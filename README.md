@@ -1,0 +1,441 @@
+# Mac Setup Script
+
+This repository contains a single script — **`setup_mac.sh`** — that bootstraps a fresh macOS environment for development and productivity.  
+It installs and configures **Homebrew, pyenv, SDKMAN!, Emacs, Colima (with Docker CLI), Bruno, Obsidian**, plus a set of essential command-line tools.
+
+---
+
+## ✨ Features
+
+- ✅ Idempotent: safe to run multiple times — skips already installed items  
+- ✅ Works on both **Apple Silicon** and **Intel** Macs  
+- ✅ Installs **Xcode CLT** and **Rosetta 2** (if required)  
+- ✅ Bootstraps:
+  - **Oh My Zsh** with **Powerlevel10k** theme and plugins (`git`, `zsh-autosuggestions`, `zsh-syntax-highlighting`)  
+  - **Core CLI utilities**: `git`, `wget`, `curl`, `jq`, `htop`, `tree`, `tmux`, `ripgrep`, `fd`, `gnupg`  
+  - **Python via UV** (default, recommended) — 10-100x faster than pip, manages Python versions, virtual envs, and tools  
+  - **Python via pyenv** + `pyenv-virtualenv`, `pipx`, `poetry` (legacy option, set `USE_UV=false`)  
+  - **Java via SDKMAN!** + optional `maven` and `gradle`  
+  - **Colima** + `docker` & `docker-compose` CLI (lightweight Docker alternative)  
+  - **Emacs** with a minimal starter config  
+  - **Bruno** and **Obsidian** (via Homebrew cask)  
+- ✅ Adds sensible `zsh` aliases and environment initialization (`pyenv`, `sdkman`, `colima`)
+  - Includes shortcuts like `ll`, `cls`, `grv`, `colima-start`, and `colima-stop`
+- ✅ Optional macOS defaults tuning (hidden behind a toggle)  
+- ✅ Clear logs with ✅/⚠️ markers and an install summary at the end  
+
+---
+
+## ⚙️ Installation
+
+1. Clone or download this repo.
+    ```
+    git clone <this-repo-url>
+    cd mac-setup
+    ```
+2.   Make the scripts executable:  
+    ```
+    chmod +x setup_mac.sh setup_wizard.sh
+    ```
+3. Run it:
+
+```
+./setup_mac.sh
+```
+
+---
+
+## 🧙 Interactive Wizard Mode
+
+For a guided, step-by-step experience, use the interactive wizard:
+
+```sh
+./setup_wizard.sh
+```
+
+The wizard will guide you through:
+
+1. **Setup Type Selection** - Choose between full setup, custom module selection, or migration
+2. **Module Selection** - Toggle which components to install
+3. **Python Configuration** - Choose between UV (recommended) or pyenv, and select version
+4. **Java Configuration** - Select Java version (21, 17, 11, or custom)
+5. **Docker Configuration** - Configure Colima VM resources (CPUs, memory, disk)
+6. **Additional Options** - Dotfile installation and macOS defaults tuning
+7. **Review & Confirm** - See a summary before installation begins
+
+### Wizard Features
+
+- 🎨 **Colorful UI** - Clear visual hierarchy with colors and emojis
+- ✅ **Toggle Selection** - Easily toggle modules on/off
+- 📋 **Summary Review** - Review all choices before installation
+- 🔄 **Migration Support** - Guided pyenv to UV migration
+- 🔍 **Dry-Run Mode** - Preview all commands without making changes
+- ✔️ **Input Validation** - Validates all user inputs with helpful error messages
+  - Version format validation (Python versions)
+  - Numeric range validation (CPUs: 1-32, Memory: 2-128GB, Disk: 10-500GB)
+  - Menu choice validation (ensures valid selections)
+  - Retry loops allow fixing errors without restarting
+
+## 🧩 Partial Execution
+
+Run only specific modules using the `--only` flag:
+
+```sh
+# Run only Python setup
+./setup_mac.sh --only python
+
+# Run multiple modules
+./setup_mac.sh --only python,java,docker
+
+# List available modules
+./setup_mac.sh --list-modules
+```
+
+### Available Modules
+
+| Module | Description |
+|--------|-------------|
+| `homebrew` | Homebrew package manager |
+| `ohmyzsh` | Oh My Zsh + Powerlevel10k + plugins |
+| `cli` | Core CLI utilities (git, jq, ripgrep, etc.) |
+| `python` | Python environment (UV or pyenv/poetry) |
+| `java` | SDKMAN! + Java + Maven/Gradle |
+| `emacs` | Emacs editor + minimal config |
+| `docker` | Colima + Docker CLI |
+| `apps` | GUI apps (Bruno, Obsidian) |
+
+> **Note:** Homebrew is automatically included when other modules depend on it.
+
+## 🔍 Dry-Run Mode
+
+Preview all commands before execution without making any changes to your system:
+
+```sh
+# Preview full setup
+./setup_mac.sh --dry-run
+
+# Preview specific modules
+./setup_mac.sh --dry-run --only python,docker
+
+# Use with wizard (select dry-run in Additional Options)
+./setup_wizard.sh
+```
+
+**Dry-run mode will:**
+- ✅ Display all commands that would be executed
+- ✅ Show configuration that would be applied
+- ✅ Verify module dependencies
+- ✅ Check for already-installed tools
+- ❌ Not install or modify anything
+- ❌ Not update configuration files
+
+This is useful for:
+- Testing the script on a new machine
+- Understanding what will be installed
+- Troubleshooting issues
+- Learning the installation process
+
+## 🔄 Migrating from pyenv to UV
+
+If you previously installed pyenv and want to switch to UV:
+
+```sh
+./setup_mac.sh --migrate-to-uv
+```
+
+This will:
+1. Install UV alongside pyenv (non-destructive)
+2. Install your Python version via UV
+3. Migrate pipx tools to `uv tool`
+4. Update `.zshrc` (comments out pyenv init, adds UV path)
+5. Provide cleanup instructions
+
+### After Migration
+
+```sh
+# Reload shell
+exec zsh
+
+# Verify UV is working
+uv --version   
+uv python list --only-installed  
+
+# Optional cleanup (after verifying everything works)
+rm -rf ~/.pyenv
+pipx uninstall-all && brew uninstall pipx
+brew uninstall pyenv pyenv-virtualenv
+```
+
+> ⚠️ **Keep pyenv installed** until you've verified UV works for all your projects!
+
+## 🛠️ Customization
+
+You can override versions or disable features per run using environment variables:
+
+```sh
+# Versions
+PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./setup_mac.sh
+JDK_DIST="${JDK_DIST:-temurin}"                     # SDKMAN candidate vendor (temurin, oracle, liberica, etc.)
+JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier (e.g., "21.0.4-tem" for Temurin 21)
+
+# Feature toggles
+USE_UV="${USE_UV:-true}"                            # Use uv instead of pyenv/poetry/pipx (recommended)
+INSTALL_PY_TOOLS="${INSTALL_PY_TOOLS:-true}"        # Install Python tools (via uv tool or pipx)
+INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Add aliases and init lines to ~/.zshrc
+TUNE_DEFAULTS="${TUNE_DEFAULTS:-false}"             # Apply some macOS defaults
+CREATE_MIN_EMACS_INIT="${CREATE_MIN_EMACS_INIT:-true}"
+CREATE_OBSIDIAN_VAULT="${CREATE_OBSIDIAN_VAULT:-false}"  # Create starter vault folder
+
+# Colima defaults (edit as desired)
+COLIMA_PROFILE="${COLIMA_PROFILE:-default}"
+COLIMA_CPUS="${COLIMA_CPUS:-4}"
+COLIMA_MEMORY="${COLIMA_MEMORY:-8}"     # in GiB
+COLIMA_DISK="${COLIMA_DISK:-60}"        # in GiB
+COLIMA_RUNTIME="${COLIMA_RUNTIME:-docker}"  # docker or containerd
+
+```
+
+When dotfiles are enabled, the script appends a small alias block to `~/.zshrc` with:
+- `ll` → `ls -lah`
+- `cls` → `clear`
+- `grv` → `git remote -v`
+- `colima-start` → `colima start`
+- `colima-stop` → `colima stop`
+
+### UV vs pyenv/poetry
+
+By default, the script uses **UV** for Python management. UV is a modern, Rust-based tool that is 10-100x faster than pip and replaces pyenv, poetry, and pipx with a single unified tool.
+
+To use the legacy pyenv/poetry stack instead:
+```sh
+USE_UV=false ./setup_mac.sh
+```
+
+## 🪛 Installed Command-Line Tools and Purpose
+
+| Tool | Purpose |
+|-------|------------|
+|git| Version control |
+|wget| Download files from web|
+|curl| Transfer data from or to a server|
+|jq| Lightweight json processor|
+|htop| Interactive process viewer|
+|tree| Display directories as a tree|
+|tmux| Terminal Multiplexer for managing sessions|
+|ripgrep (rg) | Fast text searches across files|
+|fd| Simple, fast alternative to find|
+|gnupg|Encryption, signing and key management|
+|oh-my-zsh| Framework for managing Zsh configuration|
+|powerlevel10k| Fast, flexible Zsh theme with rich prompts|
+|zsh-autosuggestions| Fish-like autosuggestions for Zsh|
+|zsh-syntax-highlighting| Syntax highlighting for Zsh commands|
+|uv| Fast Python package manager (replaces pyenv, poetry, pipx) — default|
+|pyenv| Manage multiple Python Versions (legacy, when `USE_UV=false`)|
+|pyenv-virtualenv| Virtual environment support for pyenv (legacy)|
+|pipx| Install and run Python CLI tools in isolated environments (legacy)|
+|poetry| Python packaging and dependency management (legacy)|
+|black| Python code formatter|
+|ruff| Python Linter and formatter|
+|httpie| User-friendly HTTP client|
+|SDKMAN!| Manage parallel versions of Java|
+|maven| Java build automation and dependency management|
+|emacs| Goto Text editor|
+|colima| Lightweight VM for container runtimes (Docker runtime replacement)|
+|docker| Docker CLI to interact with containers|
+
+## 🔤 Oh My Zsh Git Aliases
+
+The `git` plugin provides 150+ aliases. Here are the most commonly used:
+
+| Alias | Command |
+|-------|---------|
+| `g` | `git` |
+| `gst` | `git status` |
+| `ga` | `git add` |
+| `gaa` | `git add --all` |
+| `gcmsg` | `git commit -m` |
+| `gc!` | `git commit --amend` |
+| `gco` | `git checkout` |
+| `gcb` | `git checkout -b` |
+| `gb` | `git branch` |
+| `gba` | `git branch -a` |
+| `gbd` | `git branch -d` |
+| `gp` | `git push` |
+| `gpf!` | `git push --force` |
+| `gl` | `git pull` |
+| `gf` | `git fetch` |
+| `gfa` | `git fetch --all --prune` |
+| `gd` | `git diff` |
+| `gds` | `git diff --staged` |
+| `glog` | `git log --oneline --decorate --graph` |
+| `gloga` | `git log --oneline --decorate --graph --all` |
+| `gsta` | `git stash push` |
+| `gstp` | `git stash pop` |
+| `gstl` | `git stash list` |
+| `grb` | `git rebase` |
+| `grbi` | `git rebase -i` |
+| `gm` | `git merge` |
+| `gcp` | `git cherry-pick` |
+| `grh` | `git reset HEAD` |
+| `grhh` | `git reset HEAD --hard` |
+
+> **Tip:** Run `alias | grep git` to see all available git aliases.
+
+## 🔧 Using Bruno API Client
+
+Bruno is an open-source alternative to Postman that stores collections as plain text files, making them git-friendly and easy to collaborate on.
+
+### Getting Started
+
+Once installed, Bruno can be found in your Applications folder. Collections are stored locally as `.bru` files.
+
+### Importing from Postman
+
+1. **Export from Postman:**
+   - In Postman, select your collection
+   - Click the three dots → Export
+   - Choose **Collection v2.1** format
+   - Save the JSON file
+
+2. **Import to Bruno:**
+   - Open Bruno
+   - Click **Import Collection**
+   - Select the exported JSON file
+   - Choose a folder location for your collection
+
+### Importing from cURL
+
+Bruno supports importing cURL commands:
+
+1. In Bruno, click **Import** → **cURL**
+2. Paste your cURL command
+3. Bruno will convert it to a request
+
+### Collection Structure
+
+Bruno collections are stored as plain text:
+
+```
+~/Documents/Bruno/
+├── my-api/
+│   ├── bruno.json          # Collection metadata
+│   ├── Get Users.bru       # Individual request
+│   └── Create User.bru     # Another request
+```
+
+### Sample `.bru` File Format
+
+```bru
+meta {
+  name: Get Users
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://api.example.com/users
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+```
+
+### Environment Variables
+
+Bruno supports environment variables for different stages:
+
+1. Click on collection name → **Environments**
+2. Add variables like `baseUrl`, `apiToken`, etc.
+3. Use them in requests: `{{baseUrl}}/users`
+
+### Why Bruno over Postman?
+
+- ✅ **Git-friendly:** Collections are plain text files
+- ✅ **Offline-first:** Works without internet
+- ✅ **Privacy:** No cloud sync required
+- ✅ **Open-source:** Free and community-driven
+- ✅ **Fast:** Lightweight and performant
+
+## Post Installation
+   - Open a new terminal or run: exec zsh
+   - Verify:
+      
+       # If using UV (default)
+       ```
+       uv --version
+       uv python list --only-installed
+       python --version
+       ```
+       
+       
+       # If using pyenv (USE_UV=false)
+       ```
+       pyenv --version  
+       python --version 
+       ```
+       
+       # Java & Docker
+       ```
+       sdk version  
+       java -version  
+       docker version  
+       colima status  
+       emacs --version  
+       ```
+
+## Notes:
+   - Some steps (Xcode CLT, Rosetta) may prompt or require admin rights.
+   - Colima controls the Docker context. If docker fails, try:
+       ```
+       colima start
+       docker context ls
+       ```
+
+---
+
+## 🧪 Testing
+
+The project includes a test suite to validate both scripts:
+
+```sh
+# Run all tests
+./tests/run_tests.sh
+
+# Run only setup_mac.sh tests
+./tests/test_setup_mac.sh
+
+# Run only setup_wizard.sh tests
+./tests/test_setup_wizard.sh
+```
+
+### Test Coverage
+
+**setup_mac.sh tests (15 tests):**
+- Script syntax validation
+- Help and list-modules flags
+- Environment variable defaults and overrides
+- Bash 3.2 compatibility (no Bash 4 syntax)
+- Module definitions (Homebrew, Python, Java, Docker, Apps)
+- UV and pyenv support
+- SDKMAN and Colima support
+
+**setup_wizard.sh tests (18 tests):**
+- Script syntax validation
+- All wizard screens defined
+- Helper functions defined
+- State variable initialization
+- Module list completeness
+- Environment variable exports
+- Bash 3.2 compatibility
+- Integration with setup_mac.sh
+
+---
+
+Enjoy your new setup!
