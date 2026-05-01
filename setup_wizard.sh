@@ -325,8 +325,13 @@ SELECTED_MODULES=()
 # Configuration
 WIZARD_PYTHON_VERSION="3.12.5"
 WIZARD_USE_UV="true"
+WIZARD_ZSH_MODE="plain"
+WIZARD_PACKAGE_MANAGER="auto"
 WIZARD_JDK_VERSION="21.0.4-tem"
 WIZARD_INSTALL_DOTFILES="true"
+WIZARD_RECONCILE_EXISTING_CONFIG="true"
+WIZARD_CLEANUP_HOMEBREW_OVERLAPS="false"
+WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="false"
 WIZARD_TUNE_DEFAULTS="false"
 WIZARD_DRY_RUN="false"
 WIZARD_COLIMA_CPUS="4"
@@ -352,8 +357,8 @@ show_welcome() {
   echo ""
   echo -e "${DIM}What this wizard can set up for you:${RESET}"
   echo ""
-  echo "  🍺 Homebrew          - Package manager for macOS"
-  echo "  🐚 Oh My Zsh         - Powerful shell with themes & plugins"
+  echo "  📦 Package Manager   - Homebrew on newer macOS, MacPorts on older macOS"
+  echo "  🐚 Zsh               - Minimal zsh or Oh My Zsh with Powerlevel10k"
   echo "  🛠️  CLI Tools         - Essential command-line utilities"
   echo "  🐍 Python            - Python environment (UV or pyenv)"
   echo "  ☕ Java              - SDKMAN! with JDK, Maven, Gradle"
@@ -388,7 +393,7 @@ show_setup_type() {
   case "$choice" in
     1)
       SETUP_TYPE="full"
-      SELECTED_MODULES=("homebrew" "ohmyzsh" "cli" "python" "java" "emacs" "docker" "apps")
+      SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "emacs" "docker" "apps")
       ;;
     2)
       SETUP_TYPE="custom"
@@ -398,7 +403,7 @@ show_setup_type() {
       ;;
     *)
       SETUP_TYPE="full"
-      SELECTED_MODULES=("homebrew" "ohmyzsh" "cli" "python" "java" "emacs" "docker" "apps")
+      SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "emacs" "docker" "apps")
       ;;
   esac
 }
@@ -423,12 +428,12 @@ show_module_selection() {
 
     local selected="false"
     is_module_selected "homebrew" && selected="true"
-    print_option "1" "homebrew" "Homebrew package manager" "$selected"
+    print_option "1" "package-manager" "Homebrew or MacPorts setup (module name: homebrew)" "$selected"
     echo ""
 
     selected="false"
-    is_module_selected "ohmyzsh" && selected="true"
-    print_option "2" "ohmyzsh" "Oh My Zsh + Powerlevel10k + plugins" "$selected"
+    is_module_selected "zsh" && selected="true"
+    print_option "2" "zsh" "Minimal zsh or Oh My Zsh + Powerlevel10k" "$selected"
     echo ""
 
     selected="false"
@@ -470,7 +475,7 @@ show_module_selection() {
     # Handle numeric input safely before any arithmetic
     case "$input" in
       1) toggle_selected_module "homebrew"; continue ;;
-      2) toggle_selected_module "ohmyzsh"; continue ;;
+      2) toggle_selected_module "zsh"; continue ;;
       3) toggle_selected_module "cli"; continue ;;
       4) toggle_selected_module "python"; continue ;;
       5) toggle_selected_module "java"; continue ;;
@@ -496,7 +501,7 @@ show_module_selection() {
         break
         ;;
       all|a)
-        SELECTED_MODULES=("homebrew" "ohmyzsh" "cli" "python" "java" "emacs" "docker" "apps")
+        SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "emacs" "docker" "apps")
         ;;
       none|n|clear|c)
         SELECTED_MODULES=()
@@ -514,18 +519,89 @@ show_module_selection() {
     set -u
   fi
 
-  # Ensure homebrew is included if other modules need it
-  local needs_homebrew=("cli" "python" "emacs" "docker" "apps")
-  for mod in "${needs_homebrew[@]}"; do
+  # Ensure package manager setup is included if other modules need it.
+  local needs_package_manager=("zsh" "cli" "emacs" "docker" "apps")
+  for mod in "${needs_package_manager[@]}"; do
     if is_module_selected "$mod"; then
       if ! is_module_selected "homebrew"; then
         SELECTED_MODULES=("homebrew" ${SELECTED_MODULES[@]+"${SELECTED_MODULES[@]}"})
-        print_info "Added 'homebrew' as it's required by other selected modules."
+        print_info "Added package-manager setup as it's required by other selected modules."
         sleep 1
       fi
       break
     fi
   done
+}
+
+show_package_manager_config() {
+  if ! is_module_selected "homebrew"; then
+    return
+  fi
+
+  print_header
+  print_section "Step 3a: Package Manager"
+
+  echo "Choose which macOS package manager setup should use:"
+  echo ""
+  echo -e "  ${BOLD}1)${RESET} ${GREEN}Auto (Recommended)${RESET} - Homebrew on macOS 13+, MacPorts on macOS 12 and older"
+  echo -e "  ${BOLD}2)${RESET} ${CYAN}Homebrew${RESET} - Use Homebrew explicitly"
+  echo -e "  ${BOLD}3)${RESET} ${CYAN}MacPorts${RESET} - Use MacPorts explicitly"
+  echo ""
+  echo -ne "${WHITE}Enter your choice [1-3] (default: 1): ${RESET}"
+
+  local choice
+  read -r choice
+  choice=$(validate_choice "$choice" 1 3 1)
+
+  case "$choice" in
+    1) WIZARD_PACKAGE_MANAGER="auto" ;;
+    2) WIZARD_PACKAGE_MANAGER="homebrew" ;;
+    3) WIZARD_PACKAGE_MANAGER="macports" ;;
+    *) WIZARD_PACKAGE_MANAGER="auto" ;;
+  esac
+
+  echo ""
+  print_success "Package manager mode: $WIZARD_PACKAGE_MANAGER"
+  if [[ "$WIZARD_PACKAGE_MANAGER" == "macports" ]]; then
+    print_info "Install MacPorts from https://www.macports.org/install.php before running non-dry setup."
+  fi
+
+  wait_for_key
+}
+
+show_zsh_config() {
+  if ! is_module_selected "zsh"; then
+    return
+  fi
+
+  print_header
+  print_section "Step 3a: Zsh Configuration"
+
+  echo "Choose your zsh setup:"
+  echo ""
+  echo -e "  ${BOLD}1)${RESET} ${GREEN}Plain zsh (Recommended)${RESET} - Minimal plugins, direct sourcing, Powerlevel10k"
+  echo -e "  ${BOLD}2)${RESET} ${CYAN}Oh My Zsh${RESET} - Oh My Zsh framework with Powerlevel10k"
+  echo ""
+  echo -ne "${WHITE}Enter your choice [1-2] (default: 1): ${RESET}"
+
+  local choice
+  read -r choice
+  choice=$(validate_choice "$choice" 1 2 1)
+
+  case "$choice" in
+    1) WIZARD_ZSH_MODE="plain" ;;
+    2) WIZARD_ZSH_MODE="ohmyzsh" ;;
+    *) WIZARD_ZSH_MODE="plain" ;;
+  esac
+
+  echo ""
+  if [[ "$WIZARD_ZSH_MODE" == "plain" ]]; then
+    print_success "Using plain zsh with Powerlevel10k"
+  else
+    print_success "Using Oh My Zsh with Powerlevel10k"
+  fi
+
+  wait_for_key
 }
 
 show_python_config() {
@@ -534,7 +610,7 @@ show_python_config() {
   fi
 
   print_header
-  print_section "Step 3a: Python Configuration"
+  print_section "Step 3b: Python Configuration"
 
   echo "Choose your Python package manager:"
   echo ""
@@ -591,7 +667,7 @@ show_java_config() {
   fi
 
   print_header
-  print_section "Step 3b: Java Configuration"
+  print_section "Step 3c: Java Configuration"
 
   echo "Java will be installed via SDKMAN!"
   echo ""
@@ -634,7 +710,7 @@ show_docker_config() {
   fi
 
   print_header
-  print_section "Step 3c: Docker (Colima) Configuration"
+  print_section "Step 3d: Docker (Colima) Configuration"
 
   echo "Colima is a lightweight Docker runtime for macOS."
   echo "Configure the VM resources:"
@@ -709,7 +785,7 @@ show_apps_config() {
   fi
 
   print_header
-  print_section "Step 3d: Apps Configuration"
+  print_section "Step 3e: Apps Configuration"
 
   echo "Choose which apps to install:"
   echo ""
@@ -753,13 +829,38 @@ show_additional_options() {
   echo "Configure additional settings:"
   echo ""
 
-  if prompt_yes_no "Add aliases and init lines to ~/.zshrc?" "y"; then
+  if prompt_yes_no "Install/symlink dotfiles from the dotfiles repo?" "y"; then
     WIZARD_INSTALL_DOTFILES="true"
   else
     WIZARD_INSTALL_DOTFILES="false"
   fi
 
   echo ""
+
+  if prompt_yes_no "Reconcile existing Antigen/pyenv/stale shell config?" "y"; then
+    WIZARD_RECONCILE_EXISTING_CONFIG="true"
+  else
+    WIZARD_RECONCILE_EXISTING_CONFIG="false"
+  fi
+
+  echo ""
+
+  if prompt_yes_no "Remove verified Homebrew package overlaps after MacPorts replacements are active?" "n"; then
+    WIZARD_CLEANUP_HOMEBREW_OVERLAPS="true"
+  else
+    WIZARD_CLEANUP_HOMEBREW_OVERLAPS="false"
+  fi
+
+  echo ""
+
+  if is_module_selected "apps" && [[ "$WIZARD_PACKAGE_MANAGER" != "homebrew" ]]; then
+    if prompt_yes_no "Use existing Homebrew for GUI app casks when MacPorts is selected?" "n"; then
+      WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="true"
+    else
+      WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="false"
+    fi
+    echo ""
+  fi
 
   if prompt_yes_no "Apply macOS defaults (fast key repeat, show extensions, etc.)?" "n"; then
     WIZARD_TUNE_DEFAULTS="true"
@@ -792,6 +893,18 @@ show_summary() {
   echo -e "${BOLD}Configuration:${RESET}"
   echo ""
 
+  if is_module_selected "homebrew"; then
+    echo -e "  Package manager: ${CYAN}$WIZARD_PACKAGE_MANAGER${RESET}"
+  fi
+
+  if is_module_selected "zsh"; then
+    if [[ "$WIZARD_ZSH_MODE" == "plain" ]]; then
+      echo -e "  Zsh: ${CYAN}Plain zsh${RESET} with ${CYAN}Powerlevel10k${RESET}"
+    else
+      echo -e "  Zsh: ${CYAN}Oh My Zsh${RESET} with ${CYAN}Powerlevel10k${RESET}"
+    fi
+  fi
+
   if is_module_selected "python"; then
     if [[ "$WIZARD_USE_UV" == "true" ]]; then
       echo -e "  Python: ${CYAN}UV${RESET} with version ${CYAN}$WIZARD_PYTHON_VERSION${RESET}"
@@ -809,6 +922,9 @@ show_summary() {
   fi
 
   echo -e "  Install dotfiles: ${CYAN}$WIZARD_INSTALL_DOTFILES${RESET}"
+  echo -e "  Reconcile existing config: ${CYAN}$WIZARD_RECONCILE_EXISTING_CONFIG${RESET}"
+  echo -e "  Cleanup Homebrew overlaps: ${CYAN}$WIZARD_CLEANUP_HOMEBREW_OVERLAPS${RESET}"
+  echo -e "  Homebrew cask fallback: ${CYAN}$WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK${RESET}"
   echo -e "  Tune macOS defaults: ${CYAN}$WIZARD_TUNE_DEFAULTS${RESET}"
 
   if [[ "$WIZARD_DRY_RUN" == "true" ]]; then
@@ -829,13 +945,19 @@ run_setup() {
 
   local cmd="./setup_mac.sh"
   [[ "$WIZARD_DRY_RUN" == "true" ]] && cmd+=" --dry-run"
+  [[ "$WIZARD_RECONCILE_EXISTING_CONFIG" == "true" ]] && cmd+=" --reconcile-existing-config"
   cmd+=" --only $modules_str"
 
   # Export environment variables
   export PYTHON_VERSION="$WIZARD_PYTHON_VERSION"
   export USE_UV="$WIZARD_USE_UV"
+  export ZSH_MODE="$WIZARD_ZSH_MODE"
+  export PACKAGE_MANAGER="$WIZARD_PACKAGE_MANAGER"
   export JDK_VERSION="$WIZARD_JDK_VERSION"
   export INSTALL_DOTFILES="$WIZARD_INSTALL_DOTFILES"
+  export RECONCILE_EXISTING_CONFIG="$WIZARD_RECONCILE_EXISTING_CONFIG"
+  export CLEANUP_HOMEBREW_OVERLAPS="$WIZARD_CLEANUP_HOMEBREW_OVERLAPS"
+  export ALLOW_HOMEBREW_CASK_FALLBACK="$WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK"
   export TUNE_DEFAULTS="$WIZARD_TUNE_DEFAULTS"
   export DRY_RUN="$WIZARD_DRY_RUN"
   export COLIMA_CPUS="$WIZARD_COLIMA_CPUS"
@@ -848,11 +970,15 @@ run_setup() {
   echo -e "${DIM}With environment:${RESET}"
   echo -e "${DIM}  PYTHON_VERSION=$PYTHON_VERSION${RESET}"
   echo -e "${DIM}  USE_UV=$USE_UV${RESET}"
+  echo -e "${DIM}  ZSH_MODE=$ZSH_MODE${RESET}"
+  echo -e "${DIM}  PACKAGE_MANAGER=$PACKAGE_MANAGER${RESET}"
   echo -e "${DIM}  JDK_VERSION=$JDK_VERSION${RESET}"
   echo -e "${DIM}  INSTALL_DOTFILES=$INSTALL_DOTFILES${RESET}"
+  echo -e "${DIM}  RECONCILE_EXISTING_CONFIG=$RECONCILE_EXISTING_CONFIG${RESET}"
+  echo -e "${DIM}  CLEANUP_HOMEBREW_OVERLAPS=$CLEANUP_HOMEBREW_OVERLAPS${RESET}"
+  echo -e "${DIM}  ALLOW_HOMEBREW_CASK_FALLBACK=$ALLOW_HOMEBREW_CASK_FALLBACK${RESET}"
   echo -e "${DIM}  TUNE_DEFAULTS=$TUNE_DEFAULTS${RESET}"
   echo -e "${DIM}  DRY_RUN=$DRY_RUN${RESET}"
-  echo -e "${DIM}  TUNE_DEFAULTS=$TUNE_DEFAULTS${RESET}"
   echo -e "${DIM}  COLIMA_CPUS=$COLIMA_CPUS${RESET}"
   echo -e "${DIM}  COLIMA_MEMORY=$COLIMA_MEMORY${RESET}"
   echo -e "${DIM}  COLIMA_DISK=$COLIMA_DISK${RESET}"
@@ -865,7 +991,15 @@ run_setup() {
 
   # Run the setup script
   if [[ -f "$SCRIPT_DIR/setup_mac.sh" ]]; then
-    "$SCRIPT_DIR/setup_mac.sh" --only "$modules_str"
+    local setup_args=()
+    [[ "$WIZARD_DRY_RUN" == "true" ]] && setup_args+=("--dry-run")
+    if [[ "$WIZARD_RECONCILE_EXISTING_CONFIG" == "true" ]]; then
+      setup_args+=("--reconcile-existing-config")
+    else
+      setup_args+=("--no-reconcile-existing-config")
+    fi
+    setup_args+=("--only" "$modules_str")
+    "$SCRIPT_DIR/setup_mac.sh" "${setup_args[@]}"
   else
     print_error "setup_mac.sh not found in $SCRIPT_DIR"
     exit 1
@@ -882,7 +1016,7 @@ run_migration() {
   echo "  1. Install UV alongside pyenv (non-destructive)"
   echo "  2. Install your Python version via UV"
   echo "  3. Migrate pipx tools to 'uv tool'"
-  echo "  4. Update .zshrc configuration"
+  echo "  4. Update shell configuration"
   echo ""
 
   print_warning "This is non-destructive. pyenv will remain installed."
@@ -971,6 +1105,8 @@ main() {
 
   case "$SETUP_TYPE" in
     full)
+      show_package_manager_config
+      show_zsh_config
       show_python_config
       show_java_config
       show_docker_config
@@ -987,6 +1123,8 @@ main() {
       ;;
     custom)
       show_module_selection
+      show_package_manager_config
+      show_zsh_config
       show_python_config
       show_java_config
       show_docker_config

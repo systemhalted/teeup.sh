@@ -40,7 +40,7 @@ In `setup_mac.sh`, add a toggle variable in the "User Toggles" section:
 ```bash
 # Module toggles (all enabled by default, use --only to run specific modules)
 RUN_HOMEBREW="${RUN_HOMEBREW:-true}"
-RUN_OHMYZSH="${RUN_OHMYZSH:-true}"
+RUN_ZSH="${RUN_ZSH:-true}"
 RUN_CLI="${RUN_CLI:-true}"
 RUN_PYTHON="${RUN_PYTHON:-true}"
 RUN_JAVA="${RUN_JAVA:-true}"
@@ -58,8 +58,9 @@ Add your module to the list:
 list_modules() {
   cat <<EOF
 Available modules:
-  homebrew  - Homebrew package manager
-  ohmyzsh   - Oh My Zsh + Powerlevel10k + plugins
+  homebrew  - Package manager setup (Homebrew or MacPorts; compatibility module name)
+  zsh       - Zsh integration + Powerlevel10k + plugins
+  ohmyzsh   - Legacy alias for zsh with ZSH_MODE=ohmyzsh
   cli       - Core CLI utilities (git, jq, ripgrep, etc.)
   python    - Python environment (UV or pyenv/poetry)
   java      - SDKMAN! + Java + Maven/Gradle
@@ -103,13 +104,7 @@ if [[ "$RUN_NEWMODULE" == "true" ]]; then
   log "Setting up New Module..."
   
   # Your installation logic here
-  if brew list --formula newmodule >/dev/null 2>&1; then
-    remember_skipped "newmodule"
-    log "New Module already installed."
-  else
-    brew install newmodule
-    remember_installed "newmodule"
-  fi
+  pkg_install newmodule newmodule
   
   # Configuration steps
   # ...
@@ -223,7 +218,7 @@ if ! command -v tool >/dev/null 2>&1; then
 fi
 
 # Use || for optional commands
-brew install package || warn "Failed to install package"
+pkg_install package package || warn "Failed to install package"
 ```
 
 ### Logging
@@ -242,12 +237,20 @@ err "Critical error"            # Error message
 Always check if something is already installed:
 
 ```bash
-if [[ -f "$CONFIG_FILE" ]]; then
+if pkg_installed package; then
+  log "Package already exists, skipping"
+elif [[ -f "$CONFIG_FILE" ]]; then
   log "Config already exists, skipping"
 else
   # Create config
 fi
 ```
+
+### Package Manager Support
+
+Package-backed modules should use `pkg_install <package> [command]` instead of calling `brew` or `port` directly. This keeps `PACKAGE_MANAGER=auto` working across newer Homebrew machines and older MacPorts machines.
+
+Use explicit Homebrew calls only for Homebrew-only features, such as casks, and guard them with the existing fallback behavior.
 
 ---
 
@@ -368,4 +371,3 @@ If you have questions about contributing:
 4. Ask in the community
 
 Happy contributing! 🚀
-

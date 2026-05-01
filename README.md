@@ -1,7 +1,7 @@
 # Mac Setup Script
 
-This repository contains a single script — **`setup_mac.sh`** — that bootstraps a fresh macOS environment for development and productivity.  
-It installs and configures **Homebrew, pyenv, SDKMAN!, Emacs, Colima (with Docker CLI), Bruno, Obsidian**, plus a set of essential command-line tools.
+This repository contains **`setup_mac.sh`** and an interactive wizard that bootstrap a macOS development environment.
+It installs and configures a macOS package manager (**Homebrew on newer macOS, MacPorts on older macOS**), **zsh with Powerlevel10k, UV, SDKMAN!, Emacs, Colima (with Docker CLI), Bruno, Obsidian**, plus common command-line tools.
 
 ---
 
@@ -11,16 +11,17 @@ It installs and configures **Homebrew, pyenv, SDKMAN!, Emacs, Colima (with Docke
 - ✅ Works on both **Apple Silicon** and **Intel** Macs  
 - ✅ Installs **Xcode CLT** and **Rosetta 2** (if required)  
 - ✅ Bootstraps:
-  - **Oh My Zsh** with **Powerlevel10k** theme and plugins (`git`, `zsh-autosuggestions`, `zsh-syntax-highlighting`)  
+  - **Package manager**: `PACKAGE_MANAGER=auto` uses Homebrew on macOS 13+ and MacPorts on macOS 12 and older
+  - **zsh** in either plain mode (default) or **Oh My Zsh** mode, both with **Powerlevel10k**
   - **Core CLI utilities**: `git`, `wget`, `curl`, `jq`, `htop`, `tree`, `tmux`, `ripgrep`, `fd`, `gnupg`  
   - **Python via UV** (default, recommended) — 10-100x faster than pip, manages Python versions, virtual envs, and tools  
   - **Python via pyenv** + `pyenv-virtualenv`, `pipx`, `poetry` (legacy option, set `USE_UV=false`)  
   - **Java via SDKMAN!** + optional `maven` and `gradle`  
   - **Colima** + `docker` & `docker-compose` CLI (lightweight Docker alternative)  
   - **Emacs** with a minimal starter config  
-  - **Bruno** and **Obsidian** (via Homebrew cask)  
-- ✅ Adds sensible `zsh` aliases and environment initialization (`pyenv`, `sdkman`, `colima`)
-  - Includes shortcuts like `ll`, `cls`, `grv`, `colima-start`, and `colima-stop`
+  - **Bruno** and **Obsidian** (via Homebrew cask when Homebrew is selected or cask fallback is enabled)
+- ✅ Installs/symlinks the sibling `dotfiles` repo when present
+- ✅ Can reconcile existing shell config by disabling old Antigen, pyenv, and stale hardcoded path lines
 - ✅ Optional macOS defaults tuning (hidden behind a toggle)  
 - ✅ Clear logs with ✅/⚠️ markers and an install summary at the end  
 
@@ -43,6 +44,26 @@ It installs and configures **Homebrew, pyenv, SDKMAN!, Emacs, Colima (with Docke
 ./setup_mac.sh
 ```
 
+### Package Manager Selection
+
+By default, setup uses `PACKAGE_MANAGER=auto`:
+
+- macOS 13 or newer: **Homebrew**
+- macOS 12 or older: **MacPorts**
+
+MacPorts itself is not installed by the script. On older Macs, install the official pkg for your macOS version first:
+
+```sh
+open https://www.macports.org/install.php
+```
+
+Then rerun setup. You can override the choice:
+
+```sh
+PACKAGE_MANAGER=homebrew ./setup_mac.sh
+PACKAGE_MANAGER=macports ./setup_mac.sh
+```
+
 ---
 
 ## 🧙 Interactive Wizard Mode
@@ -57,11 +78,13 @@ The wizard will guide you through:
 
 1. **Setup Type Selection** - Choose between full setup, custom module selection, or migration
 2. **Module Selection** - Toggle which components to install
-3. **Python Configuration** - Choose between UV (recommended) or pyenv, and select version
-4. **Java Configuration** - Select Java version (21, 17, 11, or custom)
-5. **Docker Configuration** - Configure Colima VM resources (CPUs, memory, disk)
-6. **Additional Options** - Dotfile installation and macOS defaults tuning
-7. **Review & Confirm** - See a summary before installation begins
+3. **Package Manager Selection** - Auto, Homebrew, or MacPorts
+4. **Zsh Configuration** - Choose plain zsh (default) or Oh My Zsh
+5. **Python Configuration** - Choose between UV (recommended) or pyenv, and select version
+6. **Java Configuration** - Select Java version (21, 17, 11, or custom)
+7. **Docker Configuration** - Configure Colima VM resources (CPUs, memory, disk)
+8. **Additional Options** - Dotfile installation, existing-config reconciliation, cleanup, and macOS defaults tuning
+9. **Review & Confirm** - See a summary before installation begins
 
 ### Wizard Features
 
@@ -84,8 +107,14 @@ Run only specific modules using the `--only` flag:
 # Run only Python setup
 ./setup_mac.sh --only python
 
+# Run only zsh setup, defaulting to plain zsh
+./setup_mac.sh --only zsh
+
+# Use Oh My Zsh mode
+ZSH_MODE=ohmyzsh ./setup_mac.sh --only zsh
+
 # Run multiple modules
-./setup_mac.sh --only python,java,docker
+./setup_mac.sh --only zsh,python,java,docker
 
 # List available modules
 ./setup_mac.sh --list-modules
@@ -95,8 +124,9 @@ Run only specific modules using the `--only` flag:
 
 | Module | Description |
 |--------|-------------|
-| `homebrew` | Homebrew package manager |
-| `ohmyzsh` | Oh My Zsh + Powerlevel10k + plugins |
+| `homebrew` | Package manager setup; compatibility module name for Homebrew or MacPorts |
+| `zsh` | zsh integration + Powerlevel10k + plugins |
+| `ohmyzsh` | Legacy alias for `zsh` with `ZSH_MODE=ohmyzsh` |
 | `cli` | Core CLI utilities (git, jq, ripgrep, etc.) |
 | `python` | Python environment (UV or pyenv/poetry) |
 | `java` | SDKMAN! + Java + Maven/Gradle |
@@ -104,7 +134,7 @@ Run only specific modules using the `--only` flag:
 | `docker` | Colima + Docker CLI |
 | `apps` | GUI apps (Bruno, Obsidian) |
 
-> **Note:** Homebrew is automatically included when other modules depend on it.
+> **Note:** Package manager setup is automatically included when other modules depend on it. The module is still named `homebrew` for backward compatibility.
 
 ## 🔍 Dry-Run Mode
 
@@ -147,7 +177,7 @@ This will:
 1. Install UV alongside pyenv (non-destructive)
 2. Install your Python version via UV
 3. Migrate pipx tools to `uv tool`
-4. Update `.zshrc` (comments out pyenv init, adds UV path)
+4. Update shell config (disables active pyenv init, adds UV path when dotfiles are not installed)
 5. Provide cleanup instructions
 
 ### After Migration
@@ -162,8 +192,8 @@ uv python list --only-installed
 
 # Optional cleanup (after verifying everything works)
 rm -rf ~/.pyenv
-pipx uninstall-all && brew uninstall pipx
-brew uninstall pyenv pyenv-virtualenv
+pipx uninstall-all
+brew uninstall pipx pyenv pyenv-virtualenv  # if those were installed with Homebrew
 ```
 
 > ⚠️ **Keep pyenv installed** until you've verified UV works for all your projects!
@@ -181,7 +211,12 @@ JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier 
 # Feature toggles
 USE_UV="${USE_UV:-true}"                            # Use uv instead of pyenv/poetry/pipx (recommended)
 INSTALL_PY_TOOLS="${INSTALL_PY_TOOLS:-true}"        # Install Python tools (via uv tool or pipx)
-INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Add aliases and init lines to ~/.zshrc
+ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
+PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, or macports
+INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Install/symlink sibling dotfiles payload
+RECONCILE_EXISTING_CONFIG="${RECONCILE_EXISTING_CONFIG:-false}"  # Disable old shell config lines
+CLEANUP_HOMEBREW_OVERLAPS="${CLEANUP_HOMEBREW_OVERLAPS:-false}"  # Remove verified overlaps in MacPorts mode
+ALLOW_HOMEBREW_CASK_FALLBACK="${ALLOW_HOMEBREW_CASK_FALLBACK:-false}"  # Use existing Homebrew casks in MacPorts mode
 TUNE_DEFAULTS="${TUNE_DEFAULTS:-false}"             # Apply some macOS defaults
 CREATE_MIN_EMACS_INIT="${CREATE_MIN_EMACS_INIT:-true}"
 CREATE_OBSIDIAN_VAULT="${CREATE_OBSIDIAN_VAULT:-false}"  # Create starter vault folder
@@ -195,12 +230,9 @@ COLIMA_RUNTIME="${COLIMA_RUNTIME:-docker}"  # docker or containerd
 
 ```
 
-When dotfiles are enabled, the script appends a small alias block to `~/.zshrc` with:
-- `ll` → `ls -lah`
-- `cls` → `clear`
-- `grv` → `git remote -v`
-- `colima-start` → `colima start`
-- `colima-stop` → `colima stop`
+When dotfiles are enabled and the sibling `dotfiles` repo is present, the script
+symlinks `zshrc`, `zprofile`, `gitconfig`, and `tmux.conf` into `$HOME`. If the
+payload is not present, setup falls back to small managed shell blocks.
 
 ### UV vs pyenv/poetry
 
@@ -210,6 +242,8 @@ To use the legacy pyenv/poetry stack instead:
 ```sh
 USE_UV=false ./setup_mac.sh
 ```
+
+Legacy pyenv mode currently requires Homebrew. MacPorts setups should keep the default `USE_UV=true`.
 
 ## 🪛 Installed Command-Line Tools and Purpose
 
@@ -417,16 +451,16 @@ The project includes a test suite to validate both scripts:
 
 ### Test Coverage
 
-**setup_mac.sh tests (15 tests):**
+**setup_mac.sh tests (23 tests):**
 - Script syntax validation
 - Help and list-modules flags
 - Environment variable defaults and overrides
 - Bash 3.2 compatibility (no Bash 4 syntax)
-- Module definitions (Homebrew, Python, Java, Docker, Apps)
+- Module definitions (package manager, zsh, Python, Java, Docker, Apps)
 - UV and pyenv support
 - SDKMAN and Colima support
 
-**setup_wizard.sh tests (18 tests):**
+**setup_wizard.sh tests (26 tests):**
 - Script syntax validation
 - All wizard screens defined
 - Helper functions defined

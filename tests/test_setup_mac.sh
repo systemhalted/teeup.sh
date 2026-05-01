@@ -54,6 +54,7 @@ test_default_env_vars() {
   local content
   content=$(cat "$PROJECT_DIR/setup_mac.sh")
   assert_contains "$content" 'PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"' "Should have default Python version"
+  assert_contains "$content" 'PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"' "Should default package manager to auto"
 }
 
 ###########################################
@@ -81,6 +82,7 @@ test_all_modules_defined() {
   local content
   content=$(cat "$PROJECT_DIR/setup_mac.sh")
   assert_contains "$content" "RUN_HOMEBREW" "Should define RUN_HOMEBREW"
+  assert_contains "$content" "RUN_ZSH" "Should define RUN_ZSH"
   assert_contains "$content" "RUN_PYTHON" "Should define RUN_PYTHON"
   assert_contains "$content" "RUN_JAVA" "Should define RUN_JAVA"
   assert_contains "$content" "RUN_DOCKER" "Should define RUN_DOCKER"
@@ -113,6 +115,53 @@ test_uv_support() {
   content=$(cat "$PROJECT_DIR/setup_mac.sh")
   assert_contains "$content" "USE_UV" "Should support UV"
   assert_contains "$content" "uv python install" "Should install Python via UV"
+}
+
+###########################################
+# Test: Has modern zsh support
+###########################################
+test_zsh_support() {
+  local content
+  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  assert_contains "$content" 'ZSH_MODE="${ZSH_MODE:-plain}"' "Should default to plain zsh mode"
+  assert_contains "$content" "zsh)      RUN_ZSH=true" "Should support zsh module"
+  assert_contains "$content" "ohmyzsh)  RUN_ZSH=true; ZSH_MODE=\"ohmyzsh\"" "Should keep ohmyzsh alias"
+  assert_contains "$content" "powerlevel10k" "Should support Powerlevel10k"
+}
+
+###########################################
+# Test: Has existing config reconciliation
+###########################################
+test_reconcile_support() {
+  local content
+  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  assert_contains "$content" "RECONCILE_EXISTING_CONFIG" "Should support existing config reconciliation"
+  assert_contains "$content" "--reconcile-existing-config" "Should expose reconcile flag"
+  assert_contains "$content" "disable_matching_lines" "Should disable stale config safely"
+}
+
+###########################################
+# Test: Has package manager support
+###########################################
+test_package_manager_support() {
+  local content
+  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  assert_contains "$content" "resolve_package_manager" "Should resolve package manager"
+  assert_contains "$content" "macports" "Should support MacPorts"
+  assert_contains "$content" "sudo port install" "Should install packages with MacPorts"
+  assert_contains "$content" "CLEANUP_HOMEBREW_OVERLAPS" "Should support Homebrew overlap cleanup"
+}
+
+###########################################
+# Test: Does not install Antigen
+###########################################
+test_no_antigen_install() {
+  local content
+  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  if grep -q "curl .*antigen\\|antigen init\\|source .*antigen.zsh" "$PROJECT_DIR/setup_mac.sh"; then
+    return 1
+  fi
+  assert_contains "$content" "Antigen removed" "Should reconcile old Antigen config"
 }
 
 ###########################################
@@ -214,6 +263,10 @@ run_test "All modules defined" test_all_modules_defined
 run_test "Has shebang" test_has_shebang
 run_test "Uses strict mode" test_strict_mode
 run_test "UV support" test_uv_support
+run_test "Modern zsh support" test_zsh_support
+run_test "Existing config reconciliation" test_reconcile_support
+run_test "Package manager support" test_package_manager_support
+run_test "No Antigen install" test_no_antigen_install
 run_test "pyenv support" test_pyenv_support
 run_test "SDKMAN support" test_sdkman_support
 run_test "Colima support" test_colima_support

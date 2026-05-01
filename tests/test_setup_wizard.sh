@@ -66,6 +66,8 @@ test_wizard_screens_defined() {
   assert_contains "$content" "show_welcome()" "Should have show_welcome"
   assert_contains "$content" "show_setup_type()" "Should have show_setup_type"
   assert_contains "$content" "show_module_selection()" "Should have show_module_selection"
+  assert_contains "$content" "show_package_manager_config()" "Should have package manager config"
+  assert_contains "$content" "show_zsh_config()" "Should have show_zsh_config"
   assert_contains "$content" "show_python_config()" "Should have show_python_config"
   assert_contains "$content" "show_java_config()" "Should have show_java_config"
   assert_contains "$content" "show_docker_config()" "Should have show_docker_config"
@@ -95,6 +97,10 @@ test_state_variables() {
   assert_contains "$content" "SELECTED_MODULES=()" "Should init SELECTED_MODULES"
   assert_contains "$content" "WIZARD_PYTHON_VERSION=" "Should init WIZARD_PYTHON_VERSION"
   assert_contains "$content" "WIZARD_USE_UV=" "Should init WIZARD_USE_UV"
+  assert_contains "$content" "WIZARD_ZSH_MODE=" "Should init WIZARD_ZSH_MODE"
+  assert_contains "$content" "WIZARD_PACKAGE_MANAGER=" "Should init package manager setting"
+  assert_contains "$content" "WIZARD_RECONCILE_EXISTING_CONFIG=" "Should init reconciliation setting"
+  assert_contains "$content" "WIZARD_CLEANUP_HOMEBREW_OVERLAPS=" "Should init cleanup setting"
   assert_contains "$content" "WIZARD_JDK_VERSION=" "Should init WIZARD_JDK_VERSION"
 }
 
@@ -105,6 +111,7 @@ test_module_list_complete() {
   local content
   content=$(cat "$PROJECT_DIR/setup_wizard.sh")
   assert_contains "$content" '"homebrew"' "Should list homebrew"
+  assert_contains "$content" '"zsh"' "Should list zsh"
   assert_contains "$content" '"python"' "Should list python"
   assert_contains "$content" '"java"' "Should list java"
   assert_contains "$content" '"docker"' "Should list docker"
@@ -120,6 +127,17 @@ test_setup_type_options() {
   assert_contains "$content" "Full Setup" "Should have Full Setup option"
   assert_contains "$content" "Custom Setup" "Should have Custom Setup option"
   assert_contains "$content" "Migration" "Should have Migration option"
+}
+
+###########################################
+# Test: Zsh mode choices
+###########################################
+test_zsh_mode_choices() {
+  local content
+  content=$(cat "$PROJECT_DIR/setup_wizard.sh")
+  assert_contains "$content" "Plain zsh" "Should offer plain zsh mode"
+  assert_contains "$content" "Oh My Zsh" "Should offer Oh My Zsh mode"
+  assert_contains "$content" 'WIZARD_ZSH_MODE="plain"' "Should default to plain zsh"
 }
 
 ###########################################
@@ -157,7 +175,11 @@ test_exports_env_vars() {
   content=$(cat "$PROJECT_DIR/setup_wizard.sh")
   assert_contains "$content" 'export PYTHON_VERSION=' "Should export PYTHON_VERSION"
   assert_contains "$content" 'export USE_UV=' "Should export USE_UV"
+  assert_contains "$content" 'export ZSH_MODE=' "Should export ZSH_MODE"
+  assert_contains "$content" 'export PACKAGE_MANAGER=' "Should export PACKAGE_MANAGER"
   assert_contains "$content" 'export JDK_VERSION=' "Should export JDK_VERSION"
+  assert_contains "$content" 'export RECONCILE_EXISTING_CONFIG=' "Should export reconciliation setting"
+  assert_contains "$content" 'export CLEANUP_HOMEBREW_OVERLAPS=' "Should export Homebrew cleanup setting"
   assert_contains "$content" 'export INSTALL_BRUNO=' "Should export INSTALL_BRUNO"
 }
 
@@ -245,6 +267,29 @@ test_dryrun_support() {
 }
 
 ###########################################
+# Test: Reconciliation prompt support
+###########################################
+test_reconcile_prompt() {
+  local content
+  content=$(cat "$PROJECT_DIR/setup_wizard.sh")
+  assert_contains "$content" "WIZARD_RECONCILE_EXISTING_CONFIG" "Should support reconciliation prompt"
+  assert_contains "$content" "Reconcile existing" "Should ask about existing config cleanup"
+  assert_contains "$content" "--reconcile-existing-config" "Should pass reconcile flag"
+}
+
+###########################################
+# Test: Package manager prompt support
+###########################################
+test_package_manager_prompt() {
+  local content
+  content=$(cat "$PROJECT_DIR/setup_wizard.sh")
+  assert_contains "$content" "Package Manager" "Should ask about package manager"
+  assert_contains "$content" "Homebrew on macOS 13+" "Should describe auto package manager choice"
+  assert_contains "$content" "MacPorts" "Should offer MacPorts"
+  assert_contains "$content" "ALLOW_HOMEBREW_CASK_FALLBACK" "Should support cask fallback"
+}
+
+###########################################
 # Test: Exports dry-run to setup_mac
 ###########################################
 test_exports_dryrun() {
@@ -271,6 +316,7 @@ run_test "Helper functions defined" test_helper_functions_defined
 run_test "State variables initialized" test_state_variables
 run_test "Module list complete" test_module_list_complete
 run_test "Setup type options" test_setup_type_options
+run_test "Zsh mode choices" test_zsh_mode_choices
 run_test "No Bash 4 lowercase" test_no_bash4_lowercase
 run_test "Uses tr for lowercase" test_uses_tr_lowercase
 run_test "Safe array expansion" test_safe_array_expansion
@@ -283,6 +329,8 @@ run_test "Shellcheck validation" test_shellcheck
 run_test "Validation functions defined" test_validation_functions_defined
 run_test "Validation used in configs" test_validation_used
 run_test "Dry-run mode support" test_dryrun_support
+run_test "Reconciliation prompt" test_reconcile_prompt
+run_test "Package manager prompt" test_package_manager_prompt
 run_test "Exports dry-run to setup_mac" test_exports_dryrun
 
 print_summary
