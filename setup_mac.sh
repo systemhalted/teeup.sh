@@ -1343,6 +1343,7 @@ if [[ "$INSTALL_DOTFILES" == "true" ]]; then
     log "Installing dotfiles from $DOTFILES_DIR"
     install_dotfile_link "$DOTFILES_DIR/zshrc" "$HOME/.zshrc"
     install_dotfile_link "$DOTFILES_DIR/zprofile" "$HOME/.zprofile"
+    install_dotfile_link "$DOTFILES_DIR/shellrc.common" "$HOME/.shellrc.common"
     install_dotfile_link "$DOTFILES_DIR/gitconfig" "$HOME/.gitconfig"
     install_dotfile_link "$DOTFILES_DIR/tmux.conf" "$HOME/.tmux.conf"
   else
