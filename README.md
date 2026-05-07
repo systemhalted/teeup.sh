@@ -1,7 +1,16 @@
-# Mac Setup Script
+# ⛳️ teeup
+Get your new machine ready for the first drive.
 
-This repository contains **`setup_mac.sh`** and an interactive wizard that bootstrap a macOS development environment.
-It installs and configures a macOS package manager (**Homebrew on newer macOS, MacPorts on older macOS**), **zsh with Powerlevel10k, UV, SDKMAN!, Emacs, Colima (with Docker CLI), Bruno, Obsidian**, plus common command-line tools.
+This repository contains teeup.sh, an interactive, cross-platform shell script that automates the setup of macOS, Ubuntu, and Fedora environments. It configures system defaults, sets up your workspace, and installs your essential packages so you can get straight to work.
+
+Through an interactive wizard, teeup provisions a complete development environment, including:
+
+Package Management: Homebrew (for newer macOS/Linux) or MacPorts (for older macOS)
+Terminal & Shell: zsh configured with Powerlevel10k
+Development Tools: UV, SDKMAN!, and Emacs
+Containers: Colima bundled with the Docker CLI
+Applications: Bruno and Obsidian
+Utilities: A curated suite of common command-line tools
 
 ---
 
@@ -39,12 +48,12 @@ It installs and configures a macOS package manager (**Homebrew on newer macOS, M
     ```
 2.   Make the scripts executable:  
     ```
-    chmod +x setup_mac.sh setup_wizard.sh
+    chmod +x teeup.sh teeup-wizard.sh
     ```
 3. Run it:
 
 ```
-./setup_mac.sh
+./teeup.sh
 ```
 
 ### Package Manager Selection
@@ -63,8 +72,8 @@ open https://www.macports.org/install.php
 Then rerun setup. You can override the choice:
 
 ```sh
-PACKAGE_MANAGER=homebrew ./setup_mac.sh
-PACKAGE_MANAGER=macports ./setup_mac.sh
+PACKAGE_MANAGER=homebrew ./teeup.sh
+PACKAGE_MANAGER=macports ./teeup.sh
 ```
 
 ---
@@ -74,7 +83,7 @@ PACKAGE_MANAGER=macports ./setup_mac.sh
 For a guided, step-by-step experience, use the interactive wizard:
 
 ```sh
-./setup_wizard.sh
+./teeup-wizard.sh
 ```
 
 The wizard will guide you through:
@@ -108,22 +117,22 @@ Run only specific modules using the `--only` flag:
 
 ```sh
 # Run only Python setup
-./setup_mac.sh --only python
+./teeup.sh --only python
 
 # Run only zsh setup, defaulting to plain zsh
-./setup_mac.sh --only zsh
+./teeup.sh --only zsh
 
 # Use Oh My Zsh mode
-ZSH_MODE=ohmyzsh ./setup_mac.sh --only zsh
+ZSH_MODE=ohmyzsh ./teeup.sh --only zsh
 
 # Run multiple modules
-./setup_mac.sh --only zsh,python,java,docker
+./teeup.sh --only zsh,python,java,docker
 
 # Install only Rust
-./setup_mac.sh --only rust
+./teeup.sh --only rust
 
 # List available modules
-./setup_mac.sh --list-modules
+./teeup.sh --list-modules
 ```
 
 ### Available Modules
@@ -149,13 +158,13 @@ Preview all commands before execution without making any changes to your system:
 
 ```sh
 # Preview full setup
-./setup_mac.sh --dry-run
+./teeup.sh --dry-run
 
 # Preview specific modules
-./setup_mac.sh --dry-run --only python,docker
+./teeup.sh --dry-run --only python,docker
 
 # Use with wizard (select dry-run in Additional Options)
-./setup_wizard.sh
+./teeup-wizard.sh
 ```
 
 **Dry-run mode will:**
@@ -177,7 +186,7 @@ This is useful for:
 If you previously installed pyenv and want to switch to UV:
 
 ```sh
-./setup_mac.sh --migrate-to-uv
+./teeup.sh --migrate-to-uv
 ```
 
 This will:
@@ -211,7 +220,7 @@ You can override versions or disable features per run using environment variable
 
 ```sh
 # Versions
-PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./setup_mac.sh
+PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./teeup.sh
 JDK_DIST="${JDK_DIST:-temurin}"                     # SDKMAN candidate vendor (temurin, oracle, liberica, etc.)
 JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier (e.g., "21.0.4-tem" for Temurin 21)
 
@@ -247,7 +256,7 @@ By default, the script uses **UV** for Python management. UV is a modern, Rust-b
 
 To use the legacy pyenv/poetry stack instead:
 ```sh
-USE_UV=false ./setup_mac.sh
+USE_UV=false ./teeup.sh
 ```
 
 Legacy pyenv mode currently requires Homebrew. MacPorts setups should keep the default `USE_UV=true`.
@@ -457,16 +466,16 @@ The project includes a test suite to validate both scripts:
 # Run all tests
 ./tests/run_tests.sh
 
-# Run only setup_mac.sh tests
-./tests/test_setup_mac.sh
+# Run only teeup.sh tests
+./tests/test_teeup.sh
 
-# Run only setup_wizard.sh tests
-./tests/test_setup_wizard.sh
+# Run only teeup-wizard.sh tests
+./tests/test_teeup-wizard.sh
 ```
 
 ### Test Coverage
 
-**setup_mac.sh tests (23 tests):**
+**teeup.sh tests (23 tests):**
 - Script syntax validation
 - Help and list-modules flags
 - Environment variable defaults and overrides
@@ -475,7 +484,7 @@ The project includes a test suite to validate both scripts:
 - UV and pyenv support
 - SDKMAN and Colima support
 
-**setup_wizard.sh tests (26 tests):**
+**teeup-wizard.sh tests (26 tests):**
 - Script syntax validation
 - All wizard screens defined
 - Helper functions defined
@@ -483,7 +492,7 @@ The project includes a test suite to validate both scripts:
 - Module list completeness
 - Environment variable exports
 - Bash 3.2 compatibility
-- Integration with setup_mac.sh
+- Integration with teeup.sh
 
 ---
 

@@ -19,7 +19,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 1. **Fork the repository**
 2. **Clone your fork:**
    ```bash
-   git clone https://github.com/yourusername/setup.git
+   git clone https://github.com/yourusername/teeup.sh.git
    cd setup
    ```
 3. **Create a feature branch:**
@@ -35,7 +35,7 @@ To add a new module to the setup scripts, follow these steps:
 
 ### 1. Add Toggle Variable
 
-In `setup_mac.sh`, add a toggle variable in the "User Toggles" section:
+In `teeup.sh`, add a toggle variable in the "User Toggles" section:
 
 ```bash
 # Module toggles (all enabled by default, use --only to run specific modules)
@@ -116,7 +116,7 @@ fi
 
 ### 5. Add to Wizard
 
-In `setup_wizard.sh`, add configuration screen:
+In `teeup-wizard.sh`, add configuration screen:
 
 ```bash
 show_newmodule_config() {
@@ -151,12 +151,12 @@ show_module_selection() {
 
 ### 6. Add Tests
 
-In `tests/test_setup_mac.sh`, add tests:
+In `tests/test_teeup.sh`, add tests:
 
 ```bash
 test_newmodule_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "RUN_NEWMODULE" "Should define RUN_NEWMODULE"
   assert_contains "$content" "newmodule" "Should support newmodule"
 }
@@ -263,8 +263,8 @@ Use explicit Homebrew calls only for Homebrew-only features, such as casks, and 
 ./tests/run_tests.sh
 
 # Run specific test file
-./tests/test_setup_mac.sh
-./tests/test_setup_wizard.sh
+./tests/test_teeup.sh
+./tests/test_teeup-wizard.sh
 ```
 
 ### Writing Tests
@@ -274,7 +274,7 @@ Tests use the helper framework in `tests/test_helper.sh`:
 ```bash
 test_my_feature() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "my_feature" "Should contain my_feature"
 }
 

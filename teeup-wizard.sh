@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# setup_wizard.sh — Interactive Mac developer bootstrap wizard
-# A user-friendly wizard interface for setup_mac.sh
+# teeup-wizard.sh — Interactive Mac developer bootstrap wizard
+# A user-friendly wizard interface for teeup.sh
 #
 # Usage:
-#   ./setup_wizard.sh
+#   ./teeup_wizard.sh
 
 set -euo pipefail
 
@@ -31,7 +31,7 @@ print_header() {
   echo -e "${CYAN}${BOLD}"
   echo "╔══════════════════════════════════════════════════════════════╗"
   echo "║                                                              ║"
-  echo "║            🍎  Mac Setup Wizard  🍎                          ║"
+  echo "║            ⛳️  teeup Wizard  ⛳️                              ║"
   echo "║                                                              ║"
   echo "║        Interactive macOS Development Environment Setup       ║"
   echo "║                                                              ║"
@@ -950,7 +950,7 @@ run_setup() {
   local modules_str
   modules_str=$(IFS=,; echo "${SELECTED_MODULES[*]}")
 
-  local cmd="./setup_mac.sh"
+  local cmd="./teeup.sh"
   [[ "$WIZARD_DRY_RUN" == "true" ]] && cmd+=" --dry-run"
   [[ "$WIZARD_RECONCILE_EXISTING_CONFIG" == "true" ]] && cmd+=" --reconcile-existing-config"
   cmd+=" --only $modules_str"
@@ -997,7 +997,7 @@ run_setup() {
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   # Run the setup script
-  if [[ -f "$SCRIPT_DIR/setup_mac.sh" ]]; then
+  if [[ -f "$SCRIPT_DIR/teeup.sh" ]]; then
     local setup_args=()
     [[ "$WIZARD_DRY_RUN" == "true" ]] && setup_args+=("--dry-run")
     if [[ "$WIZARD_RECONCILE_EXISTING_CONFIG" == "true" ]]; then
@@ -1006,9 +1006,9 @@ run_setup() {
       setup_args+=("--no-reconcile-existing-config")
     fi
     setup_args+=("--only" "$modules_str")
-    "$SCRIPT_DIR/setup_mac.sh" "${setup_args[@]}"
+    "$SCRIPT_DIR/teeup.sh" "${setup_args[@]}"
   else
-    print_error "setup_mac.sh not found in $SCRIPT_DIR"
+    print_error "teeup.sh not found in $SCRIPT_DIR"
     exit 1
   fi
 }
@@ -1038,10 +1038,10 @@ run_migration() {
 
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-  if [[ -f "$SCRIPT_DIR/setup_mac.sh" ]]; then
-    "$SCRIPT_DIR/setup_mac.sh" --migrate-to-uv
+  if [[ -f "$SCRIPT_DIR/teeup.sh" ]]; then
+    "$SCRIPT_DIR/teeup.sh" --migrate-to-uv
   else
-    print_error "setup_mac.sh not found in $SCRIPT_DIR"
+    print_error "teeup.sh not found in $SCRIPT_DIR"
     exit 1
   fi
 }
@@ -1103,11 +1103,11 @@ show_completion() {
 #################################
 
 main() {
-  # Check if setup_mac.sh exists
+  # Check if teeup.sh exists
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  if [[ ! -f "$SCRIPT_DIR/setup_mac.sh" ]]; then
-    print_error "setup_mac.sh not found in $SCRIPT_DIR"
-    print_info "The wizard requires setup_mac.sh to be in the same directory."
+  if [[ ! -f "$SCRIPT_DIR/teeup.sh" ]]; then
+    print_error "teeup.sh not found in $SCRIPT_DIR"
+    print_info "The wizard requires teeup.sh to be in the same directory."
     exit 1
   fi
 

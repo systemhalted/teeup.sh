@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# test_setup_mac.sh — Tests for setup_mac.sh
+# test_teeup.sh — Tests for teeup.sh
 #
-# Usage: ./tests/test_setup_mac.sh
+# Usage: ./tests/test_teeup.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -10,14 +10,14 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/test_helper.sh"
 
 echo "========================================"
-echo "Testing setup_mac.sh"
+echo "Testing teeup.sh"
 echo "========================================"
 
 ###########################################
 # Test: Script syntax is valid
 ###########################################
 test_syntax_valid() {
-  bash -n "$PROJECT_DIR/setup_mac.sh" 2>&1
+  bash -n "$PROJECT_DIR/teeup.sh" 2>&1
 }
 
 ###########################################
@@ -25,7 +25,7 @@ test_syntax_valid() {
 ###########################################
 test_help_flag() {
   local output
-  output=$("$PROJECT_DIR/setup_mac.sh" --help 2>&1 || true)
+  output=$("$PROJECT_DIR/teeup.sh" --help 2>&1 || true)
   assert_contains "$output" "Usage:" "Help should show usage"
 }
 
@@ -34,7 +34,7 @@ test_help_flag() {
 ###########################################
 test_list_modules() {
   local output
-  output=$("$PROJECT_DIR/setup_mac.sh" --list-modules 2>&1 || true)
+  output=$("$PROJECT_DIR/teeup.sh" --list-modules 2>&1 || true)
   assert_contains "$output" "homebrew" "Should list homebrew module"
 }
 
@@ -43,7 +43,7 @@ test_list_modules() {
 ###########################################
 test_unknown_option() {
   local output
-  output=$("$PROJECT_DIR/setup_mac.sh" --invalid-option 2>&1 || true)
+  output=$("$PROJECT_DIR/teeup.sh" --invalid-option 2>&1 || true)
   assert_contains "$output" "Unknown option" "Should warn about unknown option"
 }
 
@@ -52,7 +52,7 @@ test_unknown_option() {
 ###########################################
 test_default_env_vars() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" 'PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"' "Should have default Python version"
   assert_contains "$content" 'PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"' "Should default package manager to auto"
 }
@@ -62,7 +62,7 @@ test_default_env_vars() {
 ###########################################
 test_no_bash4_lowercase() {
   local count
-  count=$(grep -E '\$\{[a-zA-Z_]+,,\}' "$PROJECT_DIR/setup_mac.sh" | wc -l | tr -d ' ')
+  count=$(grep -E '\$\{[a-zA-Z_]+,,\}' "$PROJECT_DIR/teeup.sh" | wc -l | tr -d ' ')
   assert_equals "0" "$count" "Should not use Bash 4 lowercase syntax"
 }
 
@@ -71,7 +71,7 @@ test_no_bash4_lowercase() {
 ###########################################
 test_uses_tr_lowercase() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "tr '[:upper:]' '[:lower:]'" "Should use tr for lowercase"
 }
 
@@ -80,7 +80,7 @@ test_uses_tr_lowercase() {
 ###########################################
 test_all_modules_defined() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "RUN_HOMEBREW" "Should define RUN_HOMEBREW"
   assert_contains "$content" "RUN_ZSH" "Should define RUN_ZSH"
   assert_contains "$content" "RUN_PYTHON" "Should define RUN_PYTHON"
@@ -94,7 +94,7 @@ test_all_modules_defined() {
 ###########################################
 test_has_shebang() {
   local first_line
-  first_line=$(head -1 "$PROJECT_DIR/setup_mac.sh")
+  first_line=$(head -1 "$PROJECT_DIR/teeup.sh")
   assert_contains "$first_line" "#!/usr/bin/env bash" "Should have bash shebang"
 }
 
@@ -103,7 +103,7 @@ test_has_shebang() {
 ###########################################
 test_strict_mode() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "set -euo pipefail" "Should use strict mode"
 }
 
@@ -112,7 +112,7 @@ test_strict_mode() {
 ###########################################
 test_uv_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "USE_UV" "Should support UV"
   assert_contains "$content" "uv python install" "Should install Python via UV"
 }
@@ -122,7 +122,7 @@ test_uv_support() {
 ###########################################
 test_zsh_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" 'ZSH_MODE="${ZSH_MODE:-plain}"' "Should default to plain zsh mode"
   assert_contains "$content" "zsh)      RUN_ZSH=true" "Should support zsh module"
   assert_contains "$content" "ohmyzsh)  RUN_ZSH=true; ZSH_MODE=\"ohmyzsh\"" "Should keep ohmyzsh alias"
@@ -134,7 +134,7 @@ test_zsh_support() {
 ###########################################
 test_reconcile_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "RECONCILE_EXISTING_CONFIG" "Should support existing config reconciliation"
   assert_contains "$content" "--reconcile-existing-config" "Should expose reconcile flag"
   assert_contains "$content" "disable_matching_lines" "Should disable stale config safely"
@@ -145,7 +145,7 @@ test_reconcile_support() {
 ###########################################
 test_package_manager_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "resolve_package_manager" "Should resolve package manager"
   assert_contains "$content" "macports" "Should support MacPorts"
   assert_contains "$content" "sudo port install" "Should install packages with MacPorts"
@@ -157,8 +157,8 @@ test_package_manager_support() {
 ###########################################
 test_no_antigen_install() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
-  if grep -q "curl .*antigen\\|antigen init\\|source .*antigen.zsh" "$PROJECT_DIR/setup_mac.sh"; then
+  content=$(cat "$PROJECT_DIR/teeup.sh")
+  if grep -q "curl .*antigen\\|antigen init\\|source .*antigen.zsh" "$PROJECT_DIR/teeup.sh"; then
     return 1
   fi
   assert_contains "$content" "Antigen removed" "Should reconcile old Antigen config"
@@ -169,7 +169,7 @@ test_no_antigen_install() {
 ###########################################
 test_pyenv_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "pyenv install" "Should support pyenv"
 }
 
@@ -178,7 +178,7 @@ test_pyenv_support() {
 ###########################################
 test_sdkman_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "SDKMAN" "Should support SDKMAN"
   assert_contains "$content" "sdk install java" "Should install Java via SDKMAN"
 }
@@ -188,7 +188,7 @@ test_sdkman_support() {
 ###########################################
 test_colima_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "colima" "Should support Colima"
   assert_contains "$content" "COLIMA_CPUS" "Should have Colima CPU config"
 }
@@ -198,7 +198,7 @@ test_colima_support() {
 ###########################################
 test_bruno_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "bruno" "Should support Bruno"
   assert_contains "$content" "INSTALL_BRUNO" "Should have Bruno toggle"
 }
@@ -208,7 +208,7 @@ test_bruno_support() {
 ###########################################
 test_cls_alias() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "alias cls='clear'" "Should add cls alias for clear"
 }
 
@@ -221,7 +221,7 @@ test_shellcheck() {
     return 0
   fi
 
-  shellcheck -x "$PROJECT_DIR/setup_mac.sh" 2>&1
+  shellcheck -x "$PROJECT_DIR/teeup.sh" 2>&1
 }
 
 ###########################################
@@ -229,7 +229,7 @@ test_shellcheck() {
 ###########################################
 test_dryrun_support() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "DRY_RUN" "Should support DRY_RUN"
   assert_contains "$content" "run_cmd" "Should have run_cmd function"
   assert_contains "$content" "--dry-run" "Should have --dry-run flag"
@@ -240,7 +240,7 @@ test_dryrun_support() {
 ###########################################
 test_run_cmd_function() {
   local content
-  content=$(cat "$PROJECT_DIR/setup_mac.sh")
+  content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "run_cmd()" "Should define run_cmd function"
   assert_contains "$content" "[DRY-RUN]" "Should have dry-run output message"
 }

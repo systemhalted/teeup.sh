@@ -60,8 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Testing
 - Test framework with test_helper.sh
-- 18 tests for setup_mac.sh (including dry-run mode)
-- 23 tests for setup_wizard.sh (including validation and dry-run)
+- 18 tests for teeup.sh (including dry-run mode)
+- 23 tests for teeup-wizard.sh (including validation and dry-run)
 - Syntax validation
 - Compatibility checks
 - Feature verification
@@ -120,16 +120,16 @@ git clone <repository-url>
 cd setup
 
 # Make executable
-chmod +x setup_mac.sh setup_wizard.sh
+chmod +x teeup.sh teeup-wizard.sh
 
 # Run wizard
-./setup_wizard.sh
+./teeup-wizard.sh
 
 # Or run directly
-./setup_mac.sh
+./teeup.sh
 
 # Or partial installation
-./setup_mac.sh --only python,java
+./teeup.sh --only python,java
 ```
 
 ### Migration
@@ -137,7 +137,7 @@ chmod +x setup_mac.sh setup_wizard.sh
 For users migrating from pyenv to UV:
 
 ```bash
-./setup_mac.sh --migrate-to-uv
+./teeup.sh --migrate-to-uv
 ```
 
 ### Testing
