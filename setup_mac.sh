@@ -51,6 +51,7 @@ RUN_JAVA="${RUN_JAVA:-true}"
 RUN_EMACS="${RUN_EMACS:-true}"
 RUN_DOCKER="${RUN_DOCKER:-true}"
 RUN_APPS="${RUN_APPS:-true}"
+RUN_RUST="${RUN_RUST:-true}"
 
 # Colima defaults (edit as desired)
 COLIMA_PROFILE="${COLIMA_PROFILE:-default}"
@@ -449,7 +450,7 @@ Options:
   --help                Show this help message
   --dry-run             Preview commands without executing them
   --only MODULES        Run only specified modules (comma-separated)
-                        Available: homebrew,zsh,ohmyzsh,cli,python,java,emacs,docker,apps
+                        Available: homebrew,zsh,ohmyzsh,cli,python,java,rust,emacs,docker,apps
                         The homebrew module is a compatibility alias for package-manager setup.
   --migrate-to-uv       Migrate from pyenv/poetry/pipx to UV
   --reconcile-existing-config
@@ -513,6 +514,7 @@ Available modules:
   cli       - Core CLI utilities (git, jq, ripgrep, etc.)
   python    - Python environment (UV or pyenv/poetry)
   java      - SDKMAN! + Java + Maven/Gradle
+  rust      - Rust toolchain via rustup
   emacs     - Emacs editor + minimal config
   docker    - Colima + Docker CLI
   apps      - GUI apps (Bruno, Obsidian)
@@ -528,6 +530,7 @@ parse_only_modules() {
   RUN_CLI=false
   RUN_PYTHON=false
   RUN_JAVA=false
+  RUN_RUST=false
   RUN_EMACS=false
   RUN_DOCKER=false
   RUN_APPS=false
@@ -544,6 +547,7 @@ parse_only_modules() {
       cli)      RUN_CLI=true ;;
       python)   RUN_PYTHON=true ;;
       java)     RUN_JAVA=true ;;
+      rust)     RUN_RUST=true ;;
       emacs)    RUN_EMACS=true ;;
       docker)   RUN_DOCKER=true ;;
       apps)     RUN_APPS=true ;;
@@ -705,6 +709,8 @@ if [[ "$DRY_RUN" == "true" ]]; then
 fi
 
 normalize_zsh_mode
+
+ZSHRC="${HOME}/.zshrc"
 
 SUMMARY_INSTALLED=()
 SUMMARY_SKIPPED=()
@@ -1197,6 +1203,44 @@ if [[ "$RUN_JAVA" == "true" ]]; then
 else
   log "Skipping Java setup (RUN_JAVA=false)"
 fi
+
+###################################
+# ===== Rust via rustup ========= #
+###################################
+
+if [[ "$RUN_RUST" == "true" ]]; then
+  if ! have rustup; then
+    log "Installing Rust via rustup…"
+    if [[ "$DRY_RUN" == "true" ]]; then
+      run_cmd curl -s https://sh.rustup.rs -o rustup-init.sh
+      run_cmd sh rustup-init.sh -y --no-modify-path
+      run_cmd rm rustup-init.sh
+    else
+      curl -s https://sh.rustup.rs -o rustup-init.sh
+      sh rustup-init.sh -y --no-modify-path
+      rm rustup-init.sh
+    fi
+    remember_installed "rustup"
+    # Add cargo to current PATH
+    export PATH="$HOME/.cargo/bin:$PATH"
+  else
+    remember_skipped "rustup"
+    ok "rustup already installed."
+  fi
+
+  # Ensure cargo in PATH for future shells
+  if [[ "$INSTALL_DOTFILES" == "true" ]]; then
+    append_once "$ZSHRC" "Added by setup_mac.sh — Cargo path" <<'EOF'
+# Rust (cargo)
+if [ -f "$HOME/.cargo/env" ]; then
+  source "$HOME/.cargo/env"
+fi
+EOF
+  fi
+else
+  log "Skipping Rust setup (RUN_RUST=false)"
+fi
+
 
 ############################
 # ===== Emacs install ==== #

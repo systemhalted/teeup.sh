@@ -362,6 +362,7 @@ show_welcome() {
   echo "  🛠️  CLI Tools         - Essential command-line utilities"
   echo "  🐍 Python            - Python environment (UV or pyenv)"
   echo "  ☕ Java              - SDKMAN! with JDK, Maven, Gradle"
+  echo "  🦀 Rust               - Rust toolchain via rustup"
   echo "  📝 Emacs             - Text editor with starter config"
   echo "  🐳 Docker            - Colima + Docker CLI"
   echo "  📱 Apps              - Bruno, Obsidian"
@@ -411,7 +412,7 @@ show_setup_type() {
 show_module_selection() {
   # Temporarily disable 'set -u' (unbound variable check) for this function
   # This is needed because we use array expansion patterns that can trigger
-  # false positives with empty arrays in Bash 3.2 (macOS default shell)
+  # false positives with empty arrays in Bash 3.2 (macOS ships /bin/bash as Bash 3.2)
   # We restore the setting at the end of the function
   local restore_nounset="false"
   case "$-" in
@@ -466,6 +467,11 @@ show_module_selection() {
     print_option "8" "apps" "GUI apps (Bruno, Obsidian)" "$selected"
     echo ""
 
+    selected="false"
+    is_module_selected "rust" && selected="true"
+    print_option "9" "rust" "Rust toolchain via rustup" "$selected"
+    echo ""
+
     echo ""
     echo -ne "${WHITE}Enter number to toggle, 'all', or 'done': ${RESET}"
     read -r input
@@ -482,10 +488,11 @@ show_module_selection() {
       6) toggle_selected_module "emacs"; continue ;;
       7) toggle_selected_module "docker"; continue ;;
       8) toggle_selected_module "apps"; continue ;;
+      9) toggle_selected_module "rust"; continue ;;
       ''|*[!0-9]*)
         ;; # non-numeric; fall through to keyword handling
       *)
-        print_warning "Invalid input. Enter a number 1-8, 'all', or 'done'."
+        print_warning "Invalid input. Enter a number 1-9, 'all', or 'done'."
         sleep 1
         continue
         ;;
@@ -501,7 +508,7 @@ show_module_selection() {
         break
         ;;
       all|a)
-        SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "emacs" "docker" "apps")
+        SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "emacs" "docker" "apps" "rust")
         ;;
       none|n|clear|c)
         SELECTED_MODULES=()
@@ -1079,6 +1086,11 @@ show_completion() {
 
   if is_module_selected "emacs"; then
     echo -e "     ${DIM}emacs --version${RESET}"
+  fi
+
+  if is_module_selected "rust"; then
+    echo -e "     ${DIM}rustc --version${RESET}"
+    echo -e "     ${DIM}cargo --version${RESET}"
   fi
 
   echo ""

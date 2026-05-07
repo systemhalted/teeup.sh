@@ -17,11 +17,14 @@ It installs and configures a macOS package manager (**Homebrew on newer macOS, M
   - **Python via UV** (default, recommended) — 10-100x faster than pip, manages Python versions, virtual envs, and tools  
   - **Python via pyenv** + `pyenv-virtualenv`, `pipx`, `poetry` (legacy option, set `USE_UV=false`)  
   - **Java via SDKMAN!** + optional `maven` and `gradle`  
+  - **Rust via rustup** — official toolchain installer with `rustc`, `cargo`, and `rustup`
   - **Colima** + `docker` & `docker-compose` CLI (lightweight Docker alternative)  
   - **Emacs** with a minimal starter config  
   - **Bruno** and **Obsidian** (via Homebrew cask when Homebrew is selected or cask fallback is enabled)
 - ✅ Installs/symlinks the sibling `dotfiles` repo when present
 - ✅ Can reconcile existing shell config by disabling old Antigen, pyenv, and stale hardcoded path lines
+- ✅ Adds sensible `zsh` aliases and environment initialization (`pyenv`, `sdkman`, `colima`) when no dotfiles repo is present
+  - Includes shortcuts like `ll`, `cls`, `grv`, `colima-start`, and `colima-stop`
 - ✅ Optional macOS defaults tuning (hidden behind a toggle)  
 - ✅ Clear logs with ✅/⚠️ markers and an install summary at the end  
 
@@ -116,6 +119,9 @@ ZSH_MODE=ohmyzsh ./setup_mac.sh --only zsh
 # Run multiple modules
 ./setup_mac.sh --only zsh,python,java,docker
 
+# Install only Rust
+./setup_mac.sh --only rust
+
 # List available modules
 ./setup_mac.sh --list-modules
 ```
@@ -130,6 +136,7 @@ ZSH_MODE=ohmyzsh ./setup_mac.sh --only zsh
 | `cli` | Core CLI utilities (git, jq, ripgrep, etc.) |
 | `python` | Python environment (UV or pyenv/poetry) |
 | `java` | SDKMAN! + Java + Maven/Gradle |
+| `rust` | Rust toolchain via rustup (`rustc`, `cargo`) |
 | `emacs` | Emacs editor + minimal config |
 | `docker` | Colima + Docker CLI |
 | `apps` | GUI apps (Bruno, Obsidian) |
@@ -273,6 +280,8 @@ Legacy pyenv mode currently requires Homebrew. MacPorts setups should keep the d
 |httpie| User-friendly HTTP client|
 |SDKMAN!| Manage parallel versions of Java|
 |maven| Java build automation and dependency management|
+|rustup| Official Rust toolchain installer and version manager|
+|cargo| Rust package manager and build tool|
 |emacs| Goto Text editor|
 |colima| Lightweight VM for container runtimes (Docker runtime replacement)|
 |docker| Docker CLI to interact with containers|
@@ -422,6 +431,12 @@ Bruno supports environment variables for different stages:
        docker version  
        colima status  
        emacs --version  
+       ```
+
+       # Rust
+       ```
+       rustc --version
+       cargo --version
        ```
 
 ## Notes:
