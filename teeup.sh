@@ -1203,10 +1203,10 @@ EOF
     remember_installed "python@$PYTHON_VERSION (pyenv)"
   fi
 
-  if [[ "$DRY_RUN" != "true" ]]; then
-    pyenv global "$PYTHON_VERSION" || warn "Could not set global Python to $PYTHON_VERSION."
-  else
+  if [[ "$DRY_RUN" == "true" ]]; then
     run_cmd pyenv global "$PYTHON_VERSION"
+  else
+    pyenv global "$PYTHON_VERSION" || warn "Could not set global Python to $PYTHON_VERSION."
   fi
 
   # pipx + Python dev tools
