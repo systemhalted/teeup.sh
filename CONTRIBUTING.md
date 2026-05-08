@@ -1,6 +1,6 @@
-# Contributing to Mac Setup Scripts
+# Contributing to teeup.sh
 
-Thank you for your interest in contributing! This document provides guidelines for contributing to the Mac Setup Scripts project.
+Thank you for your interest in contributing! This document provides guidelines for contributing to the teeup.sh project.
 
 ---
 

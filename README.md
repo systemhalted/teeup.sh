@@ -1,4 +1,15 @@
-# ⛳️ teeup.sh - Get your new machine ready for the first drive.
+<p align="center">
+  <img src="assets/teeup_logo.png" alt="teeup.sh logo" width="520">
+</p>
+
+<h1 align="center">
+  <img src="assets/teeup_emoji.png" alt="" width="32" height="32">
+  teeup.sh
+</h1>
+
+<p align="center">
+  Get your new machine ready for the first drive.
+</p>
 
 This repository contains teeup.sh, an interactive macOS setup script. It configures system defaults, sets up your workspace, and installs your essential packages so you can get straight to work.
 
