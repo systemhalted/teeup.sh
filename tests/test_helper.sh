@@ -24,7 +24,7 @@ setup_test_env() {
   export MOCK_BIN="$(mktemp -d)"
   export MOCK_LOG="$TEST_HOME/mock.log"
   touch "$MOCK_LOG"
-  export PATH="$MOCK_BIN:$PATH"
+  export PATH="$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
 }
 
 cleanup_test_env() {
@@ -82,6 +82,55 @@ case "$1" in
 esac
 EOF
   mock_command sudo 0 ""
+}
+
+mock_python_commands() {
+  mock_command_script uv <<'EOF'
+echo "uv $*" >> "$MOCK_LOG"
+case "$1 $2 $3" in
+  "python list --only-installed") exit 0 ;;
+  "tool list ") exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+  mock_command_script pyenv <<'EOF'
+echo "pyenv $*" >> "$MOCK_LOG"
+case "$1" in
+  versions) exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+  mock_command_script pipx <<'EOF'
+echo "pipx $*" >> "$MOCK_LOG"
+case "$1" in
+  list) exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+}
+
+mock_runtime_commands() {
+  mock_command_script rbenv <<'EOF'
+echo "rbenv $*" >> "$MOCK_LOG"
+case "$1" in
+  versions) exit 0 ;;
+  init) echo "true" ;;
+  *) exit 0 ;;
+esac
+EOF
+  mock_command ruby-build 0 ""
+  mock_command gem 0 ""
+  mock_command rustup 0 ""
+  mock_command cargo 0 ""
+  mock_command_script colima <<'EOF'
+echo "colima $*" >> "$MOCK_LOG"
+case "$1" in
+  status) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF
+  mock_command docker 0 ""
+  mock_command docker-compose 0 ""
 }
 
 assert_equals() {
