@@ -110,6 +110,31 @@ run_cmd() {
   fi
 }
 
+require_command_available() {
+  local command_name="$1"
+  local context="$2"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    return 0
+  fi
+  if ! have "$command_name"; then
+    err "$context did not make '$command_name' available on PATH."
+    err "Open a new terminal or fix PATH, then rerun setup."
+    exit 1
+  fi
+}
+
+require_path_available() {
+  local path="$1"
+  local context="$2"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    return 0
+  fi
+  if [[ ! -e "$path" ]]; then
+    err "$context did not create expected path: $path"
+    exit 1
+  fi
+}
+
 append_once() {
   # append_once <file> <unique_marker> <block...>
   local file="$1"; shift
@@ -385,6 +410,9 @@ pkg_install() {
       homebrew) run_cmd brew install "$pkg" ;;
       macports) run_cmd sudo port install "$pkg" ;;
     esac
+    if [[ -n "$command_name" ]]; then
+      require_command_available "$command_name" "$pkg install"
+    fi
     remember_installed "$pkg ($tag)"
   fi
 }
@@ -629,6 +657,7 @@ migrate_pyenv_to_uv() {
       curl -LsSf https://astral.sh/uv/install.sh | sh
     fi
     export PATH="$HOME/.local/bin:$PATH"
+    require_command_available uv "UV install"
     ok "UV installed"
   else
     ok "UV already installed"
@@ -812,6 +841,7 @@ if [[ "$RUN_HOMEBREW" == "true" ]]; then
       fi
 
       apply_package_manager_path
+      require_command_available brew "Homebrew install"
 
       # Ensure Brew in future shells
       if [[ "$INSTALL_DOTFILES" == "true" ]] && dotfiles_payload_available; then
@@ -945,8 +975,10 @@ EOF
       else
         RUNZSH=no KEEP_ZSHRC=yes sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
       fi
+      require_path_available "$OMZ_DIR/oh-my-zsh.sh" "Oh My Zsh install"
       remember_installed "oh-my-zsh"
     else
+      require_path_available "$OMZ_DIR/oh-my-zsh.sh" "Oh My Zsh"
       remember_skipped "oh-my-zsh"
       log "Oh My Zsh already installed."
     fi
@@ -1037,6 +1069,7 @@ if [[ "$USE_UV" == "true" ]]; then
     remember_installed "uv"
     # Add uv to current PATH
     export PATH="$HOME/.local/bin:$PATH"
+    require_command_available uv "UV install"
   else
     remember_skipped "uv"
     ok "UV already installed."
@@ -1195,8 +1228,12 @@ if [[ "$RUN_JAVA" == "true" ]]; then
 
   if [[ -s "${SDKMAN_DIR}/bin/sdkman-init.sh" ]]; then
     log "Using SDKMAN through zsh."
+  elif [[ "$DRY_RUN" == "true" ]]; then
+    warn "SDKMAN init script is not present; dry-run will preview SDKMAN commands."
   else
-    warn "SDKMAN init script not found. Reopen your terminal and rerun if needed."
+    err "SDKMAN init script not found at ${SDKMAN_DIR}/bin/sdkman-init.sh."
+    err "Reopen your terminal or rerun SDKMAN install, then rerun setup."
+    exit 1
   fi
 
   # Java via SDKMAN
@@ -1332,6 +1369,7 @@ if [[ "$RUN_RUST" == "true" ]]; then
     remember_installed "rustup"
     # Add cargo to current PATH
     export PATH="$HOME/.cargo/bin:$PATH"
+    require_command_available rustup "Rust install"
   else
     remember_skipped "rustup"
     ok "rustup already installed."
