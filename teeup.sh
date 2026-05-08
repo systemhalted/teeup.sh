@@ -690,16 +690,15 @@ migrate_pyenv_to_uv() {
   # Migrate pipx tools to uv tool
   if have pipx; then
     log "Migrating pipx tools to UV..."
-    local tools
-    tools=$(pipx list 2>/dev/null | grep "package " | awk '{print $2}' || true)
-    for tool in $tools; do
+    while IFS= read -r tool; do
+      [[ -z "$tool" ]] && continue
       log "Installing $tool via uv tool..."
       if [[ "$DRY_RUN" == "true" ]]; then
         run_cmd uv tool install "$tool"
       else
         uv tool install "$tool" 2>/dev/null || warn "Failed to install $tool"
       fi
-    done
+    done < <(pipx list 2>/dev/null | awk '/^[[:space:]]*package / {print $2}')
     ok "Tools migrated to UV"
   fi
 
@@ -1619,14 +1618,14 @@ if [[ "$RECONCILE_EXISTING_CONFIG" == "true" ]]; then
     log "pyenv detected and UV selected; disabling pyenv shell init."
     if have uv && have pipx; then
       log "Migrating pipx tools to uv tool where possible."
-      tools=$(pipx list 2>/dev/null | grep "package " | awk '{print $2}' || true)
-      for tool in $tools; do
+      while IFS= read -r tool; do
+        [[ -z "$tool" ]] && continue
         if [[ "$DRY_RUN" == "true" ]]; then
           run_cmd uv tool install "$tool"
         else
           uv tool install "$tool" 2>/dev/null || warn "Failed to install uv tool: $tool"
         fi
-      done
+      done < <(pipx list 2>/dev/null | awk '/^[[:space:]]*package / {print $2}')
     fi
   fi
   for shell_file in "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
