@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          else
+            brew install shellcheck
+          fi
+
+      - name: Shellcheck main scripts
+        run: shellcheck teeup.sh teeup-wizard.sh
+
+      - name: Shellcheck test scripts (warnings+)
+        run: shellcheck --severity=warning -x tests/*.sh
+
+      - name: Run tests
+        env:
+          CI: "true"
+        run: ./tests/run_tests.sh

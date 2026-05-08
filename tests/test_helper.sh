@@ -3,7 +3,6 @@
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
 RESET='\033[0m'
 
 TESTS_RUN=0
@@ -13,7 +12,8 @@ declare -a FAILED_TESTS=()
 
 setup_test_env() {
   export TEST_MODE="true"
-  export TEST_HOME="$(mktemp -d)"
+  TEST_HOME="$(mktemp -d)"
+  export TEST_HOME
   export HOME="$TEST_HOME"
   export ZSHRC="$TEST_HOME/.zshrc"
   export ZPROFILE="$TEST_HOME/.zprofile"
@@ -21,7 +21,8 @@ setup_test_env() {
   mkdir -p "$(dirname "$ZSH_INTEGRATION")"
   touch "$ZSHRC"
   touch "$ZPROFILE"
-  export MOCK_BIN="$(mktemp -d)"
+  MOCK_BIN="$(mktemp -d)"
+  export MOCK_BIN
   export MOCK_LOG="$TEST_HOME/mock.log"
   touch "$MOCK_LOG"
   export PATH="$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin"

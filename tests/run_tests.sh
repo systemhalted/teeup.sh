@@ -23,9 +23,6 @@ chmod +x "$SCRIPT_DIR/test_teeup.sh"
 chmod +x "$SCRIPT_DIR/test_teeup_wizard.sh"
 chmod +x "$SCRIPT_DIR/test_teeup_behavior.sh"
 
-TOTAL_PASSED=0
-TOTAL_FAILED=0
-
 # Run teeup.sh tests
 echo "━��━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 "$SCRIPT_DIR/test_teeup.sh" && MAC_RESULT=0 || MAC_RESULT=$?

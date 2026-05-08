@@ -190,6 +190,7 @@ test_module_selection_helpers_execute() {
     return 1
   fi
 
+  # shellcheck disable=SC2034  # consumed by has_selected_modules sourced above
   SELECTED_MODULES=("ruby")
   has_selected_modules || {
     echo "FAIL: Non-empty module list should be selected"
