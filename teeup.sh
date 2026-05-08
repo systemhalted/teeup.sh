@@ -1185,7 +1185,8 @@ EOF
     log "Python $PYTHON_VERSION already installed with pyenv."
   else
     # Build deps help (esp. for older Pythons)
-    run_cmd brew install openssl readline sqlite xz tcl-tk zlib bzip2 || true
+    run_cmd brew install openssl readline sqlite xz tcl-tk zlib bzip2 \
+      || warn "Failed to install Python build deps via brew; pyenv install may fail"
     if [[ "$DRY_RUN" == "true" ]]; then
       run_cmd pyenv install "$PYTHON_VERSION"
     else
@@ -1210,7 +1211,7 @@ EOF
   else
     remember_skipped "pipx"
   fi
-  run_cmd pipx ensurepath || true
+  run_cmd pipx ensurepath || warn "pipx ensurepath failed; pipx tools may not be on PATH"
 
   if [[ "$INSTALL_PY_TOOLS" == "true" ]]; then
     PY_TOOLS=(poetry black ruff httpie)
