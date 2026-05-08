@@ -1393,15 +1393,21 @@ fi
 if [[ "$RUN_RUST" == "true" ]]; then
   if ! have rustup; then
     log "Installing Rust via rustup…"
+    rustup_init="$(mktemp -t teeup-rustup-init.XXXXXX)"
     if [[ "$DRY_RUN" == "true" ]]; then
-      run_cmd curl -s https://sh.rustup.rs -o rustup-init.sh
-      run_cmd sh rustup-init.sh -y --no-modify-path
-      run_cmd rm rustup-init.sh
+      run_cmd curl -fsSL https://sh.rustup.rs -o "$rustup_init"
+      run_cmd sh "$rustup_init" -y --no-modify-path
+      run_cmd rm -f "$rustup_init"
     else
-      curl -s https://sh.rustup.rs -o rustup-init.sh
-      sh rustup-init.sh -y --no-modify-path
-      rm rustup-init.sh
+      if ! curl -fsSL https://sh.rustup.rs -o "$rustup_init"; then
+        rm -f "$rustup_init"
+        err "Failed to download rustup installer"
+        exit 1
+      fi
+      sh "$rustup_init" -y --no-modify-path
+      rm -f "$rustup_init"
     fi
+    unset rustup_init
     remember_installed "rustup"
     # Add cargo to current PATH
     export PATH="$HOME/.cargo/bin:$PATH"
