@@ -1118,7 +1118,9 @@ EOF
   if [[ "$DRY_RUN" == "true" ]]; then
     run_cmd sh -c "cd \"\$HOME\" && uv python pin \"$PYTHON_VERSION\""
   else
-    (cd "$HOME" && uv python pin "$PYTHON_VERSION" 2>/dev/null) || true
+    if ! (cd "$HOME" && uv python pin "$PYTHON_VERSION"); then
+      warn "uv python pin $PYTHON_VERSION failed; you may need to run it manually"
+    fi
   fi
 
   # Install Python dev tools via uv tool
