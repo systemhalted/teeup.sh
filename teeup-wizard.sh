@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# teeup-wizard.sh — Interactive Mac developer bootstrap wizard
-# A user-friendly wizard interface for teeup.sh
+# teeup-wizard.sh — An Interactive, user-friendly wizard interface for teeup.sh
 #
 # Usage:
 #   ./teeup_wizard.sh
@@ -12,12 +11,10 @@ set -euo pipefail
 #################################
 BOLD='\033[1m'
 DIM='\033[2m'
-UNDERLINE='\033[4m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
 WHITE='\033[0;37m'
 RESET='\033[0m'
@@ -31,9 +28,9 @@ print_header() {
   echo -e "${CYAN}${BOLD}"
   echo "╔══════════════════════════════════════════════════════════════╗"
   echo "║                                                              ║"
-  echo "║            ⛳️  teeup Wizard  ⛳️                              ║"
+  echo "║            ⛳️  teeup.sh Wizard  ⛳️                           ║"
   echo "║                                                              ║"
-  echo "║        Interactive macOS Development Environment Setup       ║"
+  echo "║        Get your new machine ready for the first drive!       ║"
   echo "║                                                              ║"
   echo "╚══════════════════════════════════════════════════════════════╝"
   echo -e "${RESET}"
@@ -201,8 +198,7 @@ is_module_selected() {
 
 # Check if any modules are selected (Bash 3.2 compatible)
 has_selected_modules() {
-  # Use declare to check if array has elements
-  local count="${#SELECTED_MODULES[@]:-0}"
+  local count="${#SELECTED_MODULES[@]}"
   [[ "$count" -gt 0 ]]
 }
 
@@ -328,6 +324,9 @@ WIZARD_USE_UV="true"
 WIZARD_ZSH_MODE="plain"
 WIZARD_PACKAGE_MANAGER="auto"
 WIZARD_JDK_VERSION="21.0.4-tem"
+WIZARD_RUBY_VERSION="3.4.9"
+WIZARD_RUBYGEMS_UPDATE="true"
+WIZARD_BUNDLER_VERSION=""
 WIZARD_INSTALL_DOTFILES="true"
 WIZARD_RECONCILE_EXISTING_CONFIG="true"
 WIZARD_CLEANUP_HOMEBREW_OVERLAPS="false"
@@ -362,6 +361,7 @@ show_welcome() {
   echo "  🛠️  CLI Tools         - Essential command-line utilities"
   echo "  🐍 Python            - Python environment (UV or pyenv)"
   echo "  ☕ Java              - SDKMAN! with JDK, Maven, Gradle"
+  echo "  💎 Ruby              - rbenv with RubyGems and Bundler"
   echo "  🦀 Rust               - Rust toolchain via rustup"
   echo "  📝 Emacs             - Text editor with starter config"
   echo "  🐳 Docker            - Colima + Docker CLI"
@@ -394,7 +394,7 @@ show_setup_type() {
   case "$choice" in
     1)
       SETUP_TYPE="full"
-      SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "emacs" "docker" "apps")
+      SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker" "apps")
       ;;
     2)
       SETUP_TYPE="custom"
@@ -404,7 +404,7 @@ show_setup_type() {
       ;;
     *)
       SETUP_TYPE="full"
-      SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "emacs" "docker" "apps")
+      SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker" "apps")
       ;;
   esac
 }
@@ -453,23 +453,28 @@ show_module_selection() {
     echo ""
 
     selected="false"
+    is_module_selected "ruby" && selected="true"
+    print_option "6" "ruby" "rbenv with RubyGems and Bundler" "$selected"
+    echo ""
+
+    selected="false"
     is_module_selected "emacs" && selected="true"
-    print_option "6" "emacs" "Emacs editor + minimal config" "$selected"
+    print_option "7" "emacs" "Emacs editor + minimal config" "$selected"
     echo ""
 
     selected="false"
     is_module_selected "docker" && selected="true"
-    print_option "7" "docker" "Colima + Docker CLI" "$selected"
+    print_option "8" "docker" "Colima + Docker CLI" "$selected"
     echo ""
 
     selected="false"
     is_module_selected "apps" && selected="true"
-    print_option "8" "apps" "GUI apps (Bruno, Obsidian)" "$selected"
+    print_option "9" "apps" "GUI apps (Bruno, Obsidian)" "$selected"
     echo ""
 
     selected="false"
     is_module_selected "rust" && selected="true"
-    print_option "9" "rust" "Rust toolchain via rustup" "$selected"
+    print_option "10" "rust" "Rust toolchain via rustup" "$selected"
     echo ""
 
     echo ""
@@ -485,14 +490,15 @@ show_module_selection() {
       3) toggle_selected_module "cli"; continue ;;
       4) toggle_selected_module "python"; continue ;;
       5) toggle_selected_module "java"; continue ;;
-      6) toggle_selected_module "emacs"; continue ;;
-      7) toggle_selected_module "docker"; continue ;;
-      8) toggle_selected_module "apps"; continue ;;
-      9) toggle_selected_module "rust"; continue ;;
+      6) toggle_selected_module "ruby"; continue ;;
+      7) toggle_selected_module "emacs"; continue ;;
+      8) toggle_selected_module "docker"; continue ;;
+      9) toggle_selected_module "apps"; continue ;;
+      10) toggle_selected_module "rust"; continue ;;
       ''|*[!0-9]*)
         ;; # non-numeric; fall through to keyword handling
       *)
-        print_warning "Invalid input. Enter a number 1-9, 'all', or 'done'."
+        print_warning "Invalid input. Enter a number 1-10, 'all', or 'done'."
         sleep 1
         continue
         ;;
@@ -508,13 +514,13 @@ show_module_selection() {
         break
         ;;
       all|a)
-        SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "emacs" "docker" "apps" "rust")
+        SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker" "apps")
         ;;
       none|n|clear|c)
         SELECTED_MODULES=()
         ;;
       *)
-        print_warning "Invalid input. Enter a number 1-8, 'all', or 'done'."
+        print_warning "Invalid input. Enter a number 1-10, 'all', or 'done'."
         sleep 1
         ;;
     esac
@@ -527,7 +533,7 @@ show_module_selection() {
   fi
 
   # Ensure package manager setup is included if other modules need it.
-  local needs_package_manager=("zsh" "cli" "emacs" "docker" "apps")
+  local needs_package_manager=("zsh" "cli" "ruby" "emacs" "docker" "apps")
   for mod in "${needs_package_manager[@]}"; do
     if is_module_selected "$mod"; then
       if ! is_module_selected "homebrew"; then
@@ -711,13 +717,63 @@ show_java_config() {
   wait_for_key
 }
 
+show_ruby_config() {
+  if ! is_module_selected "ruby"; then
+    return
+  fi
+
+  print_header
+  print_section "Step 3d: Ruby Configuration"
+
+  echo "Ruby will be installed via rbenv."
+  echo ""
+
+  local version
+  local valid=false
+  while [[ "$valid" == "false" ]]; do
+    echo -ne "${WHITE}Ruby version to install ${DIM}[$WIZARD_RUBY_VERSION]${RESET}: "
+    read -r version
+
+    if validate_version_format "$version" "Ruby version"; then
+      WIZARD_RUBY_VERSION="${version:-$WIZARD_RUBY_VERSION}"
+      valid=true
+    elif [[ -z "$version" ]]; then
+      valid=true
+    else
+      echo ""
+    fi
+  done
+
+  echo ""
+  if prompt_yes_no "Update RubyGems after installing Ruby?" "y"; then
+    WIZARD_RUBYGEMS_UPDATE="true"
+  else
+    WIZARD_RUBYGEMS_UPDATE="false"
+  fi
+
+  echo ""
+  echo -ne "${WHITE}Bundler version ${DIM}[latest]${RESET}: "
+  local bundler_version
+  read -r bundler_version
+  WIZARD_BUNDLER_VERSION="$bundler_version"
+
+  echo ""
+  if [[ -n "$WIZARD_BUNDLER_VERSION" ]]; then
+    print_success "Using Ruby $WIZARD_RUBY_VERSION with Bundler $WIZARD_BUNDLER_VERSION"
+  else
+    print_success "Using Ruby $WIZARD_RUBY_VERSION with latest Bundler"
+  fi
+
+  wait_for_key
+}
+
 show_docker_config() {
   if ! is_module_selected "docker"; then
     return
   fi
 
   print_header
-  print_section "Step 3d: Docker (Colima) Configuration"
+  print_section "Step 3e: Docker (Colima) Configuration"
 
   echo "Colima is a lightweight Docker runtime for macOS."
   echo "Configure the VM resources:"
@@ -792,7 +848,7 @@ show_apps_config() {
   fi
 
   print_header
-  print_section "Step 3e: Apps Configuration"
+  print_section "Step 3f: Apps Configuration"
 
   echo "Choose which apps to install:"
   echo ""
@@ -924,6 +980,15 @@ show_summary() {
     echo -e "  Java: ${CYAN}$WIZARD_JDK_VERSION${RESET}"
   fi
 
+  if is_module_selected "ruby"; then
+    if [[ -n "$WIZARD_BUNDLER_VERSION" ]]; then
+      echo -e "  Ruby: ${CYAN}$WIZARD_RUBY_VERSION${RESET}, Bundler ${CYAN}$WIZARD_BUNDLER_VERSION${RESET}"
+    else
+      echo -e "  Ruby: ${CYAN}$WIZARD_RUBY_VERSION${RESET}, latest Bundler"
+    fi
+    echo -e "  Update RubyGems: ${CYAN}$WIZARD_RUBYGEMS_UPDATE${RESET}"
+  fi
+
   if is_module_selected "docker"; then
     echo -e "  Colima: ${CYAN}${WIZARD_COLIMA_CPUS} CPUs, ${WIZARD_COLIMA_MEMORY}GB RAM, ${WIZARD_COLIMA_DISK}GB disk${RESET}"
   fi
@@ -961,6 +1026,9 @@ run_setup() {
   export ZSH_MODE="$WIZARD_ZSH_MODE"
   export PACKAGE_MANAGER="$WIZARD_PACKAGE_MANAGER"
   export JDK_VERSION="$WIZARD_JDK_VERSION"
+  export RUBY_VERSION="$WIZARD_RUBY_VERSION"
+  export RUBYGEMS_UPDATE="$WIZARD_RUBYGEMS_UPDATE"
+  export BUNDLER_VERSION="$WIZARD_BUNDLER_VERSION"
   export INSTALL_DOTFILES="$WIZARD_INSTALL_DOTFILES"
   export RECONCILE_EXISTING_CONFIG="$WIZARD_RECONCILE_EXISTING_CONFIG"
   export CLEANUP_HOMEBREW_OVERLAPS="$WIZARD_CLEANUP_HOMEBREW_OVERLAPS"
@@ -980,6 +1048,9 @@ run_setup() {
   echo -e "${DIM}  ZSH_MODE=$ZSH_MODE${RESET}"
   echo -e "${DIM}  PACKAGE_MANAGER=$PACKAGE_MANAGER${RESET}"
   echo -e "${DIM}  JDK_VERSION=$JDK_VERSION${RESET}"
+  echo -e "${DIM}  RUBY_VERSION=$RUBY_VERSION${RESET}"
+  echo -e "${DIM}  RUBYGEMS_UPDATE=$RUBYGEMS_UPDATE${RESET}"
+  echo -e "${DIM}  BUNDLER_VERSION=$BUNDLER_VERSION${RESET}"
   echo -e "${DIM}  INSTALL_DOTFILES=$INSTALL_DOTFILES${RESET}"
   echo -e "${DIM}  RECONCILE_EXISTING_CONFIG=$RECONCILE_EXISTING_CONFIG${RESET}"
   echo -e "${DIM}  CLEANUP_HOMEBREW_OVERLAPS=$CLEANUP_HOMEBREW_OVERLAPS${RESET}"
@@ -1079,6 +1150,12 @@ show_completion() {
     echo -e "     ${DIM}java -version${RESET}"
   fi
 
+  if is_module_selected "ruby"; then
+    echo -e "     ${DIM}ruby --version${RESET}"
+    echo -e "     ${DIM}gem --version${RESET}"
+    echo -e "     ${DIM}bundle --version${RESET}"
+  fi
+
   if is_module_selected "docker"; then
     echo -e "     ${DIM}colima status${RESET}"
     echo -e "     ${DIM}docker version${RESET}"
@@ -1121,6 +1198,7 @@ main() {
       show_zsh_config
       show_python_config
       show_java_config
+      show_ruby_config
       show_docker_config
       show_apps_config
       show_additional_options
@@ -1139,6 +1217,7 @@ main() {
       show_zsh_config
       show_python_config
       show_java_config
+      show_ruby_config
       show_docker_config
       show_apps_config
       show_additional_options

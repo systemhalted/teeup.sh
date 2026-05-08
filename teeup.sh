@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# teeup.sh — Mac developer bootstrap
+# teeup.sh — Get your new machine ready for the first drive.
 # Installs a package manager, zsh integration, UV, SDKMAN!, Emacs, Colima (+ docker CLIs), Bruno, Obsidian, and common CLI tools.
 # Safe to rerun.
 #
@@ -12,6 +12,8 @@
 
 set -euo pipefail
 
+SETUP_START_EPOCH="$(date +%s)"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_DOTFILES_DIR="$(cd "$SCRIPT_DIR/../dotfiles" 2>/dev/null && pwd || true)"
 
@@ -23,10 +25,13 @@ DEFAULT_DOTFILES_DIR="$(cd "$SCRIPT_DIR/../dotfiles" 2>/dev/null && pwd || true)
 PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./teeup.sh
 JDK_DIST="${JDK_DIST:-temurin}"                     # SDKMAN candidate vendor (temurin, oracle, liberica, etc.)
 JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier (e.g., "21.0.4-tem" for Temurin 21)
+RUBY_VERSION="${RUBY_VERSION:-3.4.9}"               # Override by: RUBY_VERSION=4.0.3 ./teeup.sh
+BUNDLER_VERSION="${BUNDLER_VERSION:-}"              # Optional Bundler version; empty installs latest
 
 # Feature toggles
 USE_UV="${USE_UV:-true}"                            # Use uv instead of pyenv/poetry/pipx (recommended)
 INSTALL_PY_TOOLS="${INSTALL_PY_TOOLS:-true}"        # Install Python tools (via uv tool or pipx)
+RUBYGEMS_UPDATE="${RUBYGEMS_UPDATE:-true}"          # Update RubyGems after installing Ruby
 INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Install/symlink dotfiles from DOTFILES_DIR
 RECONCILE_EXISTING_CONFIG="${RECONCILE_EXISTING_CONFIG:-false}"  # Disable old Antigen/pyenv/stale shell config
 ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
@@ -48,6 +53,7 @@ RUN_ZSH="${RUN_ZSH:-true}"
 RUN_CLI="${RUN_CLI:-true}"
 RUN_PYTHON="${RUN_PYTHON:-true}"
 RUN_JAVA="${RUN_JAVA:-true}"
+RUN_RUBY="${RUN_RUBY:-true}"
 RUN_EMACS="${RUN_EMACS:-true}"
 RUN_DOCKER="${RUN_DOCKER:-true}"
 RUN_APPS="${RUN_APPS:-true}"
@@ -65,11 +71,27 @@ COLIMA_RUNTIME="${COLIMA_RUNTIME:-docker}"  # docker or containerd
 #################################
 
 emoj() { printf "%b " "$1"; }
-log()  { emoj "🔹"; echo "$*"; }
-ok()   { emoj "✅"; echo "$*"; }
-warn() { emoj "⚠️"; echo "$*" >&2; }
-err()  { emoj "❌"; echo "$*" >&2; }
+log()  { printf "%b %s\n" "🔹" "$*"; }
+ok()   { printf "%b %s\n" "✅" "$*"; }
+warn() { printf "%b %s\n" "⚠️" "$*" >&2; }
+err()  { printf "%b %s\n" "❌" "$*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+format_duration() {
+  local total="$1"
+  local hours minutes seconds
+  hours=$((total / 3600))
+  minutes=$(((total % 3600) / 60))
+  seconds=$((total % 60))
+
+  if [[ "$hours" -gt 0 ]]; then
+    printf "%dh %dm %ds" "$hours" "$minutes" "$seconds"
+  elif [[ "$minutes" -gt 0 ]]; then
+    printf "%dm %ds" "$minutes" "$seconds"
+  else
+    printf "%ds" "$seconds"
+  fi
+}
 
 ZSHRC="${ZSHRC:-$HOME/.zshrc}"
 ZPROFILE="${ZPROFILE:-$HOME/.zprofile}"
@@ -139,7 +161,8 @@ write_managed_file() {
 
 backup_target() {
   local target="$1"
-  local backup="${target}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+  local backup
+  backup="${target}.teeup_backup_$(date +%Y%m%d%H%M%S)"
   if [[ "$DRY_RUN" == "true" ]]; then
     emoj "🔍"
     echo "[DRY-RUN] Would back up $target to $backup"
@@ -440,8 +463,9 @@ sdk_cmd() {
 }
 
 show_help() {
-  cat <<EOF
-Mac Setup Script - Bootstrap your macOS development environment
+    cat <<EOF
+
+⛳️ teeup.sh - Get your new machine ready for the first drive. ⛳️
 
 Usage:
   ./teeup.sh [OPTIONS]
@@ -450,7 +474,7 @@ Options:
   --help                Show this help message
   --dry-run             Preview commands without executing them
   --only MODULES        Run only specified modules (comma-separated)
-                        Available: homebrew,zsh,ohmyzsh,cli,python,java,rust,emacs,docker,apps
+                        Available: homebrew,zsh,ohmyzsh,cli,python,java,ruby,rust,emacs,docker,apps
                         The homebrew module is a compatibility alias for package-manager setup.
   --migrate-to-uv       Migrate from pyenv/poetry/pipx to UV
   --reconcile-existing-config
@@ -462,7 +486,10 @@ Options:
 Environment Variables:
   PYTHON_VERSION        Python version to install (default: 3.12.5)
   JDK_VERSION           Java version for SDKMAN (default: 21.0.4-tem)
+  RUBY_VERSION          Ruby version to install with rbenv (default: 3.4.9)
+  BUNDLER_VERSION       Optional Bundler version to install (default: latest)
   USE_UV                Use UV instead of pyenv (default: true)
+  RUBYGEMS_UPDATE       Update RubyGems after Ruby install (default: true)
   ZSH_MODE              zsh integration mode: plain or ohmyzsh (default: plain)
   PACKAGE_MANAGER       auto, homebrew, or macports (default: auto)
   INSTALL_DOTFILES      Install/symlink dotfiles from DOTFILES_DIR (default: true)
@@ -501,6 +528,9 @@ Examples:
 
   # Use pyenv instead of UV
   USE_UV=false ./teeup.sh --only python
+
+  # Install only Ruby
+  ./teeup.sh --only ruby
 EOF
   exit 0
 }
@@ -514,6 +544,7 @@ Available modules:
   cli       - Core CLI utilities (git, jq, ripgrep, etc.)
   python    - Python environment (UV or pyenv/poetry)
   java      - SDKMAN! + Java + Maven/Gradle
+  ruby      - Ruby via rbenv + RubyGems + Bundler
   rust      - Rust toolchain via rustup
   emacs     - Emacs editor + minimal config
   docker    - Colima + Docker CLI
@@ -530,6 +561,7 @@ parse_only_modules() {
   RUN_CLI=false
   RUN_PYTHON=false
   RUN_JAVA=false
+  RUN_RUBY=false
   RUN_RUST=false
   RUN_EMACS=false
   RUN_DOCKER=false
@@ -547,6 +579,7 @@ parse_only_modules() {
       cli)      RUN_CLI=true ;;
       python)   RUN_PYTHON=true ;;
       java)     RUN_JAVA=true ;;
+      ruby)     RUN_RUBY=true ;;
       rust)     RUN_RUST=true ;;
       emacs)    RUN_EMACS=true ;;
       docker)   RUN_DOCKER=true ;;
@@ -557,7 +590,7 @@ parse_only_modules() {
 
   # Package manager setup is needed by package-backed modules. Python only needs
   # it when explicitly using the legacy pyenv path instead of uv.
-  if [[ "$RUN_ZSH" == "true" || "$RUN_CLI" == "true" || "$RUN_EMACS" == "true" || "$RUN_DOCKER" == "true" || "$RUN_APPS" == "true" ]]; then
+  if [[ "$RUN_ZSH" == "true" || "$RUN_CLI" == "true" || "$RUN_RUBY" == "true" || "$RUN_EMACS" == "true" || "$RUN_DOCKER" == "true" || "$RUN_APPS" == "true" ]]; then
     RUN_HOMEBREW=true
   elif [[ "$RUN_PYTHON" == "true" && "$USE_UV" != "true" ]]; then
     RUN_HOMEBREW=true
@@ -1205,6 +1238,79 @@ else
 fi
 
 ###################################
+# ===== Ruby via rbenv ========== #
+###################################
+if [[ "$RUN_RUBY" == "true" ]]; then
+  log "Installing Ruby via rbenv..."
+
+  pkg_install rbenv rbenv
+  pkg_install ruby-build ruby-build
+
+  RBENV_ROOT="${RBENV_ROOT:-$HOME/.rbenv}"
+  prepend_path_once "$RBENV_ROOT/bin"
+  if have rbenv; then
+    if [[ "$DRY_RUN" == "true" ]]; then
+      run_cmd sh -c "eval \"\$(rbenv init - bash)\""
+    else
+      RBENV_INIT_SCRIPT="$(rbenv init - bash)" || RBENV_INIT_SCRIPT=""
+      if [[ -n "$RBENV_INIT_SCRIPT" ]]; then
+        eval "$RBENV_INIT_SCRIPT"
+      else
+        warn "Could not initialize rbenv for the current shell."
+      fi
+    fi
+  fi
+
+  if [[ "$INSTALL_DOTFILES" == "true" ]] && dotfiles_payload_available; then
+    log "rbenv init is handled conditionally by dotfiles zshrc."
+  elif [[ "$INSTALL_DOTFILES" == "true" ]]; then
+    append_once "$ZSHRC" "Added by teeup.sh - rbenv init" <<'EOF'
+# rbenv init
+if command -v rbenv >/dev/null 2>&1; then
+  eval "$(rbenv init - zsh)"
+fi
+EOF
+  fi
+
+  log "Ensuring Ruby $RUBY_VERSION via rbenv..."
+  if [[ "$DRY_RUN" == "true" ]]; then
+    run_cmd rbenv install -s "$RUBY_VERSION"
+    run_cmd rbenv global "$RUBY_VERSION"
+    remember_installed "ruby@$RUBY_VERSION (rbenv)"
+  elif rbenv versions --bare | grep -qx "$RUBY_VERSION"; then
+    remember_skipped "ruby@$RUBY_VERSION (rbenv)"
+    log "Ruby $RUBY_VERSION already installed with rbenv."
+  else
+    run_cmd rbenv install "$RUBY_VERSION"
+    remember_installed "ruby@$RUBY_VERSION (rbenv)"
+  fi
+
+  if [[ "$DRY_RUN" != "true" ]]; then
+    run_cmd rbenv global "$RUBY_VERSION"
+  fi
+
+  if [[ "$RUBYGEMS_UPDATE" == "true" ]]; then
+    run_cmd gem update --system
+    remember_installed "rubygems update"
+  else
+    remember_skipped "rubygems update"
+    log "Skipping RubyGems update (RUBYGEMS_UPDATE=false)."
+  fi
+
+  if [[ -n "$BUNDLER_VERSION" ]]; then
+    run_cmd gem install bundler -v "$BUNDLER_VERSION"
+    remember_installed "bundler@$BUNDLER_VERSION"
+  else
+    run_cmd gem install bundler
+    remember_installed "bundler"
+  fi
+
+  run_cmd rbenv rehash
+else
+  log "Skipping Ruby setup (RUN_RUBY=false)"
+fi
+
+###################################
 # ===== Rust via rustup ========= #
 ###################################
 
@@ -1480,7 +1586,10 @@ done
 for item in ${SUMMARY_SKIPPED[@]+"${SUMMARY_SKIPPED[@]}"}; do
   emoj "  ↩️"; echo " $item"
 done
+SETUP_END_EPOCH="$(date +%s)"
+SETUP_ELAPSED_SECONDS=$((SETUP_END_EPOCH - SETUP_START_EPOCH))
 
 echo ""
 ok "All done! Open a new terminal (or 'exec zsh') to load updated PATH/initializations."
 warn "Colima may require full-disk/network permissions on first use. If docker commands fail, restart your shell and try: 'colima start'."
+printf "%b Install duration: %s\n" "⏱️" "$(format_duration "$SETUP_ELAPSED_SECONDS")"

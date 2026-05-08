@@ -70,6 +70,7 @@ test_wizard_screens_defined() {
   assert_contains "$content" "show_zsh_config()" "Should have show_zsh_config"
   assert_contains "$content" "show_python_config()" "Should have show_python_config"
   assert_contains "$content" "show_java_config()" "Should have show_java_config"
+  assert_contains "$content" "show_ruby_config()" "Should have show_ruby_config"
   assert_contains "$content" "show_docker_config()" "Should have show_docker_config"
   assert_contains "$content" "show_apps_config()" "Should have show_apps_config"
   assert_contains "$content" "show_summary()" "Should have show_summary"
@@ -102,6 +103,9 @@ test_state_variables() {
   assert_contains "$content" "WIZARD_RECONCILE_EXISTING_CONFIG=" "Should init reconciliation setting"
   assert_contains "$content" "WIZARD_CLEANUP_HOMEBREW_OVERLAPS=" "Should init cleanup setting"
   assert_contains "$content" "WIZARD_JDK_VERSION=" "Should init WIZARD_JDK_VERSION"
+  assert_contains "$content" "WIZARD_RUBY_VERSION=" "Should init WIZARD_RUBY_VERSION"
+  assert_contains "$content" "WIZARD_RUBYGEMS_UPDATE=" "Should init WIZARD_RUBYGEMS_UPDATE"
+  assert_contains "$content" "WIZARD_BUNDLER_VERSION=" "Should init WIZARD_BUNDLER_VERSION"
 }
 
 ###########################################
@@ -114,6 +118,7 @@ test_module_list_complete() {
   assert_contains "$content" '"zsh"' "Should list zsh"
   assert_contains "$content" '"python"' "Should list python"
   assert_contains "$content" '"java"' "Should list java"
+  assert_contains "$content" '"ruby"' "Should list ruby"
   assert_contains "$content" '"docker"' "Should list docker"
   assert_contains "$content" '"apps"' "Should list apps"
 }
@@ -168,6 +173,31 @@ test_safe_array_expansion() {
 }
 
 ###########################################
+# Test: Module selection helpers execute
+###########################################
+test_module_selection_helpers_execute() {
+  local tmp_script
+  tmp_script="$(mktemp)"
+  awk '$0 != "main \"$@\"" { print }' "$PROJECT_DIR/teeup-wizard.sh" > "$tmp_script"
+
+  # shellcheck disable=SC1090
+  source "$tmp_script"
+  rm -f "$tmp_script"
+
+  SELECTED_MODULES=()
+  if has_selected_modules; then
+    echo "FAIL: Empty module list should not be selected"
+    return 1
+  fi
+
+  SELECTED_MODULES=("ruby")
+  has_selected_modules || {
+    echo "FAIL: Non-empty module list should be selected"
+    return 1
+  }
+}
+
+###########################################
 # Test: Exports env vars to teeup.sh
 ###########################################
 test_exports_env_vars() {
@@ -178,6 +208,9 @@ test_exports_env_vars() {
   assert_contains "$content" 'export ZSH_MODE=' "Should export ZSH_MODE"
   assert_contains "$content" 'export PACKAGE_MANAGER=' "Should export PACKAGE_MANAGER"
   assert_contains "$content" 'export JDK_VERSION=' "Should export JDK_VERSION"
+  assert_contains "$content" 'export RUBY_VERSION=' "Should export RUBY_VERSION"
+  assert_contains "$content" 'export RUBYGEMS_UPDATE=' "Should export RUBYGEMS_UPDATE"
+  assert_contains "$content" 'export BUNDLER_VERSION=' "Should export BUNDLER_VERSION"
   assert_contains "$content" 'export RECONCILE_EXISTING_CONFIG=' "Should export reconciliation setting"
   assert_contains "$content" 'export CLEANUP_HOMEBREW_OVERLAPS=' "Should export Homebrew cleanup setting"
   assert_contains "$content" 'export INSTALL_BRUNO=' "Should export INSTALL_BRUNO"
@@ -320,6 +353,7 @@ run_test "Zsh mode choices" test_zsh_mode_choices
 run_test "No Bash 4 lowercase" test_no_bash4_lowercase
 run_test "Uses tr for lowercase" test_uses_tr_lowercase
 run_test "Safe array expansion" test_safe_array_expansion
+run_test "Module selection helpers execute" test_module_selection_helpers_execute
 run_test "Exports env vars" test_exports_env_vars
 run_test "Calls teeup.sh" test_calls_teeup
 run_test "Main function exists" test_main_function

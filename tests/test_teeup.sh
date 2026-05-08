@@ -54,6 +54,7 @@ test_default_env_vars() {
   local content
   content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" 'PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"' "Should have default Python version"
+  assert_contains "$content" 'RUBY_VERSION="${RUBY_VERSION:-3.4.9}"' "Should have default Ruby version"
   assert_contains "$content" 'PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"' "Should default package manager to auto"
 }
 
@@ -85,6 +86,7 @@ test_all_modules_defined() {
   assert_contains "$content" "RUN_ZSH" "Should define RUN_ZSH"
   assert_contains "$content" "RUN_PYTHON" "Should define RUN_PYTHON"
   assert_contains "$content" "RUN_JAVA" "Should define RUN_JAVA"
+  assert_contains "$content" "RUN_RUBY" "Should define RUN_RUBY"
   assert_contains "$content" "RUN_DOCKER" "Should define RUN_DOCKER"
   assert_contains "$content" "RUN_APPS" "Should define RUN_APPS"
 }
@@ -184,6 +186,18 @@ test_sdkman_support() {
 }
 
 ###########################################
+# Test: Has Ruby support
+###########################################
+test_ruby_support() {
+  local content
+  content=$(cat "$PROJECT_DIR/teeup.sh")
+  assert_contains "$content" "ruby      - Ruby via rbenv" "Should list Ruby module"
+  assert_contains "$content" "rbenv install" "Should install Ruby via rbenv"
+  assert_contains "$content" "gem update --system" "Should update RubyGems"
+  assert_contains "$content" "gem install bundler" "Should install Bundler"
+}
+
+###########################################
 # Test: Has Colima support
 ###########################################
 test_colima_support() {
@@ -246,6 +260,17 @@ test_run_cmd_function() {
 }
 
 ###########################################
+# Test: Install duration is reported
+###########################################
+test_install_duration_support() {
+  local content
+  content=$(cat "$PROJECT_DIR/teeup.sh")
+  assert_contains "$content" "SETUP_START_EPOCH" "Should capture setup start time"
+  assert_contains "$content" "format_duration()" "Should format elapsed setup duration"
+  assert_contains "$content" "Install duration:" "Should report install duration"
+}
+
+###########################################
 # Run all tests
 ###########################################
 echo ""
@@ -269,11 +294,13 @@ run_test "Package manager support" test_package_manager_support
 run_test "No Antigen install" test_no_antigen_install
 run_test "pyenv support" test_pyenv_support
 run_test "SDKMAN support" test_sdkman_support
+run_test "Ruby support" test_ruby_support
 run_test "Colima support" test_colima_support
 run_test "Bruno support" test_bruno_support
 run_test "cls alias" test_cls_alias
 run_test "Shellcheck validation" test_shellcheck
 run_test "Dry-run mode support" test_dryrun_support
 run_test "run_cmd function defined" test_run_cmd_function
+run_test "Install duration support" test_install_duration_support
 
 print_summary

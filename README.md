@@ -1,5 +1,4 @@
-# ⛳️ teeup
-Get your new machine ready for the first drive.
+# ⛳️ teeup.sh - Get your new machine ready for the first drive.
 
 This repository contains teeup.sh, an interactive, cross-platform shell script that automates the setup of macOS, Ubuntu, and Fedora environments. It configures system defaults, sets up your workspace, and installs your essential packages so you can get straight to work.
 
@@ -7,7 +6,7 @@ Through an interactive wizard, teeup provisions a complete development environme
 
 Package Management: Homebrew (for newer macOS/Linux) or MacPorts (for older macOS)
 Terminal & Shell: zsh configured with Powerlevel10k
-Development Tools: UV, SDKMAN!, and Emacs
+Development Tools: UV, SDKMAN!, rbenv, rustup, and Emacs
 Containers: Colima bundled with the Docker CLI
 Applications: Bruno and Obsidian
 Utilities: A curated suite of common command-line tools
@@ -26,6 +25,7 @@ Utilities: A curated suite of common command-line tools
   - **Python via UV** (default, recommended) — 10-100x faster than pip, manages Python versions, virtual envs, and tools  
   - **Python via pyenv** + `pyenv-virtualenv`, `pipx`, `poetry` (legacy option, set `USE_UV=false`)  
   - **Java via SDKMAN!** + optional `maven` and `gradle`  
+  - **Ruby via rbenv** + RubyGems and Bundler
   - **Rust via rustup** — official toolchain installer with `rustc`, `cargo`, and `rustup`
   - **Colima** + `docker` & `docker-compose` CLI (lightweight Docker alternative)  
   - **Emacs** with a minimal starter config  
@@ -34,6 +34,7 @@ Utilities: A curated suite of common command-line tools
 - ✅ Can reconcile existing shell config by disabling old Antigen, pyenv, and stale hardcoded path lines
 - ✅ Adds sensible `zsh` aliases and environment initialization (`pyenv`, `sdkman`, `colima`) when no dotfiles repo is present
   - Includes shortcuts like `ll`, `cls`, `grv`, `colima-start`, and `colima-stop`
+- ✅ Reports total install duration in the final summary
 - ✅ Optional macOS defaults tuning (hidden behind a toggle)  
 - ✅ Clear logs with ✅/⚠️ markers and an install summary at the end  
 
@@ -44,7 +45,7 @@ Utilities: A curated suite of common command-line tools
 1. Clone or download this repo.
     ```
     git clone <this-repo-url>
-    cd mac-setup
+    cd teeup.sh
     ```
 2.   Make the scripts executable:  
     ```
@@ -94,9 +95,10 @@ The wizard will guide you through:
 4. **Zsh Configuration** - Choose plain zsh (default) or Oh My Zsh
 5. **Python Configuration** - Choose between UV (recommended) or pyenv, and select version
 6. **Java Configuration** - Select Java version (21, 17, 11, or custom)
-7. **Docker Configuration** - Configure Colima VM resources (CPUs, memory, disk)
-8. **Additional Options** - Dotfile installation, existing-config reconciliation, cleanup, and macOS defaults tuning
-9. **Review & Confirm** - See a summary before installation begins
+7. **Ruby Configuration** - Select Ruby version, RubyGems update behavior, and optional Bundler version
+8. **Docker Configuration** - Configure Colima VM resources (CPUs, memory, disk)
+9. **Additional Options** - Dotfile installation, existing-config reconciliation, cleanup, and macOS defaults tuning
+10. **Review & Confirm** - See a summary before installation begins
 
 ### Wizard Features
 
@@ -131,6 +133,9 @@ ZSH_MODE=ohmyzsh ./teeup.sh --only zsh
 # Install only Rust
 ./teeup.sh --only rust
 
+# Install only Ruby
+./teeup.sh --only ruby
+
 # List available modules
 ./teeup.sh --list-modules
 ```
@@ -145,6 +150,7 @@ ZSH_MODE=ohmyzsh ./teeup.sh --only zsh
 | `cli` | Core CLI utilities (git, jq, ripgrep, etc.) |
 | `python` | Python environment (UV or pyenv/poetry) |
 | `java` | SDKMAN! + Java + Maven/Gradle |
+| `ruby` | Ruby via rbenv + RubyGems + Bundler |
 | `rust` | Rust toolchain via rustup (`rustc`, `cargo`) |
 | `emacs` | Emacs editor + minimal config |
 | `docker` | Colima + Docker CLI |
@@ -223,10 +229,13 @@ You can override versions or disable features per run using environment variable
 PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./teeup.sh
 JDK_DIST="${JDK_DIST:-temurin}"                     # SDKMAN candidate vendor (temurin, oracle, liberica, etc.)
 JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier (e.g., "21.0.4-tem" for Temurin 21)
+RUBY_VERSION="${RUBY_VERSION:-3.4.9}"               # Override by: RUBY_VERSION=4.0.3 ./teeup.sh
+BUNDLER_VERSION="${BUNDLER_VERSION:-}"              # Optional Bundler version; empty installs latest
 
 # Feature toggles
 USE_UV="${USE_UV:-true}"                            # Use uv instead of pyenv/poetry/pipx (recommended)
 INSTALL_PY_TOOLS="${INSTALL_PY_TOOLS:-true}"        # Install Python tools (via uv tool or pipx)
+RUBYGEMS_UPDATE="${RUBYGEMS_UPDATE:-true}"          # Update RubyGems after installing Ruby
 ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
 PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, or macports
 INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Install/symlink sibling dotfiles payload
@@ -289,6 +298,9 @@ Legacy pyenv mode currently requires Homebrew. MacPorts setups should keep the d
 |httpie| User-friendly HTTP client|
 |SDKMAN!| Manage parallel versions of Java|
 |maven| Java build automation and dependency management|
+|rbenv| Manage Ruby versions|
+|ruby-build| Compile and install Ruby versions for rbenv|
+|bundler| Ruby dependency management|
 |rustup| Official Rust toolchain installer and version manager|
 |cargo| Rust package manager and build tool|
 |emacs| Goto Text editor|
@@ -440,6 +452,13 @@ Bruno supports environment variables for different stages:
        docker version  
        colima status  
        emacs --version  
+       ```
+
+       # Ruby
+       ```
+       ruby --version
+       gem --version
+       bundle --version
        ```
 
        # Rust
