@@ -152,6 +152,18 @@ assert_contains() {
   return 1
 }
 
+assert_file_contains_active() {
+  # Asserts that $file has at least one non-comment line matching $pattern.
+  # Use this instead of assert_contains when the pattern is a generic
+  # keyword that could legitimately appear in comments.
+  local file="$1" pattern="$2" message="${3:-Should contain active line matching pattern}"
+  if grep -qE "^[[:space:]]*[^#[:space:]].*${pattern}" "$file"; then
+    return 0
+  fi
+  echo -e "${RED}FAIL: $message${RESET}\n  File: $file\n  Pattern: $pattern"
+  return 1
+}
+
 assert_file_exists() {
   local file="$1" message="${2:-File should exist}"
   [[ -f "$file" ]] && return 0

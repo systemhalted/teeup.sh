@@ -128,7 +128,7 @@ test_zsh_support() {
   assert_contains "$content" 'ZSH_MODE="${ZSH_MODE:-plain}"' "Should default to plain zsh mode"
   assert_contains "$content" "zsh)      RUN_ZSH=true" "Should support zsh module"
   assert_contains "$content" "ohmyzsh)  RUN_ZSH=true; ZSH_MODE=\"ohmyzsh\"" "Should keep ohmyzsh alias"
-  assert_contains "$content" "powerlevel10k" "Should support Powerlevel10k"
+  assert_file_contains_active "$PROJECT_DIR/teeup.sh" "powerlevel10k" "Should support Powerlevel10k in active code"
 }
 
 ###########################################
@@ -149,7 +149,7 @@ test_package_manager_support() {
   local content
   content=$(cat "$PROJECT_DIR/teeup.sh")
   assert_contains "$content" "resolve_package_manager" "Should resolve package manager"
-  assert_contains "$content" "macports" "Should support MacPorts"
+  assert_file_contains_active "$PROJECT_DIR/teeup.sh" "macports" "Should support MacPorts in active code"
   assert_contains "$content" "sudo port install" "Should install packages with MacPorts"
   assert_contains "$content" "CLEANUP_HOMEBREW_OVERLAPS" "Should support Homebrew overlap cleanup"
 }
@@ -170,19 +170,15 @@ test_no_antigen_install() {
 # Test: Has pyenv support
 ###########################################
 test_pyenv_support() {
-  local content
-  content=$(cat "$PROJECT_DIR/teeup.sh")
-  assert_contains "$content" "pyenv install" "Should support pyenv"
+  assert_file_contains_active "$PROJECT_DIR/teeup.sh" "pyenv install" "Should call pyenv install in active code"
 }
 
 ###########################################
 # Test: Has SDKMAN support
 ###########################################
 test_sdkman_support() {
-  local content
-  content=$(cat "$PROJECT_DIR/teeup.sh")
-  assert_contains "$content" "SDKMAN" "Should support SDKMAN"
-  assert_contains "$content" "sdk install java" "Should install Java via SDKMAN"
+  assert_file_contains_active "$PROJECT_DIR/teeup.sh" "SDKMAN" "Should reference SDKMAN in active code"
+  assert_file_contains_active "$PROJECT_DIR/teeup.sh" "sdk install java" "Should install Java via SDKMAN"
 }
 
 ###########################################
