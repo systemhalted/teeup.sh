@@ -21,6 +21,7 @@ echo ""
 # Make test scripts executable
 chmod +x "$SCRIPT_DIR/test_teeup.sh"
 chmod +x "$SCRIPT_DIR/test_teeup_wizard.sh"
+chmod +x "$SCRIPT_DIR/test_teeup_behavior.sh"
 
 TOTAL_PASSED=0
 TOTAL_FAILED=0
@@ -28,6 +29,11 @@ TOTAL_FAILED=0
 # Run teeup.sh tests
 echo "━��━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 "$SCRIPT_DIR/test_teeup.sh" && MAC_RESULT=0 || MAC_RESULT=$?
+echo ""
+
+# Run teeup.sh behavioral tests
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+"$SCRIPT_DIR/test_teeup_behavior.sh" && BEHAVIOR_RESULT=0 || BEHAVIOR_RESULT=$?
 echo ""
 
 # Run teeup-wizard.sh tests
@@ -46,6 +52,12 @@ else
   echo -e "  teeup.sh tests:    \033[0;31mFAILED\033[0m"
 fi
 
+if [[ $BEHAVIOR_RESULT -eq 0 ]]; then
+  echo -e "  behavior tests:    \033[0;32mPASSED\033[0m"
+else
+  echo -e "  behavior tests:    \033[0;31mFAILED\033[0m"
+fi
+
 if [[ $WIZARD_RESULT -eq 0 ]]; then
   echo -e "  teeup-wizard.sh tests: \033[0;32mPASSED\033[0m"
 else
@@ -54,7 +66,7 @@ fi
 
 echo ""
 
-if [[ $MAC_RESULT -eq 0 && $WIZARD_RESULT -eq 0 ]]; then
+if [[ $MAC_RESULT -eq 0 && $BEHAVIOR_RESULT -eq 0 && $WIZARD_RESULT -eq 0 ]]; then
   echo -e "\033[0;32m✅ All tests passed!\033[0m"
   exit 0
 else

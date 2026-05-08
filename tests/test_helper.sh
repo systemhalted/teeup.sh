@@ -14,15 +14,26 @@ declare -a FAILED_TESTS=()
 setup_test_env() {
   export TEST_MODE="true"
   export TEST_HOME="$(mktemp -d)"
+  export HOME="$TEST_HOME"
   export ZSHRC="$TEST_HOME/.zshrc"
+  export ZPROFILE="$TEST_HOME/.zprofile"
+  export ZSH_INTEGRATION="$TEST_HOME/.config/mac-setup/zsh.zsh"
+  mkdir -p "$(dirname "$ZSH_INTEGRATION")"
   touch "$ZSHRC"
+  touch "$ZPROFILE"
   export MOCK_BIN="$(mktemp -d)"
+  export MOCK_LOG="$TEST_HOME/mock.log"
+  touch "$MOCK_LOG"
   export PATH="$MOCK_BIN:$PATH"
 }
 
 cleanup_test_env() {
-  [[ -n "$TEST_HOME" && "$TEST_HOME" == /tmp/* ]] && rm -rf "$TEST_HOME"
-  [[ -n "$MOCK_BIN" && "$MOCK_BIN" == /tmp/* ]] && rm -rf "$MOCK_BIN"
+  case "${TEST_HOME:-}" in
+    /tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*) rm -rf "$TEST_HOME" ;;
+  esac
+  case "${MOCK_BIN:-}" in
+    /tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*) rm -rf "$MOCK_BIN" ;;
+  esac
 }
 
 mock_command() {
@@ -35,6 +46,42 @@ echo "$output"
 exit $exit_code
 EOF
   chmod +x "$MOCK_BIN/$cmd"
+}
+
+mock_command_script() {
+  local cmd="$1"
+  shift
+  {
+    echo "#!/usr/bin/env bash"
+    cat
+  } > "$MOCK_BIN/$cmd"
+  chmod +x "$MOCK_BIN/$cmd"
+}
+
+mock_macos_base_commands() {
+  mock_command uname 0 "Darwin"
+  mock_command sw_vers 0 "14.6.1"
+  mock_command xcode-select 0 "/Library/Developer/CommandLineTools"
+  mock_command pkgutil 1 ""
+}
+
+mock_package_manager_commands() {
+  mock_command_script brew <<'EOF'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1" in
+  --prefix) echo "/opt/homebrew" ;;
+  list) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF
+  mock_command_script port <<'EOF'
+echo "port $*" >> "$MOCK_LOG"
+case "$1" in
+  installed) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF
+  mock_command sudo 0 ""
 }
 
 assert_equals() {
