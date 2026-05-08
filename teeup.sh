@@ -489,6 +489,25 @@ sdk_cmd() {
   zsh -lc 'source "$HOME/.sdkman/bin/sdkman-init.sh" >/dev/null 2>&1 || exit 1; sdk "$@"' zsh "$@"
 }
 
+sdk_candidate_listed() {
+  local candidate="$1"
+  local candidates
+  candidates="$(sdk_cmd list java 2>/dev/null)" || return 1
+  [[ "$candidates" == *"$candidate"* ]]
+}
+
+sdk_candidate_installed() {
+  local candidate="$1"
+  sdk_cmd home java "$candidate" >/dev/null 2>&1
+}
+
+sdk_candidate_current() {
+  local candidate="$1"
+  local current
+  current="$(sdk_cmd current java 2>/dev/null)" || return 1
+  [[ "$current" == *"$candidate"* ]]
+}
+
 show_help() {
     cat <<EOF
 
@@ -1239,22 +1258,39 @@ if [[ "$RUN_JAVA" == "true" ]]; then
   # Java via SDKMAN
   echo "Installing Java candidate"
   JAVA_CANDIDATE="${JDK_VERSION}"
+  JAVA_INSTALLED_THIS_RUN=false
   if [[ "$DRY_RUN" == "true" ]]; then
     run_cmd sdk install java "$JAVA_CANDIDATE"
     run_cmd sdk default java "$JAVA_CANDIDATE"
     remember_installed "java@$JAVA_CANDIDATE (SDKMAN)"
-  elif sdk_cmd list java | grep -q "$JAVA_CANDIDATE"; then
-    if ! sdk_cmd current java | grep -q "$JAVA_CANDIDATE"; then
-      log "Installing Java $JAVA_CANDIDATE via SDKMAN!…"
-      sdk_cmd install java "$JAVA_CANDIDATE" || true
-      sdk_cmd default java "$JAVA_CANDIDATE" || true
-      remember_installed "java@$JAVA_CANDIDATE (SDKMAN)"
-    else
-      remember_skipped "java@$JAVA_CANDIDATE (SDKMAN)"
-      log "Java $JAVA_CANDIDATE already current."
-    fi
-  else
+  elif ! sdk_candidate_listed "$JAVA_CANDIDATE"; then
     warn "Requested Java candidate $JAVA_CANDIDATE not listed by SDKMAN. Skipping."
+  else
+    if ! sdk_candidate_installed "$JAVA_CANDIDATE"; then
+      log "Installing Java $JAVA_CANDIDATE via SDKMAN!…"
+      if sdk_cmd install java "$JAVA_CANDIDATE"; then
+        JAVA_INSTALLED_THIS_RUN=true
+      else
+        warn "Failed to install Java $JAVA_CANDIDATE"
+      fi
+    fi
+
+    if sdk_candidate_installed "$JAVA_CANDIDATE"; then
+      if sdk_candidate_current "$JAVA_CANDIDATE"; then
+        if [[ "$JAVA_INSTALLED_THIS_RUN" == "true" ]]; then
+          remember_installed "java@$JAVA_CANDIDATE (SDKMAN)"
+        else
+          remember_skipped "java@$JAVA_CANDIDATE (SDKMAN)"
+        fi
+        log "Java $JAVA_CANDIDATE already current."
+      else
+        log "Setting Java $JAVA_CANDIDATE as SDKMAN default…"
+        sdk_cmd default java "$JAVA_CANDIDATE" || warn "Failed to set Java $JAVA_CANDIDATE as default"
+        remember_installed "java@$JAVA_CANDIDATE (SDKMAN)"
+      fi
+    else
+      warn "Java $JAVA_CANDIDATE is not installed; default was not changed."
+    fi
   fi
 
   # Maven/Gradle via SDKMAN (optional but useful)
