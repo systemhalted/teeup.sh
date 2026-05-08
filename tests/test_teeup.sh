@@ -231,6 +231,10 @@ test_cls_alias() {
 ###########################################
 test_shellcheck() {
   if ! command -v shellcheck >/dev/null 2>&1; then
+    if [[ "${CI:-}" == "true" ]]; then
+      echo "shellcheck is required in CI but is not installed"
+      return 1
+    fi
     echo "shellcheck not installed, skipping"
     return 0
   fi
