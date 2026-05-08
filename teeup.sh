@@ -646,7 +646,11 @@ migrate_pyenv_to_uv() {
     tools=$(pipx list 2>/dev/null | grep "package " | awk '{print $2}' || true)
     for tool in $tools; do
       log "Installing $tool via uv tool..."
-      run_cmd uv tool install "$tool" 2>/dev/null || warn "Failed to install $tool"
+      if [[ "$DRY_RUN" == "true" ]]; then
+        run_cmd uv tool install "$tool"
+      else
+        uv tool install "$tool" 2>/dev/null || warn "Failed to install $tool"
+      fi
     done
     ok "Tools migrated to UV"
   fi
@@ -1152,7 +1156,7 @@ EOF
   else
     remember_skipped "pipx"
   fi
-  pipx ensurepath || true
+  run_cmd pipx ensurepath || true
 
   if [[ "$INSTALL_PY_TOOLS" == "true" ]]; then
     PY_TOOLS=(poetry black ruff httpie)
@@ -1161,7 +1165,7 @@ EOF
         remember_skipped "pipx:$t"
         log "pipx tool already installed: $t"
       else
-        pipx install "$t" || warn "Failed to install pipx tool: $t"
+        run_cmd pipx install "$t" || warn "Failed to install pipx tool: $t"
         remember_installed "pipx:$t"
       fi
     done
@@ -1534,7 +1538,11 @@ if [[ "$RECONCILE_EXISTING_CONFIG" == "true" ]]; then
       log "Migrating pipx tools to uv tool where possible."
       tools=$(pipx list 2>/dev/null | grep "package " | awk '{print $2}' || true)
       for tool in $tools; do
-        run_cmd uv tool install "$tool" 2>/dev/null || warn "Failed to install uv tool: $tool"
+        if [[ "$DRY_RUN" == "true" ]]; then
+          run_cmd uv tool install "$tool"
+        else
+          uv tool install "$tool" 2>/dev/null || warn "Failed to install uv tool: $tool"
+        fi
       done
     fi
   fi
