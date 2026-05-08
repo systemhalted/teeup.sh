@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Module System** - Install only what you need with `--only` flag
 - **UV Support** - Modern Python package manager (10-100x faster than pip)
 - **Bruno Integration** - Open-source Postman alternative
-- **Comprehensive Testing** - 41 automated tests ensuring quality
+- **Comprehensive Testing** - automated test suite (`./tests/run_tests.sh`)
 
 #### Modules
 - **Homebrew** - Package manager with auto-detection for Apple Silicon
@@ -145,8 +145,6 @@ For users migrating from pyenv to UV:
 ```bash
 # Run all tests
 ./tests/run_tests.sh
-
-# Results: 33/33 tests passing
 ```
 
 ---
