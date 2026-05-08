@@ -23,7 +23,6 @@ DEFAULT_DOTFILES_DIR="$(cd "$SCRIPT_DIR/../dotfiles" 2>/dev/null && pwd || true)
 
 # Versions
 PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./teeup.sh
-JDK_DIST="${JDK_DIST:-temurin}"                     # SDKMAN candidate vendor (temurin, oracle, liberica, etc.)
 JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier (e.g., "21.0.4-tem" for Temurin 21)
 RUBY_VERSION="${RUBY_VERSION:-3.4.9}"               # Override by: RUBY_VERSION=4.0.3 ./teeup.sh
 BUNDLER_VERSION="${BUNDLER_VERSION:-}"              # Optional Bundler version; empty installs latest
@@ -743,7 +742,7 @@ fi
 
 normalize_zsh_mode
 
-ZSHRC="${HOME}/.zshrc"
+ZSHRC="${ZSHRC:-$HOME/.zshrc}"
 
 SUMMARY_INSTALLED=()
 SUMMARY_SKIPPED=()
@@ -1336,7 +1335,7 @@ if [[ "$RUN_RUST" == "true" ]]; then
 
   # Ensure cargo in PATH for future shells
   if [[ "$INSTALL_DOTFILES" == "true" ]]; then
-    append_once "$ZSHRC" "Added by teeup.sh — Cargo path" <<'EOF'
+    append_once "$ZSHRC" "Added by teeup.sh - Cargo path" <<'EOF'
 # Rust (cargo)
 if [ -f "$HOME/.cargo/env" ]; then
   source "$HOME/.cargo/env"

@@ -1,6 +1,6 @@
 # ⛳️ teeup.sh - Get your new machine ready for the first drive.
 
-This repository contains teeup.sh, an interactive, cross-platform shell script that automates the setup of macOS, Ubuntu, and Fedora environments. It configures system defaults, sets up your workspace, and installs your essential packages so you can get straight to work.
+This repository contains teeup.sh, an interactive macOS setup script. It configures system defaults, sets up your workspace, and installs your essential packages so you can get straight to work.
 
 Through an interactive wizard, teeup provisions a complete development environment, including:
 
@@ -227,7 +227,6 @@ You can override versions or disable features per run using environment variable
 ```sh
 # Versions
 PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./teeup.sh
-JDK_DIST="${JDK_DIST:-temurin}"                     # SDKMAN candidate vendor (temurin, oracle, liberica, etc.)
 JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier (e.g., "21.0.4-tem" for Temurin 21)
 RUBY_VERSION="${RUBY_VERSION:-3.4.9}"               # Override by: RUBY_VERSION=4.0.3 ./teeup.sh
 BUNDLER_VERSION="${BUNDLER_VERSION:-}"              # Optional Bundler version; empty installs latest
