@@ -476,6 +476,26 @@ Bruno supports environment variables for different stages:
 
 ---
 
+## 🔐 Trust Model
+
+teeup runs vendor install scripts directly from upstream over HTTPS without
+checksum verification. The script is only as trustworthy as these endpoints
+and your TLS chain. The endpoints used are:
+
+| Tool      | URL                                                                          |
+|-----------|------------------------------------------------------------------------------|
+| Homebrew  | `https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh`         |
+| Oh My Zsh | `https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh`  |
+| UV        | `https://astral.sh/uv/install.sh`                                            |
+| SDKMAN!   | `https://get.sdkman.io`                                                      |
+| rustup    | `https://sh.rustup.rs`                                                       |
+
+If you don't want any of these to run, install the corresponding tool
+yourself first (teeup detects existing installs and skips them) or run
+with `--only` to skip the modules you don't want.
+
+---
+
 ## 🧪 Testing
 
 The project includes a test suite to validate both scripts:

@@ -1236,9 +1236,9 @@ if [[ "$RUN_JAVA" == "true" ]]; then
   if [[ ! -d "$SDKMAN_DIR" ]]; then
     log "Installing SDKMAN!…"
     if [[ "$DRY_RUN" == "true" ]]; then
-      run_cmd bash -c "curl -s https://get.sdkman.io | bash"
+      run_cmd bash -c "curl -fsSL https://get.sdkman.io | bash"
     else
-      curl -s "https://get.sdkman.io" | bash
+      curl -fsSL "https://get.sdkman.io" | bash
     fi
     remember_installed "SDKMAN!"
   else
