@@ -486,7 +486,13 @@ normalize_zsh_mode() {
 }
 
 sdk_cmd() {
-  zsh -lc 'source "$HOME/.sdkman/bin/sdkman-init.sh" >/dev/null 2>&1 || exit 1; sdk "$@"' zsh "$@"
+  zsh -lc '
+    if ! source "$HOME/.sdkman/bin/sdkman-init.sh" >/dev/null 2>&1; then
+      echo "sdk_cmd: failed to source $HOME/.sdkman/bin/sdkman-init.sh" >&2
+      exit 1
+    fi
+    sdk "$@"
+  ' zsh "$@"
 }
 
 sdk_candidate_listed() {
