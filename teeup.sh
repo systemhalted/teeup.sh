@@ -15,7 +15,11 @@ set -euo pipefail
 SETUP_START_EPOCH="$(date +%s)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_DOTFILES_DIR="$(cd "$SCRIPT_DIR/../dotfiles" 2>/dev/null && pwd || true)"
+if DEFAULT_DOTFILES_DIR="$(cd "$SCRIPT_DIR/../dotfiles" 2>/dev/null && pwd)"; then
+  :
+else
+  DEFAULT_DOTFILES_DIR=""
+fi
 
 #############################
 # ===== User Toggles ===== #
