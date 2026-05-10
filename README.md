@@ -13,14 +13,14 @@
 
 This repository contains teeup.sh, an interactive macOS setup script. It configures system defaults, sets up your workspace, and installs your essential packages so you can get straight to work.
 
-Through an interactive wizard, teeup provisions a complete development environment, including:
+Through an interactive wizard, teeup provisions a complete development environment, including: 
 
-Package Management: Homebrew (for newer macOS/Linux) or MacPorts (for older macOS)
-Terminal & Shell: zsh configured with Powerlevel10k
-Development Tools: UV, SDKMAN!, rbenv, rustup, and Emacs
-Containers: Colima bundled with the Docker CLI
-Applications: Bruno and Obsidian
-Utilities: A curated suite of common command-line tools
+- **Package Management**: Homebrew (for newer macOS/Linux) or MacPorts (for older macOS)   
+- **Terminal & Shell**: zsh configured with Powerlevel10k   
+- **Development Tools**: UV, SDKMAN!, rbenv, rustup, and Emacs    
+- **Containers**: Colima bundled with the Docker CLI   
+- **Applications**: Bruno and Obsidian   
+- **Utilities**: A curated suite of common command-line tools   
 
 ---
 
