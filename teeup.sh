@@ -962,7 +962,7 @@ if command -v brew >/dev/null 2>&1; then
 fi
 
 autoload -Uz compinit
-compinit
+compinit -i
 
 for theme_file in \
   /opt/local/share/powerlevel10k/powerlevel10k.zsh-theme \
