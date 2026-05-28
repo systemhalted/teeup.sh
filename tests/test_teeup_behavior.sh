@@ -297,7 +297,7 @@ test_bash_deploy_links_only_bash_dotfiles() {
   local df="$TEST_HOME/dotfiles"
   mkdir -p "$df"
   local f
-  for f in zshrc zprofile bashrc .bash_profile profile shellrc.common teeupshrc gitconfig tmux.conf; do
+  for f in zshrc zprofile bashrc .bash_profile profile shellrc.common teeupshrc starship.toml gitconfig tmux.conf; do
     echo "# stub" > "$df/$f"
   done
 
@@ -307,6 +307,7 @@ test_bash_deploy_links_only_bash_dotfiles() {
 
   assert_contains "$output" "ln -s $df/bashrc $HOME/.bashrc" "Should link bash dotfiles"
   assert_contains "$output" "ln -s $df/teeupshrc $HOME/.teeupshrc" "Should link shared teeupshrc"
+  assert_contains "$output" "ln -s $df/starship.toml $HOME/.config/starship.toml" "Should link starship.toml"
   if [[ "$output" == *"$df/zshrc $HOME/.zshrc"* ]]; then
     echo "FAIL: bash deployment should not link zsh dotfiles (segregation)"
     return 1

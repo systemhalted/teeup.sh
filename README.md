@@ -279,11 +279,12 @@ COLIMA_RUNTIME="${COLIMA_RUNTIME:-docker}"  # docker or containerd
 ```
 
 When dotfiles are enabled and the sibling `dotfiles` repo is present, the script
-symlinks the zsh files (`zshrc`, `zprofile`), the bash files (`bashrc`,
-`.bash_profile`, `profile`), the shared `shellrc.common` and `teeupshrc`, plus
-`gitconfig` and `tmux.conf` into `$HOME`. If the payload is not present, setup
-falls back to small managed shell blocks written to `~/.teeupshrc` and sourced
-from your shell's rc file.
+symlinks the shared files (`shellrc.common`, `teeupshrc`, `gitconfig`,
+`tmux.conf`) plus the dotfiles for your **target login shell only** (segregated):
+zsh gets `zshrc`/`zprofile`; bash gets `bashrc`/`.bash_profile`/`profile` and a
+starter `starship.toml` (→ `~/.config/starship.toml`). If the payload is not
+present, setup falls back to small managed shell blocks written to `~/.teeupshrc`
+and sourced from your shell's rc file.
 
 ### UV vs pyenv/poetry
 

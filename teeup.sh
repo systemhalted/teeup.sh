@@ -1570,6 +1570,10 @@ if [[ "$INSTALL_DOTFILES" == "true" ]]; then
       install_dotfile_link "$DOTFILES_DIR/bashrc" "$HOME/.bashrc"
       install_dotfile_link "$DOTFILES_DIR/.bash_profile" "$HOME/.bash_profile"
       install_dotfile_link "$DOTFILES_DIR/profile" "$HOME/.profile"
+      if [[ -f "$DOTFILES_DIR/starship.toml" ]]; then
+        run_cmd mkdir -p "$HOME/.config"
+        install_dotfile_link "$DOTFILES_DIR/starship.toml" "$HOME/.config/starship.toml"
+      fi
     fi
   else
     warn "DOTFILES_DIR is not available; falling back to small managed shell blocks."
