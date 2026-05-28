@@ -207,6 +207,7 @@ test_exports_env_vars() {
   assert_contains "$content" 'export PYTHON_VERSION=' "Should export PYTHON_VERSION"
   assert_contains "$content" 'export USE_UV=' "Should export USE_UV"
   assert_contains "$content" 'export ZSH_MODE=' "Should export ZSH_MODE"
+  assert_contains "$content" 'export TARGET_SHELL=' "Should export TARGET_SHELL"
   assert_contains "$content" 'export PACKAGE_MANAGER=' "Should export PACKAGE_MANAGER"
   assert_contains "$content" 'export JDK_VERSION=' "Should export JDK_VERSION"
   assert_contains "$content" 'export RUBY_VERSION=' "Should export RUBY_VERSION"
@@ -225,6 +226,15 @@ test_calls_teeup() {
   content=$(cat "$PROJECT_DIR/teeup-wizard.sh")
   assert_contains "$content" "teeup.sh" "Should reference teeup.sh"
   assert_contains "$content" "--only" "Should use --only flag"
+}
+
+###########################################
+# Test: Passes generic 'shell' module (not 'zsh') so TARGET_SHELL wins
+###########################################
+test_passes_shell_module() {
+  local content
+  content=$(cat "$PROJECT_DIR/teeup-wizard.sh")
+  assert_contains "$content" 'out_mods+=("shell")' "Should translate the zsh module to the generic shell module so TARGET_SHELL is respected"
 }
 
 ###########################################
@@ -320,7 +330,21 @@ test_package_manager_prompt() {
   assert_contains "$content" "Package Manager" "Should ask about package manager"
   assert_contains "$content" "Homebrew on macOS 13+" "Should describe auto package manager choice"
   assert_contains "$content" "MacPorts" "Should offer MacPorts"
+  assert_contains "$content" "APT on Debian/Ubuntu" "Should offer Linux APT auto description"
+  assert_contains "$content" "DNF on Fedora/RHEL-family" "Should offer Linux DNF auto description"
   assert_contains "$content" "ALLOW_HOMEBREW_CASK_FALLBACK" "Should support cask fallback"
+}
+
+###########################################
+# Test: Platform-aware wizard support
+###########################################
+test_platform_aware_wizard() {
+  local content
+  content=$(cat "$PROJECT_DIR/teeup-wizard.sh")
+  assert_contains "$content" "detect_wizard_platform()" "Should detect platform"
+  assert_contains "$content" "wizard_is_linux()" "Should support Linux platform checks"
+  assert_contains "$content" "Welcome to the Linux Setup Wizard" "Should have Linux welcome message"
+  assert_contains "$content" "Apps module is currently macOS-only" "Should explain app module limitation"
 }
 
 ###########################################
@@ -357,6 +381,7 @@ run_test "Safe array expansion" test_safe_array_expansion
 run_test "Module selection helpers execute" test_module_selection_helpers_execute
 run_test "Exports env vars" test_exports_env_vars
 run_test "Calls teeup.sh" test_calls_teeup
+run_test "Passes shell module not zsh" test_passes_shell_module
 run_test "Main function exists" test_main_function
 run_test "Checks teeup.sh exists" test_checks_teeup_exists
 run_test "Bruno in apps config" test_bruno_in_apps
@@ -366,6 +391,7 @@ run_test "Validation used in configs" test_validation_used
 run_test "Dry-run mode support" test_dryrun_support
 run_test "Reconciliation prompt" test_reconcile_prompt
 run_test "Package manager prompt" test_package_manager_prompt
+run_test "Platform-aware wizard" test_platform_aware_wizard
 run_test "Exports dry-run to teeup" test_exports_dryrun
 
 print_summary

@@ -18,9 +18,16 @@ setup_test_env() {
   export ZSHRC="$TEST_HOME/.zshrc"
   export ZPROFILE="$TEST_HOME/.zprofile"
   export ZSH_INTEGRATION="$TEST_HOME/.config/mac-setup/zsh.zsh"
+  export BASHRC="$TEST_HOME/.bashrc"
+  export BASH_PROFILE="$TEST_HOME/.bash_profile"
+  export PROFILE="$TEST_HOME/.profile"
+  export TEEUPSHRC="$TEST_HOME/.teeupshrc"
   mkdir -p "$(dirname "$ZSH_INTEGRATION")"
   touch "$ZSHRC"
   touch "$ZPROFILE"
+  touch "$BASHRC"
+  touch "$BASH_PROFILE"
+  touch "$PROFILE"
   MOCK_BIN="$(mktemp -d)"
   export MOCK_BIN
   export MOCK_LOG="$TEST_HOME/mock.log"
@@ -66,6 +73,10 @@ mock_macos_base_commands() {
   mock_command pkgutil 1 ""
 }
 
+mock_linux_base_commands() {
+  mock_command uname 0 "Linux"
+}
+
 mock_package_manager_commands() {
   mock_command_script brew <<'EOF'
 echo "brew $*" >> "$MOCK_LOG"
@@ -81,6 +92,26 @@ case "$1" in
   installed) exit 1 ;;
   *) exit 0 ;;
 esac
+EOF
+  mock_command sudo 0 ""
+}
+
+mock_linux_package_manager_commands() {
+  mock_command_script apt-get <<'EOF'
+echo "apt-get $*" >> "$MOCK_LOG"
+exit 0
+EOF
+  mock_command_script dnf <<'EOF'
+echo "dnf $*" >> "$MOCK_LOG"
+exit 0
+EOF
+  mock_command_script dpkg-query <<'EOF'
+echo "dpkg-query $*" >> "$MOCK_LOG"
+exit 1
+EOF
+  mock_command_script rpm <<'EOF'
+echo "rpm $*" >> "$MOCK_LOG"
+exit 1
 EOF
   mock_command sudo 0 ""
 }

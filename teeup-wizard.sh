@@ -142,6 +142,69 @@ wait_for_key() {
   read -r
 }
 
+strip_quotes() {
+  local value="$1"
+  value="${value%\"}"
+  value="${value#\"}"
+  echo "$value"
+}
+
+detect_wizard_platform() {
+  WIZARD_OS="$(uname -s)"
+  WIZARD_PLATFORM_FAMILY="unknown"
+  WIZARD_PLATFORM_LABEL="$WIZARD_OS"
+  WIZARD_DISTRO_ID=""
+  WIZARD_DISTRO_VERSION=""
+
+  case "$WIZARD_OS" in
+    Darwin)
+      WIZARD_PLATFORM_FAMILY="macos"
+      WIZARD_PLATFORM_LABEL="macOS"
+      ;;
+    Linux)
+      WIZARD_PLATFORM_FAMILY="linux"
+      if [[ -r /etc/os-release ]]; then
+        while IFS='=' read -r key value; do
+          value="$(strip_quotes "$value")"
+          case "$key" in
+            ID) WIZARD_DISTRO_ID="$value" ;;
+            VERSION_ID) WIZARD_DISTRO_VERSION="$value" ;;
+          esac
+        done < /etc/os-release
+      fi
+      if [[ -n "$WIZARD_DISTRO_ID" ]]; then
+        WIZARD_PLATFORM_LABEL="Linux ${WIZARD_DISTRO_ID}${WIZARD_DISTRO_VERSION:+ ${WIZARD_DISTRO_VERSION}}"
+      else
+        WIZARD_PLATFORM_LABEL="Linux"
+      fi
+      case "$(basename "${SHELL:-bash}")" in
+        *zsh) WIZARD_TARGET_SHELL="zsh" ;;
+        *) WIZARD_TARGET_SHELL="bash" ;;
+      esac
+      ;;
+  esac
+}
+
+wizard_is_macos() {
+  [[ "$WIZARD_PLATFORM_FAMILY" == "macos" ]]
+}
+
+wizard_is_linux() {
+  [[ "$WIZARD_PLATFORM_FAMILY" == "linux" ]]
+}
+
+wizard_supports_apps() {
+  wizard_is_macos
+}
+
+set_full_default_modules() {
+  if wizard_supports_apps; then
+    SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker" "apps")
+  else
+    SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker")
+  fi
+}
+
 # Toggle item in SELECTED_MODULES array (Bash 3.2 compatible)
 # This function adds/removes a module from the selection:
 # - If module exists in array: removes it (deselect)
@@ -322,6 +385,7 @@ SELECTED_MODULES=()
 WIZARD_PYTHON_VERSION="3.12.5"
 WIZARD_USE_UV="true"
 WIZARD_ZSH_MODE="plain"
+WIZARD_TARGET_SHELL="zsh"
 WIZARD_PACKAGE_MANAGER="auto"
 WIZARD_JDK_VERSION="21.0.4-tem"
 WIZARD_RUBY_VERSION="3.4.9"
@@ -348,24 +412,47 @@ WIZARD_INSTALL_OBSIDIAN="true"
 show_welcome() {
   print_header
 
-  echo -e "${WHITE}Welcome to the Mac Setup Wizard!${RESET}"
+  if wizard_is_macos; then
+    echo -e "${WHITE}Welcome to the macOS Setup Wizard!${RESET}"
+  elif wizard_is_linux; then
+    echo -e "${WHITE}Welcome to the Linux Setup Wizard!${RESET}"
+  else
+    echo -e "${WHITE}Welcome to the Setup Wizard!${RESET}"
+  fi
   echo ""
-  echo "This wizard will help you configure and install your macOS development"
-  echo "environment step by step. You can choose which components to install"
-  echo "and customize settings along the way."
+  echo "This wizard will help you configure and install your development"
+  echo "environment on ${WIZARD_PLATFORM_LABEL} step by step."
+  echo "You can choose which components to install and customize settings along the way."
   echo ""
   echo -e "${DIM}What this wizard can set up for you:${RESET}"
   echo ""
-  echo "  📦 Package Manager   - Homebrew on newer macOS, MacPorts on older macOS"
-  echo "  🐚 Zsh               - Minimal zsh or Oh My Zsh with Powerlevel10k"
+  if wizard_is_macos; then
+    echo "  📦 Package Manager   - Homebrew on newer macOS, MacPorts on older macOS"
+  elif wizard_is_linux; then
+    echo "  📦 Package Manager   - APT on Debian/Ubuntu, DNF on Fedora/RHEL-family"
+  else
+    echo "  📦 Package Manager   - Auto-detected from your operating system"
+  fi
+  if wizard_is_linux; then
+    echo "  🐚 Shell             - bash (bash-completion + Starship) or zsh (Powerlevel10k)"
+  else
+    echo "  🐚 Zsh               - Minimal zsh or Oh My Zsh with Powerlevel10k"
+  fi
   echo "  🛠️  CLI Tools         - Essential command-line utilities"
   echo "  🐍 Python            - Python environment (UV or pyenv)"
   echo "  ☕ Java              - SDKMAN! with JDK, Maven, Gradle"
   echo "  💎 Ruby              - rbenv with RubyGems and Bundler"
   echo "  🦀 Rust               - Rust toolchain via rustup"
   echo "  📝 Emacs             - Text editor with starter config"
-  echo "  🐳 Docker            - Colima + Docker CLI"
-  echo "  📱 Apps              - Bruno, Obsidian"
+  if wizard_is_macos; then
+    echo "  🐳 Docker            - Colima + Docker CLI"
+    echo "  📱 Apps              - Bruno, Obsidian"
+  elif wizard_is_linux; then
+    echo "  🐳 Docker            - Docker engine + CLI"
+    echo "  📱 Apps              - macOS-only (skipped on Linux)"
+  else
+    echo "  🐳 Docker            - Docker runtime + CLI"
+  fi
   echo ""
 
   if ! prompt_yes_no "Ready to begin?"; then
@@ -394,7 +481,7 @@ show_setup_type() {
   case "$choice" in
     1)
       SETUP_TYPE="full"
-      SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker" "apps")
+      set_full_default_modules
       ;;
     2)
       SETUP_TYPE="custom"
@@ -404,7 +491,7 @@ show_setup_type() {
       ;;
     *)
       SETUP_TYPE="full"
-      SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker" "apps")
+      set_full_default_modules
       ;;
   esac
 }
@@ -412,7 +499,7 @@ show_setup_type() {
 show_module_selection() {
   # Temporarily disable 'set -u' (unbound variable check) for this function
   # This is needed because we use array expansion patterns that can trigger
-  # false positives with empty arrays in Bash 3.2 (macOS ships /bin/bash as Bash 3.2)
+  # false positives with empty arrays in Bash 3.2 environments.
   # We restore the setting at the end of the function
   local restore_nounset="false"
   case "$-" in
@@ -429,12 +516,22 @@ show_module_selection() {
 
     local selected="false"
     is_module_selected "homebrew" && selected="true"
-    print_option "1" "package-manager" "Homebrew or MacPorts setup (module name: homebrew)" "$selected"
+    if wizard_is_macos; then
+      print_option "1" "package-manager" "Homebrew or MacPorts setup (module name: homebrew)" "$selected"
+    elif wizard_is_linux; then
+      print_option "1" "package-manager" "APT or DNF setup (module name: homebrew)" "$selected"
+    else
+      print_option "1" "package-manager" "Auto package manager setup (module name: homebrew)" "$selected"
+    fi
     echo ""
 
     selected="false"
     is_module_selected "zsh" && selected="true"
-    print_option "2" "zsh" "Minimal zsh or Oh My Zsh + Powerlevel10k" "$selected"
+    if wizard_is_linux; then
+      print_option "2" "shell" "Configure login shell: bash (Starship) or zsh (Powerlevel10k)" "$selected"
+    else
+      print_option "2" "zsh" "Minimal zsh or Oh My Zsh + Powerlevel10k" "$selected"
+    fi
     echo ""
 
     selected="false"
@@ -464,12 +561,20 @@ show_module_selection() {
 
     selected="false"
     is_module_selected "docker" && selected="true"
-    print_option "8" "docker" "Colima + Docker CLI" "$selected"
+    if wizard_is_macos; then
+      print_option "8" "docker" "Colima + Docker CLI" "$selected"
+    else
+      print_option "8" "docker" "Docker engine + CLI" "$selected"
+    fi
     echo ""
 
     selected="false"
     is_module_selected "apps" && selected="true"
-    print_option "9" "apps" "GUI apps (Bruno, Obsidian)" "$selected"
+    if wizard_supports_apps; then
+      print_option "9" "apps" "GUI apps (Bruno, Obsidian)" "$selected"
+    else
+      print_option "9" "apps" "GUI apps (macOS only)" "$selected"
+    fi
     echo ""
 
     selected="false"
@@ -493,7 +598,15 @@ show_module_selection() {
       6) toggle_selected_module "ruby"; continue ;;
       7) toggle_selected_module "emacs"; continue ;;
       8) toggle_selected_module "docker"; continue ;;
-      9) toggle_selected_module "apps"; continue ;;
+      9)
+        if wizard_supports_apps; then
+          toggle_selected_module "apps"
+        else
+          print_warning "Apps module is currently macOS-only and will be skipped on Linux."
+          sleep 1
+        fi
+        continue
+        ;;
       10) toggle_selected_module "rust"; continue ;;
       ''|*[!0-9]*)
         ;; # non-numeric; fall through to keyword handling
@@ -514,7 +627,7 @@ show_module_selection() {
         break
         ;;
       all|a)
-        SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker" "apps")
+        set_full_default_modules
         ;;
       none|n|clear|c)
         SELECTED_MODULES=()
@@ -554,11 +667,25 @@ show_package_manager_config() {
   print_header
   print_section "Step 3a: Package Manager"
 
-  echo "Choose which macOS package manager setup should use:"
-  echo ""
-  echo -e "  ${BOLD}1)${RESET} ${GREEN}Auto (Recommended)${RESET} - Homebrew on macOS 13+, MacPorts on macOS 12 and older"
-  echo -e "  ${BOLD}2)${RESET} ${CYAN}Homebrew${RESET} - Use Homebrew explicitly"
-  echo -e "  ${BOLD}3)${RESET} ${CYAN}MacPorts${RESET} - Use MacPorts explicitly"
+  if wizard_is_macos; then
+    echo "Choose which macOS package manager setup should use:"
+    echo ""
+    echo -e "  ${BOLD}1)${RESET} ${GREEN}Auto (Recommended)${RESET} - Homebrew on macOS 13+, MacPorts on macOS 12 and older"
+    echo -e "  ${BOLD}2)${RESET} ${CYAN}Homebrew${RESET} - Use Homebrew explicitly"
+    echo -e "  ${BOLD}3)${RESET} ${CYAN}MacPorts${RESET} - Use MacPorts explicitly"
+  elif wizard_is_linux; then
+    echo "Choose which Linux package manager setup should use:"
+    echo ""
+    echo -e "  ${BOLD}1)${RESET} ${GREEN}Auto (Recommended)${RESET} - APT on Debian/Ubuntu, DNF on Fedora/RHEL-family"
+    echo -e "  ${BOLD}2)${RESET} ${CYAN}APT${RESET} - Use apt explicitly"
+    echo -e "  ${BOLD}3)${RESET} ${CYAN}DNF${RESET} - Use dnf explicitly"
+  else
+    echo "Choose package manager mode:"
+    echo ""
+    echo -e "  ${BOLD}1)${RESET} ${GREEN}Auto (Recommended)${RESET}"
+    echo -e "  ${BOLD}2)${RESET} ${CYAN}Homebrew${RESET}"
+    echo -e "  ${BOLD}3)${RESET} ${CYAN}APT${RESET}"
+  fi
   echo ""
   echo -ne "${WHITE}Enter your choice [1-3] (default: 1): ${RESET}"
 
@@ -566,12 +693,28 @@ show_package_manager_config() {
   read -r choice
   choice=$(validate_choice "$choice" 1 3 1)
 
-  case "$choice" in
-    1) WIZARD_PACKAGE_MANAGER="auto" ;;
-    2) WIZARD_PACKAGE_MANAGER="homebrew" ;;
-    3) WIZARD_PACKAGE_MANAGER="macports" ;;
-    *) WIZARD_PACKAGE_MANAGER="auto" ;;
-  esac
+  if wizard_is_macos; then
+    case "$choice" in
+      1) WIZARD_PACKAGE_MANAGER="auto" ;;
+      2) WIZARD_PACKAGE_MANAGER="homebrew" ;;
+      3) WIZARD_PACKAGE_MANAGER="macports" ;;
+      *) WIZARD_PACKAGE_MANAGER="auto" ;;
+    esac
+  elif wizard_is_linux; then
+    case "$choice" in
+      1) WIZARD_PACKAGE_MANAGER="auto" ;;
+      2) WIZARD_PACKAGE_MANAGER="apt" ;;
+      3) WIZARD_PACKAGE_MANAGER="dnf" ;;
+      *) WIZARD_PACKAGE_MANAGER="auto" ;;
+    esac
+  else
+    case "$choice" in
+      1) WIZARD_PACKAGE_MANAGER="auto" ;;
+      2) WIZARD_PACKAGE_MANAGER="homebrew" ;;
+      3) WIZARD_PACKAGE_MANAGER="apt" ;;
+      *) WIZARD_PACKAGE_MANAGER="auto" ;;
+    esac
+  fi
 
   echo ""
   print_success "Package manager mode: $WIZARD_PACKAGE_MANAGER"
@@ -588,7 +731,39 @@ show_zsh_config() {
   fi
 
   print_header
-  print_section "Step 3a: Zsh Configuration"
+  print_section "Step 3a: Shell Configuration"
+
+  if wizard_is_linux; then
+    echo "Which login shell do you use on this machine?"
+    echo ""
+    echo -e "  ${BOLD}1)${RESET} ${GREEN}bash${RESET} - Default on most Linux distros"
+    echo -e "  ${BOLD}2)${RESET} ${CYAN}zsh${RESET} - Configure zsh as your shell"
+    echo ""
+    local default_shell_choice=1
+    [[ "$WIZARD_TARGET_SHELL" == "zsh" ]] && default_shell_choice=2
+    echo -ne "${WHITE}Enter your choice [1-2] (default: ${default_shell_choice}): ${RESET}"
+
+    local shell_choice
+    read -r shell_choice
+    shell_choice=$(validate_choice "$shell_choice" 1 2 "$default_shell_choice")
+
+    case "$shell_choice" in
+      1) WIZARD_TARGET_SHELL="bash" ;;
+      2) WIZARD_TARGET_SHELL="zsh" ;;
+      *) WIZARD_TARGET_SHELL="bash" ;;
+    esac
+
+    if [[ "$WIZARD_TARGET_SHELL" == "bash" ]]; then
+      WIZARD_ZSH_MODE="plain"
+      echo ""
+      print_success "Using bash; tool initialization is written to ~/.teeupshrc."
+      wait_for_key
+      return
+    fi
+    echo ""
+  else
+    WIZARD_TARGET_SHELL="zsh"
+  fi
 
   echo "Choose your zsh setup:"
   echo ""
@@ -773,11 +948,18 @@ show_docker_config() {
   fi
 
   print_header
-  print_section "Step 3e: Docker (Colima) Configuration"
-
-  echo "Colima is a lightweight Docker runtime for macOS."
-  echo "Configure the VM resources:"
-  echo ""
+  if wizard_is_macos; then
+    print_section "Step 3e: Docker (Colima) Configuration"
+    echo "Colima is a lightweight Docker runtime for macOS."
+    echo "Configure the VM resources:"
+    echo ""
+  else
+    print_section "Step 3e: Docker Configuration"
+    echo "On Linux, setup installs Docker engine + CLI via your package manager."
+    print_info "No Colima VM resource settings are required on Linux."
+    wait_for_key
+    return
+  fi
 
   # CPU validation with retry loop
   # Accepts 1-32 CPUs (typical range for Docker VM)
@@ -847,6 +1029,18 @@ show_apps_config() {
     return
   fi
 
+  if ! wizard_supports_apps; then
+    print_warning "Apps module is currently macOS-only. Skipping apps configuration."
+    local filtered=()
+    local mod
+    for mod in ${SELECTED_MODULES[@]+"${SELECTED_MODULES[@]}"}; do
+      [[ "$mod" == "apps" ]] && continue
+      filtered+=("$mod")
+    done
+    SELECTED_MODULES=("${filtered[@]}")
+    return
+  fi
+
   print_header
   print_section "Step 3f: Apps Configuration"
 
@@ -908,27 +1102,34 @@ show_additional_options() {
 
   echo ""
 
-  if prompt_yes_no "Remove verified Homebrew package overlaps after MacPorts replacements are active?" "n"; then
-    WIZARD_CLEANUP_HOMEBREW_OVERLAPS="true"
+  if wizard_is_macos; then
+    if prompt_yes_no "Remove verified Homebrew package overlaps after MacPorts replacements are active?" "n"; then
+      WIZARD_CLEANUP_HOMEBREW_OVERLAPS="true"
+    else
+      WIZARD_CLEANUP_HOMEBREW_OVERLAPS="false"
+    fi
+
+    echo ""
+
+    if is_module_selected "apps" && [[ "$WIZARD_PACKAGE_MANAGER" != "homebrew" ]]; then
+      if prompt_yes_no "Use existing Homebrew for GUI app casks when MacPorts is selected?" "n"; then
+        WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="true"
+      else
+        WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="false"
+      fi
+      echo ""
+    fi
+
+    if prompt_yes_no "Apply macOS defaults (fast key repeat, show extensions, etc.)?" "n"; then
+      WIZARD_TUNE_DEFAULTS="true"
+    else
+      WIZARD_TUNE_DEFAULTS="false"
+    fi
   else
     WIZARD_CLEANUP_HOMEBREW_OVERLAPS="false"
-  fi
-
-  echo ""
-
-  if is_module_selected "apps" && [[ "$WIZARD_PACKAGE_MANAGER" != "homebrew" ]]; then
-    if prompt_yes_no "Use existing Homebrew for GUI app casks when MacPorts is selected?" "n"; then
-      WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="true"
-    else
-      WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="false"
-    fi
-    echo ""
-  fi
-
-  if prompt_yes_no "Apply macOS defaults (fast key repeat, show extensions, etc.)?" "n"; then
-    WIZARD_TUNE_DEFAULTS="true"
-  else
+    WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="false"
     WIZARD_TUNE_DEFAULTS="false"
+    print_info "Skipping macOS-only options on ${WIZARD_PLATFORM_LABEL}."
   fi
 
   echo ""
@@ -949,7 +1150,11 @@ show_summary() {
   echo -e "${BOLD}Modules to install:${RESET}"
   echo ""
   for mod in ${SELECTED_MODULES[@]+"${SELECTED_MODULES[@]}"}; do
-    echo -e "  ${GREEN}✓${RESET} $mod"
+    if [[ "$mod" == "zsh" ]]; then
+      echo -e "  ${GREEN}✓${RESET} shell (${WIZARD_TARGET_SHELL})"
+    else
+      echo -e "  ${GREEN}✓${RESET} $mod"
+    fi
   done
 
   echo ""
@@ -961,10 +1166,12 @@ show_summary() {
   fi
 
   if is_module_selected "zsh"; then
-    if [[ "$WIZARD_ZSH_MODE" == "plain" ]]; then
-      echo -e "  Zsh: ${CYAN}Plain zsh${RESET} with ${CYAN}Powerlevel10k${RESET}"
+    if [[ "$WIZARD_TARGET_SHELL" == "bash" ]]; then
+      echo -e "  Shell: ${CYAN}bash${RESET} with ${CYAN}bash-completion${RESET} + ${CYAN}Starship${RESET}"
+    elif [[ "$WIZARD_ZSH_MODE" == "plain" ]]; then
+      echo -e "  Shell: ${CYAN}Plain zsh${RESET} with ${CYAN}Powerlevel10k${RESET}"
     else
-      echo -e "  Zsh: ${CYAN}Oh My Zsh${RESET} with ${CYAN}Powerlevel10k${RESET}"
+      echo -e "  Shell: ${CYAN}Oh My Zsh${RESET} with ${CYAN}Powerlevel10k${RESET}"
     fi
   fi
 
@@ -990,14 +1197,20 @@ show_summary() {
   fi
 
   if is_module_selected "docker"; then
-    echo -e "  Colima: ${CYAN}${WIZARD_COLIMA_CPUS} CPUs, ${WIZARD_COLIMA_MEMORY}GB RAM, ${WIZARD_COLIMA_DISK}GB disk${RESET}"
+    if wizard_is_macos; then
+      echo -e "  Colima: ${CYAN}${WIZARD_COLIMA_CPUS} CPUs, ${WIZARD_COLIMA_MEMORY}GB RAM, ${WIZARD_COLIMA_DISK}GB disk${RESET}"
+    else
+      echo -e "  Docker: ${CYAN}engine + CLI via package manager${RESET}"
+    fi
   fi
 
   echo -e "  Install dotfiles: ${CYAN}$WIZARD_INSTALL_DOTFILES${RESET}"
   echo -e "  Reconcile existing config: ${CYAN}$WIZARD_RECONCILE_EXISTING_CONFIG${RESET}"
-  echo -e "  Cleanup Homebrew overlaps: ${CYAN}$WIZARD_CLEANUP_HOMEBREW_OVERLAPS${RESET}"
-  echo -e "  Homebrew cask fallback: ${CYAN}$WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK${RESET}"
-  echo -e "  Tune macOS defaults: ${CYAN}$WIZARD_TUNE_DEFAULTS${RESET}"
+  if wizard_is_macos; then
+    echo -e "  Cleanup Homebrew overlaps: ${CYAN}$WIZARD_CLEANUP_HOMEBREW_OVERLAPS${RESET}"
+    echo -e "  Homebrew cask fallback: ${CYAN}$WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK${RESET}"
+    echo -e "  Tune macOS defaults: ${CYAN}$WIZARD_TUNE_DEFAULTS${RESET}"
+  fi
 
   if [[ "$WIZARD_DRY_RUN" == "true" ]]; then
     echo ""
@@ -1011,9 +1224,19 @@ run_setup() {
   print_header
   print_section "Running Setup"
 
-  # Build the command
+  # Build the command. The shell preference travels via TARGET_SHELL, so emit the
+  # generic 'shell' module (not 'zsh', which would force TARGET_SHELL=zsh on the CLI).
   local modules_str
-  modules_str=$(IFS=,; echo "${SELECTED_MODULES[*]}")
+  local out_mods=()
+  local m
+  for m in ${SELECTED_MODULES[@]+"${SELECTED_MODULES[@]}"}; do
+    if [[ "$m" == "zsh" ]]; then
+      out_mods+=("shell")
+    else
+      out_mods+=("$m")
+    fi
+  done
+  modules_str=$(IFS=,; echo "${out_mods[*]}")
 
   local cmd="./teeup.sh"
   [[ "$WIZARD_DRY_RUN" == "true" ]] && cmd+=" --dry-run"
@@ -1024,6 +1247,7 @@ run_setup() {
   export PYTHON_VERSION="$WIZARD_PYTHON_VERSION"
   export USE_UV="$WIZARD_USE_UV"
   export ZSH_MODE="$WIZARD_ZSH_MODE"
+  export TARGET_SHELL="$WIZARD_TARGET_SHELL"
   export PACKAGE_MANAGER="$WIZARD_PACKAGE_MANAGER"
   export JDK_VERSION="$WIZARD_JDK_VERSION"
   export RUBY_VERSION="$WIZARD_RUBY_VERSION"
@@ -1046,6 +1270,7 @@ run_setup() {
   echo -e "${DIM}  PYTHON_VERSION=$PYTHON_VERSION${RESET}"
   echo -e "${DIM}  USE_UV=$USE_UV${RESET}"
   echo -e "${DIM}  ZSH_MODE=$ZSH_MODE${RESET}"
+  echo -e "${DIM}  TARGET_SHELL=$TARGET_SHELL${RESET}"
   echo -e "${DIM}  PACKAGE_MANAGER=$PACKAGE_MANAGER${RESET}"
   echo -e "${DIM}  JDK_VERSION=$JDK_VERSION${RESET}"
   echo -e "${DIM}  RUBY_VERSION=$RUBY_VERSION${RESET}"
@@ -1131,7 +1356,7 @@ show_completion() {
 
   echo -e "${BOLD}Next steps:${RESET}"
   echo ""
-  echo "  1. Open a new terminal or run: ${CYAN}exec zsh${RESET}"
+  echo -e "  1. Open a new terminal or run: ${CYAN}exec ${WIZARD_TARGET_SHELL}${RESET}"
   echo ""
   echo "  2. Verify your installation:"
 
@@ -1157,7 +1382,9 @@ show_completion() {
   fi
 
   if is_module_selected "docker"; then
-    echo -e "     ${DIM}colima status${RESET}"
+    if wizard_is_macos; then
+      echo -e "     ${DIM}colima status${RESET}"
+    fi
     echo -e "     ${DIM}docker version${RESET}"
   fi
 
@@ -1168,6 +1395,10 @@ show_completion() {
   if is_module_selected "rust"; then
     echo -e "     ${DIM}rustc --version${RESET}"
     echo -e "     ${DIM}cargo --version${RESET}"
+  fi
+
+  if is_module_selected "zsh" && [[ "$WIZARD_TARGET_SHELL" == "bash" ]]; then
+    echo -e "     ${DIM}starship --version${RESET}"
   fi
 
   echo ""
@@ -1187,6 +1418,8 @@ main() {
     print_info "The wizard requires teeup.sh to be in the same directory."
     exit 1
   fi
+
+  detect_wizard_platform
 
   # Run wizard
   show_welcome

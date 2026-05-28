@@ -11,12 +11,12 @@
   Get your new machine ready for the first drive.
 </p>
 
-This repository contains teeup.sh, an interactive macOS setup script. It configures system defaults, sets up your workspace, and installs your essential packages so you can get straight to work.
+This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
 Through an interactive wizard, teeup provisions a complete development environment, including: 
 
-- **Package Management**: Homebrew (for newer macOS/Linux) or MacPorts (for older macOS)   
-- **Terminal & Shell**: zsh configured with Powerlevel10k   
+- **Package Management**: Homebrew or MacPorts on macOS, APT or DNF on Linux   
+- **Terminal & Shell**: zsh with Powerlevel10k, or bash with bash-completion + Starship — tool initialization is shared across both via `~/.teeupshrc`   
 - **Development Tools**: UV, SDKMAN!, rbenv, rustup, and Emacs    
 - **Containers**: Colima bundled with the Docker CLI   
 - **Applications**: Bruno and Obsidian   
@@ -27,10 +27,11 @@ Through an interactive wizard, teeup provisions a complete development environme
 ## ✨ Features
 
 - ✅ Idempotent: safe to run multiple times — skips already installed items  
+- ✅ Works on **macOS** and **Linux** (first-class: Ubuntu + Fedora)  
 - ✅ Works on both **Apple Silicon** and **Intel** Macs  
-- ✅ Installs **Xcode CLT** and **Rosetta 2** (if required)  
+- ✅ Installs **Xcode CLT** and **Rosetta 2** (if required, macOS only)  
 - ✅ Bootstraps:
-  - **Package manager**: `PACKAGE_MANAGER=auto` uses Homebrew on macOS 13+ and MacPorts on macOS 12 and older
+  - **Package manager**: `PACKAGE_MANAGER=auto` resolves by platform (`homebrew`/`macports` on macOS, `apt`/`dnf` on Linux)
   - **zsh** in either plain mode (default) or **Oh My Zsh** mode, both with **Powerlevel10k**
   - **Core CLI utilities**: `git`, `wget`, `curl`, `jq`, `htop`, `tree`, `tmux`, `ripgrep`, `fd`, `gnupg`  
   - **Python via UV** (default, recommended) — 10-100x faster than pip, manages Python versions, virtual envs, and tools  
@@ -38,12 +39,14 @@ Through an interactive wizard, teeup provisions a complete development environme
   - **Java via SDKMAN!** + optional `maven` and `gradle`  
   - **Ruby via rbenv** + RubyGems and Bundler
   - **Rust via rustup** — official toolchain installer with `rustc`, `cargo`, and `rustup`
-  - **Colima** + `docker` & `docker-compose` CLI (lightweight Docker alternative)  
+  - **Docker runtime + CLI** (Colima on macOS, distro packages on Linux; no Docker Desktop required)  
   - **Emacs** with a minimal starter config  
-  - **Bruno** and **Obsidian** (via Homebrew cask when Homebrew is selected or cask fallback is enabled)
-- ✅ Installs/symlinks the sibling `dotfiles` repo when present
+  - **Bruno** and **Obsidian** (macOS-only via Homebrew cask)
+- ✅ Detects your login shell (`bash` or `zsh`) and wires tool init into a shared `~/.teeupshrc` sourced by both shells; override with `TARGET_SHELL`
+- ✅ Adds the invoking user to the `docker` group on Linux so `docker` works without `sudo` (after re-login)
+- ✅ Installs/symlinks the sibling `dotfiles` repo (bash and zsh) when present
 - ✅ Can reconcile existing shell config by disabling old Antigen, pyenv, and stale hardcoded path lines
-- ✅ Adds sensible `zsh` aliases and environment initialization (`pyenv`, `sdkman`, `colima`) when no dotfiles repo is present
+- ✅ Adds sensible aliases and environment initialization (`pyenv`, `sdkman`, `colima`) for both bash and zsh when no dotfiles repo is present
   - Includes shortcuts like `ll`, `cls`, `grv`, `colima-start`, and `colima-stop`
 - ✅ Reports total install duration in the final summary
 - ✅ Optional macOS defaults tuning (hidden behind a toggle)  
@@ -74,6 +77,8 @@ By default, setup uses `PACKAGE_MANAGER=auto`:
 
 - macOS 13 or newer: **Homebrew**
 - macOS 12 or older: **MacPorts**
+- Ubuntu/Debian: **APT**
+- Fedora/RHEL-family: **DNF**
 
 MacPorts itself is not installed by the script. On older Macs, install the official pkg for your macOS version first:
 
@@ -86,6 +91,8 @@ Then rerun setup. You can override the choice:
 ```sh
 PACKAGE_MANAGER=homebrew ./teeup.sh
 PACKAGE_MANAGER=macports ./teeup.sh
+PACKAGE_MANAGER=apt ./teeup.sh
+PACKAGE_MANAGER=dnf ./teeup.sh
 ```
 
 ---
@@ -110,6 +117,8 @@ The wizard will guide you through:
 8. **Docker Configuration** - Configure Colima VM resources (CPUs, memory, disk)
 9. **Additional Options** - Dotfile installation, existing-config reconciliation, cleanup, and macOS defaults tuning
 10. **Review & Confirm** - See a summary before installation begins
+
+> Note: The wizard detects your platform. On Linux it offers APT/DNF selection and asks whether your login shell is bash or zsh; on macOS it offers Homebrew/MacPorts and zsh modes.
 
 ### Wizard Features
 
@@ -155,17 +164,19 @@ ZSH_MODE=ohmyzsh ./teeup.sh --only zsh
 
 | Module | Description |
 |--------|-------------|
-| `homebrew` | Package manager setup; compatibility module name for Homebrew or MacPorts |
-| `zsh` | zsh integration + Powerlevel10k + plugins |
+| `homebrew` | Package manager setup; compatibility module name resolved by OS |
+| `shell` | Configure your login shell — zsh: Powerlevel10k + plugins; bash: bash-completion + Starship |
+| `zsh` | Force zsh setup (Powerlevel10k + plugins) |
 | `ohmyzsh` | Legacy alias for `zsh` with `ZSH_MODE=ohmyzsh` |
+| `bash` | Force bash setup (bash-completion + Starship) |
 | `cli` | Core CLI utilities (git, jq, ripgrep, etc.) |
 | `python` | Python environment (UV or pyenv/poetry) |
 | `java` | SDKMAN! + Java + Maven/Gradle |
 | `ruby` | Ruby via rbenv + RubyGems + Bundler |
 | `rust` | Rust toolchain via rustup (`rustc`, `cargo`) |
 | `emacs` | Emacs editor + minimal config |
-| `docker` | Colima + Docker CLI |
-| `apps` | GUI apps (Bruno, Obsidian) |
+| `docker` | Docker runtime + CLI (Colima on macOS, distro packages on Linux) |
+| `apps` | GUI apps (Bruno, Obsidian; macOS-only currently) |
 
 > **Note:** Package manager setup is automatically included when other modules depend on it. The module is still named `homebrew` for backward compatibility.
 
@@ -247,7 +258,9 @@ USE_UV="${USE_UV:-true}"                            # Use uv instead of pyenv/po
 INSTALL_PY_TOOLS="${INSTALL_PY_TOOLS:-true}"        # Install Python tools (via uv tool or pipx)
 RUBYGEMS_UPDATE="${RUBYGEMS_UPDATE:-true}"          # Update RubyGems after installing Ruby
 ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
-PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, or macports
+TARGET_SHELL="${TARGET_SHELL:-auto}"                # Login shell to configure: auto, bash, or zsh
+PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, macports, apt, or dnf
+STRICT_PLATFORM="${STRICT_PLATFORM:-false}"         # fail instead of skipping unsupported modules
 INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Install/symlink sibling dotfiles payload
 RECONCILE_EXISTING_CONFIG="${RECONCILE_EXISTING_CONFIG:-false}"  # Disable old shell config lines
 CLEANUP_HOMEBREW_OVERLAPS="${CLEANUP_HOMEBREW_OVERLAPS:-false}"  # Remove verified overlaps in MacPorts mode
@@ -266,8 +279,11 @@ COLIMA_RUNTIME="${COLIMA_RUNTIME:-docker}"  # docker or containerd
 ```
 
 When dotfiles are enabled and the sibling `dotfiles` repo is present, the script
-symlinks `zshrc`, `zprofile`, `gitconfig`, and `tmux.conf` into `$HOME`. If the
-payload is not present, setup falls back to small managed shell blocks.
+symlinks the zsh files (`zshrc`, `zprofile`), the bash files (`bashrc`,
+`.bash_profile`, `profile`), the shared `shellrc.common` and `teeupshrc`, plus
+`gitconfig` and `tmux.conf` into `$HOME`. If the payload is not present, setup
+falls back to small managed shell blocks written to `~/.teeupshrc` and sourced
+from your shell's rc file.
 
 ### UV vs pyenv/poetry
 
@@ -278,7 +294,7 @@ To use the legacy pyenv/poetry stack instead:
 USE_UV=false ./teeup.sh
 ```
 
-Legacy pyenv mode currently requires Homebrew. MacPorts setups should keep the default `USE_UV=true`.
+Legacy pyenv mode is supported on macOS and Linux, but `USE_UV=true` remains the recommended default.
 
 ## 🪛 Installed Command-Line Tools and Purpose
 
@@ -296,6 +312,8 @@ Legacy pyenv mode currently requires Homebrew. MacPorts setups should keep the d
 |gnupg|Encryption, signing and key management|
 |oh-my-zsh| Framework for managing Zsh configuration|
 |powerlevel10k| Fast, flexible Zsh theme with rich prompts|
+|starship| Fast, cross-shell prompt (used for bash)|
+|bash-completion| Programmable tab-completion for bash|
 |zsh-autosuggestions| Fish-like autosuggestions for Zsh|
 |zsh-syntax-highlighting| Syntax highlighting for Zsh commands|
 |uv| Fast Python package manager (replaces pyenv, poetry, pipx) — default|
@@ -500,6 +518,7 @@ and your TLS chain. The endpoints used are:
 | UV        | `https://astral.sh/uv/install.sh`                                            |
 | SDKMAN!   | `https://get.sdkman.io`                                                      |
 | rustup    | `https://sh.rustup.rs`                                                       |
+| Starship  | `https://starship.rs/install.sh`                                             |
 
 If you don't want any of these to run, install the corresponding tool
 yourself first (teeup detects existing installs and skips them) or run

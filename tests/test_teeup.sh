@@ -146,12 +146,30 @@ test_reconcile_support() {
 # Test: Has package manager support
 ###########################################
 test_package_manager_support() {
-  local content
+  local content pkg_content
   content=$(cat "$PROJECT_DIR/teeup.sh")
-  assert_contains "$content" "resolve_package_manager" "Should resolve package manager"
+  pkg_content=$(cat "$PROJECT_DIR/lib/package_manager.sh")
+  assert_contains "$content" "source \"$SCRIPT_DIR/lib/package_manager.sh\"" "Should source package manager library"
+  assert_contains "$pkg_content" "resolve_package_manager" "Should resolve package manager"
+  assert_contains "$pkg_content" "auto|homebrew|macports|apt|dnf" "Should support Linux package managers"
   assert_file_contains_active "$PROJECT_DIR/teeup.sh" "macports" "Should support MacPorts in active code"
-  assert_contains "$content" "sudo port install" "Should install packages with MacPorts"
+  assert_contains "$pkg_content" "port install" "Should install packages with MacPorts"
+  assert_contains "$pkg_content" "apt-get install" "Should install packages with apt"
+  assert_contains "$pkg_content" "dnf install" "Should install packages with dnf"
   assert_contains "$content" "CLEANUP_HOMEBREW_OVERLAPS" "Should support Homebrew overlap cleanup"
+}
+
+###########################################
+# Test: Platform support and strict mode
+###########################################
+test_platform_support() {
+  local content platform_content
+  content=$(cat "$PROJECT_DIR/teeup.sh")
+  platform_content=$(cat "$PROJECT_DIR/lib/platform.sh")
+  assert_contains "$content" "--strict-platform" "Should expose strict platform flag"
+  assert_contains "$content" 'STRICT_PLATFORM="${STRICT_PLATFORM:-false}"' "Should define STRICT_PLATFORM"
+  assert_contains "$content" "source \"$SCRIPT_DIR/lib/platform.sh\"" "Should source platform library"
+  assert_contains "$platform_content" "platform_supports_module" "Should define module support checks"
 }
 
 ###########################################
@@ -291,6 +309,7 @@ run_test "UV support" test_uv_support
 run_test "Modern zsh support" test_zsh_support
 run_test "Existing config reconciliation" test_reconcile_support
 run_test "Package manager support" test_package_manager_support
+run_test "Platform support" test_platform_support
 run_test "No Antigen install" test_no_antigen_install
 run_test "pyenv support" test_pyenv_support
 run_test "SDKMAN support" test_sdkman_support
