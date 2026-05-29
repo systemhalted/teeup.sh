@@ -163,6 +163,27 @@ ensure_ruby_build_definition() {
   return 1
 }
 
+# Install the system libraries rbenv needs to compile Ruby from source. Ruby's
+# fiddle/psych extensions link libffi/libyaml, which a source build does not
+# provide; without them `rbenv install` fails at make. Mirrors the pyenv build-
+# deps step. pkg_install skips already-present packages and is non-fatal.
+install_ruby_build_deps() {
+  log "Ensuring Ruby build dependencies for $RESOLVED_PACKAGE_MANAGER..."
+  case "$RESOLVED_PACKAGE_MANAGER" in
+    homebrew)
+      run_cmd brew install openssl@3 libyaml gmp \
+        || warn "Failed to install some Ruby build deps via Homebrew; rbenv install may fail" ;;
+    apt)
+      local deps=(autoconf patch build-essential libssl-dev libyaml-dev libreadline-dev \
+                  zlib1g-dev libgmp-dev libncurses-dev libffi-dev libgdbm-dev libdb-dev uuid-dev)
+      for d in "${deps[@]}"; do pkg_install "$d"; done ;;
+    dnf)
+      local deps=(gcc make patch autoconf openssl-devel libyaml-devel readline-devel \
+                  zlib-devel gmp-devel ncurses-devel libffi-devel gdbm-devel libdb-devel)
+      for d in "${deps[@]}"; do pkg_install "$d"; done ;;
+  esac
+}
+
 require_command_available() {
   local command_name="$1"
   local context="$2"
@@ -1334,6 +1355,7 @@ EOF
     log "Ensuring Ruby $RUBY_VERSION via rbenv..."
     ruby_ready=false
     if [[ "$DRY_RUN" == "true" ]]; then
+      install_ruby_build_deps
       ensure_ruby_build_definition "$RUBY_VERSION"
       run_cmd rbenv install -s "$RUBY_VERSION"
       remember_installed "ruby@$RUBY_VERSION (rbenv)"
@@ -1342,16 +1364,18 @@ EOF
       remember_skipped "ruby@$RUBY_VERSION (rbenv)"
       log "Ruby $RUBY_VERSION already installed with rbenv."
       ruby_ready=true
-    elif ensure_ruby_build_definition "$RUBY_VERSION" && run_cmd rbenv install "$RUBY_VERSION"; then
-      remember_installed "ruby@$RUBY_VERSION (rbenv)"
-      ruby_ready=true
     else
-      if [[ "$STRICT_PLATFORM" == "true" ]]; then
+      install_ruby_build_deps
+      if ensure_ruby_build_definition "$RUBY_VERSION" && run_cmd rbenv install "$RUBY_VERSION"; then
+        remember_installed "ruby@$RUBY_VERSION (rbenv)"
+        ruby_ready=true
+      elif [[ "$STRICT_PLATFORM" == "true" ]]; then
         err "Failed to install Ruby $RUBY_VERSION via rbenv."
         exit 1
+      else
+        warn "Skipping Ruby $RUBY_VERSION (rbenv install failed); continuing setup."
+        remember_skipped "ruby@$RUBY_VERSION (install failed)"
       fi
-      warn "Skipping Ruby $RUBY_VERSION (rbenv install failed); continuing setup."
-      remember_skipped "ruby@$RUBY_VERSION (install failed)"
     fi
 
     # Only configure gems/bundler against a Ruby that actually installed.

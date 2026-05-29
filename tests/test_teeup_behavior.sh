@@ -190,6 +190,22 @@ test_bash_target_routes_init_to_teeupshrc() {
   fi
 }
 
+test_ruby_installs_build_deps() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  mock_runtime_commands
+
+  local output
+  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only ruby 2>&1)
+
+  assert_contains "$output" "Ensuring Ruby build dependencies for apt" "Ruby module should install build deps before compiling"
+  assert_contains "$output" "libyaml-dev" "Should install libyaml-dev (psych needs libyaml)"
+  assert_contains "$output" "libffi-dev" "Should install libffi-dev (fiddle needs libffi)"
+}
+
 test_zsh_target_sources_teeupshrc_from_zshrc() {
   setup_test_env
   trap cleanup_test_env RETURN
@@ -350,6 +366,7 @@ run_test "Linux apps skip by default" test_linux_apps_skip_by_default
 run_test "Linux apps strict-platform fails" test_linux_apps_strict_platform_fails
 run_test "Linux Docker avoids Colima" test_linux_docker_avoids_colima
 run_test "Bash target routes init to teeupshrc" test_bash_target_routes_init_to_teeupshrc
+run_test "Ruby installs build dependencies" test_ruby_installs_build_deps
 run_test "Zsh target sources teeupshrc from zshrc" test_zsh_target_sources_teeupshrc_from_zshrc
 run_test "rbenv init is cross-shell in teeupshrc" test_rbenv_init_is_cross_shell_in_teeupshrc
 run_test "Target shell autodetect routes consistently" test_target_shell_autodetect_routes_consistently
