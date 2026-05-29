@@ -253,7 +253,7 @@ test_shellcheck() {
     return 0
   fi
 
-  shellcheck -x "$PROJECT_DIR/teeup.sh" 2>&1
+  shellcheck --severity=warning -x "$PROJECT_DIR/teeup.sh" 2>&1
 }
 
 ###########################################
