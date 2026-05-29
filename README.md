@@ -44,9 +44,9 @@ Through an interactive wizard, teeup provisions a complete development environme
   - **Bruno** and **Obsidian** (macOS-only via Homebrew cask)
 - ✅ Detects your login shell (`bash` or `zsh`) and wires tool init into a shared `~/.teeupshrc` sourced by both shells; override with `TARGET_SHELL`
 - ✅ Adds the invoking user to the `docker` group on Linux so `docker` works without `sudo` (after re-login)
-- ✅ Installs/symlinks the sibling `dotfiles` repo (bash and zsh) when present
+- ✅ Installs/symlinks the sibling `dotfiles` repo for your target login shell (segregated bash/zsh) when present
 - ✅ Can reconcile existing shell config by disabling old Antigen, pyenv, and stale hardcoded path lines
-- ✅ Adds sensible aliases and environment initialization (`pyenv`, `sdkman`, `colima`) for both bash and zsh when no dotfiles repo is present
+- ✅ Adds sensible aliases and environment initialization (`pyenv`, `sdkman`, `colima`) for your target shell when no dotfiles repo is present
   - Includes shortcuts like `ll`, `cls`, `grv`, `colima-start`, and `colima-stop`
 - ✅ Reports total install duration in the final summary
 - ✅ Optional macOS defaults tuning (hidden behind a toggle)  
@@ -109,8 +109,8 @@ The wizard will guide you through:
 
 1. **Setup Type Selection** - Choose between full setup, custom module selection, or migration
 2. **Module Selection** - Toggle which components to install
-3. **Package Manager Selection** - Auto, Homebrew, or MacPorts
-4. **Zsh Configuration** - Choose plain zsh (default) or Oh My Zsh
+3. **Package Manager Selection** - Auto (resolves by OS) or explicit (Homebrew/MacPorts on macOS, APT/DNF on Linux)
+4. **Shell Configuration** - On Linux, choose bash or zsh; for zsh, plain (default) or Oh My Zsh
 5. **Python Configuration** - Choose between UV (recommended) or pyenv, and select version
 6. **Java Configuration** - Select Java version (21, 17, 11, or custom)
 7. **Ruby Configuration** - Select Ruby version, RubyGems update behavior, and optional Bundler version
@@ -227,8 +227,8 @@ This will:
 ### After Migration
 
 ```sh
-# Reload shell
-exec zsh
+# Reload shell (open a new terminal, or re-exec your shell)
+exec "$SHELL"
 
 # Verify UV is working
 uv --version   
@@ -457,7 +457,7 @@ Bruno supports environment variables for different stages:
 - ✅ **Fast:** Lightweight and performant
 
 ## Post Installation
-   - Open a new terminal or run: exec zsh
+   - Open a new terminal or run: exec "$SHELL"
    - Verify:
       
        # If using UV (default)
@@ -535,16 +535,15 @@ The project includes a test suite to validate both scripts:
 # Run all tests
 ./tests/run_tests.sh
 
-# Run only teeup.sh tests
+# Run individual suites
 ./tests/test_teeup.sh
-
-# Run only teeup-wizard.sh tests
-./tests/test_teeup-wizard.sh
+./tests/test_teeup_behavior.sh
+./tests/test_teeup_wizard.sh
 ```
 
 ### Test Coverage
 
-**teeup.sh tests (23 tests):**
+**teeup.sh static tests:**
 - Script syntax validation
 - Help and list-modules flags
 - Environment variable defaults and overrides
@@ -553,13 +552,20 @@ The project includes a test suite to validate both scripts:
 - UV and pyenv support
 - SDKMAN and Colima support
 
-**teeup-wizard.sh tests (26 tests):**
+**teeup.sh behavior tests:**
+- Dry-run command previews with mocked tools
+- Platform resolution (macOS Homebrew/MacPorts, Linux APT/DNF)
+- Target-shell routing (bash vs zsh) and `teeupshrc` wiring
+- Segregated bash/zsh deployments and Starship-vs-Powerlevel10k selection
+- Linux docker-group membership
+
+**teeup-wizard.sh tests:**
 - Script syntax validation
 - All wizard screens defined
 - Helper functions defined
 - State variable initialization
 - Module list completeness
-- Environment variable exports
+- Environment variable exports (incl. `TARGET_SHELL`)
 - Bash 3.2 compatibility
 - Integration with teeup.sh
 

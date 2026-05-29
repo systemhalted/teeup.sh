@@ -606,7 +606,7 @@ EOF
   ok "Migration complete!"
   echo ""
   echo "📝 Next steps:"
-  echo "   1. Run: exec zsh (to reload shell)"
+  echo "   1. Open a new terminal (or re-exec your shell) to reload"
   echo "   2. Verify: uv --version && uv python list --only-installed"
   echo "   3. Optional cleanup (after verifying everything works):"
   echo "      - Remove pyenv: rm -rf ~/.pyenv"

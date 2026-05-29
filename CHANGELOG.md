@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - SDKMAN! installer
   - Configurable JDK versions (Temurin 21/17/11)
   - Maven and Gradle support
+- **Ruby Environment** - rbenv with RubyGems and Bundler
+- **Rust Environment** - rustup toolchain (`rustc`, `cargo`)
 - **Emacs** - Text editor with minimal starter config
 - **Docker** - Colima VM + Docker CLI
   - Configurable resources (CPU, memory, disk)
@@ -117,7 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ```bash
 # Clone repository
 git clone <repository-url>
-cd setup
+cd teeup.sh
 
 # Make executable
 chmod +x teeup.sh teeup-wizard.sh
@@ -151,6 +153,21 @@ For users migrating from pyenv to UV:
 
 ## [Unreleased]
 
+### Added
+- **Linux support** — first-class Ubuntu (APT) and Fedora (DNF); `PACKAGE_MANAGER=auto` resolves by platform
+- **MacPorts support** on older macOS (≤ 12); Homebrew on macOS 13+
+- **bash support** — Starship prompt + bash-completion, with tool init in a shared POSIX `~/.teeupshrc`
+  - `TARGET_SHELL` (auto/bash/zsh) detection and override
+  - Segregated bash/zsh deployments — only the target shell's dotfiles/rc are configured
+  - `shell` and `bash` module aliases (`zsh`/`ohmyzsh` force zsh)
+- **Ruby via rbenv** + RubyGems and Bundler
+- **Rust via rustup** (`rustc`, `cargo`)
+- Linux: adds the invoking user to the `docker` group (sudo-free `docker` after re-login)
+
+### Changed
+- Platform, package-manager, and shell logic extracted into `lib/platform.sh`, `lib/package_manager.sh`, `lib/shell.sh`
+- Tool initialization (uv, cargo, SDKMAN, rbenv, pyenv) consolidated into `~/.teeupshrc`
+
 ### Planned Features
 - Progress bars for long operations
 - Checksum verification for downloads
@@ -162,7 +179,7 @@ For users migrating from pyenv to UV:
 
 ### [1.0.0] - 2026-02-18
 - Initial release with full feature set
-- 41 comprehensive tests
+- Comprehensive automated test suite
 - Interactive wizard mode
 - UV and Bruno integration
 - Dry-run mode

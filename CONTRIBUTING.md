@@ -20,7 +20,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 2. **Clone your fork:**
    ```bash
    git clone https://github.com/yourusername/teeup.sh.git
-   cd setup
+   cd teeup.sh
    ```
 3. **Create a feature branch:**
    ```bash
