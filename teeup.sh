@@ -119,6 +119,50 @@ run_cmd() {
   fi
 }
 
+# True if the ruby-build that `rbenv install` will use knows about a Ruby
+# version. Checks via rbenv (which prefers a plugin ruby-build over a system
+# one) and falls back to a standalone ruby-build.
+ruby_build_knows() {
+  rbenv install --list-all 2>/dev/null | grep -qx "$1" \
+    || ruby-build --definitions 2>/dev/null | grep -qx "$1"
+}
+
+# Make sure ruby-build can resolve a given Ruby version, refreshing it if not.
+# Distro/Homebrew ruby-build packages are frequently too old for recent
+# releases; refresh via Homebrew or the rbenv git plugin (which takes
+# precedence over a system ruby-build). Returns non-zero (non-fatal) when the
+# version still can't be resolved, so callers can skip rather than abort.
+ensure_ruby_build_definition() {
+  local version="$1"
+  local plugin="${RBENV_ROOT:-$HOME/.rbenv}/plugins/ruby-build"
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    emoj "🔍"
+    echo "[DRY-RUN] Would refresh ruby-build (git plugin/Homebrew) if it can't resolve Ruby $version"
+    return 0
+  fi
+
+  ruby_build_knows "$version" && return 0
+
+  log "ruby-build doesn't list Ruby $version; refreshing ruby-build definitions..."
+  if is_macos && have brew && brew list ruby-build >/dev/null 2>&1; then
+    brew upgrade ruby-build || brew install ruby-build || true
+  elif [[ -d "$plugin/.git" ]]; then
+    git -C "$plugin" pull --ff-only || true
+  else
+    [[ -e "$plugin" ]] && mv "$plugin" "$plugin.bak.$$" 2>/dev/null || true
+    git clone --depth 1 https://github.com/rbenv/ruby-build.git "$plugin" || true
+  fi
+  have rbenv && rbenv rehash >/dev/null 2>&1 || true
+
+  if ruby_build_knows "$version"; then
+    ok "ruby-build refreshed; Ruby $version is now resolvable."
+    return 0
+  fi
+  warn "ruby-build still cannot resolve Ruby $version after refresh."
+  return 1
+}
+
 require_command_available() {
   local command_name="$1"
   local context="$2"
@@ -1288,39 +1332,50 @@ EOF
     fi
 
     log "Ensuring Ruby $RUBY_VERSION via rbenv..."
+    ruby_ready=false
     if [[ "$DRY_RUN" == "true" ]]; then
+      ensure_ruby_build_definition "$RUBY_VERSION"
       run_cmd rbenv install -s "$RUBY_VERSION"
-      run_cmd rbenv global "$RUBY_VERSION"
       remember_installed "ruby@$RUBY_VERSION (rbenv)"
+      ruby_ready=true
     elif rbenv versions --bare | grep -qx "$RUBY_VERSION"; then
       remember_skipped "ruby@$RUBY_VERSION (rbenv)"
       log "Ruby $RUBY_VERSION already installed with rbenv."
-    else
-      run_cmd rbenv install "$RUBY_VERSION"
+      ruby_ready=true
+    elif ensure_ruby_build_definition "$RUBY_VERSION" && run_cmd rbenv install "$RUBY_VERSION"; then
       remember_installed "ruby@$RUBY_VERSION (rbenv)"
+      ruby_ready=true
+    else
+      if [[ "$STRICT_PLATFORM" == "true" ]]; then
+        err "Failed to install Ruby $RUBY_VERSION via rbenv."
+        exit 1
+      fi
+      warn "Skipping Ruby $RUBY_VERSION (rbenv install failed); continuing setup."
+      remember_skipped "ruby@$RUBY_VERSION (install failed)"
     fi
 
-    if [[ "$DRY_RUN" != "true" ]]; then
+    # Only configure gems/bundler against a Ruby that actually installed.
+    if [[ "$ruby_ready" == "true" ]]; then
       run_cmd rbenv global "$RUBY_VERSION"
-    fi
 
-    if [[ "$RUBYGEMS_UPDATE" == "true" ]]; then
-      run_cmd gem update --system
-      remember_installed "rubygems update"
-    else
-      remember_skipped "rubygems update"
-      log "Skipping RubyGems update (RUBYGEMS_UPDATE=false)."
-    fi
+      if [[ "$RUBYGEMS_UPDATE" == "true" ]]; then
+        run_cmd gem update --system
+        remember_installed "rubygems update"
+      else
+        remember_skipped "rubygems update"
+        log "Skipping RubyGems update (RUBYGEMS_UPDATE=false)."
+      fi
 
-    if [[ -n "$BUNDLER_VERSION" ]]; then
-      run_cmd gem install bundler -v "$BUNDLER_VERSION"
-      remember_installed "bundler@$BUNDLER_VERSION"
-    else
-      run_cmd gem install bundler
-      remember_installed "bundler"
-    fi
+      if [[ -n "$BUNDLER_VERSION" ]]; then
+        run_cmd gem install bundler -v "$BUNDLER_VERSION"
+        remember_installed "bundler@$BUNDLER_VERSION"
+      else
+        run_cmd gem install bundler
+        remember_installed "bundler"
+      fi
 
-    run_cmd rbenv rehash
+      run_cmd rbenv rehash
+    fi
   fi
 else
   log "Skipping Ruby setup (RUN_RUBY=false)"
