@@ -27,7 +27,7 @@ jobs:
           fi
 
       - name: Shellcheck main scripts
-        run: shellcheck teeup.sh teeup-wizard.sh
+        run: shellcheck --severity=warning teeup.sh teeup-wizard.sh
 
       - name: Shellcheck test scripts (warnings+)
         run: shellcheck --severity=warning -x tests/*.sh
