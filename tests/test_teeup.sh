@@ -289,6 +289,47 @@ test_install_duration_support() {
 }
 
 ###########################################
+# Test: Profile + module selection flags exist
+###########################################
+test_profile_and_selection_flags() {
+  local content
+  content=$(cat "$PROJECT_DIR/teeup.sh")
+  assert_contains "$content" 'TEEUP_PROFILE="${TEEUP_PROFILE:-base}"' "Should default profile to base"
+  assert_contains "$content" "--all)" "Should support --all flag"
+  assert_contains "$content" "--except)" "Should support --except flag"
+  assert_contains "$content" "--profile)" "Should support --profile flag"
+  assert_contains "$content" "--init-dotfiles)" "Should support --init-dotfiles flag"
+  assert_contains "$content" "--dotfiles)" "Should support --dotfiles flag"
+  assert_contains "$content" "parse_except_modules()" "Should define parse_except_modules"
+  assert_contains "$content" "apply_profile_defaults()" "Should define apply_profile_defaults"
+}
+
+###########################################
+# Test: Neutral dotfiles template exists and is neutral
+###########################################
+test_neutral_dotfiles_template() {
+  local tmpl="$PROJECT_DIR/templates/dotfiles"
+  assert_dir_exists "$tmpl" "Neutral dotfiles template directory should exist"
+  assert_file_exists "$tmpl/gitconfig" "Template should include gitconfig"
+  assert_file_exists "$tmpl/zshrc" "Template should include zshrc"
+  assert_file_exists "$tmpl/bashrc" "Template should include bashrc"
+  assert_file_exists "$tmpl/shellrc.common" "Template should include shellrc.common"
+  # The neutral gitconfig must not impose Emacs as editor/mergetool.
+  if grep -qE '^[[:space:]]*editor[[:space:]]*=[[:space:]]*emacs' "$tmpl/gitconfig"; then
+    echo "FAIL: neutral template gitconfig should not set editor = emacs"
+    return 1
+  fi
+  if grep -qE '^\[mergetool "ediff"\]' "$tmpl/gitconfig"; then
+    echo "FAIL: neutral template gitconfig should not configure ediff mergetool"
+    return 1
+  fi
+  if ! grep -q 'path = ~/.gitconfig.local' "$tmpl/gitconfig"; then
+    echo "FAIL: template gitconfig should include ~/.gitconfig.local"
+    return 1
+  fi
+}
+
+###########################################
 # Run all tests
 ###########################################
 echo ""
@@ -321,5 +362,7 @@ run_test "Shellcheck validation" test_shellcheck
 run_test "Dry-run mode support" test_dryrun_support
 run_test "run_cmd function defined" test_run_cmd_function
 run_test "Install duration support" test_install_duration_support
+run_test "Profile and selection flags" test_profile_and_selection_flags
+run_test "Neutral dotfiles template" test_neutral_dotfiles_template
 
 print_summary

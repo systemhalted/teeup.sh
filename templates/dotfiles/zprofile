@@ -1,0 +1,54 @@
+path_prepend() {
+  [ -d "$1" ] || return
+  path=("$1" "${(@)path:#$1}")
+}
+
+# macOS does not provide C.UTF-8. Normalize it before child Bash processes
+# emit locale warnings.
+if [ "${LC_ALL:-}" = "C.UTF-8" ] || [ "${LANG:-}" = "C.UTF-8" ]; then
+  export LANG="en_US.UTF-8"
+  export LC_ALL="en_US.UTF-8"
+fi
+
+# Prefer MacPorts on older macOS where Homebrew support is limited, otherwise
+# prefer Homebrew. Both remain available when installed.
+mac_setup_prefer_macports=false
+if command -v sw_vers >/dev/null 2>&1; then
+  mac_setup_macos_major="$(sw_vers -productVersion | cut -d. -f1)"
+  case "$mac_setup_macos_major" in
+    ''|*[!0-9]*) ;;
+    *)
+      [ "$mac_setup_macos_major" -le 12 ] && mac_setup_prefer_macports=true
+      ;;
+  esac
+fi
+
+mac_setup_homebrew_shellenv() {
+  if [ -x /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [ -x /usr/local/bin/brew ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+}
+
+mac_setup_macports_path() {
+  path_prepend "/opt/local/sbin"
+  path_prepend "/opt/local/bin"
+}
+
+if [ "$mac_setup_prefer_macports" = true ]; then
+  mac_setup_homebrew_shellenv
+  mac_setup_macports_path
+else
+  mac_setup_macports_path
+  mac_setup_homebrew_shellenv
+fi
+
+path_prepend "$HOME/.local/bin"
+path_prepend "$HOME/.cargo/bin"
+
+# rbenv/SDKMAN/pyenv init lives in ~/.teeupshrc (sourced by zshrc and bashrc).
+
+unset mac_setup_prefer_macports mac_setup_macos_major
+unfunction mac_setup_homebrew_shellenv 2>/dev/null || unset -f mac_setup_homebrew_shellenv 2>/dev/null
+unfunction mac_setup_macports_path 2>/dev/null || unset -f mac_setup_macports_path 2>/dev/null

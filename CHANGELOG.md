@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-05-30
+
+### Changed
+- **Neutral by default.** A bare `./teeup.sh` now installs a lean `base` profile
+  (package manager + login shell + core CLI) instead of the entire stack. Use
+  `--all` (or `TEEUP_PROFILE=full`) for the full curated stack. This is a
+  behavior change for no-argument runs.
+
+### Added
+- `--profile base|full` and `--all` to choose the default module set.
+- `--except a,b` to subtract modules (e.g. `--all --except apps,docker`).
+- `--init-dotfiles [DIR]` to generate a neutral starter dotfiles repo you own
+  (from `templates/dotfiles/`), then symlink it.
+- `--dotfiles PATH|URL` to use an existing dotfiles directory or clone a git repo
+  as your overlay.
+- Wizard: a **Minimal (base)** setup preset (now the default) and a Dotfiles step
+  that auto-detects a sibling `dotfiles`, generates a starter, or uses none.
+
+### Notes
+- Dotfiles are now modeled as a neutral base (owned by teeup) plus a personal
+  overlay you bring — teeup no longer ships one person's config as the default
+  payload. The generated starter omits editor/mergetool lock-in and personal
+  aliases.
+
+---
+
 ## [1.0.0] - 2026-02-18
 
 ### Added

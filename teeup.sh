@@ -4,9 +4,11 @@
 # Safe to rerun.
 #
 # Usage:
-#   ./teeup.sh                    # Run full setup
+#   ./teeup.sh                    # Minimal base: package manager + shell + CLI
+#   ./teeup.sh --all              # Full curated stack
+#   ./teeup.sh --all --except apps,docker  # Full stack minus some modules
 #   ./teeup.sh --only python      # Run only Python setup
-#   ./teeup.sh --only java,docker # Run only Java and Docker setup
+#   ./teeup.sh --init-dotfiles    # Generate a neutral starter dotfiles repo
 #   ./teeup.sh --migrate-to-uv    # Migrate from pyenv to UV
 #   ./teeup.sh --help             # Show usage
 
@@ -49,19 +51,42 @@ CREATE_MIN_EMACS_INIT="${CREATE_MIN_EMACS_INIT:-true}"
 CREATE_OBSIDIAN_VAULT="${CREATE_OBSIDIAN_VAULT:-false}"  # Create starter vault folder
 DRY_RUN="${DRY_RUN:-false}"                         # Preview commands without executing them
 
-# Module toggles (all enabled by default, use --only to run specific modules)
+# Profile selects the default module set when modules aren't chosen explicitly:
+#   base - a lean starting point: package manager + login shell + CLI utilities.
+#   full - the whole curated stack (everything below).
+# A bare `./teeup.sh` resolves to `base`; `--all` (or TEEUP_PROFILE=full) opts into
+# the full stack. `--only`/`--except` and explicit RUN_* env vars override it.
+# (Named TEEUP_PROFILE, not PROFILE, since PROFILE is the ~/.profile path below.)
+TEEUP_PROFILE="${TEEUP_PROFILE:-base}"
+
+# Module toggles. These are left empty here and resolved from TEEUP_PROFILE after
+# argument parsing (see resolve_modules), so the chosen profile and any --only/
+# --except flags can drive them. An explicit RUN_* env var still wins: it is set
+# now and preserved through resolution.
 # RUN_HOMEBREW is kept as the public module name for compatibility. It now means
 # "prepare the selected package manager" and may resolve to Homebrew or MacPorts.
-RUN_HOMEBREW="${RUN_HOMEBREW:-true}"
-RUN_ZSH="${RUN_ZSH:-true}"
-RUN_CLI="${RUN_CLI:-true}"
-RUN_PYTHON="${RUN_PYTHON:-true}"
-RUN_JAVA="${RUN_JAVA:-true}"
-RUN_RUBY="${RUN_RUBY:-true}"
-RUN_EMACS="${RUN_EMACS:-true}"
-RUN_DOCKER="${RUN_DOCKER:-true}"
-RUN_APPS="${RUN_APPS:-true}"
-RUN_RUST="${RUN_RUST:-true}"
+RUN_HOMEBREW="${RUN_HOMEBREW:-}"
+RUN_ZSH="${RUN_ZSH:-}"
+RUN_CLI="${RUN_CLI:-}"
+RUN_PYTHON="${RUN_PYTHON:-}"
+RUN_JAVA="${RUN_JAVA:-}"
+RUN_RUBY="${RUN_RUBY:-}"
+RUN_EMACS="${RUN_EMACS:-}"
+RUN_DOCKER="${RUN_DOCKER:-}"
+RUN_APPS="${RUN_APPS:-}"
+RUN_RUST="${RUN_RUST:-}"
+
+# Set by --only (allowlist mode) and --except (subtractive). ONLY_MODE makes
+# resolve_modules skip profile defaulting since --only already set every RUN_*.
+ONLY_MODE=false
+EXCEPT_MODULES=""
+
+# Dotfiles source controls (resolved after arg parsing). INIT_DOTFILES_DIR, when
+# set, scaffolds a neutral starter dotfiles repo there; DOTFILES_SOURCE accepts a
+# path or a git URL for an existing/personal overlay.
+INIT_DOTFILES_DIR=""
+DOTFILES_SOURCE=""
+TEMPLATE_DOTFILES_DIR="${TEMPLATE_DOTFILES_DIR:-$SCRIPT_DIR/templates/dotfiles}"
 
 # Colima defaults (edit as desired)
 COLIMA_PROFILE="${COLIMA_PROFILE:-default}"
@@ -334,6 +359,75 @@ dotfiles_payload_available() {
   esac
 }
 
+# True when the argument looks like a git URL rather than a local path.
+looks_like_git_url() {
+  case "$1" in
+    *://*|git@*:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Scaffold a neutral starter dotfiles repo at $1 from templates/dotfiles, then
+# point DOTFILES_DIR at it. Won't clobber an existing non-empty directory.
+init_dotfiles_repo() {
+  local dest="$1"
+  if [[ ! -d "$TEMPLATE_DOTFILES_DIR" ]]; then
+    err "Neutral dotfiles template not found at $TEMPLATE_DOTFILES_DIR"
+    exit 1
+  fi
+  if [[ -d "$dest" ]] && [[ -n "$(ls -A "$dest" 2>/dev/null || true)" ]]; then
+    warn "Dotfiles directory $dest already exists and is not empty; leaving it as-is."
+    DOTFILES_DIR="$dest"
+    return 0
+  fi
+  log "Generating a neutral starter dotfiles repo at $dest"
+  run_cmd mkdir -p "$dest"
+  # Copy template contents (including dotfiles like .bash_profile) into dest.
+  if [[ "$DRY_RUN" == "true" ]]; then
+    emoj "🔍"; echo "[DRY-RUN] Would copy $TEMPLATE_DOTFILES_DIR/. into $dest"
+    have git && run_cmd git -C "$dest" init -q
+    # Under dry-run the files aren't actually copied, so the dotfiles step below
+    # can't find a payload and previews managed blocks instead. Say so plainly.
+    warn "Dry-run: starter not actually created, so the dotfiles step previews managed blocks; a real run copies the starter first, then symlinks it."
+  else
+    cp -R "$TEMPLATE_DOTFILES_DIR/." "$dest/"
+    if [[ ! -d "$dest/.git" ]] && have git; then
+      git -C "$dest" init -q
+    fi
+    ok "Starter dotfiles ready at $dest (edit and version-control as you like)"
+  fi
+  DOTFILES_DIR="$dest"
+}
+
+# Resolve where the dotfiles payload comes from, based on --init-dotfiles /
+# --dotfiles. A path is used directly; a git URL is cloned. Falls back silently
+# to the sibling auto-detect / neutral managed blocks when neither flag is given.
+prepare_dotfiles_source() {
+  if [[ -n "$INIT_DOTFILES_DIR" ]]; then
+    INSTALL_DOTFILES=true
+    init_dotfiles_repo "$INIT_DOTFILES_DIR"
+    return 0
+  fi
+  if [[ -n "$DOTFILES_SOURCE" ]]; then
+    INSTALL_DOTFILES=true
+    if looks_like_git_url "$DOTFILES_SOURCE"; then
+      local clone_dir="${DOTFILES_CLONE_DIR:-$HOME/dotfiles}"
+      if [[ -d "$clone_dir/.git" ]]; then
+        log "Reusing existing dotfiles clone at $clone_dir"
+      elif [[ -d "$clone_dir" ]] && [[ -n "$(ls -A "$clone_dir" 2>/dev/null || true)" ]]; then
+        err "Cannot clone dotfiles into non-empty $clone_dir; set DOTFILES_CLONE_DIR to an unused path."
+        exit 1
+      else
+        log "Cloning dotfiles overlay from $DOTFILES_SOURCE into $clone_dir"
+        run_cmd git clone "$DOTFILES_SOURCE" "$clone_dir"
+      fi
+      DOTFILES_DIR="$clone_dir"
+    else
+      DOTFILES_DIR="$DOTFILES_SOURCE"
+    fi
+  fi
+}
+
 # shellcheck source=lib/platform.sh
 source "$SCRIPT_DIR/lib/platform.sh"
 # shellcheck source=lib/package_manager.sh
@@ -452,13 +546,26 @@ show_help() {
 Usage:
   ./teeup.sh [OPTIONS]
 
+By default (no module flags) teeup runs the 'base' profile: package manager +
+login shell + core CLI utilities. Use --all (or specific modules) to install the
+rest of the stack (language runtimes, Emacs, Docker, GUI apps).
+
 Options:
   --help                Show this help message
   --dry-run             Preview commands without executing them
+  --profile PROFILE     Default module set: 'base' (pkg mgr + shell + cli) or
+                        'full' (everything). Default: base.
+  --all                 Install the full stack (alias for --profile full)
   --only MODULES        Run only specified modules (comma-separated)
                         Available: homebrew,shell,zsh,ohmyzsh,bash,cli,python,java,ruby,rust,emacs,docker,apps
                         homebrew aliases package-manager setup; shell configures the
                         login shell (zsh→Powerlevel10k, bash→Starship), zsh/bash force one.
+  --except MODULES      Skip the listed modules (comma-separated). Combine with
+                        --all, e.g. --all --except apps,docker
+  --init-dotfiles [DIR] Generate a neutral starter dotfiles repo (default ~/dotfiles)
+                        you own, then symlink it. Use this if you have no dotfiles.
+  --dotfiles PATH|URL   Use an existing dotfiles directory, or clone a git URL,
+                        as the dotfiles overlay (sets DOTFILES_DIR).
   --migrate-to-uv       Migrate from pyenv/poetry/pipx to UV
   --strict-platform     Fail if a selected module is unsupported on this OS
   --reconcile-existing-config
@@ -468,6 +575,7 @@ Options:
   --list-modules        List available modules
 
 Environment Variables:
+  TEEUP_PROFILE         Default module set when none chosen: base or full (default: base)
   PYTHON_VERSION        Python version to install (default: 3.12.5)
   JDK_VERSION           Java version for SDKMAN (default: 21.0.4-tem)
   RUBY_VERSION          Ruby version to install with rbenv (default: 3.4.9)
@@ -479,7 +587,8 @@ Environment Variables:
   PACKAGE_MANAGER       auto, homebrew, macports, apt, or dnf (default: auto)
   STRICT_PLATFORM       Fail on unsupported module/platform combos (default: false)
   INSTALL_DOTFILES      Install/symlink dotfiles from DOTFILES_DIR (default: true)
-  DOTFILES_DIR          Dotfiles payload path (default: ../dotfiles when present)
+  DOTFILES_DIR          Dotfiles overlay path (default: ../dotfiles when present;
+                        otherwise neutral managed blocks, or use --init-dotfiles)
   ALLOW_HOMEBREW_CASK_FALLBACK
                         Use existing Homebrew for GUI casks in MacPorts mode (default: false)
   CLEANUP_HOMEBREW_OVERLAPS
@@ -491,11 +600,23 @@ Environment Variables:
   DRY_RUN               Preview mode, no actual changes (default: false)
 
 Examples:
-  # Full setup
+  # Minimal base setup: package manager + login shell + CLI utilities (default)
   ./teeup.sh
+
+  # Full curated stack (runtimes, Emacs, Docker, GUI apps)
+  ./teeup.sh --all
+
+  # Full stack minus the GUI apps and Docker
+  ./teeup.sh --all --except apps,docker
 
   # Preview what would be installed (dry-run)
   ./teeup.sh --dry-run
+
+  # Generate a neutral starter dotfiles repo you own, then set up
+  ./teeup.sh --init-dotfiles ~/dotfiles
+
+  # Use your own dotfiles repo as the overlay
+  ./teeup.sh --dotfiles https://github.com/you/dotfiles.git
 
   # Only install Python environment
   ./teeup.sh --only python
@@ -543,7 +664,9 @@ EOF
 
 parse_only_modules() {
   local modules="$1"
-  # Disable all modules first
+  # Allowlist mode: disable everything, enable only what's listed. Marks
+  # ONLY_MODE so resolve_modules skips profile defaulting for this run.
+  ONLY_MODE=true
   RUN_HOMEBREW=false
   RUN_ZSH=false
   RUN_CLI=false
@@ -577,14 +700,76 @@ parse_only_modules() {
       *) warn "Unknown module: $mod" ;;
     esac
   done
+}
 
-  # Package manager setup is needed by package-backed modules. Python only needs
-  # it when explicitly using the legacy pyenv path instead of uv.
+# Subtract modules from the current selection. Used by --except. Accepts the same
+# names as --only; shell/zsh/bash/ohmyzsh all map to the shell module (RUN_ZSH).
+parse_except_modules() {
+  local modules="$1"
+  local mod mod_lower
+  IFS=',' read -ra MODS <<< "$modules"
+  for mod in "${MODS[@]}"; do
+    mod_lower=$(echo "$mod" | tr '[:upper:]' '[:lower:]')
+    case "$mod_lower" in
+      homebrew)                  RUN_HOMEBREW=false ;;
+      shell|zsh|ohmyzsh|bash)    RUN_ZSH=false ;;
+      cli)                       RUN_CLI=false ;;
+      python)                    RUN_PYTHON=false ;;
+      java)                      RUN_JAVA=false ;;
+      ruby)                      RUN_RUBY=false ;;
+      rust)                      RUN_RUST=false ;;
+      emacs)                     RUN_EMACS=false ;;
+      docker)                    RUN_DOCKER=false ;;
+      apps)                      RUN_APPS=false ;;
+      *) warn "Unknown module: $mod" ;;
+    esac
+  done
+}
+
+# Package manager setup is needed by package-backed modules. Python only needs
+# it when explicitly using the legacy pyenv path instead of uv. Only ever turns
+# the package manager on (never off), so base/full keep their pkg manager.
+recompute_homebrew_need() {
   if [[ "$RUN_ZSH" == "true" || "$RUN_CLI" == "true" || "$RUN_RUBY" == "true" || "$RUN_EMACS" == "true" || "$RUN_DOCKER" == "true" || "$RUN_APPS" == "true" ]]; then
     RUN_HOMEBREW=true
   elif [[ "$RUN_PYTHON" == "true" && "$USE_UV" != "true" ]]; then
     RUN_HOMEBREW=true
   fi
+}
+
+# Fill any unset RUN_* from the selected TEEUP_PROFILE. base = package manager + login
+# shell + CLI; full = the whole stack. An explicit RUN_* env var is preserved
+# because it is non-empty by the time this runs.
+apply_profile_defaults() {
+  local extra
+  if [[ "$TEEUP_PROFILE" == "full" ]]; then
+    extra=true
+  else
+    extra=false
+  fi
+  RUN_HOMEBREW="${RUN_HOMEBREW:-true}"
+  RUN_ZSH="${RUN_ZSH:-true}"
+  RUN_CLI="${RUN_CLI:-true}"
+  RUN_PYTHON="${RUN_PYTHON:-$extra}"
+  RUN_JAVA="${RUN_JAVA:-$extra}"
+  RUN_RUBY="${RUN_RUBY:-$extra}"
+  RUN_RUST="${RUN_RUST:-$extra}"
+  RUN_EMACS="${RUN_EMACS:-$extra}"
+  RUN_DOCKER="${RUN_DOCKER:-$extra}"
+  RUN_APPS="${RUN_APPS:-$extra}"
+}
+
+# Final module resolution after all arguments are parsed. Precedence:
+# --only (explicit allowlist) > explicit RUN_* env > TEEUP_PROFILE default, then
+# --except subtracts, then the package manager need is recomputed.
+resolve_modules() {
+  if [[ "$ONLY_MODE" != "true" ]]; then
+    apply_profile_defaults
+  fi
+  if [[ -n "$EXCEPT_MODULES" ]]; then
+    parse_except_modules "$EXCEPT_MODULES"
+  fi
+  recompute_homebrew_need
 }
 
 migrate_pyenv_to_uv() {
@@ -702,6 +887,44 @@ while [[ $# -gt 0 ]]; do
       parse_only_modules "$2"
       shift 2
       ;;
+    --except)
+      if [[ -z "${2:-}" ]]; then
+        err "--except requires a comma-separated list of modules"
+        exit 1
+      fi
+      EXCEPT_MODULES="$2"
+      shift 2
+      ;;
+    --profile)
+      case "${2:-}" in
+        base|full) TEEUP_PROFILE="$2" ;;
+        *) err "--profile requires 'base' or 'full'"; exit 1 ;;
+      esac
+      shift 2
+      ;;
+    --all)
+      TEEUP_PROFILE=full
+      shift
+      ;;
+    --init-dotfiles)
+      # Optional directory argument; defaults to ~/dotfiles when omitted or when
+      # the next token is another flag.
+      if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
+        INIT_DOTFILES_DIR="$2"
+        shift 2
+      else
+        INIT_DOTFILES_DIR="$HOME/dotfiles"
+        shift
+      fi
+      ;;
+    --dotfiles)
+      if [[ -z "${2:-}" ]]; then
+        err "--dotfiles requires a path or git URL"
+        exit 1
+      fi
+      DOTFILES_SOURCE="$2"
+      shift 2
+      ;;
     --migrate-to-uv)
       migrate_pyenv_to_uv
       ;;
@@ -741,6 +964,11 @@ fi
 
 normalize_zsh_mode
 normalize_strict_platform
+
+# Resolve the final module set from TEEUP_PROFILE / --only / --except / RUN_* env, and
+# resolve where dotfiles come from (--init-dotfiles / --dotfiles / sibling).
+resolve_modules
+prepare_dotfiles_source
 
 ZSHRC="${ZSHRC:-$HOME/.zshrc}"
 
@@ -1759,8 +1987,13 @@ SETUP_END_EPOCH="$(date +%s)"
 SETUP_ELAPSED_SECONDS=$((SETUP_END_EPOCH - SETUP_START_EPOCH))
 
 echo ""
-ok "All done! Open a new terminal (or 'exec ${TARGET_SHELL:-zsh}') to load updated PATH/initializations."
-if is_macos; then
-  warn "Colima may require full-disk/network permissions on first use. If docker commands fail, restart your shell and try: 'colima start'."
+if [[ "$DRY_RUN" == "true" ]]; then
+  ok "Dry-run complete. No changes were made — the commands above were a preview."
+  log "Re-run without --dry-run to apply them."
+else
+  ok "All done! Open a new terminal (or 'exec ${TARGET_SHELL:-zsh}') to load updated PATH/initializations."
+  if is_macos; then
+    warn "Colima may require full-disk/network permissions on first use. If docker commands fail, restart your shell and try: 'colima start'."
+  fi
 fi
 printf "%b Install duration: %s\n" "⏱️" "$(format_duration "$SETUP_ELAPSED_SECONDS")"

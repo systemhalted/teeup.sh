@@ -97,6 +97,15 @@ prompt_yes_no() {
   esac
 }
 
+# Final confirmation prompt, worded for the selected mode (dry-run vs real).
+confirm_start() {
+  if [[ "$WIZARD_DRY_RUN" == "true" ]]; then
+    prompt_yes_no "Run the dry-run preview now?"
+  else
+    prompt_yes_no "Start installation?"
+  fi
+}
+
 prompt_choice() {
   local prompt="$1"
   local default="$2"
@@ -203,6 +212,11 @@ set_full_default_modules() {
   else
     SELECTED_MODULES=("homebrew" "zsh" "cli" "python" "java" "ruby" "rust" "emacs" "docker")
   fi
+}
+
+# The lean base: package manager + login shell + core CLI utilities.
+set_base_default_modules() {
+  SELECTED_MODULES=("homebrew" "zsh" "cli")
 }
 
 # Toggle item in SELECTED_MODULES array (Bash 3.2 compatible)
@@ -392,6 +406,11 @@ WIZARD_RUBY_VERSION="3.4.9"
 WIZARD_RUBYGEMS_UPDATE="true"
 WIZARD_BUNDLER_VERSION=""
 WIZARD_INSTALL_DOTFILES="true"
+# Dotfiles delivery: "existing" (bring your own overlay), "generate" (scaffold a
+# neutral starter you own), or "none" (minimal managed blocks).
+WIZARD_DOTFILES_MODE="generate"
+WIZARD_DOTFILES_SOURCE=""
+WIZARD_INIT_DOTFILES_DIR=""
 WIZARD_RECONCILE_EXISTING_CONFIG="true"
 WIZARD_CLEANUP_HOMEBREW_OVERLAPS="false"
 WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="false"
@@ -468,30 +487,35 @@ show_setup_type() {
 
   echo "How would you like to proceed?"
   echo ""
-  echo -e "  ${BOLD}1)${RESET} 🚀 ${GREEN}Full Setup${RESET} - Install everything with recommended settings"
-  echo -e "  ${BOLD}2)${RESET} 🎯 ${CYAN}Custom Setup${RESET} - Choose which modules to install"
-  echo -e "  ${BOLD}3)${RESET} 🔄 ${YELLOW}Migration${RESET} - Migrate from pyenv to UV"
+  echo -e "  ${BOLD}1)${RESET} 🌱 ${GREEN}Minimal Setup (Recommended)${RESET} - Package manager + shell + CLI utilities"
+  echo -e "  ${BOLD}2)${RESET} 🚀 ${CYAN}Full Setup${RESET} - The whole stack (runtimes, Emacs, Docker, apps)"
+  echo -e "  ${BOLD}3)${RESET} 🎯 ${CYAN}Custom Setup${RESET} - Choose which modules to install"
+  echo -e "  ${BOLD}4)${RESET} 🔄 ${YELLOW}Migration${RESET} - Migrate from pyenv to UV"
   echo ""
-  echo -ne "${WHITE}Enter your choice [1-3] (default: 1): ${RESET}"
+  echo -ne "${WHITE}Enter your choice [1-4] (default: 1): ${RESET}"
 
   local choice
   read -r choice
-  choice=$(validate_choice "$choice" 1 3 1)
+  choice=$(validate_choice "$choice" 1 4 1)
 
   case "$choice" in
     1)
+      SETUP_TYPE="minimal"
+      set_base_default_modules
+      ;;
+    2)
       SETUP_TYPE="full"
       set_full_default_modules
       ;;
-    2)
+    3)
       SETUP_TYPE="custom"
       ;;
-    3)
+    4)
       SETUP_TYPE="migrate"
       ;;
     *)
-      SETUP_TYPE="full"
-      set_full_default_modules
+      SETUP_TYPE="minimal"
+      set_base_default_modules
       ;;
   esac
 }
@@ -1086,11 +1110,60 @@ show_additional_options() {
   echo "Configure additional settings:"
   echo ""
 
-  if prompt_yes_no "Install/symlink dotfiles from the dotfiles repo?" "y"; then
-    WIZARD_INSTALL_DOTFILES="true"
+  # Dotfiles: a neutral base owned by teeup + a personal overlay you bring.
+  local wizard_dir sibling_dotfiles df_choice df_default df_src df_dir
+  wizard_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  sibling_dotfiles="$(cd "$wizard_dir/../dotfiles" 2>/dev/null && pwd || true)"
+
+  echo "Dotfiles (shell aliases, git config, tmux, prompt):"
+  echo ""
+  if [[ -n "$sibling_dotfiles" ]]; then
+    echo -e "  ${BOLD}1)${RESET} Use existing dotfiles  ${DIM}(detected: $sibling_dotfiles)${RESET}"
   else
-    WIZARD_INSTALL_DOTFILES="false"
+    echo -e "  ${BOLD}1)${RESET} Use existing dotfiles  ${DIM}(enter a path or git URL)${RESET}"
   fi
+  echo -e "  ${BOLD}2)${RESET} Generate a neutral starter dotfiles repo you own"
+  echo -e "  ${BOLD}3)${RESET} None ${DIM}(teeup writes minimal managed shell blocks)${RESET}"
+  echo ""
+  df_default=2
+  [[ -n "$sibling_dotfiles" ]] && df_default=1
+  echo -ne "${WHITE}Enter your choice [1-3] (default: $df_default): ${RESET}"
+  read -r df_choice
+  df_choice=$(validate_choice "$df_choice" 1 3 "$df_default")
+
+  WIZARD_DOTFILES_SOURCE=""
+  WIZARD_INIT_DOTFILES_DIR=""
+  case "$df_choice" in
+    1)
+      WIZARD_DOTFILES_MODE="existing"
+      WIZARD_INSTALL_DOTFILES="true"
+      if [[ -n "$sibling_dotfiles" ]]; then
+        echo -ne "${WHITE}Path or git URL [${sibling_dotfiles}]: ${RESET}"
+        read -r df_src
+        WIZARD_DOTFILES_SOURCE="${df_src:-$sibling_dotfiles}"
+      else
+        echo -ne "${WHITE}Path or git URL: ${RESET}"
+        read -r df_src
+        WIZARD_DOTFILES_SOURCE="$df_src"
+        if [[ -z "$WIZARD_DOTFILES_SOURCE" ]]; then
+          print_warning "No source given; generating a neutral starter instead."
+          WIZARD_DOTFILES_MODE="generate"
+          WIZARD_INIT_DOTFILES_DIR="$HOME/dotfiles"
+        fi
+      fi
+      ;;
+    2)
+      WIZARD_DOTFILES_MODE="generate"
+      WIZARD_INSTALL_DOTFILES="true"
+      echo -ne "${WHITE}Target directory [${HOME}/dotfiles]: ${RESET}"
+      read -r df_dir
+      WIZARD_INIT_DOTFILES_DIR="${df_dir:-$HOME/dotfiles}"
+      ;;
+    3|*)
+      WIZARD_DOTFILES_MODE="none"
+      WIZARD_INSTALL_DOTFILES="false"
+      ;;
+  esac
 
   echo ""
 
@@ -1147,7 +1220,13 @@ show_summary() {
   print_header
   print_section "Step 5: Review Configuration"
 
-  echo -e "${BOLD}Modules to install:${RESET}"
+  if [[ "$WIZARD_DRY_RUN" == "true" ]]; then
+    echo -e "${YELLOW}🔍 Dry-run: nothing below will be installed — this is a preview.${RESET}"
+    echo ""
+    echo -e "${BOLD}Modules that would be installed:${RESET}"
+  else
+    echo -e "${BOLD}Modules to install:${RESET}"
+  fi
   echo ""
   for mod in ${SELECTED_MODULES[@]+"${SELECTED_MODULES[@]}"}; do
     if [[ "$mod" == "zsh" ]]; then
@@ -1204,7 +1283,11 @@ show_summary() {
     fi
   fi
 
-  echo -e "  Install dotfiles: ${CYAN}$WIZARD_INSTALL_DOTFILES${RESET}"
+  case "${WIZARD_DOTFILES_MODE:-}" in
+    existing) echo -e "  Dotfiles: ${CYAN}use existing (${WIZARD_DOTFILES_SOURCE:-auto-detected})${RESET}" ;;
+    generate) echo -e "  Dotfiles: ${CYAN}generate starter at ${WIZARD_INIT_DOTFILES_DIR:-$HOME/dotfiles}${RESET}" ;;
+    none|*)   echo -e "  Dotfiles: ${CYAN}none (minimal managed blocks)${RESET}" ;;
+  esac
   echo -e "  Reconcile existing config: ${CYAN}$WIZARD_RECONCILE_EXISTING_CONFIG${RESET}"
   if wizard_is_macos; then
     echo -e "  Cleanup Homebrew overlaps: ${CYAN}$WIZARD_CLEANUP_HOMEBREW_OVERLAPS${RESET}"
@@ -1242,6 +1325,10 @@ run_setup() {
   [[ "$WIZARD_DRY_RUN" == "true" ]] && cmd+=" --dry-run"
   [[ "$WIZARD_RECONCILE_EXISTING_CONFIG" == "true" ]] && cmd+=" --reconcile-existing-config"
   cmd+=" --only $modules_str"
+  case "${WIZARD_DOTFILES_MODE:-}" in
+    existing) [[ -n "$WIZARD_DOTFILES_SOURCE" ]] && cmd+=" --dotfiles $WIZARD_DOTFILES_SOURCE" ;;
+    generate) cmd+=" --init-dotfiles ${WIZARD_INIT_DOTFILES_DIR:-$HOME/dotfiles}" ;;
+  esac
 
   # Export environment variables
   export PYTHON_VERSION="$WIZARD_PYTHON_VERSION"
@@ -1302,6 +1389,10 @@ run_setup() {
       setup_args+=("--no-reconcile-existing-config")
     fi
     setup_args+=("--only" "$modules_str")
+    case "${WIZARD_DOTFILES_MODE:-}" in
+      existing) [[ -n "$WIZARD_DOTFILES_SOURCE" ]] && setup_args+=("--dotfiles" "$WIZARD_DOTFILES_SOURCE") ;;
+      generate) setup_args+=("--init-dotfiles" "${WIZARD_INIT_DOTFILES_DIR:-$HOME/dotfiles}") ;;
+    esac
     "$SCRIPT_DIR/teeup.sh" "${setup_args[@]}"
   else
     print_error "teeup.sh not found in $SCRIPT_DIR"
@@ -1344,6 +1435,27 @@ run_migration() {
 
 show_completion() {
   print_header
+
+  # Dry-run made no changes, so don't tell the user to reload the shell or verify
+  # installs that never happened.
+  if [[ "$WIZARD_DRY_RUN" == "true" ]]; then
+    echo -e "${YELLOW}${BOLD}"
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║                                                              ║"
+    echo "║              🔍  Dry-Run Complete  🔍                        ║"
+    echo "║                                                              ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo -e "${RESET}"
+    echo ""
+    echo "No changes were made to your system — the commands above were a preview."
+    echo ""
+    echo -e "${BOLD}Next step:${RESET}"
+    echo ""
+    echo "  Run the wizard again and choose a real run (decline dry-run in"
+    echo "  Additional Options), or run teeup.sh directly without --dry-run."
+    echo ""
+    return
+  fi
 
   echo -e "${GREEN}${BOLD}"
   echo "╔══════════════════════════════════════════════════════════════╗"
@@ -1426,6 +1538,19 @@ main() {
   show_setup_type
 
   case "$SETUP_TYPE" in
+    minimal)
+      show_package_manager_config
+      show_zsh_config
+      show_additional_options
+      show_summary
+
+      if confirm_start; then
+        run_setup
+        show_completion
+      else
+        print_info "Installation cancelled."
+      fi
+      ;;
     full)
       show_package_manager_config
       show_zsh_config
@@ -1437,7 +1562,7 @@ main() {
       show_additional_options
       show_summary
 
-      if prompt_yes_no "Start installation?"; then
+      if confirm_start; then
         run_setup
         show_completion
       else
@@ -1456,7 +1581,7 @@ main() {
       show_additional_options
       show_summary
 
-      if prompt_yes_no "Start installation?"; then
+      if confirm_start; then
         run_setup
         show_completion
       else

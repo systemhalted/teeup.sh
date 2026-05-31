@@ -35,20 +35,33 @@ To add a new module to the setup scripts, follow these steps:
 
 ### 1. Add Toggle Variable
 
-In `teeup.sh`, add a toggle variable in the "User Toggles" section:
+In `teeup.sh`, add a toggle variable in the "User Toggles" section. Toggles are
+left **empty** here and resolved from the selected profile after argument parsing
+(see `apply_profile_defaults`), so the profile and `--only`/`--except` can drive
+them while an explicit `RUN_*` env var still wins:
 
 ```bash
-# Module toggles (all enabled by default, use --only to run specific modules)
-RUN_HOMEBREW="${RUN_HOMEBREW:-true}"
-RUN_ZSH="${RUN_ZSH:-true}"
-RUN_CLI="${RUN_CLI:-true}"
-RUN_PYTHON="${RUN_PYTHON:-true}"
-RUN_JAVA="${RUN_JAVA:-true}"
-RUN_EMACS="${RUN_EMACS:-true}"
-RUN_DOCKER="${RUN_DOCKER:-true}"
-RUN_APPS="${RUN_APPS:-true}"
-RUN_NEWMODULE="${RUN_NEWMODULE:-true}"  # Add your new module
+# Module toggles (resolved from TEEUP_PROFILE in apply_profile_defaults).
+RUN_HOMEBREW="${RUN_HOMEBREW:-}"
+RUN_ZSH="${RUN_ZSH:-}"
+RUN_CLI="${RUN_CLI:-}"
+# ... existing modules ...
+RUN_NEWMODULE="${RUN_NEWMODULE:-}"  # Add your new module
 ```
+
+Then decide whether your module belongs in the lean `base` profile (package
+manager + shell + cli) or only in `full`, and wire its default in
+`apply_profile_defaults()`:
+
+```bash
+apply_profile_defaults() {
+  # ...
+  RUN_CLI="${RUN_CLI:-true}"                # in base
+  RUN_NEWMODULE="${RUN_NEWMODULE:-$extra}"  # full-only (extra=true only when profile=full)
+}
+```
+
+Also add a case to `parse_except_modules()` so `--except newmodule` works.
 
 ### 2. Update `list_modules()` Function
 

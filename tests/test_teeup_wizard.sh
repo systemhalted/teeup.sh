@@ -129,9 +129,24 @@ test_module_list_complete() {
 test_setup_type_options() {
   local content
   content=$(cat "$PROJECT_DIR/teeup-wizard.sh")
+  assert_contains "$content" "Minimal Setup" "Should have Minimal Setup option"
   assert_contains "$content" "Full Setup" "Should have Full Setup option"
   assert_contains "$content" "Custom Setup" "Should have Custom Setup option"
   assert_contains "$content" "Migration" "Should have Migration option"
+  assert_contains "$content" "set_base_default_modules" "Should define a base-modules preset"
+}
+
+###########################################
+# Test: Dotfiles step offers base/overlay choices and emits flags
+###########################################
+test_dotfiles_step() {
+  local content
+  content=$(cat "$PROJECT_DIR/teeup-wizard.sh")
+  assert_contains "$content" "WIZARD_DOTFILES_MODE" "Should track a dotfiles mode"
+  assert_contains "$content" "Generate a neutral starter dotfiles repo" "Should offer to generate a starter"
+  assert_contains "$content" "Use existing dotfiles" "Should offer to use existing dotfiles"
+  assert_contains "$content" "--init-dotfiles" "Should emit --init-dotfiles for the generate mode"
+  assert_contains "$content" "--dotfiles" "Should emit --dotfiles for an existing overlay"
 }
 
 ###########################################
@@ -374,6 +389,7 @@ run_test "Helper functions defined" test_helper_functions_defined
 run_test "State variables initialized" test_state_variables
 run_test "Module list complete" test_module_list_complete
 run_test "Setup type options" test_setup_type_options
+run_test "Dotfiles base/overlay step" test_dotfiles_step
 run_test "Zsh mode choices" test_zsh_mode_choices
 run_test "No Bash 4 lowercase" test_no_bash4_lowercase
 run_test "Uses tr for lowercase" test_uses_tr_lowercase

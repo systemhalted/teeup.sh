@@ -44,7 +44,7 @@ Through an interactive wizard, teeup provisions a complete development environme
   - **Bruno** and **Obsidian** (macOS-only via Homebrew cask)
 - ✅ Detects your login shell (`bash` or `zsh`) and wires tool init into a shared `~/.teeupshrc` sourced by both shells; override with `TARGET_SHELL`
 - ✅ Adds the invoking user to the `docker` group on Linux so `docker` works without `sudo` (after re-login)
-- ✅ Installs/symlinks the sibling `dotfiles` repo for your target login shell (segregated bash/zsh) when present
+- ✅ Dotfiles your way: use your own repo (`--dotfiles <path|url>` or a sibling `dotfiles`), generate a neutral starter you own (`--init-dotfiles`), or fall back to minimal managed shell blocks
 - ✅ Can reconcile existing shell config by disabling old Antigen, pyenv, and stale hardcoded path lines
 - ✅ Adds sensible aliases and environment initialization (`pyenv`, `sdkman`, `colima`) for your target shell when no dotfiles repo is present
   - Includes shortcuts like `ll`, `cls`, `grv`, `colima-start`, and `colima-stop`
@@ -68,8 +68,14 @@ Through an interactive wizard, teeup provisions a complete development environme
 3. Run it:
 
 ```
-./teeup.sh
+./teeup.sh            # Minimal base: package manager + login shell + CLI tools
+./teeup.sh --all      # The full curated stack (language runtimes, Emacs, Docker, apps)
 ```
+
+By default teeup installs a **lean base** (the `base` profile): a package manager,
+your login shell, and core CLI utilities. Opt into the rest with `--all`, pick
+exact modules with `--only`, or trim the full stack with `--except`. This keeps a
+bare run neutral — you decide what else gets installed.
 
 ### Package Manager Selection
 
@@ -107,7 +113,7 @@ For a guided, step-by-step experience, use the interactive wizard:
 
 The wizard will guide you through:
 
-1. **Setup Type Selection** - Choose between full setup, custom module selection, or migration
+1. **Setup Type Selection** - Choose between minimal base (recommended), full setup, custom module selection, or migration
 2. **Module Selection** - Toggle which components to install
 3. **Package Manager Selection** - Auto (resolves by OS) or explicit (Homebrew/MacPorts on macOS, APT/DNF on Linux)
 4. **Shell Configuration** - On Linux, choose bash or zsh; for zsh, plain (default) or Oh My Zsh
@@ -115,7 +121,7 @@ The wizard will guide you through:
 6. **Java Configuration** - Select Java version (21, 17, 11, or custom)
 7. **Ruby Configuration** - Select Ruby version, RubyGems update behavior, and optional Bundler version
 8. **Docker Configuration** - Configure Colima VM resources (CPUs, memory, disk)
-9. **Additional Options** - Dotfile installation, existing-config reconciliation, cleanup, and macOS defaults tuning
+9. **Additional Options** - Dotfiles (use your own, generate a neutral starter, or none), existing-config reconciliation, cleanup, and macOS defaults tuning
 10. **Review & Confirm** - See a summary before installation begins
 
 > Note: The wizard detects your platform. On Linux it offers APT/DNF selection and asks whether your login shell is bash or zsh; on macOS it offers Homebrew/MacPorts and zsh modes.
@@ -133,7 +139,26 @@ The wizard will guide you through:
   - Menu choice validation (ensures valid selections)
   - Retry loops allow fixing errors without restarting
 
-## 🧩 Partial Execution
+## 🧩 Profiles & Partial Execution
+
+teeup resolves which modules run from a **profile** (`base` or `full`), then lets
+you refine with flags. Precedence: `--only` (explicit allowlist) > explicit
+`RUN_*` env vars > profile default; `--except` then subtracts.
+
+```sh
+# Minimal base (default): package manager + login shell + CLI
+./teeup.sh
+
+# Full curated stack
+./teeup.sh --all                 # same as: TEEUP_PROFILE=full ./teeup.sh
+
+# Full stack, minus the GUI apps and Docker
+./teeup.sh --all --except apps,docker
+
+# Add a single runtime to the base without the rest
+./teeup.sh --all --except java,ruby,rust,docker,apps,emacs
+RUN_RUST=true ./teeup.sh          # or just enable one module on top of base
+```
 
 Run only specific modules using the `--only` flag:
 
@@ -185,8 +210,11 @@ ZSH_MODE=ohmyzsh ./teeup.sh --only zsh
 Preview all commands before execution without making any changes to your system:
 
 ```sh
-# Preview full setup
+# Preview the minimal base setup
 ./teeup.sh --dry-run
+
+# Preview the full stack
+./teeup.sh --dry-run --all
 
 # Preview specific modules
 ./teeup.sh --dry-run --only python,docker
@@ -253,6 +281,9 @@ JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier 
 RUBY_VERSION="${RUBY_VERSION:-3.4.9}"               # Override by: RUBY_VERSION=4.0.3 ./teeup.sh
 BUNDLER_VERSION="${BUNDLER_VERSION:-}"              # Optional Bundler version; empty installs latest
 
+# Profile (default module set when none chosen explicitly)
+TEEUP_PROFILE="${TEEUP_PROFILE:-base}"              # base (pkg mgr + shell + cli) or full
+
 # Feature toggles
 USE_UV="${USE_UV:-true}"                            # Use uv instead of pyenv/poetry/pipx (recommended)
 INSTALL_PY_TOOLS="${INSTALL_PY_TOOLS:-true}"        # Install Python tools (via uv tool or pipx)
@@ -261,7 +292,7 @@ ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
 TARGET_SHELL="${TARGET_SHELL:-auto}"                # Login shell to configure: auto, bash, or zsh
 PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, macports, apt, or dnf
 STRICT_PLATFORM="${STRICT_PLATFORM:-false}"         # fail instead of skipping unsupported modules
-INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Install/symlink sibling dotfiles payload
+INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Symlink a dotfiles overlay (see --dotfiles / --init-dotfiles)
 RECONCILE_EXISTING_CONFIG="${RECONCILE_EXISTING_CONFIG:-false}"  # Disable old shell config lines
 CLEANUP_HOMEBREW_OVERLAPS="${CLEANUP_HOMEBREW_OVERLAPS:-false}"  # Remove verified overlaps in MacPorts mode
 ALLOW_HOMEBREW_CASK_FALLBACK="${ALLOW_HOMEBREW_CASK_FALLBACK:-false}"  # Use existing Homebrew casks in MacPorts mode
@@ -278,13 +309,32 @@ COLIMA_RUNTIME="${COLIMA_RUNTIME:-docker}"  # docker or containerd
 
 ```
 
-When dotfiles are enabled and the sibling `dotfiles` repo is present, the script
-symlinks the shared files (`shellrc.common`, `teeupshrc`, `gitconfig`,
-`tmux.conf`) plus the dotfiles for your **target login shell only** (segregated):
-zsh gets `zshrc`/`zprofile`; bash gets `bashrc`/`.bash_profile`/`profile` and a
-starter `starship.toml` (→ `~/.config/starship.toml`). If the payload is not
-present, setup falls back to small managed shell blocks written to `~/.teeupshrc`
-and sourced from your shell's rc file.
+### Dotfiles: a neutral base + your overlay
+
+teeup treats dotfiles as **a neutral base it owns + a personal overlay you bring**,
+so it never imposes one person's taste:
+
+- **Bring your own** — point teeup at any dotfiles directory or git repo:
+  ```sh
+  ./teeup.sh --dotfiles ~/code/my-dotfiles
+  ./teeup.sh --dotfiles https://github.com/you/dotfiles.git
+  ```
+  A sibling `dotfiles/` directory next to `teeup.sh` is auto-detected and used by
+  default (so an author's own checkout "just works").
+- **Generate a neutral starter you own** — if you have no dotfiles yet, scaffold a
+  clean set from `templates/dotfiles/` (no editor lock-in, no personal aliases),
+  then customize and version-control it:
+  ```sh
+  ./teeup.sh --init-dotfiles ~/dotfiles
+  ```
+- **None** — with no overlay and no `--init-dotfiles`, setup falls back to small
+  managed shell blocks written to `~/.teeupshrc` and sourced from your rc file.
+
+When an overlay is used, the script symlinks the shared files (`shellrc.common`,
+`teeupshrc`, `gitconfig`, `tmux.conf`) plus the files for your **target login
+shell only** (segregated): zsh gets `zshrc`/`zprofile`; bash gets
+`bashrc`/`.bash_profile`/`profile` and a starter `starship.toml`
+(→ `~/.config/starship.toml`).
 
 ### UV vs pyenv/poetry
 

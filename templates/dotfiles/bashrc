@@ -1,0 +1,12 @@
+if [ -r "$HOME/.profile" ]; then
+  . "$HOME/.profile"
+fi
+
+if [ -r "$HOME/.shellrc.common" ]; then
+  . "$HOME/.shellrc.common"
+fi
+
+# Cross-shell tool integration (SDKMAN, rbenv, pyenv, GOPATH).
+if [ -r "$HOME/.teeupshrc" ]; then
+  . "$HOME/.teeupshrc"
+fi

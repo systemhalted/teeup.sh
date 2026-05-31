@@ -349,10 +349,100 @@ test_zsh_shell_module_still_installs_plugins() {
   fi
 }
 
+test_default_profile_is_base() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(DRY_RUN=true PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" 2>&1)
+
+  # base = package manager + shell + cli; everything else is skipped.
+  assert_contains "$output" "Installing core CLI utilities" "Base profile should install CLI"
+  assert_contains "$output" "Skipping Python setup (RUN_PYTHON=false)" "Base profile should skip Python"
+  assert_contains "$output" "Skipping Java setup (RUN_JAVA=false)" "Base profile should skip Java"
+  assert_contains "$output" "Skipping Ruby setup (RUN_RUBY=false)" "Base profile should skip Ruby"
+  assert_contains "$output" "Skipping Rust setup (RUN_RUST=false)" "Base profile should skip Rust"
+  assert_contains "$output" "Skipping Emacs setup (RUN_EMACS=false)" "Base profile should skip Emacs"
+  assert_contains "$output" "Skipping Docker setup (RUN_DOCKER=false)" "Base profile should skip Docker"
+}
+
+test_all_profile_enables_runtimes() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(DRY_RUN=true PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --all 2>&1)
+
+  if [[ "$output" == *"Skipping Java setup (RUN_JAVA=false)"* ]]; then
+    echo "FAIL: --all should not skip Java"; return 1
+  fi
+  if [[ "$output" == *"Skipping Ruby setup (RUN_RUBY=false)"* ]]; then
+    echo "FAIL: --all should not skip Ruby"; return 1
+  fi
+}
+
+test_except_skips_listed_modules() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(DRY_RUN=true PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --all --except ruby,emacs 2>&1)
+
+  assert_contains "$output" "Skipping Ruby setup (RUN_RUBY=false)" "--except ruby should skip Ruby"
+  assert_contains "$output" "Skipping Emacs setup (RUN_EMACS=false)" "--except emacs should skip Emacs"
+  if [[ "$output" == *"Skipping Java setup (RUN_JAVA=false)"* ]]; then
+    echo "FAIL: --except ruby,emacs should not skip Java"; return 1
+  fi
+}
+
+test_run_env_var_overrides_base_profile() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(DRY_RUN=true RUN_RUBY=true PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" 2>&1)
+
+  if [[ "$output" == *"Skipping Ruby setup (RUN_RUBY=false)"* ]]; then
+    echo "FAIL: RUN_RUBY=true should override base profile"; return 1
+  fi
+}
+
+test_init_dotfiles_generates_neutral_starter() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local dest="$TEST_HOME/dotfiles"
+  local output
+  output=$(DRY_RUN=true PACKAGE_MANAGER=apt "$PROJECT_DIR/teeup.sh" \
+    --only cli --init-dotfiles "$dest" 2>&1)
+
+  assert_contains "$output" "Generating a neutral starter dotfiles repo at $dest" \
+    "--init-dotfiles should scaffold a starter repo"
+}
+
 echo ""
 echo "Running tests..."
 echo ""
 
+run_test "Default profile is base" test_default_profile_is_base
+run_test "--all enables runtimes" test_all_profile_enables_runtimes
+run_test "--except skips listed modules" test_except_skips_listed_modules
+run_test "RUN_* env overrides base profile" test_run_env_var_overrides_base_profile
+run_test "--init-dotfiles generates neutral starter" test_init_dotfiles_generates_neutral_starter
 run_test "Isolated test environment" test_isolated_test_env
 run_test "macOS command mocks" test_macos_command_mocks
 run_test "Dry-run legacy Python config isolation" test_dryrun_legacy_python_does_not_write_config

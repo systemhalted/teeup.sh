@@ -1,0 +1,31 @@
+# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
+# Initialization code that may require console input (password prompts, [y/n]
+# confirmations, etc.) must go above this block; everything else may go below.
+typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
+# teeup writes shell framework/plugin integration here (path kept for compatibility).
+if [ -r "$HOME/.config/mac-setup/zsh.zsh" ]; then
+  source "$HOME/.config/mac-setup/zsh.zsh"
+fi
+
+if [ -r "$HOME/.shellrc.common" ]; then
+  source "$HOME/.shellrc.common"
+fi
+
+# Cross-shell tool integration (SDKMAN, rbenv, pyenv, GOPATH).
+if [ -r "$HOME/.teeupshrc" ]; then
+  source "$HOME/.teeupshrc"
+fi
+
+# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
+# Terminal window/tab title: directory at the prompt, "directory — command" while a command runs.
+autoload -Uz add-zsh-hook
+_term_title_idle() { print -Pn '\e]2;%~\a' }
+_term_title_run()  { print -Pn '\e]2;%~ — '"${1%% *}"'\a' }
+add-zsh-hook precmd  _term_title_idle
+add-zsh-hook preexec _term_title_run
