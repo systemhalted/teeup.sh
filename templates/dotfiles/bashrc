@@ -2,11 +2,7 @@ if [ -r "$HOME/.profile" ]; then
   . "$HOME/.profile"
 fi
 
-if [ -r "$HOME/.shellrc.common" ]; then
-  . "$HOME/.shellrc.common"
-fi
-
-# Cross-shell tool integration (SDKMAN, rbenv, pyenv, GOPATH).
-if [ -r "$HOME/.teeupshrc" ]; then
-  . "$HOME/.teeupshrc"
+# Shared cross-shell config: aliases + tool integration (SDKMAN, rbenv, pyenv, GOPATH).
+if [ -r "$HOME/.teeup.common" ]; then
+  . "$HOME/.teeup.common"
 fi

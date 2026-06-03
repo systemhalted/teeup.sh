@@ -47,7 +47,7 @@ fi
 path_prepend "$HOME/.local/bin"
 path_prepend "$HOME/.cargo/bin"
 
-# rbenv/SDKMAN/pyenv init lives in ~/.teeupshrc (sourced by zshrc and bashrc).
+# rbenv/SDKMAN/pyenv init lives in ~/.teeup.common (sourced by zshrc and bashrc).
 
 unset mac_setup_prefer_macports mac_setup_macos_major
 unfunction mac_setup_homebrew_shellenv 2>/dev/null || unset -f mac_setup_homebrew_shellenv 2>/dev/null

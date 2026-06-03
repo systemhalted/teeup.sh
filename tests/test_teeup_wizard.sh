@@ -161,6 +161,20 @@ test_zsh_mode_choices() {
 }
 
 ###########################################
+# Test: Prompt selector wiring
+###########################################
+test_prompt_selector() {
+  local content
+  content=$(cat "$PROJECT_DIR/teeup-wizard.sh")
+  assert_contains "$content" "choose_wizard_prompt()" "Should define the prompt chooser"
+  assert_contains "$content" 'WIZARD_PROMPT="none"' "Should default the prompt to none"
+  assert_contains "$content" "Which prompt would you like?" "Should ask the prompt question"
+  assert_contains "$content" 'export PROMPT=' "Should export PROMPT to teeup.sh"
+  assert_contains "$content" '--prompt' "Should pass --prompt to teeup.sh"
+  assert_contains "$content" 'setup_args+=("--prompt" "$WIZARD_PROMPT")' "Should add --prompt to the exec args"
+}
+
+###########################################
 # Test: No Bash 4 lowercase syntax
 ###########################################
 test_no_bash4_lowercase() {
@@ -391,6 +405,7 @@ run_test "Module list complete" test_module_list_complete
 run_test "Setup type options" test_setup_type_options
 run_test "Dotfiles base/overlay step" test_dotfiles_step
 run_test "Zsh mode choices" test_zsh_mode_choices
+run_test "Prompt selector wiring" test_prompt_selector
 run_test "No Bash 4 lowercase" test_no_bash4_lowercase
 run_test "Uses tr for lowercase" test_uses_tr_lowercase
 run_test "Safe array expansion" test_safe_array_expansion

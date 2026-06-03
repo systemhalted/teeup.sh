@@ -40,6 +40,7 @@ RUBYGEMS_UPDATE="${RUBYGEMS_UPDATE:-true}"          # Update RubyGems after inst
 INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Install/symlink dotfiles from DOTFILES_DIR
 RECONCILE_EXISTING_CONFIG="${RECONCILE_EXISTING_CONFIG:-false}"  # Disable old Antigen/pyenv/stale shell config
 ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
+PROMPT="${PROMPT:-none}"                             # none, powerlevel10k, or starship (prompt tool to install)
 DOTFILES_DIR="${DOTFILES_DIR:-$DEFAULT_DOTFILES_DIR}"
 PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, macports, apt, or dnf
 STRICT_PLATFORM="${STRICT_PLATFORM:-false}"         # fail instead of skip when module/platform mismatch
@@ -128,7 +129,7 @@ ZSH_INTEGRATION="${ZSH_INTEGRATION:-$HOME/.config/mac-setup/zsh.zsh}"
 BASHRC="${BASHRC:-$HOME/.bashrc}"
 BASH_PROFILE="${BASH_PROFILE:-$HOME/.bash_profile}"
 PROFILE="${PROFILE:-$HOME/.profile}"
-TEEUPSHRC="${TEEUPSHRC:-$HOME/.teeupshrc}"
+TEEUP_COMMON="${TEEUP_COMMON:-$HOME/.teeup.common}"
 
 # Execute command or preview in dry-run mode
 # Usage: run_cmd command [args...]
@@ -314,6 +315,55 @@ install_dotfile_link() {
     backup_target "$target"
   fi
   run_cmd ln -s "$source" "$target"
+}
+
+# Remove an orphaned ~/.teeupshrc symlink left by older teeup versions, but ONLY when it
+# is a symlink pointing into the active DOTFILES_DIR (a link teeup itself created). Never
+# touches a regular file (that is the Mode-2 migration's job) or a foreign-target symlink.
+remove_stale_teeupshrc_symlink() {
+  local link="$HOME/.teeupshrc" target
+  [[ -L "$link" ]] || return 0
+  target="$(readlink "$link")"
+  case "$target" in
+    "$DOTFILES_DIR"/*)
+      log "Removing orphaned teeup-owned symlink: $link"
+      run_cmd rm -f "$link"
+      ;;
+  esac
+}
+
+# One-time migration for Mode-2 users from an older teeup: a generated ~/.teeupshrc (a
+# real file) plus a "source ~/.teeupshrc" block in the shell rc. Rename the file to
+# ~/.teeup.common and rewrite the managed source block (marker + path) so the new wiring
+# is recognized and stays idempotent on re-runs. Only acts on a regular file — symlinks
+# are handled by remove_stale_teeupshrc_symlink.
+migrate_teeupshrc_to_teeup_common() {
+  local old="$HOME/.teeupshrc" new="$HOME/.teeup.common"
+  [[ -f "$old" && ! -L "$old" ]] || return 0
+  if [[ -e "$new" || -L "$new" ]]; then
+    warn "Both ~/.teeupshrc and ~/.teeup.common exist; leaving ~/.teeupshrc untouched."
+    return 0
+  fi
+
+  log "Migrating ~/.teeupshrc → ~/.teeup.common"
+  run_cmd mv "$old" "$new"
+
+  local rc tmp
+  for rc in "$BASHRC" "$ZSHRC"; do
+    [[ -f "$rc" && ! -L "$rc" ]] || continue
+    grep -q 'teeupshrc' "$rc" 2>/dev/null || continue
+    if [[ "$DRY_RUN" == "true" ]]; then
+      emoj "🔍"
+      echo "[DRY-RUN] Would re-point ~/.teeupshrc references to ~/.teeup.common in $rc"
+      continue
+    fi
+    cp -p "$rc" "${rc}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+    tmp="$(mktemp)"
+    awk '{ gsub(/teeupshrc/, "teeup.common"); print }' "$rc" > "$tmp"
+    cat "$tmp" > "$rc"
+    rm -f "$tmp"
+    ok "Re-pointed teeup.common source in $rc"
+  done
 }
 
 disable_matching_lines() {
@@ -504,6 +554,18 @@ normalize_zsh_mode() {
   esac
 }
 
+normalize_prompt() {
+  local prompt_lower
+  prompt_lower=$(echo "$PROMPT" | tr '[:upper:]' '[:lower:]')
+  case "$prompt_lower" in
+    none|powerlevel10k|starship) PROMPT="$prompt_lower" ;;
+    *)
+      warn "Unknown PROMPT '$PROMPT'; defaulting to none (plain shell prompt)"
+      PROMPT="none"
+      ;;
+  esac
+}
+
 sdk_cmd() {
   local shell_cmd="zsh"
   if ! have zsh; then
@@ -556,10 +618,12 @@ Options:
   --profile PROFILE     Default module set: 'base' (pkg mgr + shell + cli) or
                         'full' (everything). Default: base.
   --all                 Install the full stack (alias for --profile full)
+  --prompt TOOL         Prompt to install: 'none' (plain shell prompt, default),
+                        'powerlevel10k' (zsh), or 'starship' (bash). Opt-in only.
   --only MODULES        Run only specified modules (comma-separated)
                         Available: homebrew,shell,zsh,ohmyzsh,bash,cli,python,java,ruby,rust,emacs,docker,apps
                         homebrew aliases package-manager setup; shell configures the
-                        login shell (zsh→Powerlevel10k, bash→Starship), zsh/bash force one.
+                        login shell; prompt tools are opt-in via --prompt.
   --except MODULES      Skip the listed modules (comma-separated). Combine with
                         --all, e.g. --all --except apps,docker
   --init-dotfiles [DIR] Generate a neutral starter dotfiles repo (default ~/dotfiles)
@@ -583,6 +647,7 @@ Environment Variables:
   USE_UV                Use UV instead of pyenv (default: true)
   RUBYGEMS_UPDATE       Update RubyGems after Ruby install (default: true)
   ZSH_MODE              zsh integration mode: plain or ohmyzsh (default: plain)
+  PROMPT                Prompt tool to install: none, powerlevel10k, or starship (default: none)
   TARGET_SHELL          Login shell to configure: auto, bash, or zsh (default: auto)
   PACKAGE_MANAGER       auto, homebrew, macports, apt, or dnf (default: auto)
   STRICT_PLATFORM       Fail on unsupported module/platform combos (default: false)
@@ -843,7 +908,7 @@ migrate_pyenv_to_uv() {
 
     # Add uv path if not present
     if ! dotfiles_payload_available; then
-      append_once "$TEEUPSHRC" "Added by teeup.sh - uv path" <<'EOF'
+      append_once "$TEEUP_COMMON" "Added by teeup.sh - uv path" <<'EOF'
 # uv (Python package manager)
 export PATH="$HOME/.local/bin:$PATH"
 EOF
@@ -906,6 +971,13 @@ while [[ $# -gt 0 ]]; do
       TEEUP_PROFILE=full
       shift
       ;;
+    --prompt)
+      case "${2:-}" in
+        none|powerlevel10k|starship) PROMPT="$2" ;;
+        *) err "--prompt requires 'none', 'powerlevel10k', or 'starship'"; exit 1 ;;
+      esac
+      shift 2
+      ;;
     --init-dotfiles)
       # Optional directory argument; defaults to ~/dotfiles when omitted or when
       # the next token is another flag.
@@ -963,12 +1035,19 @@ if [[ "$DRY_RUN" == "true" ]]; then
 fi
 
 normalize_zsh_mode
+normalize_prompt
 normalize_strict_platform
 
 # Resolve the final module set from TEEUP_PROFILE / --only / --except / RUN_* env, and
 # resolve where dotfiles come from (--init-dotfiles / --dotfiles / sibling).
 resolve_modules
 prepare_dotfiles_source
+
+# Migrate an older Mode-2 ~/.teeupshrc to ~/.teeup.common before any block is written.
+# Only relevant on the managed-fallback path (no dotfiles payload).
+if [[ "$INSTALL_DOTFILES" == "true" ]] && ! dotfiles_payload_available; then
+  migrate_teeupshrc_to_teeup_common
+fi
 
 ZSHRC="${ZSHRC:-$HOME/.zshrc}"
 
@@ -1064,15 +1143,16 @@ if [[ "$RUN_ZSH" == "true" ]]; then
   log "Configuring zsh mode: $ZSH_MODE"
 
   if [[ "$ZSH_MODE" == "plain" ]]; then
-    if [[ "$RESOLVED_PACKAGE_MANAGER" == "macports" ]] || is_linux; then
-      ZSH_PACKAGES=(zsh zsh-completions zsh-autosuggestions zsh-syntax-highlighting)
-    else
-      ZSH_PACKAGES=(zsh zsh-completions zsh-autosuggestions zsh-syntax-highlighting powerlevel10k)
+    ZSH_PACKAGES=(zsh zsh-completions zsh-autosuggestions zsh-syntax-highlighting)
+    # Powerlevel10k is opt-in (--prompt powerlevel10k); on Homebrew it ships as a package.
+    if [[ "$PROMPT" == "powerlevel10k" ]] && ! { [[ "$RESOLVED_PACKAGE_MANAGER" == "macports" ]] || is_linux; }; then
+      ZSH_PACKAGES+=(powerlevel10k)
     fi
     for f in "${ZSH_PACKAGES[@]}"; do
       pkg_install "$f"
     done
-    if [[ "$RESOLVED_PACKAGE_MANAGER" == "macports" ]] || is_linux; then
+    # On MacPorts/Linux p10k isn't a reliable package; clone it from upstream when requested.
+    if [[ "$PROMPT" == "powerlevel10k" ]] && { [[ "$RESOLVED_PACKAGE_MANAGER" == "macports" ]] || is_linux; }; then
       P10K_DIR="${HOME}/.local/share/powerlevel10k"
       if [[ ! -d "$P10K_DIR" ]]; then
         log "Installing Powerlevel10k theme from upstream git…"
@@ -1184,50 +1264,65 @@ EOF
       remember_skipped "zsh-syntax-highlighting"
     fi
 
-    P10K_DIR="${ZSH_CUSTOM:-$OMZ_DIR/custom}/themes/powerlevel10k"
-    if [[ ! -d "$P10K_DIR" ]]; then
-      log "Installing Powerlevel10k theme…"
-      run_cmd git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$P10K_DIR"
-      remember_installed "powerlevel10k"
+    # Powerlevel10k is opt-in (--prompt powerlevel10k); otherwise use a neutral OMZ theme.
+    if [[ "$PROMPT" == "powerlevel10k" ]]; then
+      P10K_DIR="${ZSH_CUSTOM:-$OMZ_DIR/custom}/themes/powerlevel10k"
+      if [[ ! -d "$P10K_DIR" ]]; then
+        log "Installing Powerlevel10k theme…"
+        run_cmd git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$P10K_DIR"
+        remember_installed "powerlevel10k"
+      else
+        remember_skipped "powerlevel10k"
+      fi
+      OMZ_THEME="powerlevel10k/powerlevel10k"
     else
-      remember_skipped "powerlevel10k"
+      OMZ_THEME="robbyrussell"
     fi
 
-    write_managed_file "$ZSH_INTEGRATION" "Oh My Zsh integration" <<'EOF'
+    {
+      cat <<'EOF'
 # Generated by teeup.sh. Personal shell config belongs in ~/.zshrc.
 export ZSH="$HOME/.oh-my-zsh"
-ZSH_THEME="powerlevel10k/powerlevel10k"
+EOF
+      echo "ZSH_THEME=\"$OMZ_THEME\""
+      cat <<'EOF'
 plugins=(git docker command-not-found zsh-autosuggestions zsh-syntax-highlighting)
 
 if [ -r "$ZSH/oh-my-zsh.sh" ]; then
   source "$ZSH/oh-my-zsh.sh"
 fi
-
-[ -r "$HOME/.p10k.zsh" ] && source "$HOME/.p10k.zsh"
 EOF
+      if [[ "$PROMPT" == "powerlevel10k" ]]; then
+        echo ''
+        echo '[ -r "$HOME/.p10k.zsh" ] && source "$HOME/.p10k.zsh"'
+      fi
+    } | write_managed_file "$ZSH_INTEGRATION" "Oh My Zsh integration"
   fi
   else
-    log "Configuring bash shell (bash-completion + Starship)"
+    log "Configuring bash shell (bash-completion)"
     pkg_install bash-completion
 
-    if ! have starship; then
-      log "Installing Starship prompt…"
-      if [[ "$DRY_RUN" == "true" ]]; then
-        run_cmd sh -c "curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir \"$HOME/.local/bin\""
+    # Starship is opt-in (--prompt starship); otherwise the shell keeps its plain prompt.
+    if [[ "$PROMPT" == "starship" ]]; then
+      if ! have starship; then
+        log "Installing Starship prompt…"
+        if [[ "$DRY_RUN" == "true" ]]; then
+          run_cmd sh -c "curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir \"$HOME/.local/bin\""
+        else
+          curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir "$HOME/.local/bin"
+        fi
+        export PATH="$HOME/.local/bin:$PATH"
+        remember_installed "starship"
       else
-        curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir "$HOME/.local/bin"
+        remember_skipped "starship"
+        ok "Starship already installed."
       fi
-      export PATH="$HOME/.local/bin:$PATH"
-      remember_installed "starship"
-    else
-      remember_skipped "starship"
-      ok "Starship already installed."
     fi
 
     if [[ "$INSTALL_DOTFILES" == "true" ]] && dotfiles_payload_available; then
       log "bash shell integration is handled by dotfiles."
     elif [[ "$INSTALL_DOTFILES" == "true" ]]; then
-      append_once "$TEEUPSHRC" "Added by teeup.sh - bash-completion" <<'EOF'
+      append_once "$TEEUP_COMMON" "Added by teeup.sh - bash-completion" <<'EOF'
 # bash-completion (bash only)
 if [ -n "${BASH_VERSION:-}" ]; then
   if [ -r /usr/share/bash-completion/bash_completion ]; then
@@ -1239,12 +1334,14 @@ if [ -n "${BASH_VERSION:-}" ]; then
   fi
 fi
 EOF
-      append_once "$TEEUPSHRC" "Added by teeup.sh - starship" <<'EOF'
-# Starship prompt (bash only; zsh uses Powerlevel10k)
+      if [[ "$PROMPT" == "starship" ]]; then
+        append_once "$TEEUP_COMMON" "Added by teeup.sh - starship" <<'EOF'
+# Starship prompt (bash only; opt-in via teeup.sh --prompt starship)
 if [ -n "${BASH_VERSION:-}" ] && command -v starship >/dev/null 2>&1; then
   eval "$(starship init bash)"
 fi
 EOF
+      fi
     fi
   fi
 else
@@ -1303,7 +1400,7 @@ if [[ "$USE_UV" == "true" ]]; then
   if [[ "$INSTALL_DOTFILES" == "true" ]] && dotfiles_payload_available; then
     log "uv PATH is handled by dotfiles."
   elif [[ "$INSTALL_DOTFILES" == "true" ]]; then
-    append_once "$TEEUPSHRC" "Added by teeup.sh - uv path" <<'EOF'
+    append_once "$TEEUP_COMMON" "Added by teeup.sh - uv path" <<'EOF'
 # uv (Python package manager)
 export PATH="$HOME/.local/bin:$PATH"
 EOF
@@ -1354,7 +1451,7 @@ else
   if [[ "$INSTALL_DOTFILES" == "true" ]] && dotfiles_payload_available; then
     log "pyenv init is handled conditionally by dotfiles."
   elif [[ "$INSTALL_DOTFILES" == "true" ]]; then
-    append_once "$TEEUPSHRC" "Added by teeup.sh - pyenv init" <<'EOF'
+    append_once "$TEEUP_COMMON" "Added by teeup.sh - pyenv init" <<'EOF'
 # pyenv init
 if command -v pyenv >/dev/null 2>&1; then
   eval "$(pyenv init -)"
@@ -1568,7 +1665,7 @@ if [[ "$RUN_RUBY" == "true" ]]; then
     if [[ "$INSTALL_DOTFILES" == "true" ]] && dotfiles_payload_available; then
       log "rbenv init is handled conditionally by dotfiles."
     elif [[ "$INSTALL_DOTFILES" == "true" ]]; then
-      append_once "$TEEUPSHRC" "Added by teeup.sh - rbenv init" <<'EOF'
+      append_once "$TEEUP_COMMON" "Added by teeup.sh - rbenv init" <<'EOF'
 # rbenv init
 if command -v rbenv >/dev/null 2>&1; then
   if [ -n "${ZSH_VERSION:-}" ]; then
@@ -1668,7 +1765,7 @@ if [[ "$RUN_RUST" == "true" ]]; then
   if [[ "$INSTALL_DOTFILES" == "true" ]] && dotfiles_payload_available; then
     log "Cargo PATH is handled by dotfiles."
   elif [[ "$INSTALL_DOTFILES" == "true" ]]; then
-    append_once "$TEEUPSHRC" "Added by teeup.sh - Cargo path" <<'EOF'
+    append_once "$TEEUP_COMMON" "Added by teeup.sh - Cargo path" <<'EOF'
 # Rust (cargo)
 if [ -f "$HOME/.cargo/env" ]; then
   . "$HOME/.cargo/env"
@@ -1864,11 +1961,16 @@ fi
 if [[ "$INSTALL_DOTFILES" == "true" ]]; then
   if dotfiles_payload_available; then
     log "Installing dotfiles from $DOTFILES_DIR for $TARGET_SHELL"
-    # Shared, shell-agnostic dotfiles.
-    install_dotfile_link "$DOTFILES_DIR/shellrc.common" "$HOME/.shellrc.common"
-    install_dotfile_link "$DOTFILES_DIR/teeupshrc" "$HOME/.teeupshrc"
-    install_dotfile_link "$DOTFILES_DIR/gitconfig" "$HOME/.gitconfig"
-    install_dotfile_link "$DOTFILES_DIR/tmux.conf" "$HOME/.tmux.conf"
+    # The single shared cross-shell file (merged aliases + tool integration).
+    install_dotfile_link "$DOTFILES_DIR/teeup.common" "$HOME/.teeup.common"
+    # Optional / back-compat configs: link only when the overlay actually ships them, so
+    # neutral-template installs stay silent. (Legacy shellrc.common/teeupshrc keep a
+    # personal overlay working mid-migration; git/tmux are personal, never in the template.)
+    [ -e "$DOTFILES_DIR/shellrc.common" ] && install_dotfile_link "$DOTFILES_DIR/shellrc.common" "$HOME/.shellrc.common"
+    [ -e "$DOTFILES_DIR/teeupshrc" ] && install_dotfile_link "$DOTFILES_DIR/teeupshrc" "$HOME/.teeupshrc"
+    [ -e "$DOTFILES_DIR/gitconfig" ] && install_dotfile_link "$DOTFILES_DIR/gitconfig" "$HOME/.gitconfig"
+    [ -e "$DOTFILES_DIR/gitconfig.local" ] && install_dotfile_link "$DOTFILES_DIR/gitconfig.local" "$HOME/.gitconfig.local"
+    [ -e "$DOTFILES_DIR/tmux.conf" ] && install_dotfile_link "$DOTFILES_DIR/tmux.conf" "$HOME/.tmux.conf"
     # Shell-specific dotfiles for the target login shell only (segregated).
     if [[ "$TARGET_SHELL" == "zsh" ]]; then
       install_dotfile_link "$DOTFILES_DIR/zshrc" "$HOME/.zshrc"
@@ -1877,14 +1979,18 @@ if [[ "$INSTALL_DOTFILES" == "true" ]]; then
       install_dotfile_link "$DOTFILES_DIR/bashrc" "$HOME/.bashrc"
       install_dotfile_link "$DOTFILES_DIR/.bash_profile" "$HOME/.bash_profile"
       install_dotfile_link "$DOTFILES_DIR/profile" "$HOME/.profile"
-      if [[ -f "$DOTFILES_DIR/starship.toml" ]]; then
+      # Starship config: only when starship is the requested prompt and the overlay ships it.
+      if [[ "$PROMPT" == "starship" && -f "$DOTFILES_DIR/starship.toml" ]]; then
         run_cmd mkdir -p "$HOME/.config"
         install_dotfile_link "$DOTFILES_DIR/starship.toml" "$HOME/.config/starship.toml"
       fi
     fi
+    # Q4: clean up a stale ~/.teeupshrc symlink left by older teeup runs (only when it
+    # points into this DOTFILES_DIR — never touch a real file or a foreign-target link).
+    remove_stale_teeupshrc_symlink
   else
     warn "DOTFILES_DIR is not available; falling back to small managed shell blocks."
-    append_once "$TEEUPSHRC" "Added by teeup.sh - aliases" <<'EOF'
+    append_once "$TEEUP_COMMON" "Added by teeup.sh - aliases" <<'EOF'
 # Handy aliases
 alias ll='ls -lah'
 alias cls='clear'
@@ -1892,13 +1998,13 @@ alias grv='git remote -v'
 alias colima-start='colima start'
 alias colima-stop='colima stop'
 EOF
-    append_once "$TEEUPSHRC" "Added by teeup.sh - SDKMAN init" <<'EOF'
+    append_once "$TEEUP_COMMON" "Added by teeup.sh - SDKMAN init" <<'EOF'
 # SDKMAN!
 if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
   . "$HOME/.sdkman/bin/sdkman-init.sh"
 fi
 EOF
-    ensure_teeupshrc_sourced
+    ensure_teeup_common_sourced
   fi
 fi
 

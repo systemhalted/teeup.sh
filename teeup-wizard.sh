@@ -399,6 +399,7 @@ SELECTED_MODULES=()
 WIZARD_PYTHON_VERSION="3.12.5"
 WIZARD_USE_UV="true"
 WIZARD_ZSH_MODE="plain"
+WIZARD_PROMPT="none"
 WIZARD_TARGET_SHELL="zsh"
 WIZARD_PACKAGE_MANAGER="auto"
 WIZARD_JDK_VERSION="21.0.4-tem"
@@ -453,9 +454,9 @@ show_welcome() {
     echo "  📦 Package Manager   - Auto-detected from your operating system"
   fi
   if wizard_is_linux; then
-    echo "  🐚 Shell             - bash (bash-completion + Starship) or zsh (Powerlevel10k)"
+    echo "  🐚 Shell             - bash or zsh (optional prompt: Powerlevel10k / Starship)"
   else
-    echo "  🐚 Zsh               - Minimal zsh or Oh My Zsh with Powerlevel10k"
+    echo "  🐚 Zsh               - Minimal zsh or Oh My Zsh (optional Powerlevel10k prompt)"
   fi
   echo "  🛠️  CLI Tools         - Essential command-line utilities"
   echo "  🐍 Python            - Python environment (UV or pyenv)"
@@ -552,9 +553,9 @@ show_module_selection() {
     selected="false"
     is_module_selected "zsh" && selected="true"
     if wizard_is_linux; then
-      print_option "2" "shell" "Configure login shell: bash (Starship) or zsh (Powerlevel10k)" "$selected"
+      print_option "2" "shell" "Configure login shell: bash or zsh (optional prompt tool)" "$selected"
     else
-      print_option "2" "zsh" "Minimal zsh or Oh My Zsh + Powerlevel10k" "$selected"
+      print_option "2" "zsh" "Minimal zsh or Oh My Zsh (optional Powerlevel10k prompt)" "$selected"
     fi
     echo ""
 
@@ -749,6 +750,40 @@ show_package_manager_config() {
   wait_for_key
 }
 
+# Ask which prompt tool to install, scoped to the target shell (Powerlevel10k for zsh,
+# Starship for bash). Both are opt-in; the default is the shell's plain prompt.
+choose_wizard_prompt() {
+  local tool_label tool_value
+  if [[ "$WIZARD_TARGET_SHELL" == "zsh" ]]; then
+    tool_label="Powerlevel10k"; tool_value="powerlevel10k"
+  else
+    tool_label="Starship"; tool_value="starship"
+  fi
+
+  echo "Which prompt would you like?"
+  echo ""
+  echo -e "  ${BOLD}1)${RESET} ${GREEN}Plain shell prompt (Recommended)${RESET} - No extra prompt tool"
+  echo -e "  ${BOLD}2)${RESET} ${CYAN}${tool_label}${RESET} - Install ${tool_label} for ${WIZARD_TARGET_SHELL}"
+  echo ""
+  echo -ne "${WHITE}Enter your choice [1-2] (default: 1): ${RESET}"
+
+  local p_choice
+  read -r p_choice
+  p_choice=$(validate_choice "$p_choice" 1 2 1)
+
+  case "$p_choice" in
+    2) WIZARD_PROMPT="$tool_value" ;;
+    *) WIZARD_PROMPT="none" ;;
+  esac
+
+  echo ""
+  if [[ "$WIZARD_PROMPT" == "none" ]]; then
+    print_success "Using the plain ${WIZARD_TARGET_SHELL} prompt"
+  else
+    print_success "Will install ${tool_label}"
+  fi
+}
+
 show_zsh_config() {
   if ! is_module_selected "zsh"; then
     return
@@ -780,7 +815,9 @@ show_zsh_config() {
     if [[ "$WIZARD_TARGET_SHELL" == "bash" ]]; then
       WIZARD_ZSH_MODE="plain"
       echo ""
-      print_success "Using bash; tool initialization is written to ~/.teeupshrc."
+      print_success "Using bash; tool initialization is written to ~/.teeup.common."
+      echo ""
+      choose_wizard_prompt
       wait_for_key
       return
     fi
@@ -791,8 +828,8 @@ show_zsh_config() {
 
   echo "Choose your zsh setup:"
   echo ""
-  echo -e "  ${BOLD}1)${RESET} ${GREEN}Plain zsh (Recommended)${RESET} - Minimal plugins, direct sourcing, Powerlevel10k"
-  echo -e "  ${BOLD}2)${RESET} ${CYAN}Oh My Zsh${RESET} - Oh My Zsh framework with Powerlevel10k"
+  echo -e "  ${BOLD}1)${RESET} ${GREEN}Plain zsh (Recommended)${RESET} - Minimal plugins, direct sourcing"
+  echo -e "  ${BOLD}2)${RESET} ${CYAN}Oh My Zsh${RESET} - Oh My Zsh plugin framework"
   echo ""
   echo -ne "${WHITE}Enter your choice [1-2] (default: 1): ${RESET}"
 
@@ -808,10 +845,13 @@ show_zsh_config() {
 
   echo ""
   if [[ "$WIZARD_ZSH_MODE" == "plain" ]]; then
-    print_success "Using plain zsh with Powerlevel10k"
+    print_success "Using plain zsh"
   else
-    print_success "Using Oh My Zsh with Powerlevel10k"
+    print_success "Using Oh My Zsh"
   fi
+
+  echo ""
+  choose_wizard_prompt
 
   wait_for_key
 }
@@ -1113,7 +1153,7 @@ show_additional_options() {
   # Dotfiles: a neutral base owned by teeup + a personal overlay you bring.
   local wizard_dir sibling_dotfiles df_choice df_default df_src df_dir
   wizard_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  sibling_dotfiles="$(cd "$wizard_dir/../dotfiles" 2>/dev/null && pwd || true)"
+  sibling_dotfiles="$(cd "$wizard_dir/../dotfiles" 2>/dev/null && pwd)" || sibling_dotfiles=""
 
   echo "Dotfiles (shell aliases, git config, tmux, prompt):"
   echo ""
@@ -1245,12 +1285,18 @@ show_summary() {
   fi
 
   if is_module_selected "zsh"; then
+    local prompt_label
+    case "$WIZARD_PROMPT" in
+      powerlevel10k) prompt_label="Powerlevel10k" ;;
+      starship)      prompt_label="Starship" ;;
+      *)             prompt_label="plain prompt" ;;
+    esac
     if [[ "$WIZARD_TARGET_SHELL" == "bash" ]]; then
-      echo -e "  Shell: ${CYAN}bash${RESET} with ${CYAN}bash-completion${RESET} + ${CYAN}Starship${RESET}"
+      echo -e "  Shell: ${CYAN}bash${RESET} with ${CYAN}bash-completion${RESET} + ${CYAN}${prompt_label}${RESET}"
     elif [[ "$WIZARD_ZSH_MODE" == "plain" ]]; then
-      echo -e "  Shell: ${CYAN}Plain zsh${RESET} with ${CYAN}Powerlevel10k${RESET}"
+      echo -e "  Shell: ${CYAN}Plain zsh${RESET} with ${CYAN}${prompt_label}${RESET}"
     else
-      echo -e "  Shell: ${CYAN}Oh My Zsh${RESET} with ${CYAN}Powerlevel10k${RESET}"
+      echo -e "  Shell: ${CYAN}Oh My Zsh${RESET} with ${CYAN}${prompt_label}${RESET}"
     fi
   fi
 
@@ -1324,6 +1370,7 @@ run_setup() {
   local cmd="./teeup.sh"
   [[ "$WIZARD_DRY_RUN" == "true" ]] && cmd+=" --dry-run"
   [[ "$WIZARD_RECONCILE_EXISTING_CONFIG" == "true" ]] && cmd+=" --reconcile-existing-config"
+  cmd+=" --prompt $WIZARD_PROMPT"
   cmd+=" --only $modules_str"
   case "${WIZARD_DOTFILES_MODE:-}" in
     existing) [[ -n "$WIZARD_DOTFILES_SOURCE" ]] && cmd+=" --dotfiles $WIZARD_DOTFILES_SOURCE" ;;
@@ -1334,6 +1381,7 @@ run_setup() {
   export PYTHON_VERSION="$WIZARD_PYTHON_VERSION"
   export USE_UV="$WIZARD_USE_UV"
   export ZSH_MODE="$WIZARD_ZSH_MODE"
+  export PROMPT="$WIZARD_PROMPT"
   export TARGET_SHELL="$WIZARD_TARGET_SHELL"
   export PACKAGE_MANAGER="$WIZARD_PACKAGE_MANAGER"
   export JDK_VERSION="$WIZARD_JDK_VERSION"
@@ -1357,6 +1405,7 @@ run_setup() {
   echo -e "${DIM}  PYTHON_VERSION=$PYTHON_VERSION${RESET}"
   echo -e "${DIM}  USE_UV=$USE_UV${RESET}"
   echo -e "${DIM}  ZSH_MODE=$ZSH_MODE${RESET}"
+  echo -e "${DIM}  PROMPT=$PROMPT${RESET}"
   echo -e "${DIM}  TARGET_SHELL=$TARGET_SHELL${RESET}"
   echo -e "${DIM}  PACKAGE_MANAGER=$PACKAGE_MANAGER${RESET}"
   echo -e "${DIM}  JDK_VERSION=$JDK_VERSION${RESET}"
@@ -1388,6 +1437,7 @@ run_setup() {
     else
       setup_args+=("--no-reconcile-existing-config")
     fi
+    setup_args+=("--prompt" "$WIZARD_PROMPT")
     setup_args+=("--only" "$modules_str")
     case "${WIZARD_DOTFILES_MODE:-}" in
       existing) [[ -n "$WIZARD_DOTFILES_SOURCE" ]] && setup_args+=("--dotfiles" "$WIZARD_DOTFILES_SOURCE") ;;
@@ -1509,7 +1559,7 @@ show_completion() {
     echo -e "     ${DIM}cargo --version${RESET}"
   fi
 
-  if is_module_selected "zsh" && [[ "$WIZARD_TARGET_SHELL" == "bash" ]]; then
+  if is_module_selected "zsh" && [[ "$WIZARD_PROMPT" == "starship" ]]; then
     echo -e "     ${DIM}starship --version${RESET}"
   fi
 

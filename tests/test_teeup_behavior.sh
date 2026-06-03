@@ -182,8 +182,8 @@ test_bash_target_routes_init_to_teeupshrc() {
     DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only ruby 2>&1)
 
   assert_contains "$output" "Target login shell: bash" "Should report bash as target shell"
-  assert_contains "$output" "Would update $TEEUPSHRC with: Added by teeup.sh - rbenv init" "rbenv init should go to teeupshrc"
-  assert_contains "$output" "Would update $BASHRC with: Added by teeup.sh - teeupshrc" "bashrc should source teeupshrc"
+  assert_contains "$output" "Would update $TEEUP_COMMON with: Added by teeup.sh - rbenv init" "rbenv init should go to teeup.common"
+  assert_contains "$output" "Would update $BASHRC with: Added by teeup.sh - teeup.common" "bashrc should source teeup.common"
   if [[ "$output" == *"Would update $ZSHRC with: Added by teeup.sh - rbenv init"* ]]; then
     echo "FAIL: rbenv init should not be written to zshrc"
     return 1
@@ -218,8 +218,8 @@ test_zsh_target_sources_teeupshrc_from_zshrc() {
     DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only ruby 2>&1)
 
   assert_contains "$output" "Target login shell: zsh" "Should honor TARGET_SHELL=zsh"
-  assert_contains "$output" "Would update $TEEUPSHRC with: Added by teeup.sh - rbenv init" "rbenv init should go to teeupshrc"
-  assert_contains "$output" "Would update $ZSHRC with: Added by teeup.sh - teeupshrc" "zshrc should source teeupshrc"
+  assert_contains "$output" "Would update $TEEUP_COMMON with: Added by teeup.sh - rbenv init" "rbenv init should go to teeup.common"
+  assert_contains "$output" "Would update $ZSHRC with: Added by teeup.sh - teeup.common" "zshrc should source teeup.common"
 }
 
 test_rbenv_init_is_cross_shell_in_teeupshrc() {
@@ -232,10 +232,10 @@ test_rbenv_init_is_cross_shell_in_teeupshrc() {
   DRY_RUN=false TARGET_SHELL=bash PACKAGE_MANAGER=apt RUBYGEMS_UPDATE=false \
     DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only ruby >/dev/null 2>&1
 
-  assert_file_exists "$TEEUPSHRC" "Should create teeupshrc"
-  assert_file_contains_active "$TEEUPSHRC" "rbenv init - bash" "teeupshrc should init rbenv for bash"
-  assert_contains "$(cat "$TEEUPSHRC")" "ZSH_VERSION" "teeupshrc should switch on ZSH_VERSION"
-  assert_contains "$(cat "$BASHRC")" ".teeupshrc" "bashrc should source teeupshrc"
+  assert_file_exists "$TEEUP_COMMON" "Should create teeup.common"
+  assert_file_contains_active "$TEEUP_COMMON" "rbenv init - bash" "teeup.common should init rbenv for bash"
+  assert_contains "$(cat "$TEEUP_COMMON")" "ZSH_VERSION" "teeup.common should switch on ZSH_VERSION"
+  assert_contains "$(cat "$BASHRC")" ".teeup.common" "bashrc should source teeup.common"
   if grep -q "rbenv init" "$ZSHRC"; then
     echo "FAIL: rbenv init should not be written to zshrc"
     return 1
@@ -255,8 +255,8 @@ test_target_shell_autodetect_routes_consistently() {
   detected=$(printf '%s\n' "$output" | sed -n 's/.*Target login shell: //p' | tr -d '[:space:]')
 
   case "$detected" in
-    bash) assert_contains "$output" "Would update $BASHRC with: Added by teeup.sh - teeupshrc" "Detected bash should source teeupshrc from bashrc" ;;
-    zsh)  assert_contains "$output" "Would update $ZSHRC with: Added by teeup.sh - teeupshrc" "Detected zsh should source teeupshrc from zshrc" ;;
+    bash) assert_contains "$output" "Would update $BASHRC with: Added by teeup.sh - teeup.common" "Detected bash should source teeup.common from bashrc" ;;
+    zsh)  assert_contains "$output" "Would update $ZSHRC with: Added by teeup.sh - teeup.common" "Detected zsh should source teeup.common from zshrc" ;;
     *) echo "FAIL: unexpected detected shell '$detected'"; return 1 ;;
   esac
 }
@@ -283,13 +283,13 @@ test_bash_shell_module_uses_starship_not_zsh() {
   mock_linux_package_manager_commands
 
   local output
-  output=$(DRY_RUN=true PACKAGE_MANAGER=apt \
+  output=$(DRY_RUN=true PACKAGE_MANAGER=apt PROMPT=starship \
     DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only bash 2>&1)
 
   assert_contains "$output" "Configuring bash shell" "Bash module should configure bash"
-  assert_contains "$output" "https://starship.rs/install.sh" "Should install Starship"
+  assert_contains "$output" "https://starship.rs/install.sh" "Should install Starship when --prompt starship"
   assert_contains "$output" "apt-get install -y bash-completion" "Should install bash-completion"
-  assert_contains "$output" "Would update $TEEUPSHRC with: Added by teeup.sh - starship" "Should write starship init to teeupshrc"
+  assert_contains "$output" "Would update $TEEUP_COMMON with: Added by teeup.sh - starship" "Should write starship init to teeup.common"
   if [[ "$output" == *"powerlevel10k"* ]]; then
     echo "FAIL: bash shell module should not install Powerlevel10k"
     return 1
@@ -313,19 +313,58 @@ test_bash_deploy_links_only_bash_dotfiles() {
   local df="$TEST_HOME/dotfiles"
   mkdir -p "$df"
   local f
-  for f in zshrc zprofile bashrc .bash_profile profile shellrc.common teeupshrc starship.toml gitconfig tmux.conf; do
+  for f in zshrc zprofile bashrc .bash_profile profile teeup.common starship.toml; do
     echo "# stub" > "$df/$f"
   done
 
   local output
-  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=apt \
+  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=apt PROMPT=starship \
     DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only bash 2>&1)
 
   assert_contains "$output" "ln -s $df/bashrc $HOME/.bashrc" "Should link bash dotfiles"
-  assert_contains "$output" "ln -s $df/teeupshrc $HOME/.teeupshrc" "Should link shared teeupshrc"
-  assert_contains "$output" "ln -s $df/starship.toml $HOME/.config/starship.toml" "Should link starship.toml"
+  assert_contains "$output" "ln -s $df/teeup.common $HOME/.teeup.common" "Should link shared teeup.common"
+  assert_contains "$output" "ln -s $df/starship.toml $HOME/.config/starship.toml" "Should link starship.toml when --prompt starship"
   if [[ "$output" == *"$df/zshrc $HOME/.zshrc"* ]]; then
     echo "FAIL: bash deployment should not link zsh dotfiles (segregation)"
+    return 1
+  fi
+}
+
+# Optional, non-shell-specific configs link only when the overlay ships them.
+test_optional_dotfiles_link_if_present() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  # Overlay WITH optional configs → they get linked.
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"
+  local f
+  for f in bashrc teeup.common gitconfig tmux.conf; do
+    echo "# stub" > "$df/$f"
+  done
+  local with_output
+  with_output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only bash 2>&1)
+  assert_contains "$with_output" "ln -s $df/gitconfig $HOME/.gitconfig" "Should link gitconfig when present"
+  assert_contains "$with_output" "ln -s $df/tmux.conf $HOME/.tmux.conf" "Should link tmux.conf when present"
+
+  # Overlay WITHOUT them but WITH the full bash core → no optional link, no warning.
+  local df2="$TEST_HOME/dotfiles-min"
+  mkdir -p "$df2"
+  for f in bashrc .bash_profile profile teeup.common; do
+    echo "# stub" > "$df2/$f"
+  done
+  local min_output
+  min_output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$df2" "$PROJECT_DIR/teeup.sh" --only bash 2>&1)
+  if [[ "$min_output" == *"$HOME/.gitconfig"* || "$min_output" == *"$HOME/.tmux.conf"* ]]; then
+    echo "FAIL: should not link gitconfig/tmux.conf when overlay omits them"
+    return 1
+  fi
+  if [[ "$min_output" == *"Dotfile source missing"* ]]; then
+    echo "FAIL: link-if-present should not emit a missing-source warning"
     return 1
   fi
 }
@@ -337,15 +376,95 @@ test_zsh_shell_module_still_installs_plugins() {
   mock_linux_package_manager_commands
 
   local output
-  output=$(DRY_RUN=true PACKAGE_MANAGER=apt \
+  output=$(DRY_RUN=true PACKAGE_MANAGER=apt PROMPT=powerlevel10k \
     DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only zsh 2>&1)
 
   assert_contains "$output" "Configuring zsh mode" "Zsh module should configure zsh"
-  assert_contains "$output" "powerlevel10k.git" "Should install Powerlevel10k"
+  assert_contains "$output" "powerlevel10k.git" "Should install Powerlevel10k when --prompt powerlevel10k"
   assert_contains "$output" "zsh-autosuggestions" "Should install zsh plugins"
   if [[ "$output" == *"starship.rs"* ]]; then
     echo "FAIL: zsh shell module should not install Starship"
     return 1
+  fi
+}
+
+# --prompt none (the default) installs no prompt tool on either shell.
+test_prompt_none_installs_no_prompt_tool() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local zsh_output bash_output
+  zsh_output=$(DRY_RUN=true PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only zsh 2>&1)
+  bash_output=$(DRY_RUN=true PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only bash 2>&1)
+
+  if [[ "$zsh_output" == *"powerlevel10k.git"* ]]; then
+    echo "FAIL: default prompt (none) should not install Powerlevel10k"; return 1
+  fi
+  if [[ "$bash_output" == *"starship.rs"* ]]; then
+    echo "FAIL: default prompt (none) should not install Starship"; return 1
+  fi
+  # zsh plugins are independent of the prompt and should still install.
+  assert_contains "$zsh_output" "zsh-autosuggestions" "zsh plugins install regardless of prompt"
+}
+
+# --prompt starship installs Starship only (never Powerlevel10k).
+test_prompt_starship_only() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(DRY_RUN=true PACKAGE_MANAGER=apt PROMPT=starship \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only bash 2>&1)
+
+  assert_contains "$output" "https://starship.rs/install.sh" "--prompt starship should install Starship"
+  if [[ "$output" == *"powerlevel10k"* ]]; then
+    echo "FAIL: --prompt starship should not install Powerlevel10k"; return 1
+  fi
+}
+
+# An older Mode-2 ~/.teeupshrc (a real file) is migrated to ~/.teeup.common, the rc is
+# re-pointed, and a re-run stays idempotent (no duplicate source line).
+test_mode2_teeupshrc_migration() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  mock_runtime_commands
+
+  # Seed an old Mode-2 install: a real ~/.teeupshrc + the old managed source block.
+  printf '# old tool init\nexport OLD_MARKER=1\n' > "$TEST_HOME/.teeupshrc"
+  {
+    echo ""
+    echo "# Added by teeup.sh - teeupshrc"
+    echo '# Cross-shell tool integration written by teeup.sh.'
+    echo 'if [ -r "$HOME/.teeupshrc" ]; then'
+    echo '  . "$HOME/.teeupshrc"'
+    echo 'fi'
+  } >> "$BASHRC"
+
+  DRY_RUN=false TARGET_SHELL=bash PACKAGE_MANAGER=apt RUBYGEMS_UPDATE=false \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" --only ruby >/dev/null 2>&1
+
+  assert_file_exists "$TEEUP_COMMON" "Should migrate content to ~/.teeup.common"
+  assert_contains "$(cat "$TEEUP_COMMON")" "OLD_MARKER" "Migrated file should keep the old content"
+  if [[ -e "$TEST_HOME/.teeupshrc" ]]; then
+    echo "FAIL: old ~/.teeupshrc should be gone after migration"; return 1
+  fi
+  assert_contains "$(cat "$BASHRC")" ".teeup.common" "bashrc should source the new path"
+  if grep -q '\.teeupshrc' "$BASHRC"; then
+    echo "FAIL: bashrc should no longer reference .teeupshrc"; return 1
+  fi
+  # Idempotency: exactly one teeup.common source block (no duplicate).
+  local count
+  count=$(grep -c 'Added by teeup.sh - teeup.common' "$BASHRC")
+  if [[ "$count" -ne 1 ]]; then
+    echo "FAIL: expected exactly one teeup.common source block, got $count"; return 1
   fi
 }
 
@@ -455,14 +574,18 @@ run_test "Linux apt path" test_linux_apt_path
 run_test "Linux apps skip by default" test_linux_apps_skip_by_default
 run_test "Linux apps strict-platform fails" test_linux_apps_strict_platform_fails
 run_test "Linux Docker avoids Colima" test_linux_docker_avoids_colima
-run_test "Bash target routes init to teeupshrc" test_bash_target_routes_init_to_teeupshrc
+run_test "Bash target routes init to teeup.common" test_bash_target_routes_init_to_teeupshrc
 run_test "Ruby installs build dependencies" test_ruby_installs_build_deps
-run_test "Zsh target sources teeupshrc from zshrc" test_zsh_target_sources_teeupshrc_from_zshrc
-run_test "rbenv init is cross-shell in teeupshrc" test_rbenv_init_is_cross_shell_in_teeupshrc
+run_test "Zsh target sources teeup.common from zshrc" test_zsh_target_sources_teeupshrc_from_zshrc
+run_test "rbenv init is cross-shell in teeup.common" test_rbenv_init_is_cross_shell_in_teeupshrc
 run_test "Target shell autodetect routes consistently" test_target_shell_autodetect_routes_consistently
 run_test "Linux Docker adds user to docker group" test_linux_docker_adds_user_to_group
 run_test "Bash shell module uses Starship not zsh" test_bash_shell_module_uses_starship_not_zsh
 run_test "Bash deploy links only bash dotfiles" test_bash_deploy_links_only_bash_dotfiles
+run_test "Optional dotfiles link only if present" test_optional_dotfiles_link_if_present
 run_test "Zsh shell module still installs plugins" test_zsh_shell_module_still_installs_plugins
+run_test "Prompt none installs no prompt tool" test_prompt_none_installs_no_prompt_tool
+run_test "Prompt starship installs Starship only" test_prompt_starship_only
+run_test "Mode-2 teeupshrc migrates to teeup.common" test_mode2_teeupshrc_migration
 
 print_summary

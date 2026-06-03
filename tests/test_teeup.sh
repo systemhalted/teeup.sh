@@ -308,23 +308,25 @@ test_profile_and_selection_flags() {
 # Test: Neutral dotfiles template exists and is neutral
 ###########################################
 test_neutral_dotfiles_template() {
-  local tmpl="$PROJECT_DIR/templates/dotfiles"
+  local tmpl="$PROJECT_DIR/templates/dotfiles" stale
   assert_dir_exists "$tmpl" "Neutral dotfiles template directory should exist"
-  assert_file_exists "$tmpl/gitconfig" "Template should include gitconfig"
   assert_file_exists "$tmpl/zshrc" "Template should include zshrc"
   assert_file_exists "$tmpl/bashrc" "Template should include bashrc"
-  assert_file_exists "$tmpl/shellrc.common" "Template should include shellrc.common"
-  # The neutral gitconfig must not impose Emacs as editor/mergetool.
-  if grep -qE '^[[:space:]]*editor[[:space:]]*=[[:space:]]*emacs' "$tmpl/gitconfig"; then
-    echo "FAIL: neutral template gitconfig should not set editor = emacs"
-    return 1
-  fi
-  if grep -qE '^\[mergetool "ediff"\]' "$tmpl/gitconfig"; then
-    echo "FAIL: neutral template gitconfig should not configure ediff mergetool"
-    return 1
-  fi
-  if ! grep -q 'path = ~/.gitconfig.local' "$tmpl/gitconfig"; then
-    echo "FAIL: template gitconfig should include ~/.gitconfig.local"
+  # The shared cross-shell file is the single merged teeup.common (no separate
+  # shellrc.common / teeupshrc anymore).
+  assert_file_exists "$tmpl/teeup.common" "Template should include teeup.common"
+  assert_file_contains_active "$tmpl/teeup.common" "rbenv init" "teeup.common should carry tool-init (rbenv)"
+  assert_file_contains_active "$tmpl/teeup.common" "sdkman-init.sh" "teeup.common should carry tool-init (SDKMAN)"
+  # The merged template no longer ships the old split files or personal configs.
+  for stale in shellrc.common teeupshrc gitconfig gitconfig.local.example tmux.conf; do
+    if [[ -e "$tmpl/$stale" ]]; then
+      echo "FAIL: neutral template should not include $stale"
+      return 1
+    fi
+  done
+  # Template per-shell rc files should source ~/.teeup.common (not the old paths).
+  if ! grep -q '\.teeup\.common' "$tmpl/bashrc"; then
+    echo "FAIL: template bashrc should source ~/.teeup.common"
     return 1
   fi
 }

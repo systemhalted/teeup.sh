@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shell.sh — login-shell detection and cross-shell (teeupshrc) integration
+# shell.sh — login-shell detection and cross-shell (teeup.common) integration
 
 normalize_target_shell() {
   local value_lower
@@ -57,20 +57,20 @@ target_rc_file() {
   esac
 }
 
-append_teeupshrc_source() {
+append_teeup_common_source() {
   local file="$1"
-  append_once "$file" "Added by teeup.sh - teeupshrc" <<'EOF'
+  append_once "$file" "Added by teeup.sh - teeup.common" <<'EOF'
 # Cross-shell tool integration written by teeup.sh.
-if [ -r "$HOME/.teeupshrc" ]; then
-  . "$HOME/.teeupshrc"
+if [ -r "$HOME/.teeup.common" ]; then
+  . "$HOME/.teeup.common"
 fi
 EOF
 }
 
-# Wire the target shell's interactive rc file to source ~/.teeupshrc. Called only
+# Wire the target shell's interactive rc file to source ~/.teeup.common. Called only
 # on the managed-fallback path; when a dotfiles payload is present, its rc files
-# source teeupshrc themselves. Deliberately touches ONLY the target shell's rc so
+# source teeup.common themselves. Deliberately touches ONLY the target shell's rc so
 # bash and zsh stay segregated deployments.
-ensure_teeupshrc_sourced() {
-  append_teeupshrc_source "$(target_rc_file)"
+ensure_teeup_common_sourced() {
+  append_teeup_common_source "$(target_rc_file)"
 }
