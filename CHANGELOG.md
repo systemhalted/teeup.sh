@@ -30,9 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Migration
 - An older `~/.teeupshrc` is migrated automatically: a regular file (managed
   fallback) is moved to `~/.teeup.common` and the source line in your `~/.bashrc`/
-  `~/.zshrc` is re-pointed (idempotent on re-runs); a stale teeup-owned **symlink**
-  into your dotfiles dir is removed. A foreign-target symlink or pre-existing
-  `~/.teeup.common` is left untouched.
+  `~/.zshrc` is re-pointed (idempotent on re-runs). Stale teeup-owned **symlinks**
+  into your dotfiles dir (`~/.teeupshrc`, `~/.shellrc.common`) are removed — but only
+  once your overlay no longer ships that legacy file, so a back-compat link stays put
+  while you migrate. A foreign-target symlink or pre-existing `~/.teeup.common` is
+  left untouched.
 
 ---
 
