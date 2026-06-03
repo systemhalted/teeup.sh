@@ -317,12 +317,15 @@ install_dotfile_link() {
   run_cmd ln -s "$source" "$target"
 }
 
-# Remove an orphaned ~/.teeupshrc symlink left by older teeup versions, but ONLY when it
-# is a symlink pointing into the active DOTFILES_DIR (a link teeup itself created). Never
-# touches a regular file (that is the Mode-2 migration's job) or a foreign-target symlink.
-remove_stale_teeupshrc_symlink() {
-  local link="$HOME/.teeupshrc" target
+# Remove an orphaned legacy ~/.<name> symlink (e.g. teeupshrc, shellrc.common) left by an
+# older teeup, but ONLY when (a) it is a symlink pointing into the active DOTFILES_DIR (a
+# link teeup itself created) AND (b) the overlay no longer ships "$name" — so we never undo
+# a back-compat link we just created for an overlay still shipping that file. Never touches
+# a regular file (that is the Mode-2 migration's job) or a foreign-target symlink.
+remove_stale_legacy_link() {
+  local name="$1" link="$HOME/.$1" target
   [[ -L "$link" ]] || return 0
+  [[ -e "$DOTFILES_DIR/$name" ]] && return 0   # overlay still ships it → keep the link
   target="$(readlink "$link")"
   case "$target" in
     "$DOTFILES_DIR"/*)
@@ -336,7 +339,7 @@ remove_stale_teeupshrc_symlink() {
 # real file) plus a "source ~/.teeupshrc" block in the shell rc. Rename the file to
 # ~/.teeup.common and rewrite the managed source block (marker + path) so the new wiring
 # is recognized and stays idempotent on re-runs. Only acts on a regular file — symlinks
-# are handled by remove_stale_teeupshrc_symlink.
+# are handled by remove_stale_legacy_link.
 migrate_teeupshrc_to_teeup_common() {
   local old="$HOME/.teeupshrc" new="$HOME/.teeup.common"
   [[ -f "$old" && ! -L "$old" ]] || return 0
@@ -1985,9 +1988,11 @@ if [[ "$INSTALL_DOTFILES" == "true" ]]; then
         install_dotfile_link "$DOTFILES_DIR/starship.toml" "$HOME/.config/starship.toml"
       fi
     fi
-    # Q4: clean up a stale ~/.teeupshrc symlink left by older teeup runs (only when it
-    # points into this DOTFILES_DIR — never touch a real file or a foreign-target link).
-    remove_stale_teeupshrc_symlink
+    # Q4: clean up stale legacy symlinks left by older teeup runs (only teeup-owned links
+    # into this DOTFILES_DIR, and only once the overlay has dropped the legacy file — so the
+    # back-compat links above are never undone).
+    remove_stale_legacy_link teeupshrc
+    remove_stale_legacy_link shellrc.common
   else
     warn "DOTFILES_DIR is not available; falling back to small managed shell blocks."
     append_once "$TEEUP_COMMON" "Added by teeup.sh - aliases" <<'EOF'

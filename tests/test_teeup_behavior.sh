@@ -369,6 +369,59 @@ test_optional_dotfiles_link_if_present() {
   fi
 }
 
+# A back-compat link (~/.teeupshrc) for an overlay still shipping teeupshrc must SURVIVE
+# the orphan cleanup — the cleanup only fires once the overlay has dropped the legacy file.
+test_legacy_link_survives_when_overlay_ships_it() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"
+  local f
+  for f in bashrc .bash_profile profile shellrc.common teeupshrc; do
+    echo "# stub" > "$df/$f"
+  done
+
+  DRY_RUN=false TARGET_SHELL=bash PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli >/dev/null 2>&1
+
+  if [[ ! -L "$HOME/.teeupshrc" ]]; then
+    echo "FAIL: ~/.teeupshrc back-compat link should survive when overlay ships teeupshrc"; return 1
+  fi
+  assert_equals "$df/teeupshrc" "$(readlink "$HOME/.teeupshrc")" "~/.teeupshrc should point into the overlay"
+  if [[ ! -L "$HOME/.shellrc.common" ]]; then
+    echo "FAIL: ~/.shellrc.common back-compat link should survive when overlay ships it"; return 1
+  fi
+}
+
+# Once the overlay drops a legacy file, a stale teeup-owned ~/.<name> symlink is removed.
+test_stale_legacy_symlink_removed_after_migration() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"
+  local f
+  for f in bashrc .bash_profile profile teeup.common; do
+    echo "# stub" > "$df/$f"
+  done
+  # Leftover from an older run: a teeup-owned ~/.shellrc.common symlink into the overlay,
+  # which no longer ships shellrc.common.
+  ln -s "$df/shellrc.common" "$HOME/.shellrc.common"
+
+  DRY_RUN=false TARGET_SHELL=bash PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli >/dev/null 2>&1
+
+  if [[ -L "$HOME/.shellrc.common" || -e "$HOME/.shellrc.common" ]]; then
+    echo "FAIL: stale ~/.shellrc.common symlink should be removed once overlay drops it"; return 1
+  fi
+  assert_equals "$df/teeup.common" "$(readlink "$HOME/.teeup.common")" "~/.teeup.common should be linked"
+}
+
 test_zsh_shell_module_still_installs_plugins() {
   setup_test_env
   trap cleanup_test_env RETURN
@@ -583,6 +636,8 @@ run_test "Linux Docker adds user to docker group" test_linux_docker_adds_user_to
 run_test "Bash shell module uses Starship not zsh" test_bash_shell_module_uses_starship_not_zsh
 run_test "Bash deploy links only bash dotfiles" test_bash_deploy_links_only_bash_dotfiles
 run_test "Optional dotfiles link only if present" test_optional_dotfiles_link_if_present
+run_test "Legacy link survives when overlay ships it" test_legacy_link_survives_when_overlay_ships_it
+run_test "Stale legacy symlink removed after migration" test_stale_legacy_symlink_removed_after_migration
 run_test "Zsh shell module still installs plugins" test_zsh_shell_module_still_installs_plugins
 run_test "Prompt none installs no prompt tool" test_prompt_none_installs_no_prompt_tool
 run_test "Prompt starship installs Starship only" test_prompt_starship_only
