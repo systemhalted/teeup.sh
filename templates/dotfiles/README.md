@@ -6,29 +6,19 @@ symlinks them into `$HOME`; they are also fine to symlink by hand.
 
 ## Files
 
-- `zshrc` / `zprofile`: zsh interactive + login config (Powerlevel10k-aware,
-  sources the shared files below).
+- `zshrc` / `zprofile`: zsh interactive + login config (sources the shared file
+  below; Powerlevel10k-aware when you opt into it via `teeup.sh --prompt powerlevel10k`).
 - `bashrc` / `.bash_profile` / `profile`: bash + POSIX login/PATH config.
-- `shellrc.common`: a few broadly-useful aliases, sourced by both shells. Add
-  your own here.
-- `teeupshrc`: cross-shell tool init (SDKMAN, rbenv, pyenv opt-in, GOPATH,
-  bash-completion, Starship) — each gated by `command -v`, so it no-ops for tools
-  you haven't installed.
-- `gitconfig`: neutral git aliases + colors. Includes `~/.gitconfig.local` last
-  for your identity and any overrides (editor, mergetool, more aliases).
-- `gitconfig.local.example`: copy to `~/.gitconfig.local` and fill in your name,
-  email, and preferences.
-- `tmux.conf`: minimal tmux config.
-- `starship.toml`: Starship prompt config (bash; zsh uses Powerlevel10k).
+- `teeup.common`: the single shared cross-shell file, sourced by both shells. It
+  carries a few broadly-useful aliases plus cross-shell tool init (SDKMAN, rbenv,
+  pyenv opt-in, GOPATH, bash-completion, Starship) — each gated by `command -v`, so
+  it no-ops for tools you haven't installed. Add your own aliases/functions here.
+- `starship.toml`: Starship prompt config (bash; only relevant when you opt into
+  Starship via `teeup.sh --prompt starship`).
 
-## First-time setup
+> Prompt tools are opt-in. By default teeup installs no prompt; pass
+> `--prompt powerlevel10k` (zsh) or `--prompt starship` (bash) to install one.
 
-Set your git identity in an untracked local file (don't run `git config --global`
-while `~/.gitconfig` is a symlink — it would write back through the symlink):
-
-```sh
-cp gitconfig.local.example ~/.gitconfig.local
-$EDITOR ~/.gitconfig.local
-```
-
-This is your repo now — commit it, push it, and make it yours.
+This is your repo now — commit it, push it, and make it yours. Personal extras like
+a `gitconfig`/`tmux.conf` are intentionally not shipped here; add your own and teeup
+will link them if present.

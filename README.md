@@ -16,7 +16,7 @@ This repository contains `teeup.sh`, a cross-platform developer setup script. It
 Through an interactive wizard, teeup provisions a complete development environment, including: 
 
 - **Package Management**: Homebrew or MacPorts on macOS, APT or DNF on Linux   
-- **Terminal & Shell**: zsh with Powerlevel10k, or bash with bash-completion + Starship — tool initialization is shared across both via `~/.teeupshrc`   
+- **Terminal & Shell**: zsh or bash with bash-completion; tool initialization is shared across both via `~/.teeup.common`. An optional prompt (Powerlevel10k for zsh, Starship for bash) is opt-in via `--prompt`   
 - **Development Tools**: UV, SDKMAN!, rbenv, rustup, and Emacs    
 - **Containers**: Colima bundled with the Docker CLI   
 - **Applications**: Bruno and Obsidian   
@@ -32,7 +32,7 @@ Through an interactive wizard, teeup provisions a complete development environme
 - ✅ Installs **Xcode CLT** and **Rosetta 2** (if required, macOS only)  
 - ✅ Bootstraps:
   - **Package manager**: `PACKAGE_MANAGER=auto` resolves by platform (`homebrew`/`macports` on macOS, `apt`/`dnf` on Linux)
-  - **zsh** in either plain mode (default) or **Oh My Zsh** mode, both with **Powerlevel10k**
+  - **zsh** in either plain mode (default) or **Oh My Zsh** mode; an optional **Powerlevel10k** prompt via `--prompt powerlevel10k`
   - **Core CLI utilities**: `git`, `wget`, `curl`, `jq`, `htop`, `tree`, `tmux`, `ripgrep`, `fd`, `gnupg`  
   - **Python via UV** (default, recommended) — 10-100x faster than pip, manages Python versions, virtual envs, and tools  
   - **Python via pyenv** + `pyenv-virtualenv`, `pipx`, `poetry` (legacy option, set `USE_UV=false`)  
@@ -42,7 +42,7 @@ Through an interactive wizard, teeup provisions a complete development environme
   - **Docker runtime + CLI** (Colima on macOS, distro packages on Linux; no Docker Desktop required)  
   - **Emacs** with a minimal starter config  
   - **Bruno** and **Obsidian** (macOS-only via Homebrew cask)
-- ✅ Detects your login shell (`bash` or `zsh`) and wires tool init into a shared `~/.teeupshrc` sourced by both shells; override with `TARGET_SHELL`
+- ✅ Detects your login shell (`bash` or `zsh`) and wires tool init into a shared `~/.teeup.common` sourced by both shells; override with `TARGET_SHELL`
 - ✅ Adds the invoking user to the `docker` group on Linux so `docker` works without `sudo` (after re-login)
 - ✅ Dotfiles your way: use your own repo (`--dotfiles <path|url>` or a sibling `dotfiles`), generate a neutral starter you own (`--init-dotfiles`), or fall back to minimal managed shell blocks
 - ✅ Can reconcile existing shell config by disabling old Antigen, pyenv, and stale hardcoded path lines
@@ -172,6 +172,10 @@ Run only specific modules using the `--only` flag:
 # Use Oh My Zsh mode
 ZSH_MODE=ohmyzsh ./teeup.sh --only zsh
 
+# Opt into a prompt (default installs none): Powerlevel10k for zsh, Starship for bash
+./teeup.sh --only zsh --prompt powerlevel10k
+./teeup.sh --only bash --prompt starship
+
 # Run multiple modules
 ./teeup.sh --only zsh,python,java,docker
 
@@ -190,10 +194,10 @@ ZSH_MODE=ohmyzsh ./teeup.sh --only zsh
 | Module | Description |
 |--------|-------------|
 | `homebrew` | Package manager setup; compatibility module name resolved by OS |
-| `shell` | Configure your login shell — zsh: Powerlevel10k + plugins; bash: bash-completion + Starship |
-| `zsh` | Force zsh setup (Powerlevel10k + plugins) |
+| `shell` | Configure your login shell — zsh: plugins; bash: bash-completion. Optional prompt via `--prompt` |
+| `zsh` | Force zsh setup (plugins; optional Powerlevel10k via `--prompt powerlevel10k`) |
 | `ohmyzsh` | Legacy alias for `zsh` with `ZSH_MODE=ohmyzsh` |
-| `bash` | Force bash setup (bash-completion + Starship) |
+| `bash` | Force bash setup (bash-completion; optional Starship via `--prompt starship`) |
 | `cli` | Core CLI utilities (git, jq, ripgrep, etc.) |
 | `python` | Python environment (UV or pyenv/poetry) |
 | `java` | SDKMAN! + Java + Maven/Gradle |
@@ -289,6 +293,7 @@ USE_UV="${USE_UV:-true}"                            # Use uv instead of pyenv/po
 INSTALL_PY_TOOLS="${INSTALL_PY_TOOLS:-true}"        # Install Python tools (via uv tool or pipx)
 RUBYGEMS_UPDATE="${RUBYGEMS_UPDATE:-true}"          # Update RubyGems after installing Ruby
 ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
+PROMPT="${PROMPT:-none}"                             # none, powerlevel10k (zsh), or starship (bash)
 TARGET_SHELL="${TARGET_SHELL:-auto}"                # Login shell to configure: auto, bash, or zsh
 PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, macports, apt, or dnf
 STRICT_PLATFORM="${STRICT_PLATFORM:-false}"         # fail instead of skipping unsupported modules
@@ -328,13 +333,18 @@ so it never imposes one person's taste:
   ./teeup.sh --init-dotfiles ~/dotfiles
   ```
 - **None** — with no overlay and no `--init-dotfiles`, setup falls back to small
-  managed shell blocks written to `~/.teeupshrc` and sourced from your rc file.
+  managed shell blocks written to `~/.teeup.common` and sourced from your rc file.
 
-When an overlay is used, the script symlinks the shared files (`shellrc.common`,
-`teeupshrc`, `gitconfig`, `tmux.conf`) plus the files for your **target login
-shell only** (segregated): zsh gets `zshrc`/`zprofile`; bash gets
-`bashrc`/`.bash_profile`/`profile` and a starter `starship.toml`
-(→ `~/.config/starship.toml`).
+When an overlay is used, the script symlinks the single shared file (`teeup.common`)
+plus the files for your **target login shell only** (segregated): zsh gets
+`zshrc`/`zprofile`; bash gets `bashrc`/`.bash_profile`/`profile`. Non-shell-specific
+configs (`gitconfig`, `tmux.conf`, and — when `--prompt starship` is set —
+`starship.toml` → `~/.config/starship.toml`) are linked only if your overlay ships
+them, so the neutral starter stays minimal.
+
+> **Migration note:** an older `~/.teeupshrc` is renamed to `~/.teeup.common`
+> automatically. A regular file (Mode-2 fallback) is moved in place and your rc
+> re-pointed; a stale teeup-owned symlink is removed.
 
 ### UV vs pyenv/poetry
 
@@ -605,8 +615,8 @@ The project includes a test suite to validate both scripts:
 **teeup.sh behavior tests:**
 - Dry-run command previews with mocked tools
 - Platform resolution (macOS Homebrew/MacPorts, Linux APT/DNF)
-- Target-shell routing (bash vs zsh) and `teeupshrc` wiring
-- Segregated bash/zsh deployments and Starship-vs-Powerlevel10k selection
+- Target-shell routing (bash vs zsh) and `teeup.common` wiring (incl. `~/.teeupshrc`→`~/.teeup.common` migration)
+- Segregated bash/zsh deployments and opt-in prompt selection (`--prompt`)
 - Linux docker-group membership
 
 **teeup-wizard.sh tests:**

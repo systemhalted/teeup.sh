@@ -21,7 +21,7 @@ setup_test_env() {
   export BASHRC="$TEST_HOME/.bashrc"
   export BASH_PROFILE="$TEST_HOME/.bash_profile"
   export PROFILE="$TEST_HOME/.profile"
-  export TEEUPSHRC="$TEST_HOME/.teeupshrc"
+  export TEEUP_COMMON="$TEST_HOME/.teeup.common"
   mkdir -p "$(dirname "$ZSH_INTEGRATION")"
   touch "$ZSHRC"
   touch "$ZPROFILE"

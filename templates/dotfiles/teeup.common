@@ -1,5 +1,27 @@
-# teeupshrc — cross-shell tool integration sourced by both bashrc and zshrc.
+# teeup.common — shared cross-shell config sourced by both bashrc and zshrc.
 # POSIX only — shell-specific syntax must stay inside guarded branches.
+#
+# This is a neutral starter. Add your own aliases and functions below.
+
+alias ll="ls -lah"
+alias c="clear"
+alias cls="clear"
+
+# Colima shortcuts, only when colima is installed.
+if command -v colima >/dev/null 2>&1; then
+  alias colima-start="colima start"
+  alias colima-stop="colima stop"
+fi
+
+# macOS-only Finder toggles.
+if [ "$(uname -s)" = "Darwin" ]; then
+  alias showHiddenFiles="defaults write com.apple.finder AppleShowAllFiles YES; killall Finder"
+  alias hideHiddenFiles="defaults write com.apple.finder AppleShowAllFiles NO; killall Finder"
+fi
+
+# ----------------------------------------------------------------------------
+# Tool integration (formerly ~/.teeupshrc).
+# ----------------------------------------------------------------------------
 
 # Go workspace
 export GOPATH="${GOPATH:-$HOME/Development/GoWorkspace}"
@@ -41,7 +63,7 @@ if [ -n "${BASH_VERSION:-}" ]; then
   fi
 fi
 
-# Starship prompt (bash only; zsh uses Powerlevel10k)
+# Starship prompt (bash only; opt-in via teeup.sh --prompt starship)
 if [ -n "${BASH_VERSION:-}" ] && command -v starship >/dev/null 2>&1; then
   eval "$(starship init bash)"
 fi

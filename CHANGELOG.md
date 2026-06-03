@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Unified shared shell file → `~/.teeup.common`.** The overlapping
+  `shellrc.common` (aliases) and `teeupshrc` (tool init) are merged into a single
+  cross-shell file, `teeup.common`, in **both** delivery modes — the dotfiles
+  template and the managed-fallback (no-payload) generator. The neutral template's
+  per-shell rc files now source `~/.teeup.common`.
+- **Prompt tools are opt-in.** Powerlevel10k (zsh) and Starship (bash) are no
+  longer installed by default. The default is the shell's plain prompt.
+- **Leaner neutral template.** `gitconfig`, `gitconfig.local.example`, and
+  `tmux.conf` are no longer shipped in `templates/dotfiles/`. teeup links these (and
+  legacy `shellrc.common`/`teeupshrc`) only if a personal overlay actually provides
+  them; shell-specific files are still segregated to the target login shell.
+
+### Added
+- `--prompt none|powerlevel10k|starship` (and the `PROMPT` env var, default `none`)
+  to choose a prompt tool explicitly. Surfaced in the wizard as a dedicated
+  "Which prompt theme?" step, decoupled from the zsh plain/Oh My Zsh choice.
+
+### Migration
+- An older `~/.teeupshrc` is migrated automatically: a regular file (managed
+  fallback) is moved to `~/.teeup.common` and the source line in your `~/.bashrc`/
+  `~/.zshrc` is re-pointed (idempotent on re-runs); a stale teeup-owned **symlink**
+  into your dotfiles dir is removed. A foreign-target symlink or pre-existing
+  `~/.teeup.common` is left untouched.
+
+---
+
 ## [2.0.0] - 2026-05-30
 
 ### Changed
