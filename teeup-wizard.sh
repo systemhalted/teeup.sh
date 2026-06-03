@@ -1153,7 +1153,7 @@ show_additional_options() {
   # Dotfiles: a neutral base owned by teeup + a personal overlay you bring.
   local wizard_dir sibling_dotfiles df_choice df_default df_src df_dir
   wizard_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  sibling_dotfiles="$(cd "$wizard_dir/../dotfiles" 2>/dev/null && pwd || true)"
+  sibling_dotfiles="$(cd "$wizard_dir/../dotfiles" 2>/dev/null && pwd)" || sibling_dotfiles=""
 
   echo "Dotfiles (shell aliases, git config, tmux, prompt):"
   echo ""
