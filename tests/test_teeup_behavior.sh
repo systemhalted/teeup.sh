@@ -390,7 +390,7 @@ test_legacy_link_survives_when_overlay_ships_it() {
   if [[ ! -L "$HOME/.teeupshrc" ]]; then
     echo "FAIL: ~/.teeupshrc back-compat link should survive when overlay ships teeupshrc"; return 1
   fi
-  assert_equals "$df/teeupshrc" "$(readlink "$HOME/.teeupshrc")" "~/.teeupshrc should point into the overlay"
+  assert_equals "$df/teeupshrc" "$(readlink "$HOME/.teeupshrc")" "teeupshrc link should point into the overlay"
   if [[ ! -L "$HOME/.shellrc.common" ]]; then
     echo "FAIL: ~/.shellrc.common back-compat link should survive when overlay ships it"; return 1
   fi
@@ -419,7 +419,7 @@ test_stale_legacy_symlink_removed_after_migration() {
   if [[ -L "$HOME/.shellrc.common" || -e "$HOME/.shellrc.common" ]]; then
     echo "FAIL: stale ~/.shellrc.common symlink should be removed once overlay drops it"; return 1
   fi
-  assert_equals "$df/teeup.common" "$(readlink "$HOME/.teeup.common")" "~/.teeup.common should be linked"
+  assert_equals "$df/teeup.common" "$(readlink "$HOME/.teeup.common")" "teeup.common link should be created"
 }
 
 test_zsh_shell_module_still_installs_plugins() {
