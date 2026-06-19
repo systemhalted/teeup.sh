@@ -1557,6 +1557,7 @@ show_completion() {
   if is_module_selected "rust"; then
     echo -e "     ${DIM}rustc --version${RESET}"
     echo -e "     ${DIM}cargo --version${RESET}"
+    echo -e "     ${DIM}rust-analyzer --version${RESET}"
   fi
 
   if is_module_selected "zsh" && [[ "$WIZARD_PROMPT" == "starship" ]]; then

@@ -591,6 +591,20 @@ test_run_env_var_overrides_base_profile() {
   fi
 }
 
+test_rust_installs_lsp_components() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(DRY_RUN=true RUN_RUST=true PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$TEST_HOME/no-dotfiles" "$PROJECT_DIR/teeup.sh" 2>&1)
+
+  assert_contains "$output" "rustup component add rust-analyzer clippy rustfmt" \
+    "Rust module should install rust-analyzer (and clippy/rustfmt) components"
+}
+
 test_init_dotfiles_generates_neutral_starter() {
   setup_test_env
   trap cleanup_test_env RETURN
@@ -642,5 +656,6 @@ run_test "Zsh shell module still installs plugins" test_zsh_shell_module_still_i
 run_test "Prompt none installs no prompt tool" test_prompt_none_installs_no_prompt_tool
 run_test "Prompt starship installs Starship only" test_prompt_starship_only
 run_test "Mode-2 teeupshrc migrates to teeup.common" test_mode2_teeupshrc_migration
+run_test "Rust installs rust-analyzer/clippy/rustfmt components" test_rust_installs_lsp_components
 
 print_summary

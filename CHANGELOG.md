@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--prompt none|powerlevel10k|starship` (and the `PROMPT` env var, default `none`)
   to choose a prompt tool explicitly. Surfaced in the wizard as a dedicated
   "Which prompt theme?" step, decoupled from the zsh plain/Oh My Zsh choice.
+- **Rust LSP tooling.** The `rust` module now runs `rustup component add
+  rust-analyzer clippy rustfmt`, so editors (e.g. Emacs rustic/eglot) get a
+  working LSP server out of the box. `rust-analyzer` is not in rustup's default
+  profile, so it previously had to be added by hand; clippy/rustfmt are listed
+  explicitly to stay correct if the default profile changes. The step is
+  idempotent, so existing rustup installs pick the components up on rerun.
 
 ### Migration
 - An older `~/.teeupshrc` is migrated automatically: a regular file (managed
