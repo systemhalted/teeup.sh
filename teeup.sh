@@ -1764,6 +1764,15 @@ if [[ "$RUN_RUST" == "true" ]]; then
     ok "rustup already installed."
   fi
 
+  # Ensure the components needed for IDE/LSP tooling are present. clippy and
+  # rustfmt ship in rustup's default profile, but rust-analyzer (the LSP server
+  # editors like Emacs rustic/eglot drive) does not, so nothing lights up
+  # without it. clippy/rustfmt are listed explicitly so we stay correct even if
+  # the default profile changes. Re-adding an installed component is a no-op,
+  # so this remains idempotent.
+  log "Ensuring Rust components (rust-analyzer, clippy, rustfmt)…"
+  run_cmd rustup component add rust-analyzer clippy rustfmt
+
   # Ensure cargo in PATH for future shells
   if [[ "$INSTALL_DOTFILES" == "true" ]] && dotfiles_payload_available; then
     log "Cargo PATH is handled by dotfiles."
