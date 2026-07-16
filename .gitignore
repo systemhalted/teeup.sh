@@ -53,3 +53,6 @@ Temporary Items
 REVIEW_*.md
 ACTION_ITEMS.md
 
+
+# shellenv project envs (see CONTRIBUTING.md "Testing with shellenv")
+.shellenv/
