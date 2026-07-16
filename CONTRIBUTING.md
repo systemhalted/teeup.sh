@@ -280,6 +280,42 @@ Use explicit Homebrew calls only for Homebrew-only features, such as casks, and 
 ./tests/test_teeup-wizard.sh
 ```
 
+### Testing with shellenv
+
+[shellenv](https://github.com/systemhalted/shellenv) gives teeup a per-project shell sandbox: runs execute under a *pinned* bash version, and every `$HOME`/`TMPDIR`/`XDG_*` write teeup makes lands in `./.shellenv/<env>/home/` instead of your real home — so you can exercise the dotfile-writing paths for real without touching your own dotfiles. (`./.shellenv/` is gitignored.)
+
+One-time setup (needs `cc`/`make`/`tar`; the bash build takes ~a minute):
+
+```bash
+shellenv init
+shellenv install bash@5.2                     # build the pinned runtime from source
+shellenv create --shell bash@5.2 --profile strict   # from the teeup.sh directory
+```
+
+Then, from the teeup.sh directory:
+
+```bash
+# Test suite under the pinned bash
+shellenv exec -- ./tests/run_tests.sh
+
+# Dry-run everything; sandboxed even without --dry-run
+shellenv exec -- ./teeup.sh --dry-run --all
+
+# Real dotfile writes, contained: lands in .shellenv/default/home/, not ~
+shellenv exec -- ./teeup.sh --init-dotfiles
+
+# Throwaway HOME per run (idempotency checks)
+shellenv exec --ephemeral -- ./teeup.sh --init-dotfiles
+
+# Real package installs with full namespace isolation (network required)
+shellenv exec --container ubuntu:24.04 -- ./teeup.sh --only cli
+```
+
+Notes:
+- `shellenv exec --strict-shell -- …` fails instead of falling back when the pinned bash isn't installed.
+- Host-mode sandboxing contains `$HOME`-class writes only; package installs and other system mutations need `--container`.
+- If you run a bare `shellenv` binary from outside its release directory, set `SHELLENV_PROFILES` to its bundled `profiles/` directory so `--profile` resolution works.
+
 ### Writing Tests
 
 Tests use the helper framework in `tests/test_helper.sh`:
