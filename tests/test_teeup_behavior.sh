@@ -605,6 +605,28 @@ test_rust_installs_lsp_components() {
     "Rust module should install rust-analyzer (and clippy/rustfmt) components"
 }
 
+test_rust_ensures_curl_before_download() {
+  # rustup-init is fetched with curl, but `--only rust` does not pull in the CLI
+  # module (which is what guarantees curl) or the package-manager module (which
+  # runs apt-get update). On a minimal system such as a fresh ubuntu:24.04
+  # container that leaves no curl and no refreshed index, so the install must
+  # ensure curl itself before downloading. Guard the wiring so it can't regress:
+  # the rust module must invoke ensure_curl (a bare call, not just the function
+  # definition) ahead of the first curl that pulls the rustup installer.
+  local call_line download_line
+  call_line=$(grep -n '^[[:space:]]*ensure_curl[[:space:]]*$' "$PROJECT_DIR/teeup.sh" | head -1 | cut -d: -f1)
+  download_line=$(grep -n 'sh.rustup.rs' "$PROJECT_DIR/teeup.sh" | head -1 | cut -d: -f1)
+  if [[ -z "$call_line" ]]; then
+    echo -e "${RED}FAIL: Rust module should invoke ensure_curl before fetching rustup${RESET}"
+    return 1
+  fi
+  if [[ -z "$download_line" ]] || (( call_line >= download_line )); then
+    echo -e "${RED}FAIL: ensure_curl must run before the rustup download (call@${call_line:-none}, download@${download_line:-none})${RESET}"
+    return 1
+  fi
+  return 0
+}
+
 test_init_dotfiles_generates_neutral_starter() {
   setup_test_env
   trap cleanup_test_env RETURN
@@ -657,5 +679,6 @@ run_test "Prompt none installs no prompt tool" test_prompt_none_installs_no_prom
 run_test "Prompt starship installs Starship only" test_prompt_starship_only
 run_test "Mode-2 teeupshrc migrates to teeup.common" test_mode2_teeupshrc_migration
 run_test "Rust installs rust-analyzer/clippy/rustfmt components" test_rust_installs_lsp_components
+run_test "Rust ensures curl before downloading rustup" test_rust_ensures_curl_before_download
 
 print_summary

@@ -223,6 +223,27 @@ require_command_available() {
   fi
 }
 
+# Several modules fetch their installer over HTTPS with curl (rustup, sdkman,
+# uv, oh-my-zsh, starship). curl is guaranteed by the CLI module, but a module
+# run on its own — e.g. `--only rust` — may execute on a minimal system that
+# ships without it, notably a fresh container image like ubuntu:24.04. Such a
+# run also never triggers the package-manager module, so no `apt-get update`
+# has happened either. Install curl on demand so the download step has a working
+# client: prepare_package_manager refreshes the package index first, then we
+# install curl. On macOS curl is always present, so this returns early and never
+# reaches the (Homebrew-bootstrapping) prepare step.
+ensure_curl() {
+  have curl && return 0
+  if [[ "$DRY_RUN" == "true" ]]; then
+    emoj "🔍"; echo "[DRY-RUN] Would ensure 'curl' is installed before downloading installers"
+    return 0
+  fi
+  log "curl not found; installing it (needed to download installers)…"
+  prepare_package_manager
+  pkg_install curl curl
+  require_command_available curl "curl install"
+}
+
 require_path_available() {
   local path="$1"
   local context="$2"
@@ -1740,6 +1761,7 @@ fi
 if [[ "$RUN_RUST" == "true" ]]; then
   if ! have rustup; then
     log "Installing Rust via rustup…"
+    ensure_curl
     rustup_init="$(mktemp -t teeup-rustup-init.XXXXXX)"
     if [[ "$DRY_RUN" == "true" ]]; then
       run_cmd curl -fsSL https://sh.rustup.rs -o "$rustup_init"
