@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **pacman support for Arch and derivatives (including Omarchy).**
+  `PACKAGE_MANAGER=auto` now resolves to `pacman` from `ID=arch` in
+  `/etc/os-release`, or falls back to it when the binary is present;
+  `PACKAGE_MANAGER=pacman` selects it explicitly, and the wizard offers it as a
+  fourth Linux choice. Debian and Fedora `-dev`/`-devel` package names are
+  mapped onto Arch's undecorated libraries, and the Ruby and pyenv build-dep
+  lists gained Arch arms.
+
+  Two Arch-specific behaviours are worth knowing: database refreshes run
+  `pacman -Syu` rather than a bare `-Sy`, because refreshing without upgrading
+  and then installing creates an unsupported partial-upgrade state — so this
+  step upgrades the system, unlike `apt-get update`. And packages outside the
+  official repositories fall back to an AUR helper (`yay` or `paru`) when one is
+  installed, warning and skipping rather than failing when none is.
+
 ### Changed
 - **Unified shared shell file → `~/.teeup.common`.** The overlapping
   `shellrc.common` (aliases) and `teeupshrc` (tool init) are merged into a single
