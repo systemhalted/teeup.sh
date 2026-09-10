@@ -22,3 +22,6 @@ symlinks them into `$HOME`; they are also fine to symlink by hand.
 This is your repo now — commit it, push it, and make it yours. Personal extras like
 a `gitconfig`/`tmux.conf` are intentionally not shipped here; add your own and teeup
 will link them if present.
+
+These files are yours outright. They carry no teeup copyright and no attribution
+requirement — license them however you like, or not at all.
