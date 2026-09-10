@@ -37,7 +37,7 @@ normalize_package_manager() {
   local mode_lower
   mode_lower=$(echo "$PACKAGE_MANAGER" | tr '[:upper:]' '[:lower:]')
   case "$mode_lower" in
-    auto|homebrew|macports|apt|dnf) PACKAGE_MANAGER="$mode_lower" ;;
+    auto|homebrew|macports|apt|dnf|pacman) PACKAGE_MANAGER="$mode_lower" ;;
     *)
       warn "Unknown PACKAGE_MANAGER '$PACKAGE_MANAGER'; defaulting to auto"
       PACKAGE_MANAGER="auto"
@@ -73,6 +73,11 @@ resolve_package_manager() {
       RESOLVED_PACKAGE_MANAGER="dnf"
       return 0
     fi
+    # Omarchy reports ID=arch, so arch covers it and its derivatives.
+    if linux_distro_matches arch || linux_distro_matches archlinux; then
+      RESOLVED_PACKAGE_MANAGER="pacman"
+      return 0
+    fi
 
     # Best-effort default for unknown distros.
     if have apt-get; then
@@ -83,10 +88,14 @@ resolve_package_manager() {
       RESOLVED_PACKAGE_MANAGER="dnf"
       return 0
     fi
+    if have pacman; then
+      RESOLVED_PACKAGE_MANAGER="pacman"
+      return 0
+    fi
   fi
 
   err "Could not resolve package manager automatically for ${PLATFORM_LABEL:-this platform}."
-  err "Set PACKAGE_MANAGER explicitly (supported: homebrew, macports, apt, dnf)."
+  err "Set PACKAGE_MANAGER explicitly (supported: homebrew, macports, apt, dnf, pacman)."
   exit 1
 }
 
@@ -98,7 +107,7 @@ validate_package_manager_for_platform() {
         exit 1
       fi
       ;;
-    apt|dnf)
+    apt|dnf|pacman)
       if ! is_linux; then
         err "PACKAGE_MANAGER=$RESOLVED_PACKAGE_MANAGER is only supported on Linux."
         exit 1
@@ -113,6 +122,7 @@ package_manager_label() {
     macports) echo "MacPorts" ;;
     apt) echo "APT" ;;
     dnf) echo "DNF" ;;
+    pacman) echo "pacman" ;;
     *) echo "$RESOLVED_PACKAGE_MANAGER" ;;
   esac
 }
@@ -123,6 +133,7 @@ package_manager_tag() {
     macports) echo "port" ;;
     apt) echo "apt" ;;
     dnf) echo "dnf" ;;
+    pacman) echo "pacman" ;;
     *) echo "$RESOLVED_PACKAGE_MANAGER" ;;
   esac
 }
@@ -201,7 +212,27 @@ require_package_manager() {
         exit 1
       fi
       ;;
+    pacman)
+      if ! have pacman && [[ "$DRY_RUN" != "true" ]]; then
+        err "pacman is selected but the 'pacman' command is not available."
+        exit 1
+      fi
+      ;;
   esac
+}
+
+# An AUR helper, if one is installed. Omarchy ships yay. Packages that are not
+# in the official repositories fall back to this; without it they are skipped
+# with a warning rather than failing the run.
+aur_helper() {
+  local helper
+  for helper in yay paru; do
+    if have "$helper"; then
+      echo "$helper"
+      return 0
+    fi
+  done
+  return 1
 }
 
 package_command() {
@@ -219,10 +250,13 @@ package_command() {
       # On Linux the Compose plugin provides the `docker compose` subcommand
       # rather than a standalone `docker-compose` binary, so don't assert one.
       case "$RESOLVED_PACKAGE_MANAGER" in
-        apt|dnf) echo "" ;;
+        apt|dnf|pacman) echo "" ;;
         *) echo "docker-compose" ;;
       esac
       ;;
+    pipx)
+      # Arch ships pipx as python-pipx; the binary is still pipx.
+      echo "pipx" ;;
     *) echo "$pkg" ;;
   esac
 }
@@ -242,6 +276,32 @@ package_candidates() {
     apt:zsh-completions) echo "zsh zsh-completions" ;;
     dnf:zsh-completions) echo "zsh zsh-completions" ;;
     homebrew:bash-completion) echo "bash-completion@2 bash-completion" ;;
+
+    # --- Arch ---------------------------------------------------------------
+    # Only names that actually differ from the canonical ones are listed; the
+    # default branch below passes everything else through unchanged.
+    pacman:gnupg2) echo "gnupg" ;;
+    pacman:fd) echo "fd" ;;
+    pacman:gh) echo "github-cli" ;;
+    pacman:pipx) echo "python-pipx" ;;
+    pacman:docker-compose|pacman:docker-compose-plugin) echo "docker-compose" ;;
+    # Debian/Fedora -dev/-devel names map onto Arch's undecorated libraries.
+    pacman:build-essential) echo "base-devel" ;;
+    pacman:libssl-dev|pacman:openssl-devel) echo "openssl" ;;
+    pacman:libyaml-dev|pacman:libyaml-devel) echo "libyaml" ;;
+    pacman:libreadline-dev|pacman:readline-devel) echo "readline" ;;
+    pacman:zlib1g-dev|pacman:zlib-devel) echo "zlib" ;;
+    pacman:libgmp-dev|pacman:gmp-devel) echo "gmp" ;;
+    pacman:libncurses-dev|pacman:ncurses-devel) echo "ncurses" ;;
+    pacman:libffi-dev|pacman:libffi-devel) echo "libffi" ;;
+    pacman:libgdbm-dev|pacman:gdbm-devel) echo "gdbm" ;;
+    pacman:libdb-dev|pacman:libdb-devel) echo "db" ;;
+    pacman:uuid-dev) echo "util-linux-libs" ;;
+    pacman:libbz2-dev|pacman:bzip2-devel) echo "bzip2" ;;
+    pacman:libsqlite3-dev|pacman:sqlite-devel) echo "sqlite" ;;
+    pacman:xz-utils|pacman:liblzma-dev|pacman:xz-devel) echo "xz" ;;
+    pacman:tk-dev|pacman:tk-devel) echo "tk" ;;
+
     *) echo "$pkg" ;;
   esac
 }
@@ -261,6 +321,11 @@ pkg_installed() {
     dnf)
       rpm -q "$pkg" >/dev/null 2>&1
       ;;
+    pacman)
+      # -Qi covers both repo and AUR packages once installed. Groups such as
+      # base-devel are not packages themselves, so -Qg answers for those.
+      pacman -Qi "$pkg" >/dev/null 2>&1 || pacman -Qg "$pkg" >/dev/null 2>&1
+      ;;
     *)
       return 1
       ;;
@@ -274,6 +339,22 @@ pkg_install_candidate() {
     macports) run_privileged port install "$pkg" ;;
     apt) run_privileged apt-get install -y "$pkg" ;;
     dnf) run_privileged dnf install -y "$pkg" ;;
+    pacman)
+      # --needed keeps re-runs cheap; --noconfirm keeps the run unattended.
+      if run_privileged pacman -S --needed --noconfirm "$pkg"; then
+        return 0
+      fi
+      # Not in the official repositories: try the AUR, which must not run as
+      # root, so no run_privileged here.
+      local helper
+      if helper="$(aur_helper)"; then
+        log "'$pkg' is not in the official repositories; trying $helper (AUR)."
+        run_cmd "$helper" -S --needed --noconfirm "$pkg"
+      else
+        warn "'$pkg' is not in the official repositories and no AUR helper (yay/paru) is installed."
+        return 1
+      fi
+      ;;
     *) return 1 ;;
   esac
 }
@@ -371,6 +452,9 @@ prepare_package_manager() {
       ;;
     dnf)
       run_privileged dnf makecache || warn "dnf makecache returned non-zero."
+      ;;
+    pacman)
+      run_privileged pacman -Sy || warn "pacman -Sy returned non-zero."
       ;;
   esac
 }
