@@ -656,10 +656,122 @@ run_test "macOS command mocks" test_macos_command_mocks
 run_test "Dry-run legacy Python config isolation" test_dryrun_legacy_python_does_not_write_config
 run_test "UV Python skips package manager" test_uv_python_only_skips_package_manager
 run_test "Legacy Python enables package manager" test_legacy_python_only_enables_package_manager
+test_linux_pacman_path() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(DRY_RUN=true PACKAGE_MANAGER=pacman "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
+
+  assert_contains "$output" "Detected Linux" "Should detect Linux platform" || return 1
+  assert_contains "$output" "Preparing pacman" "Should prepare pacman on Linux" || return 1
+  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -Sy" "Should preview pacman database refresh" || return 1
+}
+
+test_pacman_installs_with_needed_and_noconfirm() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(DRY_RUN=true PACKAGE_MANAGER=pacman "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
+
+  # --needed keeps re-runs cheap, --noconfirm keeps the run unattended.
+  assert_contains "$output" "sudo pacman -S --needed --noconfirm" "Should install non-interactively and skip present packages" || return 1
+}
+
+test_pacman_maps_debian_dev_names_to_arch() {
+  # Unit-level on package_candidates: the ruby/python modules hardcode Arch
+  # names in their own pacman branches, so an integration test would pass even
+  # with the mapping table broken. Exercise the table directly instead.
+  local out
+  out=$(bash -c '
+    warn() { :; }; err() { :; }; log() { :; }
+    source "'"$PROJECT_DIR"'/lib/package_manager.sh"
+    RESOLVED_PACKAGE_MANAGER=pacman
+    for p in build-essential libssl-dev libyaml-dev zlib1g-dev libffi-dev \
+             uuid-dev xz-utils gnupg2 gh pipx openssl-devel readline-devel; do
+      printf "%s=>%s\n" "$p" "$(package_candidates "$p")"
+    done
+  ' 2>/dev/null)
+
+  assert_contains "$out" "build-essential=>base-devel" "build-essential should map to base-devel" || return 1
+  assert_contains "$out" "libssl-dev=>openssl" "libssl-dev should map to openssl" || return 1
+  assert_contains "$out" "libyaml-dev=>libyaml" "libyaml-dev should map to libyaml" || return 1
+  assert_contains "$out" "zlib1g-dev=>zlib" "zlib1g-dev should map to zlib" || return 1
+  assert_contains "$out" "libffi-dev=>libffi" "libffi-dev should map to libffi" || return 1
+  assert_contains "$out" "uuid-dev=>util-linux-libs" "uuid-dev should map to util-linux-libs" || return 1
+  assert_contains "$out" "xz-utils=>xz" "xz-utils should map to xz" || return 1
+  assert_contains "$out" "gnupg2=>gnupg" "gnupg2 should map to gnupg" || return 1
+  assert_contains "$out" "gh=>github-cli" "gh should map to github-cli" || return 1
+  assert_contains "$out" "pipx=>python-pipx" "pipx should map to python-pipx" || return 1
+  # Fedora-style names resolve too, since teeup passes those on some paths.
+  assert_contains "$out" "openssl-devel=>openssl" "openssl-devel should map to openssl" || return 1
+  assert_contains "$out" "readline-devel=>readline" "readline-devel should map to readline" || return 1
+}
+
+test_pacman_ruby_deps_use_arch_names() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  mock_runtime_commands
+
+  local output
+  output=$(DRY_RUN=true PACKAGE_MANAGER=pacman "$PROJECT_DIR/teeup.sh" --only ruby 2>&1)
+
+  assert_contains "$output" "sudo pacman -S --needed --noconfirm base-devel" "Ruby deps should use base-devel" || return 1
+  case "$output" in
+    *build-essential*|*libssl-dev*|*zlib1g-dev*)
+      echo "    Debian package names leaked into the pacman path" >&2
+      return 1 ;;
+  esac
+}
+
+test_pacman_autodetected_for_arch() {
+  # Unit-level: the resolver picks pacman from ID=arch in /etc/os-release,
+  # which is what Omarchy reports.
+  local resolved
+  resolved=$(bash -c '
+    have() { command -v "$1" >/dev/null 2>&1; }
+    warn() { :; }; err() { :; }; log() { :; }
+    is_macos() { false; }; is_linux() { true; }
+    linux_distro_matches() { [[ " ${DISTRO_ID:-} ${DISTRO_ID_LIKE:-} " == *" $1 "* ]]; }
+    source "'"$PROJECT_DIR"'/lib/package_manager.sh"
+    PACKAGE_MANAGER=auto DISTRO_ID=arch
+    resolve_package_manager
+    echo "$RESOLVED_PACKAGE_MANAGER"
+  ' 2>/dev/null | tail -1)
+
+  assert_equals "pacman" "$resolved" "ID=arch should resolve to pacman" || return 1
+}
+
+test_pacman_rejected_on_macos() {
+  local output
+  output=$(bash -c '
+    warn() { :; }; err() { echo "ERR: $*"; }
+    is_macos() { true; }; is_linux() { false; }
+    source "'"$PROJECT_DIR"'/lib/package_manager.sh"
+    RESOLVED_PACKAGE_MANAGER=pacman
+    validate_package_manager_for_platform
+  ' 2>&1)
+
+  assert_contains "$output" "only supported on Linux" "pacman should be rejected on macOS" || return 1
+}
+
 run_test "Package-backed modules enable package manager" test_package_backed_modules_enable_package_manager
 run_test "MacPorts dry-run missing port" test_macports_dryrun_warns_when_port_missing
 run_test "MacPorts apps skip casks" test_macports_apps_skip_casks_without_fallback
 run_test "Linux apt path" test_linux_apt_path
+run_test "Linux pacman path" test_linux_pacman_path
+run_test "pacman installs with --needed --noconfirm" test_pacman_installs_with_needed_and_noconfirm
+run_test "pacman maps Debian dev names to Arch" test_pacman_maps_debian_dev_names_to_arch
+run_test "pacman Ruby deps use Arch names" test_pacman_ruby_deps_use_arch_names
+run_test "pacman autodetected for ID=arch" test_pacman_autodetected_for_arch
+run_test "pacman rejected on macOS" test_pacman_rejected_on_macos
 run_test "Linux apps skip by default" test_linux_apps_skip_by_default
 run_test "Linux apps strict-platform fails" test_linux_apps_strict_platform_fails
 run_test "Linux Docker avoids Colima" test_linux_docker_avoids_colima

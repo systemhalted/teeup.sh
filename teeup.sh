@@ -207,6 +207,10 @@ install_ruby_build_deps() {
       local deps=(gcc make patch autoconf openssl-devel libyaml-devel readline-devel \
                   zlib-devel gmp-devel ncurses-devel libffi-devel gdbm-devel libdb-devel)
       for d in "${deps[@]}"; do pkg_install "$d"; done ;;
+    pacman)
+      # base-devel covers gcc/make/patch/autoconf, so only the libraries follow.
+      local deps=(base-devel openssl libyaml readline zlib gmp ncurses libffi gdbm db)
+      for d in "${deps[@]}"; do pkg_install "$d"; done ;;
   esac
 }
 
@@ -1514,6 +1518,11 @@ EOF
         done
       elif [[ "$RESOLVED_PACKAGE_MANAGER" == "dnf" ]]; then
         PYENV_BUILD_DEPS=(gcc make openssl-devel bzip2 bzip2-devel readline-devel sqlite sqlite-devel xz xz-devel tk-devel libffi-devel zlib-devel)
+        for dep in "${PYENV_BUILD_DEPS[@]}"; do
+          pkg_install "$dep"
+        done
+      elif [[ "$RESOLVED_PACKAGE_MANAGER" == "pacman" ]]; then
+        PYENV_BUILD_DEPS=(base-devel openssl zlib bzip2 readline sqlite xz tk libffi)
         for dep in "${PYENV_BUILD_DEPS[@]}"; do
           pkg_install "$dep"
         done

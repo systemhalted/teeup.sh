@@ -113,6 +113,14 @@ EOF
 echo "rpm $*" >> "$MOCK_LOG"
 exit 1
 EOF
+  mock_command_script pacman <<'EOF'
+echo "pacman $*" >> "$MOCK_LOG"
+# -Qi/-Qg answer "not installed" so install paths are exercised.
+case "$1" in
+  -Qi|-Qg) exit 1 ;;
+esac
+exit 0
+EOF
   mock_command sudo 0 ""
 }
 
