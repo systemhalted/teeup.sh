@@ -449,7 +449,7 @@ show_welcome() {
   if wizard_is_macos; then
     echo "  📦 Package Manager   - Homebrew on newer macOS, MacPorts on older macOS"
   elif wizard_is_linux; then
-    echo "  📦 Package Manager   - APT on Debian/Ubuntu, DNF on Fedora/RHEL-family"
+    echo "  📦 Package Manager   - APT on Debian/Ubuntu, DNF on Fedora/RHEL-family, pacman on Arch"
   else
     echo "  📦 Package Manager   - Auto-detected from your operating system"
   fi
@@ -544,7 +544,7 @@ show_module_selection() {
     if wizard_is_macos; then
       print_option "1" "package-manager" "Homebrew or MacPorts setup (module name: homebrew)" "$selected"
     elif wizard_is_linux; then
-      print_option "1" "package-manager" "APT or DNF setup (module name: homebrew)" "$selected"
+      print_option "1" "package-manager" "APT, DNF or pacman setup (module name: homebrew)" "$selected"
     else
       print_option "1" "package-manager" "Auto package manager setup (module name: homebrew)" "$selected"
     fi
@@ -701,9 +701,10 @@ show_package_manager_config() {
   elif wizard_is_linux; then
     echo "Choose which Linux package manager setup should use:"
     echo ""
-    echo -e "  ${BOLD}1)${RESET} ${GREEN}Auto (Recommended)${RESET} - APT on Debian/Ubuntu, DNF on Fedora/RHEL-family"
+    echo -e "  ${BOLD}1)${RESET} ${GREEN}Auto (Recommended)${RESET} - APT on Debian/Ubuntu, DNF on Fedora/RHEL-family, pacman on Arch"
     echo -e "  ${BOLD}2)${RESET} ${CYAN}APT${RESET} - Use apt explicitly"
     echo -e "  ${BOLD}3)${RESET} ${CYAN}DNF${RESET} - Use dnf explicitly"
+    echo -e "  ${BOLD}4)${RESET} ${CYAN}pacman${RESET} - Use pacman explicitly (Arch, Omarchy)"
   else
     echo "Choose package manager mode:"
     echo ""
@@ -712,11 +713,13 @@ show_package_manager_config() {
     echo -e "  ${BOLD}3)${RESET} ${CYAN}APT${RESET}"
   fi
   echo ""
-  echo -ne "${WHITE}Enter your choice [1-3] (default: 1): ${RESET}"
+  local max_choice=3
+  wizard_is_linux && max_choice=4
+  echo -ne "${WHITE}Enter your choice [1-${max_choice}] (default: 1): ${RESET}"
 
   local choice
   read -r choice
-  choice=$(validate_choice "$choice" 1 3 1)
+  choice=$(validate_choice "$choice" 1 "$max_choice" 1)
 
   if wizard_is_macos; then
     case "$choice" in
@@ -730,6 +733,7 @@ show_package_manager_config() {
       1) WIZARD_PACKAGE_MANAGER="auto" ;;
       2) WIZARD_PACKAGE_MANAGER="apt" ;;
       3) WIZARD_PACKAGE_MANAGER="dnf" ;;
+      4) WIZARD_PACKAGE_MANAGER="pacman" ;;
       *) WIZARD_PACKAGE_MANAGER="auto" ;;
     esac
   else

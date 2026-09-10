@@ -15,7 +15,7 @@ This repository contains `teeup.sh`, a cross-platform developer setup script. It
 
 Through an interactive wizard, teeup provisions a complete development environment, including: 
 
-- **Package Management**: Homebrew or MacPorts on macOS, APT or DNF on Linux   
+- **Package Management**: Homebrew or MacPorts on macOS, APT, DNF or pacman on Linux   
 - **Terminal & Shell**: zsh or bash with bash-completion; tool initialization is shared across both via `~/.teeup.common`. An optional prompt (Powerlevel10k for zsh, Starship for bash) is opt-in via `--prompt`   
 - **Development Tools**: UV, SDKMAN!, rbenv, rustup, and Emacs    
 - **Containers**: Colima bundled with the Docker CLI   
@@ -27,11 +27,11 @@ Through an interactive wizard, teeup provisions a complete development environme
 ## ✨ Features
 
 - ✅ Idempotent: safe to run multiple times — skips already installed items  
-- ✅ Works on **macOS** and **Linux** (first-class: Ubuntu + Fedora)  
+- ✅ Works on **macOS** and **Linux** (first-class: Ubuntu, Fedora + Arch)  
 - ✅ Works on both **Apple Silicon** and **Intel** Macs  
 - ✅ Installs **Xcode CLT** and **Rosetta 2** (if required, macOS only)  
 - ✅ Bootstraps:
-  - **Package manager**: `PACKAGE_MANAGER=auto` resolves by platform (`homebrew`/`macports` on macOS, `apt`/`dnf` on Linux)
+  - **Package manager**: `PACKAGE_MANAGER=auto` resolves by platform (`homebrew`/`macports` on macOS, `apt`/`dnf`/`pacman` on Linux)
   - **zsh** in either plain mode (default) or **Oh My Zsh** mode; an optional **Powerlevel10k** prompt via `--prompt powerlevel10k`
   - **Core CLI utilities**: `git`, `wget`, `curl`, `jq`, `htop`, `tree`, `tmux`, `ripgrep`, `fd`, `gnupg`  
   - **Python via UV** (default, recommended) — 10-100x faster than pip, manages Python versions, virtual envs, and tools  
@@ -85,6 +85,7 @@ By default, setup uses `PACKAGE_MANAGER=auto`:
 - macOS 12 or older: **MacPorts**
 - Ubuntu/Debian: **APT**
 - Fedora/RHEL-family: **DNF**
+- Arch and derivatives (including Omarchy): **pacman**
 
 MacPorts itself is not installed by the script. On older Macs, install the official pkg for your macOS version first:
 
@@ -99,7 +100,18 @@ PACKAGE_MANAGER=homebrew ./teeup.sh
 PACKAGE_MANAGER=macports ./teeup.sh
 PACKAGE_MANAGER=apt ./teeup.sh
 PACKAGE_MANAGER=dnf ./teeup.sh
+PACKAGE_MANAGER=pacman ./teeup.sh
 ```
+
+On Arch, package-database refreshes run as `pacman -Syu` rather than a bare
+`-Sy`. Refreshing without upgrading and then installing produces a
+[partial upgrade](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported),
+which Arch does not support — so this step upgrades the system, unlike
+`apt-get update` or `dnf makecache`.
+
+Packages outside the official repositories fall back to an AUR helper (`yay` or
+`paru`) when one is installed. Without a helper they are skipped with a warning
+rather than failing the run.
 
 ---
 
@@ -115,7 +127,7 @@ The wizard will guide you through:
 
 1. **Setup Type Selection** - Choose between minimal base (recommended), full setup, custom module selection, or migration
 2. **Module Selection** - Toggle which components to install
-3. **Package Manager Selection** - Auto (resolves by OS) or explicit (Homebrew/MacPorts on macOS, APT/DNF on Linux)
+3. **Package Manager Selection** - Auto (resolves by OS) or explicit (Homebrew/MacPorts on macOS, APT/DNF/pacman on Linux)
 4. **Shell Configuration** - On Linux, choose bash or zsh; for zsh, plain (default) or Oh My Zsh
 5. **Python Configuration** - Choose between UV (recommended) or pyenv, and select version
 6. **Java Configuration** - Select Java version (21, 17, 11, or custom)
@@ -124,7 +136,7 @@ The wizard will guide you through:
 9. **Additional Options** - Dotfiles (use your own, generate a neutral starter, or none), existing-config reconciliation, cleanup, and macOS defaults tuning
 10. **Review & Confirm** - See a summary before installation begins
 
-> Note: The wizard detects your platform. On Linux it offers APT/DNF selection and asks whether your login shell is bash or zsh; on macOS it offers Homebrew/MacPorts and zsh modes.
+> Note: The wizard detects your platform. On Linux it offers APT/DNF/pacman selection and asks whether your login shell is bash or zsh; on macOS it offers Homebrew/MacPorts and zsh modes.
 
 ### Wizard Features
 
@@ -295,7 +307,7 @@ RUBYGEMS_UPDATE="${RUBYGEMS_UPDATE:-true}"          # Update RubyGems after inst
 ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
 PROMPT="${PROMPT:-none}"                             # none, powerlevel10k (zsh), or starship (bash)
 TARGET_SHELL="${TARGET_SHELL:-auto}"                # Login shell to configure: auto, bash, or zsh
-PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, macports, apt, or dnf
+PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, macports, apt, dnf, or pacman
 STRICT_PLATFORM="${STRICT_PLATFORM:-false}"         # fail instead of skipping unsupported modules
 INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Symlink a dotfiles overlay (see --dotfiles / --init-dotfiles)
 RECONCILE_EXISTING_CONFIG="${RECONCILE_EXISTING_CONFIG:-false}"  # Disable old shell config lines
@@ -614,7 +626,7 @@ The project includes a test suite to validate both scripts:
 
 **teeup.sh behavior tests:**
 - Dry-run command previews with mocked tools
-- Platform resolution (macOS Homebrew/MacPorts, Linux APT/DNF)
+- Platform resolution (macOS Homebrew/MacPorts, Linux APT/DNF/pacman)
 - Target-shell routing (bash vs zsh) and `teeup.common` wiring (incl. `~/.teeupshrc`→`~/.teeup.common` migration)
 - Segregated bash/zsh deployments and opt-in prompt selection (`--prompt`)
 - Linux docker-group membership
