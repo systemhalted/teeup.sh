@@ -667,7 +667,13 @@ test_linux_pacman_path() {
 
   assert_contains "$output" "Detected Linux" "Should detect Linux platform" || return 1
   assert_contains "$output" "Preparing pacman" "Should prepare pacman on Linux" || return 1
-  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -Sy" "Should preview pacman database refresh" || return 1
+  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -Syu --noconfirm" "Should refresh and upgrade together" || return 1
+  # A bare -Sy followed by -S is the partial-upgrade antipattern Arch warns about.
+  case "$output" in
+    *"pacman -Sy "*|*"pacman -Sy"$'\n'*)
+      echo "    bare 'pacman -Sy' present; that creates a partial-upgrade state" >&2
+      return 1 ;;
+  esac
 }
 
 test_pacman_installs_with_needed_and_noconfirm() {
@@ -731,6 +737,25 @@ test_pacman_ruby_deps_use_arch_names() {
   esac
 }
 
+test_pacman_groups_are_not_probed_with_qg() {
+  # `pacman -Qg base-devel` succeeds when any single member is installed, so
+  # using it as an installed-check lets a partial group skip its install.
+  local out
+  out=$(bash -c '
+    warn() { :; }; err() { :; }; log() { :; }
+    have() { command -v "$1" >/dev/null 2>&1; }
+    source "'"$PROJECT_DIR"'/lib/package_manager.sh"
+    declare -f pkg_installed
+  ' 2>/dev/null)
+
+  case "$out" in
+    *-Qg*)
+      echo "    pkg_installed still probes groups with -Qg" >&2
+      return 1 ;;
+  esac
+  assert_contains "$out" "pacman -Qi" "pkg_installed should query packages with -Qi" || return 1
+}
+
 test_pacman_autodetected_for_arch() {
   # Unit-level: the resolver picks pacman from ID=arch in /etc/os-release,
   # which is what Omarchy reports.
@@ -770,6 +795,7 @@ run_test "Linux pacman path" test_linux_pacman_path
 run_test "pacman installs with --needed --noconfirm" test_pacman_installs_with_needed_and_noconfirm
 run_test "pacman maps Debian dev names to Arch" test_pacman_maps_debian_dev_names_to_arch
 run_test "pacman Ruby deps use Arch names" test_pacman_ruby_deps_use_arch_names
+run_test "pacman does not probe groups with -Qg" test_pacman_groups_are_not_probed_with_qg
 run_test "pacman autodetected for ID=arch" test_pacman_autodetected_for_arch
 run_test "pacman rejected on macOS" test_pacman_rejected_on_macos
 run_test "Linux apps skip by default" test_linux_apps_skip_by_default

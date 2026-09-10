@@ -322,9 +322,13 @@ pkg_installed() {
       rpm -q "$pkg" >/dev/null 2>&1
       ;;
     pacman)
-      # -Qi covers both repo and AUR packages once installed. Groups such as
-      # base-devel are not packages themselves, so -Qg answers for those.
-      pacman -Qi "$pkg" >/dev/null 2>&1 || pacman -Qg "$pkg" >/dev/null 2>&1
+      # -Qi covers both repo and AUR packages once installed. Groups are
+      # deliberately not probed here: `pacman -Qg base-devel` succeeds when
+      # *any* member is installed, which would let a partially-installed group
+      # skip its install and leave the build tools missing. Reporting groups as
+      # not-installed hands the decision to `pacman -S --needed`, which
+      # installs the missing members and skips the rest.
+      pacman -Qi "$pkg" >/dev/null 2>&1
       ;;
     *)
       return 1
@@ -454,7 +458,11 @@ prepare_package_manager() {
       run_privileged dnf makecache || warn "dnf makecache returned non-zero."
       ;;
     pacman)
-      run_privileged pacman -Sy || warn "pacman -Sy returned non-zero."
+      # -Syu, never a bare -Sy: refreshing the databases and then installing
+      # without upgrading produces a partial-upgrade state, which Arch does not
+      # support. This is a heavier action than `apt-get update`, so say so.
+      log "Refreshing and upgrading with pacman -Syu (Arch does not support partial upgrades)…"
+      run_privileged pacman -Syu --noconfirm || warn "pacman -Syu returned non-zero."
       ;;
   esac
 }
