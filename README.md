@@ -11,6 +11,12 @@
   Get your new machine ready for the first drive.
 </p>
 
+> **Redesign in progress.** teeup is being rebuilt as a modular, macOS-only
+> environment distribution. The design is in
+> `docs/superpowers/specs/2026-09-11-omarchy-inspired-redesign-design.md`.
+> The previous installer still works and lives under `legacy/`:
+> `./legacy/teeup.sh --help`.
+
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
 Through an interactive wizard, teeup provisions a complete development environment, including: 
@@ -68,8 +74,8 @@ Through an interactive wizard, teeup provisions a complete development environme
 3. Run it:
 
 ```
-./teeup.sh            # Minimal base: package manager + login shell + CLI tools
-./teeup.sh --all      # The full curated stack (language runtimes, Emacs, Docker, apps)
+./legacy/teeup.sh            # Minimal base: package manager + login shell + CLI tools
+./legacy/teeup.sh --all      # The full curated stack (language runtimes, Emacs, Docker, apps)
 ```
 
 By default teeup installs a **lean base** (the `base` profile): a package manager,
@@ -96,11 +102,11 @@ open https://www.macports.org/install.php
 Then rerun setup. You can override the choice:
 
 ```sh
-PACKAGE_MANAGER=homebrew ./teeup.sh
-PACKAGE_MANAGER=macports ./teeup.sh
-PACKAGE_MANAGER=apt ./teeup.sh
-PACKAGE_MANAGER=dnf ./teeup.sh
-PACKAGE_MANAGER=pacman ./teeup.sh
+PACKAGE_MANAGER=homebrew ./legacy/teeup.sh
+PACKAGE_MANAGER=macports ./legacy/teeup.sh
+PACKAGE_MANAGER=apt ./legacy/teeup.sh
+PACKAGE_MANAGER=dnf ./legacy/teeup.sh
+PACKAGE_MANAGER=pacman ./legacy/teeup.sh
 ```
 
 On Arch, package-database refreshes run as `pacman -Syu` rather than a bare
@@ -120,7 +126,7 @@ rather than failing the run.
 For a guided, step-by-step experience, use the interactive wizard:
 
 ```sh
-./teeup-wizard.sh
+./legacy/teeup-wizard.sh
 ```
 
 The wizard will guide you through:
@@ -159,46 +165,46 @@ you refine with flags. Precedence: `--only` (explicit allowlist) > explicit
 
 ```sh
 # Minimal base (default): package manager + login shell + CLI
-./teeup.sh
+./legacy/teeup.sh
 
 # Full curated stack
-./teeup.sh --all                 # same as: TEEUP_PROFILE=full ./teeup.sh
+./legacy/teeup.sh --all                 # same as: TEEUP_PROFILE=full ./legacy/teeup.sh
 
 # Full stack, minus the GUI apps and Docker
-./teeup.sh --all --except apps,docker
+./legacy/teeup.sh --all --except apps,docker
 
 # Add a single runtime to the base without the rest
-./teeup.sh --all --except java,ruby,rust,docker,apps,emacs
-RUN_RUST=true ./teeup.sh          # or just enable one module on top of base
+./legacy/teeup.sh --all --except java,ruby,rust,docker,apps,emacs
+RUN_RUST=true ./legacy/teeup.sh          # or just enable one module on top of base
 ```
 
 Run only specific modules using the `--only` flag:
 
 ```sh
 # Run only Python setup
-./teeup.sh --only python
+./legacy/teeup.sh --only python
 
 # Run only zsh setup, defaulting to plain zsh
-./teeup.sh --only zsh
+./legacy/teeup.sh --only zsh
 
 # Use Oh My Zsh mode
-ZSH_MODE=ohmyzsh ./teeup.sh --only zsh
+ZSH_MODE=ohmyzsh ./legacy/teeup.sh --only zsh
 
 # Opt into a prompt (default installs none): Powerlevel10k for zsh, Starship for bash
-./teeup.sh --only zsh --prompt powerlevel10k
-./teeup.sh --only bash --prompt starship
+./legacy/teeup.sh --only zsh --prompt powerlevel10k
+./legacy/teeup.sh --only bash --prompt starship
 
 # Run multiple modules
-./teeup.sh --only zsh,python,java,docker
+./legacy/teeup.sh --only zsh,python,java,docker
 
 # Install only Rust
-./teeup.sh --only rust
+./legacy/teeup.sh --only rust
 
 # Install only Ruby
-./teeup.sh --only ruby
+./legacy/teeup.sh --only ruby
 
 # List available modules
-./teeup.sh --list-modules
+./legacy/teeup.sh --list-modules
 ```
 
 ### Available Modules
@@ -227,16 +233,16 @@ Preview all commands before execution without making any changes to your system:
 
 ```sh
 # Preview the minimal base setup
-./teeup.sh --dry-run
+./legacy/teeup.sh --dry-run
 
 # Preview the full stack
-./teeup.sh --dry-run --all
+./legacy/teeup.sh --dry-run --all
 
 # Preview specific modules
-./teeup.sh --dry-run --only python,docker
+./legacy/teeup.sh --dry-run --only python,docker
 
 # Use with wizard (select dry-run in Additional Options)
-./teeup-wizard.sh
+./legacy/teeup-wizard.sh
 ```
 
 **Dry-run mode will:**
@@ -258,7 +264,7 @@ This is useful for:
 If you previously installed pyenv and want to switch to UV:
 
 ```sh
-./teeup.sh --migrate-to-uv
+./legacy/teeup.sh --migrate-to-uv
 ```
 
 This will:
@@ -292,9 +298,9 @@ You can override versions or disable features per run using environment variable
 
 ```sh
 # Versions
-PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./teeup.sh
+PYTHON_VERSION="${PYTHON_VERSION:-3.12.5}"          # Override by: PYTHON_VERSION=3.13.x ./legacy/teeup.sh
 JDK_VERSION="${JDK_VERSION:-21.0.4-tem}"            # SDKMAN version identifier (e.g., "21.0.4-tem" for Temurin 21)
-RUBY_VERSION="${RUBY_VERSION:-3.4.9}"               # Override by: RUBY_VERSION=4.0.3 ./teeup.sh
+RUBY_VERSION="${RUBY_VERSION:-3.4.9}"               # Override by: RUBY_VERSION=4.0.3 ./legacy/teeup.sh
 BUNDLER_VERSION="${BUNDLER_VERSION:-}"              # Optional Bundler version; empty installs latest
 
 # Profile (default module set when none chosen explicitly)
@@ -334,8 +340,8 @@ so it never imposes one person's taste:
 
 - **Bring your own** — point teeup at any dotfiles directory or git repo:
   ```sh
-  ./teeup.sh --dotfiles ~/code/my-dotfiles
-  ./teeup.sh --dotfiles https://github.com/you/dotfiles.git
+  ./legacy/teeup.sh --dotfiles ~/code/my-dotfiles
+  ./legacy/teeup.sh --dotfiles https://github.com/you/dotfiles.git
   ```
   A sibling `dotfiles/` directory next to `teeup.sh` is auto-detected and used by
   default (so an author's own checkout "just works").
@@ -358,7 +364,7 @@ so it never imposes one person's taste:
   clean set from `templates/dotfiles/` (no editor lock-in, no personal aliases),
   then customize and version-control it:
   ```sh
-  ./teeup.sh --init-dotfiles ~/dotfiles
+  ./legacy/teeup.sh --init-dotfiles ~/dotfiles
   ```
 - **None** — with no overlay and no `--init-dotfiles`, setup falls back to small
   managed shell blocks written to `~/.teeup.common` and sourced from your rc file.
@@ -380,7 +386,7 @@ By default, the script uses **UV** for Python management. UV is a modern, Rust-b
 
 To use the legacy pyenv/poetry stack instead:
 ```sh
-USE_UV=false ./teeup.sh
+USE_UV=false ./legacy/teeup.sh
 ```
 
 Legacy pyenv mode is supported on macOS and Linux, but `USE_UV=true` remains the recommended default.
