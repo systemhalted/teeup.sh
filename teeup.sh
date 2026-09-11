@@ -512,6 +512,8 @@ source "$SCRIPT_DIR/lib/platform.sh"
 source "$SCRIPT_DIR/lib/package_manager.sh"
 # shellcheck source=lib/shell.sh
 source "$SCRIPT_DIR/lib/shell.sh"
+# shellcheck source=lib/dotfiles.sh
+source "$SCRIPT_DIR/lib/dotfiles.sh"
 
 homebrew_casks_allowed() {
   is_macos || return 1
