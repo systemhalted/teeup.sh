@@ -300,6 +300,7 @@ test_profile_and_selection_flags() {
   assert_contains "$content" "--profile)" "Should support --profile flag"
   assert_contains "$content" "--init-dotfiles)" "Should support --init-dotfiles flag"
   assert_contains "$content" "--dotfiles)" "Should support --dotfiles flag"
+  assert_contains "$content" "--dotfiles-manager)" "Should support --dotfiles-manager flag"
   assert_contains "$content" "parse_except_modules()" "Should define parse_except_modules"
   assert_contains "$content" "apply_profile_defaults()" "Should define apply_profile_defaults"
 }
