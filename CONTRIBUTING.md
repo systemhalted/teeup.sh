@@ -273,11 +273,11 @@ Use explicit Homebrew calls only for Homebrew-only features, such as casks, and 
 
 ```bash
 # Run all tests
-./tests/run_tests.sh
+./legacy/tests/run_tests.sh
 
 # Run specific test file
-./tests/test_teeup.sh
-./tests/test_teeup-wizard.sh
+./legacy/tests/test_teeup.sh
+./legacy/tests/test_teeup-wizard.sh
 ```
 
 ### Testing with shellenv
@@ -296,7 +296,7 @@ Then, from the teeup.sh directory:
 
 ```bash
 # Test suite under the pinned bash
-shellenv exec -- ./tests/run_tests.sh
+shellenv exec -- ./legacy/tests/run_tests.sh
 
 # Dry-run everything; sandboxed even without --dry-run
 shellenv exec -- ./legacy/teeup.sh --dry-run --all
@@ -349,7 +349,7 @@ Available assertions:
 1. **Update tests** to cover your changes
 2. **Run the test suite** and ensure all tests pass:
    ```bash
-   ./tests/run_tests.sh
+   ./legacy/tests/run_tests.sh
    ```
 3. **Update documentation** (README.md, etc.)
 4. **Commit with clear message:**

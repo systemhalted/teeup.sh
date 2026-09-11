@@ -69,7 +69,7 @@ Through an interactive wizard, teeup provisions a complete development environme
     ```
 2.   Make the scripts executable:  
     ```
-    chmod +x teeup.sh teeup-wizard.sh
+    chmod +x legacy/teeup.sh legacy/teeup-wizard.sh
     ```
 3. Run it:
 
@@ -628,12 +628,12 @@ The project includes a test suite to validate both scripts:
 
 ```sh
 # Run all tests
-./tests/run_tests.sh
+./legacy/tests/run_tests.sh
 
 # Run individual suites
-./tests/test_teeup.sh
-./tests/test_teeup_behavior.sh
-./tests/test_teeup_wizard.sh
+./legacy/tests/test_teeup.sh
+./legacy/tests/test_teeup_behavior.sh
+./legacy/tests/test_teeup_wizard.sh
 ```
 
 ### Test Coverage
