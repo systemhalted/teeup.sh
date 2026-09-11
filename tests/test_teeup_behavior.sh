@@ -650,22 +650,28 @@ test_detect_dotfiles_manager_layouts() {
   source "$PROJECT_DIR/lib/dotfiles.sh"
 
   local d="$TEST_HOME/chez"; mkdir -p "$d"; touch "$d/.chezmoi.toml.tmpl" "$d/dot_bashrc"
-  assert_equals "chezmoi" "$(detect_dotfiles_manager "$d")" "chezmoi template marks chezmoi"
+  assert_equals "chezmoi" "$(detect_dotfiles_manager "$d")" "chezmoi template marks chezmoi" || return 1
 
   d="$TEST_HOME/chez2"; mkdir -p "$d"; touch "$d/dot_zshrc"
-  assert_equals "chezmoi" "$(detect_dotfiles_manager "$d")" "dot_* entry alone marks chezmoi"
+  assert_equals "chezmoi" "$(detect_dotfiles_manager "$d")" "dot_* entry alone marks chezmoi" || return 1
 
   d="$TEST_HOME/stow"; mkdir -p "$d/bash" "$d/zsh"; touch "$d/bash/.bashrc" "$d/zsh/.zshrc"
-  assert_equals "stow" "$(detect_dotfiles_manager "$d")" "package dirs with dotted files mark stow"
+  assert_equals "stow" "$(detect_dotfiles_manager "$d")" "package dirs with dotted files mark stow" || return 1
 
   d="$TEST_HOME/stow2"; mkdir -p "$d"; touch "$d/.stow-local-ignore"
-  assert_equals "stow" "$(detect_dotfiles_manager "$d")" ".stow-local-ignore marks stow"
+  assert_equals "stow" "$(detect_dotfiles_manager "$d")" ".stow-local-ignore marks stow" || return 1
 
   d="$TEST_HOME/native"; mkdir -p "$d"; touch "$d/bashrc" "$d/.bash_profile" "$d/teeup.common"
-  assert_equals "native" "$(detect_dotfiles_manager "$d")" "flat zshrc/bashrc marks native"
+  assert_equals "native" "$(detect_dotfiles_manager "$d")" "flat zshrc/bashrc marks native" || return 1
+
+  d="$TEST_HOME/native2"; mkdir -p "$d/emacs"; touch "$d/bashrc" "$d/teeup.common" "$d/emacs/.DS_Store"
+  assert_equals "native" "$(detect_dotfiles_manager "$d")" "flat layout beats a stray dotted entry in a subdirectory" || return 1
+
+  d="$TEST_HOME/stow3"; mkdir -p "$d"; touch "$d/.stowrc" "$d/bashrc"
+  assert_equals "stow" "$(detect_dotfiles_manager "$d")" "explicit stow marker still wins over a flat bashrc" || return 1
 
   d="$TEST_HOME/empty"; mkdir -p "$d/.git"; touch "$d/.git/.dotted" "$d/README.md"
-  assert_equals "none" "$(detect_dotfiles_manager "$d")" "no markers gives none; .git is ignored"
+  assert_equals "none" "$(detect_dotfiles_manager "$d")" "no markers gives none; .git is ignored" || return 1
 
   assert_equals "none" "$(detect_dotfiles_manager "$TEST_HOME/missing")" "missing dir gives none"
 }
@@ -680,12 +686,12 @@ test_stow_packages_filters_shells() {
   mkdir -p "$d/bash" "$d/zsh" "$d/common" "$d/docs"
   touch "$d/bash/.bashrc" "$d/zsh/.zshrc" "$d/common/.gitconfig" "$d/docs/README.md"
 
-  assert_equals "bash common" "$(TARGET_SHELL=bash stow_packages "$d")" "bash target drops zsh, keeps common, skips docs"
-  assert_equals "common zsh" "$(TARGET_SHELL=zsh stow_packages "$d")" "zsh target drops bash"
-  assert_equals "only this" "$(STOW_PACKAGES='only this' stow_packages "$d")" "STOW_PACKAGES overrides"
+  assert_equals "bash common" "$(TARGET_SHELL=bash stow_packages "$d")" "bash target drops zsh, keeps common, skips docs" || return 1
+  assert_equals "common zsh" "$(TARGET_SHELL=zsh stow_packages "$d")" "zsh target drops bash" || return 1
+  assert_equals "only this" "$(STOW_PACKAGES='only this' stow_packages "$d")" "STOW_PACKAGES overrides" || return 1
 
   local flat="$TEST_HOME/flat"; mkdir -p "$flat"; touch "$flat/.bashrc"
-  assert_equals "" "$(TARGET_SHELL=bash stow_packages "$flat")" "no package dirs gives empty (flat mirror)"
+  assert_equals "" "$(TARGET_SHELL=bash stow_packages "$flat")" "no package dirs gives empty (flat mirror)" || return 1
 
   local single="$TEST_HOME/single"; mkdir -p "$single/zsh" "$single/common"
   touch "$single/zsh/.zshrc" "$single/common/.gitconfig"
@@ -709,8 +715,8 @@ test_chezmoi_layout_counts_as_payload() {
   output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
     DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only rust 2>&1)
 
-  assert_contains "$output" "Cargo PATH is handled by dotfiles." "rust module must defer to the manager"
-  assert_contains "$output" "Dotfiles manager: chezmoi" "should report the resolved manager"
+  assert_contains "$output" "Cargo PATH is handled by dotfiles." "rust module must defer to the manager" || return 1
+  assert_contains "$output" "Dotfiles manager: chezmoi" "should report the resolved manager" || return 1
   if [[ "$output" == *"falling back to small managed shell blocks"* ]]; then
     echo "FAIL: managed-block fallback must not fire for a chezmoi layout"; return 1
   fi
@@ -731,13 +737,13 @@ test_dotfiles_manager_override_and_validation() {
   local output
   output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
     DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli --dotfiles-manager stow 2>&1)
-  assert_contains "$output" "Dotfiles manager: stow" "--dotfiles-manager should force stow"
+  assert_contains "$output" "Dotfiles manager: stow" "--dotfiles-manager should force stow" || return 1
 
   set +e
   output=$(DRY_RUN=true PACKAGE_MANAGER=pacman "$PROJECT_DIR/teeup.sh" --only cli --dotfiles-manager yadm 2>&1)
   local rc=$?
   set -e
-  assert_failure "$rc" "unknown manager must fail"
+  assert_failure "$rc" "unknown manager must fail" || return 1
   assert_contains "$output" "DOTFILES_MANAGER" "error should name the variable"
 }
 
@@ -756,12 +762,12 @@ test_init_dotfiles_resolves_manager() {
   output=$(TARGET_SHELL=bash PACKAGE_MANAGER=pacman INSTALL_DOTFILES=true \
     "$PROJECT_DIR/teeup.sh" --only cli --init-dotfiles "$TEST_HOME/dotfiles" 2>&1)
 
-  assert_contains "$output" "Dotfiles manager: native" "should report native for the generated starter"
-  assert_file_exists "$TEST_HOME/dotfiles/bashrc" "starter should be generated with a bashrc"
+  assert_contains "$output" "Dotfiles manager: native" "should report native for the generated starter" || return 1
+  assert_file_exists "$TEST_HOME/dotfiles/bashrc" "starter should be generated with a bashrc" || return 1
   if [[ ! -L "$HOME/.bashrc" ]]; then
     echo "FAIL: \$HOME/.bashrc should be a symlink into the generated starter"; return 1
   fi
-  assert_equals "$TEST_HOME/dotfiles/bashrc" "$(readlink "$HOME/.bashrc")" "bashrc symlink should point at the starter"
+  assert_equals "$TEST_HOME/dotfiles/bashrc" "$(readlink "$HOME/.bashrc")" "bashrc symlink should point at the starter" || return 1
   if [[ "$output" == *"falling back to small managed shell blocks"* ]]; then
     echo "FAIL: managed-block fallback must not fire when the starter was symlinked"; return 1
   fi
@@ -781,8 +787,8 @@ test_chezmoi_layout_installs_and_applies() {
   output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
     DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
 
-  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -S --needed --noconfirm chezmoi" "should install chezmoi via pacman"
-  assert_contains "$output" "[DRY-RUN] Would execute: chezmoi init --source $df --apply" "should hand off to chezmoi"
+  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -S --needed --noconfirm chezmoi" "should install chezmoi via pacman" || return 1
+  assert_contains "$output" "[DRY-RUN] Would execute: chezmoi init --source $df --apply" "should hand off to chezmoi" || return 1
   if [[ "$output" == *"ln -s "* ]]; then
     echo "FAIL: teeup must not symlink when chezmoi owns the overlay"; return 1
   fi
@@ -805,7 +811,7 @@ test_chezmoi_on_apt_uses_upstream_installer() {
   output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=apt \
     DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
 
-  assert_contains "$output" "get.chezmoi.io" "apt has no chezmoi package; use the upstream installer"
+  assert_contains "$output" "https://get.chezmoi.io" "apt has no chezmoi package; use the upstream installer" || return 1
   if [[ "$output" == *"apt-get install -y chezmoi"* ]]; then
     echo "FAIL: must not try apt-get install chezmoi"; return 1
   fi
@@ -825,7 +831,7 @@ test_chezmoi_present_skips_install() {
   output=$(DRY_RUN=true TARGET_SHELL=zsh PACKAGE_MANAGER=pacman \
     DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
 
-  assert_contains "$output" "chezmoi init --source $df --apply" "should still apply"
+  assert_contains "$output" "chezmoi init --source $df --apply" "should still apply" || return 1
   if [[ "$output" == *"--noconfirm chezmoi"* || "$output" == *"get.chezmoi.io"* ]]; then
     echo "FAIL: chezmoi already on PATH must not be installed again"; return 1
   fi
@@ -845,7 +851,7 @@ test_stow_layout_applies_target_shell_packages() {
   output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
     DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
 
-  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -S --needed --noconfirm stow" "should install stow"
+  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -S --needed --noconfirm stow" "should install stow" || return 1
   assert_contains "$output" "[DRY-RUN] Would execute: stow -d $df -t $HOME bash common" "should stow bash + common, not zsh"
 }
 
@@ -880,8 +886,8 @@ test_chezmoi_apply_failure_is_not_counted_installed() {
   output=$(TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
     DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
 
-  assert_contains "$output" "chezmoi apply returned non-zero" "should warn when chezmoi apply fails"
-  assert_contains "$output" "dotfiles (chezmoi, apply failed)" "should record the failed apply as skipped, not installed"
+  assert_contains "$output" "chezmoi apply returned non-zero" "should warn when chezmoi apply fails" || return 1
+  assert_contains "$output" "dotfiles (chezmoi, apply failed)" "should record the failed apply as skipped, not installed" || return 1
   if [[ "$output" == *"➕  dotfiles (chezmoi)"* ]]; then
     echo "FAIL: install summary must not count a failed chezmoi apply as installed"; return 1
   fi

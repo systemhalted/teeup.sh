@@ -147,8 +147,8 @@ test_dotfiles_step() {
   assert_contains "$content" "Use existing dotfiles" "Should offer to use existing dotfiles"
   assert_contains "$content" "--init-dotfiles" "Should emit --init-dotfiles for the generate mode"
   assert_contains "$content" "--dotfiles" "Should emit --dotfiles for an existing overlay"
-  assert_contains "$content" "WIZARD_DOTFILES_MANAGER" "Should track the detected dotfiles manager"
-  assert_contains "$content" "(will be installed)" "Should warn when the manager binary is missing"
+  assert_contains "$content" "WIZARD_DOTFILES_MANAGER" "Should track the detected dotfiles manager" || return 1
+  assert_contains "$content" "(will be installed)" "Should warn when the manager binary is missing" || return 1
   assert_contains "$content" "detect_dotfiles_manager" "Should detect the manager for the chosen path"
 }
 

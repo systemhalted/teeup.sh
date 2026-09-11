@@ -363,7 +363,7 @@ so it never imposes one person's taste:
 - **None** — with no overlay and no `--init-dotfiles`, setup falls back to small
   managed shell blocks written to `~/.teeup.common` and sourced from your rc file.
 
-When an overlay is used, the script symlinks the single shared file (`teeup.common`)
+When a flat overlay is used, the script symlinks the single shared file (`teeup.common`)
 plus the files for your **target login shell only** (segregated): zsh gets
 `zshrc`/`zprofile`; bash gets `bashrc`/`.bash_profile`/`profile`. Non-shell-specific
 configs (`gitconfig`, `tmux.conf`, and — when `--prompt starship` is set —

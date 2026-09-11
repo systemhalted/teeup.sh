@@ -355,31 +355,31 @@ install_dotfile_link() {
 ensure_dotfiles_manager_installed() {
   case "$RESOLVED_DOTFILES_MANAGER" in
     stow)
-      have stow && { remember_skipped "stow"; return 0; }
+      have stow && { remember_skipped "stow (PATH)"; return 0; }
       [[ "$RUN_HOMEBREW" == "true" ]] || prepare_package_manager
       pkg_install stow stow
       require_command_available stow "stow install"
       ;;
     chezmoi)
-      have chezmoi && { remember_skipped "chezmoi"; return 0; }
+      have chezmoi && { remember_skipped "chezmoi (PATH)"; return 0; }
       case "$RESOLVED_PACKAGE_MANAGER" in
         apt|macports)
           log "Installing chezmoi with the upstream installer (no $RESOLVED_PACKAGE_MANAGER package)…"
           ensure_curl
           run_cmd mkdir -p "$HOME/.local/bin"
           if [[ "$DRY_RUN" == "true" ]]; then
-            run_cmd sh -c "curl -fsLS get.chezmoi.io | sh -s -- -b $HOME/.local/bin"
+            run_cmd sh -c "curl -fsLS https://get.chezmoi.io | sh -s -- -b \"\$HOME/.local/bin\""
           else
-            sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+            curl -fsLS https://get.chezmoi.io | sh -s -- -b "$HOME/.local/bin"
           fi
           export PATH="$HOME/.local/bin:$PATH"
+          remember_installed "chezmoi"
           ;;
         *)
           [[ "$RUN_HOMEBREW" == "true" ]] || prepare_package_manager
           pkg_install chezmoi chezmoi
           ;;
       esac
-      remember_installed "chezmoi"
       require_command_available chezmoi "chezmoi install"
       ;;
   esac
