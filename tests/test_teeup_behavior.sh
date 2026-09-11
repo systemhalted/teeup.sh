@@ -642,6 +642,52 @@ test_init_dotfiles_generates_neutral_starter() {
     "--init-dotfiles should scaffold a starter repo"
 }
 
+# lib/dotfiles.sh is pure shell; source it directly and probe fixtures.
+test_detect_dotfiles_manager_layouts() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  # shellcheck source=../lib/dotfiles.sh
+  source "$PROJECT_DIR/lib/dotfiles.sh"
+
+  local d="$TEST_HOME/chez"; mkdir -p "$d"; touch "$d/.chezmoi.toml.tmpl" "$d/dot_bashrc"
+  assert_equals "chezmoi" "$(detect_dotfiles_manager "$d")" "chezmoi template marks chezmoi"
+
+  d="$TEST_HOME/chez2"; mkdir -p "$d"; touch "$d/dot_zshrc"
+  assert_equals "chezmoi" "$(detect_dotfiles_manager "$d")" "dot_* entry alone marks chezmoi"
+
+  d="$TEST_HOME/stow"; mkdir -p "$d/bash" "$d/zsh"; touch "$d/bash/.bashrc" "$d/zsh/.zshrc"
+  assert_equals "stow" "$(detect_dotfiles_manager "$d")" "package dirs with dotted files mark stow"
+
+  d="$TEST_HOME/stow2"; mkdir -p "$d"; touch "$d/.stow-local-ignore"
+  assert_equals "stow" "$(detect_dotfiles_manager "$d")" ".stow-local-ignore marks stow"
+
+  d="$TEST_HOME/native"; mkdir -p "$d"; touch "$d/bashrc" "$d/.bash_profile" "$d/teeup.common"
+  assert_equals "native" "$(detect_dotfiles_manager "$d")" "flat zshrc/bashrc marks native"
+
+  d="$TEST_HOME/empty"; mkdir -p "$d/.git"; touch "$d/.git/.dotted" "$d/README.md"
+  assert_equals "none" "$(detect_dotfiles_manager "$d")" "no markers gives none; .git is ignored"
+
+  assert_equals "none" "$(detect_dotfiles_manager "$TEST_HOME/missing")" "missing dir gives none"
+}
+
+test_stow_packages_filters_shells() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  # shellcheck source=../lib/dotfiles.sh
+  source "$PROJECT_DIR/lib/dotfiles.sh"
+
+  local d="$TEST_HOME/stow"
+  mkdir -p "$d/bash" "$d/zsh" "$d/common" "$d/docs"
+  touch "$d/bash/.bashrc" "$d/zsh/.zshrc" "$d/common/.gitconfig" "$d/docs/README.md"
+
+  assert_equals "bash common" "$(TARGET_SHELL=bash stow_packages "$d")" "bash target drops zsh, keeps common, skips docs"
+  assert_equals "common zsh" "$(TARGET_SHELL=zsh stow_packages "$d")" "zsh target drops bash"
+  assert_equals "only this" "$(STOW_PACKAGES='only this' stow_packages "$d")" "STOW_PACKAGES overrides"
+
+  local flat="$TEST_HOME/flat"; mkdir -p "$flat"; touch "$flat/.bashrc"
+  assert_equals "" "$(TARGET_SHELL=bash stow_packages "$flat")" "no package dirs gives empty (flat mirror)"
+}
+
 echo ""
 echo "Running tests..."
 echo ""
@@ -818,5 +864,7 @@ run_test "Prompt starship installs Starship only" test_prompt_starship_only
 run_test "Mode-2 teeupshrc migrates to teeup.common" test_mode2_teeupshrc_migration
 run_test "Rust installs rust-analyzer/clippy/rustfmt components" test_rust_installs_lsp_components
 run_test "Rust ensures curl before downloading rustup" test_rust_ensures_curl_before_download
+run_test "detect_dotfiles_manager recognises layouts" test_detect_dotfiles_manager_layouts
+run_test "stow_packages filters by target shell" test_stow_packages_filters_shells
 
 print_summary

@@ -388,6 +388,13 @@ validate_choice() {
   return 0
 }
 
+# Shared layout detection (also used by teeup.sh).
+WIZARD_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+if [[ -f "$WIZARD_LIB_DIR/dotfiles.sh" ]]; then
+  # shellcheck source=lib/dotfiles.sh
+  source "$WIZARD_LIB_DIR/dotfiles.sh"
+fi
+
 #################################
 # ===== Wizard State ========== #
 #################################
