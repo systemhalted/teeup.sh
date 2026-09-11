@@ -5,10 +5,12 @@
 # $HOME to whichever manager the user's repo expects. These helpers are pure
 # shell (no logging, no side effects) so the wizard can source them too.
 
-# Print the manager a dotfiles directory is laid out for:
+# Print the manager a dotfiles directory is laid out for, checked in this order:
 #   chezmoi  .chezmoiroot / .chezmoi.*.tmpl / .chezmoiignore / any top-level dot_* entry
-#   stow     .stow-local-ignore / .stowrc / a top-level non-dot dir holding a dotted entry
+#   stow     explicit marker: .stow-local-ignore / .stowrc
 #   native   teeup's flat layout: zshrc or bashrc at the top level
+#   stow     a top-level non-dot dir holding a dotted entry (an undotted top-level
+#            zshrc/bashrc cannot occur in a stow package tree, so native is checked first)
 #   none     nothing recognised (also for a missing directory)
 detect_dotfiles_manager() {
   local dir="$1" entry sub
@@ -24,6 +26,9 @@ detect_dotfiles_manager() {
   for entry in .stow-local-ignore .stowrc; do
     if [[ -e "$dir/$entry" ]]; then echo "stow"; return 0; fi
   done
+
+  if [[ -f "$dir/zshrc" || -f "$dir/bashrc" ]]; then echo "native"; return 0; fi
+
   for sub in "$dir"/*/; do
     [[ -d "$sub" ]] || continue
     for entry in "$sub".??*; do
@@ -31,7 +36,6 @@ detect_dotfiles_manager() {
     done
   done
 
-  if [[ -f "$dir/zshrc" || -f "$dir/bashrc" ]]; then echo "native"; return 0; fi
   echo "none"
 }
 

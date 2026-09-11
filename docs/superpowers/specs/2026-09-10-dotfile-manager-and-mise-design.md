@@ -41,8 +41,9 @@ sourced by both scripts) returns one of `chezmoi`, `stow`, `native`, `none`:
 | Result   | Evidence, checked in this order |
 |----------|---------------------------------|
 | chezmoi  | `.chezmoiroot`, `.chezmoi.toml.tmpl`, `.chezmoi.yaml.tmpl`, `.chezmoiignore`, or any top-level `dot_*` entry |
-| stow     | `.stow-local-ignore`, `.stowrc`, or a top-level non-dot directory that contains a dotted entry (package layout, e.g. `bash/.bashrc`) |
+| stow     | explicit marker: `.stow-local-ignore` or `.stowrc` |
 | native   | `zshrc` or `bashrc` at top level (teeup's flat layout) |
+| stow     | package layout: a top-level non-dot directory that contains a dotted entry (e.g. `bash/.bashrc`) |
 | none     | anything else |
 
 `DOTFILES_MANAGER=auto|chezmoi|stow|native` (flag `--dotfiles-manager`)
