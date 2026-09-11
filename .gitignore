@@ -56,3 +56,6 @@ ACTION_ITEMS.md
 
 # shellenv project envs (see CONTRIBUTING.md "Testing with shellenv")
 .shellenv/
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/
