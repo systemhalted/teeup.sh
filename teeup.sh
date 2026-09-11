@@ -347,6 +347,73 @@ install_dotfile_link() {
   run_cmd ln -s "$source" "$target"
 }
 
+# Make sure the resolved dotfiles manager binary exists. Stow is packaged everywhere
+# teeup runs. chezmoi is packaged by Homebrew, dnf and pacman; apt and MacPorts are
+# not, so those use the upstream installer (listed in the README trust table).
+# Mirrors ensure_curl: a run without the package-manager module still needs the
+# index refreshed before pkg_install.
+ensure_dotfiles_manager_installed() {
+  case "$RESOLVED_DOTFILES_MANAGER" in
+    stow)
+      have stow && { remember_skipped "stow"; return 0; }
+      [[ "$RUN_HOMEBREW" == "true" ]] || prepare_package_manager
+      pkg_install stow stow
+      require_command_available stow "stow install"
+      ;;
+    chezmoi)
+      have chezmoi && { remember_skipped "chezmoi"; return 0; }
+      case "$RESOLVED_PACKAGE_MANAGER" in
+        apt|macports)
+          log "Installing chezmoi with the upstream installer (no $RESOLVED_PACKAGE_MANAGER package)…"
+          ensure_curl
+          run_cmd mkdir -p "$HOME/.local/bin"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            run_cmd sh -c "curl -fsLS get.chezmoi.io | sh -s -- -b $HOME/.local/bin"
+          else
+            sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+          fi
+          export PATH="$HOME/.local/bin:$PATH"
+          ;;
+        *)
+          [[ "$RUN_HOMEBREW" == "true" ]] || prepare_package_manager
+          pkg_install chezmoi chezmoi
+          ;;
+      esac
+      remember_installed "chezmoi"
+      require_command_available chezmoi "chezmoi install"
+      ;;
+  esac
+}
+
+# Hand $HOME to the manager. Nothing here backs up or adopts: chezmoi diffs and
+# overwrites by design, stow refuses on conflicts and we surface that.
+apply_dotfiles_with_manager() {
+  case "$RESOLVED_DOTFILES_MANAGER" in
+    chezmoi)
+      log "Applying dotfiles with chezmoi from $DOTFILES_DIR"
+      # shellcheck disable=SC2086  # CHEZMOI_INIT_ARGS is intentionally word-split
+      run_cmd chezmoi init --source "$DOTFILES_DIR" --apply ${CHEZMOI_INIT_ARGS:-} \
+        || warn "chezmoi apply returned non-zero; run 'chezmoi diff' to inspect."
+      remember_installed "dotfiles (chezmoi)"
+      ;;
+    stow)
+      local pkgs
+      pkgs="$(stow_packages "$DOTFILES_DIR")"
+      if [[ -n "$pkgs" ]]; then
+        log "Stowing packages from $DOTFILES_DIR: $pkgs"
+        # shellcheck disable=SC2086  # package list is intentionally word-split
+        run_cmd stow -d "$DOTFILES_DIR" -t "$HOME" $pkgs \
+          || warn "stow reported conflicts; move the existing files aside and rerun."
+      else
+        log "Stowing $DOTFILES_DIR as a single package (flat mirror of \$HOME)"
+        run_cmd stow -d "$(dirname "$DOTFILES_DIR")" -t "$HOME" "$(basename "$DOTFILES_DIR")" \
+          || warn "stow reported conflicts; move the existing files aside and rerun."
+      fi
+      remember_installed "dotfiles (stow)"
+      ;;
+  esac
+}
+
 # Remove an orphaned legacy ~/.<name> symlink (e.g. teeupshrc, shellrc.common) left by an
 # older teeup, but ONLY when (a) it is a symlink pointing into the active DOTFILES_DIR (a
 # link teeup itself created) AND (b) the overlay no longer ships "$name" — so we never undo
@@ -2064,7 +2131,10 @@ fi
 # ===== Shell dotfiles add =====#
 #################################
 if [[ "$INSTALL_DOTFILES" == "true" ]]; then
-  if dotfiles_payload_available; then
+  if [[ "$RESOLVED_DOTFILES_MANAGER" == "chezmoi" || "$RESOLVED_DOTFILES_MANAGER" == "stow" ]]; then
+    ensure_dotfiles_manager_installed
+    apply_dotfiles_with_manager
+  elif dotfiles_payload_available; then
     log "Installing dotfiles from $DOTFILES_DIR for $TARGET_SHELL"
     # The single shared cross-shell file (merged aliases + tool integration).
     install_dotfile_link "$DOTFILES_DIR/teeup.common" "$HOME/.teeup.common"

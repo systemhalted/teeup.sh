@@ -767,6 +767,105 @@ test_init_dotfiles_resolves_manager() {
   fi
 }
 
+test_chezmoi_layout_installs_and_applies() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  # chezmoi deliberately NOT mocked: the install path must be exercised.
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"; touch "$df/.chezmoi.toml.tmpl" "$df/dot_bashrc"
+
+  local output
+  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
+
+  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -S --needed --noconfirm chezmoi" "should install chezmoi via pacman"
+  assert_contains "$output" "[DRY-RUN] Would execute: chezmoi init --source $df --apply" "should hand off to chezmoi"
+  if [[ "$output" == *"ln -s "* ]]; then
+    echo "FAIL: teeup must not symlink when chezmoi owns the overlay"; return 1
+  fi
+  if [[ "$output" == *"Would update $HOME/.teeup.common"* ]]; then
+    echo "FAIL: no managed blocks when chezmoi owns the overlay"; return 1
+  fi
+}
+
+test_chezmoi_on_apt_uses_upstream_installer() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  mock_command curl 0 ""
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"; touch "$df/dot_bashrc"
+
+  local output
+  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=apt \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
+
+  assert_contains "$output" "get.chezmoi.io" "apt has no chezmoi package; use the upstream installer"
+  if [[ "$output" == *"apt-get install -y chezmoi"* ]]; then
+    echo "FAIL: must not try apt-get install chezmoi"; return 1
+  fi
+}
+
+test_chezmoi_present_skips_install() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  mock_dotfiles_manager_commands
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"; touch "$df/dot_zshrc"
+
+  local output
+  output=$(DRY_RUN=true TARGET_SHELL=zsh PACKAGE_MANAGER=pacman \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
+
+  assert_contains "$output" "chezmoi init --source $df --apply" "should still apply"
+  if [[ "$output" == *"--noconfirm chezmoi"* || "$output" == *"get.chezmoi.io"* ]]; then
+    echo "FAIL: chezmoi already on PATH must not be installed again"; return 1
+  fi
+}
+
+test_stow_layout_applies_target_shell_packages() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df/bash" "$df/zsh" "$df/common"
+  touch "$df/bash/.bashrc" "$df/zsh/.zshrc" "$df/common/.gitconfig"
+
+  local output
+  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
+
+  assert_contains "$output" "[DRY-RUN] Would execute: sudo pacman -S --needed --noconfirm stow" "should install stow"
+  assert_contains "$output" "[DRY-RUN] Would execute: stow -d $df -t $HOME bash common" "should stow bash + common, not zsh"
+}
+
+test_stow_override_on_flat_mirror() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  mock_dotfiles_manager_commands
+
+  local df="$TEST_HOME/home-mirror"
+  mkdir -p "$df/.config"; touch "$df/.bashrc" "$df/.config/starship.toml"
+
+  local output
+  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli --dotfiles-manager stow 2>&1)
+
+  assert_contains "$output" "[DRY-RUN] Would execute: stow -d $TEST_HOME -t $HOME home-mirror" "flat mirror is stowed as one package from its parent"
+}
+
 echo ""
 echo "Running tests..."
 echo ""
@@ -948,5 +1047,10 @@ run_test "stow_packages filters by target shell" test_stow_packages_filters_shel
 run_test "chezmoi layout counts as a dotfiles payload" test_chezmoi_layout_counts_as_payload
 run_test "--dotfiles-manager override and validation" test_dotfiles_manager_override_and_validation
 run_test "--init-dotfiles resolves the manager" test_init_dotfiles_resolves_manager
+run_test "chezmoi layout installs chezmoi and applies" test_chezmoi_layout_installs_and_applies
+run_test "chezmoi on apt uses upstream installer" test_chezmoi_on_apt_uses_upstream_installer
+run_test "chezmoi on PATH is not reinstalled" test_chezmoi_present_skips_install
+run_test "stow layout applies target-shell packages" test_stow_layout_applies_target_shell_packages
+run_test "--dotfiles-manager stow on a flat mirror" test_stow_override_on_flat_mirror
 
 print_summary
