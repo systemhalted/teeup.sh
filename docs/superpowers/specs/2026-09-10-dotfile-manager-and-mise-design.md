@@ -60,7 +60,7 @@ step, after the package manager is resolved:
 - stow: `pkg_install stow stow` (present in brew, MacPorts, apt, dnf, pacman).
 - chezmoi: `pkg_install chezmoi chezmoi` on homebrew, dnf and pacman. apt and
   MacPorts do not package it, so those use the upstream installer
-  `sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"`, listed in
+  `curl -fsLS https://get.chezmoi.io | sh -s -- -b "$HOME/.local/bin"`, listed in
   the README trust-model table. `ensure_curl` runs first.
 
 **Hand-off** (`apply_dotfiles_with_manager`):
