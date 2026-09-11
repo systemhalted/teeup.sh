@@ -299,16 +299,16 @@ Then, from the teeup.sh directory:
 shellenv exec -- ./tests/run_tests.sh
 
 # Dry-run everything; sandboxed even without --dry-run
-shellenv exec -- ./teeup.sh --dry-run --all
+shellenv exec -- ./legacy/teeup.sh --dry-run --all
 
 # Real dotfile writes, contained: lands in .shellenv/default/home/, not ~
-shellenv exec -- ./teeup.sh --init-dotfiles
+shellenv exec -- ./legacy/teeup.sh --init-dotfiles
 
 # Throwaway HOME per run (idempotency checks)
-shellenv exec --ephemeral -- ./teeup.sh --init-dotfiles
+shellenv exec --ephemeral -- ./legacy/teeup.sh --init-dotfiles
 
 # Real package installs with full namespace isolation (network required)
-shellenv exec --container ubuntu:24.04 -- ./teeup.sh --only cli
+shellenv exec --container ubuntu:24.04 -- ./legacy/teeup.sh --only cli
 ```
 
 Notes:

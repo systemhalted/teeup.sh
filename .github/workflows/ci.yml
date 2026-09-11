@@ -26,13 +26,13 @@ jobs:
             brew install shellcheck
           fi
 
-      - name: Shellcheck main scripts
-        run: shellcheck --severity=warning teeup.sh teeup-wizard.sh
+      - name: Shellcheck legacy scripts
+        run: shellcheck --severity=warning legacy/teeup.sh legacy/teeup-wizard.sh
 
-      - name: Shellcheck test scripts (warnings+)
-        run: shellcheck --severity=warning -x tests/*.sh
+      - name: Shellcheck legacy tests
+        run: shellcheck --severity=warning -x legacy/tests/*.sh
 
-      - name: Run tests
+      - name: Run legacy tests
         env:
           CI: "true"
-        run: ./tests/run_tests.sh
+        run: ./legacy/tests/run_tests.sh
