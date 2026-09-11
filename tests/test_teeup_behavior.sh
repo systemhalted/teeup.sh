@@ -866,6 +866,28 @@ test_stow_override_on_flat_mirror() {
   assert_contains "$output" "[DRY-RUN] Would execute: stow -d $TEST_HOME -t $HOME home-mirror" "flat mirror is stowed as one package from its parent"
 }
 
+test_chezmoi_apply_failure_is_not_counted_installed() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  mock_command chezmoi 1 ""
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"; touch "$df/dot_bashrc"
+
+  local output
+  output=$(TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli 2>&1)
+
+  assert_contains "$output" "chezmoi apply returned non-zero" "should warn when chezmoi apply fails"
+  assert_contains "$output" "dotfiles (chezmoi, apply failed)" "should record the failed apply as skipped, not installed"
+  if [[ "$output" == *"➕  dotfiles (chezmoi)"* ]]; then
+    echo "FAIL: install summary must not count a failed chezmoi apply as installed"; return 1
+  fi
+  assert_contains "$output" "↩️  dotfiles (chezmoi, apply failed)" "skipped summary should list the failed apply"
+}
+
 echo ""
 echo "Running tests..."
 echo ""
@@ -1052,5 +1074,6 @@ run_test "chezmoi on apt uses upstream installer" test_chezmoi_on_apt_uses_upstr
 run_test "chezmoi on PATH is not reinstalled" test_chezmoi_present_skips_install
 run_test "stow layout applies target-shell packages" test_stow_layout_applies_target_shell_packages
 run_test "--dotfiles-manager stow on a flat mirror" test_stow_override_on_flat_mirror
+run_test "chezmoi apply failure is not counted installed" test_chezmoi_apply_failure_is_not_counted_installed
 
 print_summary

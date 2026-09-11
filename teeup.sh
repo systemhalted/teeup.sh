@@ -392,9 +392,12 @@ apply_dotfiles_with_manager() {
     chezmoi)
       log "Applying dotfiles with chezmoi from $DOTFILES_DIR"
       # shellcheck disable=SC2086  # CHEZMOI_INIT_ARGS is intentionally word-split
-      run_cmd chezmoi init --source "$DOTFILES_DIR" --apply ${CHEZMOI_INIT_ARGS:-} \
-        || warn "chezmoi apply returned non-zero; run 'chezmoi diff' to inspect."
-      remember_installed "dotfiles (chezmoi)"
+      if run_cmd chezmoi init --source "$DOTFILES_DIR" --apply ${CHEZMOI_INIT_ARGS:-}; then
+        remember_installed "dotfiles (chezmoi)"
+      else
+        warn "chezmoi apply returned non-zero; run 'chezmoi diff' to inspect."
+        remember_skipped "dotfiles (chezmoi, apply failed)"
+      fi
       ;;
     stow)
       local pkgs
@@ -402,14 +405,21 @@ apply_dotfiles_with_manager() {
       if [[ -n "$pkgs" ]]; then
         log "Stowing packages from $DOTFILES_DIR: $pkgs"
         # shellcheck disable=SC2086  # package list is intentionally word-split
-        run_cmd stow -d "$DOTFILES_DIR" -t "$HOME" $pkgs \
-          || warn "stow reported conflicts; move the existing files aside and rerun."
+        if run_cmd stow -d "$DOTFILES_DIR" -t "$HOME" $pkgs; then
+          remember_installed "dotfiles (stow)"
+        else
+          warn "stow reported conflicts; move the existing files aside and rerun."
+          remember_skipped "dotfiles (stow, conflicts)"
+        fi
       else
         log "Stowing $DOTFILES_DIR as a single package (flat mirror of \$HOME)"
-        run_cmd stow -d "$(dirname "$DOTFILES_DIR")" -t "$HOME" "$(basename "$DOTFILES_DIR")" \
-          || warn "stow reported conflicts; move the existing files aside and rerun."
+        if run_cmd stow -d "$(dirname "$DOTFILES_DIR")" -t "$HOME" "$(basename "$DOTFILES_DIR")"; then
+          remember_installed "dotfiles (stow)"
+        else
+          warn "stow reported conflicts; move the existing files aside and rerun."
+          remember_skipped "dotfiles (stow, conflicts)"
+        fi
       fi
-      remember_installed "dotfiles (stow)"
       ;;
   esac
 }
