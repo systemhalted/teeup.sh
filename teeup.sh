@@ -508,9 +508,7 @@ prepare_dotfiles_source() {
   if [[ -n "$INIT_DOTFILES_DIR" ]]; then
     INSTALL_DOTFILES=true
     init_dotfiles_repo "$INIT_DOTFILES_DIR"
-    return 0
-  fi
-  if [[ -n "$DOTFILES_SOURCE" ]]; then
+  elif [[ -n "$DOTFILES_SOURCE" ]]; then
     INSTALL_DOTFILES=true
     if looks_like_git_url "$DOTFILES_SOURCE"; then
       local clone_dir="${DOTFILES_CLONE_DIR:-$HOME/dotfiles}"

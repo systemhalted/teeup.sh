@@ -741,6 +741,32 @@ test_dotfiles_manager_override_and_validation() {
   assert_contains "$output" "DOTFILES_MANAGER" "error should name the variable"
 }
 
+# --init-dotfiles must resolve the manager on its own exit path from
+# prepare_dotfiles_source, not just the --dotfiles/sibling-default path. A real
+# (non-dry-run) run is required: dry-run never copies the starter, so the bug
+# (falling back to managed blocks after generating a native-layout starter) is
+# invisible under dry-run.
+test_init_dotfiles_resolves_manager() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local output
+  output=$(TARGET_SHELL=bash PACKAGE_MANAGER=pacman INSTALL_DOTFILES=true \
+    "$PROJECT_DIR/teeup.sh" --only cli --init-dotfiles "$TEST_HOME/dotfiles" 2>&1)
+
+  assert_contains "$output" "Dotfiles manager: native" "should report native for the generated starter"
+  assert_file_exists "$TEST_HOME/dotfiles/bashrc" "starter should be generated with a bashrc"
+  if [[ ! -L "$HOME/.bashrc" ]]; then
+    echo "FAIL: \$HOME/.bashrc should be a symlink into the generated starter"; return 1
+  fi
+  assert_equals "$TEST_HOME/dotfiles/bashrc" "$(readlink "$HOME/.bashrc")" "bashrc symlink should point at the starter"
+  if [[ "$output" == *"falling back to small managed shell blocks"* ]]; then
+    echo "FAIL: managed-block fallback must not fire when the starter was symlinked"; return 1
+  fi
+}
+
 echo ""
 echo "Running tests..."
 echo ""
@@ -921,5 +947,6 @@ run_test "detect_dotfiles_manager recognises layouts" test_detect_dotfiles_manag
 run_test "stow_packages filters by target shell" test_stow_packages_filters_shells
 run_test "chezmoi layout counts as a dotfiles payload" test_chezmoi_layout_counts_as_payload
 run_test "--dotfiles-manager override and validation" test_dotfiles_manager_override_and_validation
+run_test "--init-dotfiles resolves the manager" test_init_dotfiles_resolves_manager
 
 print_summary
