@@ -46,10 +46,13 @@ stow_packages() {
     echo "$STOW_PACKAGES"
     return 0
   fi
-  case "${TARGET_SHELL:-bash}" in
-    zsh) other_shell="bash" ;;
-    *)   other_shell="zsh" ;;
-  esac
+  # Only apply shell filtering if both bash and zsh packages exist
+  if [[ -d "$dir/bash" && -d "$dir/zsh" ]]; then
+    case "${TARGET_SHELL:-bash}" in
+      zsh) other_shell="bash" ;;
+      *)   other_shell="zsh" ;;
+    esac
+  fi
   for sub in "$dir"/*/; do
     [[ -d "$sub" ]] || continue
     name="$(basename "$sub")"
