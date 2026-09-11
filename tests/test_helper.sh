@@ -173,6 +173,17 @@ EOF
   mock_command docker-compose 0 ""
 }
 
+mock_dotfiles_manager_commands() {
+  mock_command_script chezmoi <<'EOF'
+echo "chezmoi $*" >> "$MOCK_LOG"
+exit 0
+EOF
+  mock_command_script stow <<'EOF'
+echo "stow $*" >> "$MOCK_LOG"
+exit 0
+EOF
+}
+
 assert_equals() {
   local expected="$1" actual="$2" message="${3:-Values should be equal}"
   if [[ "$expected" == "$actual" ]]; then
