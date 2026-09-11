@@ -419,6 +419,9 @@ WIZARD_INSTALL_DOTFILES="true"
 WIZARD_DOTFILES_MODE="generate"
 WIZARD_DOTFILES_SOURCE=""
 WIZARD_INIT_DOTFILES_DIR=""
+# Filled by show_additional_options: chezmoi | stow | native | none, or empty for a
+# git URL (detected after teeup.sh clones it).
+WIZARD_DOTFILES_MANAGER=""
 WIZARD_RECONCILE_EXISTING_CONFIG="true"
 WIZARD_CLEANUP_HOMEBREW_OVERLAPS="false"
 WIZARD_ALLOW_HOMEBREW_CASK_FALLBACK="false"
@@ -1154,6 +1157,27 @@ show_apps_config() {
   wait_for_key
 }
 
+# Set WIZARD_DOTFILES_MANAGER from a path. A git URL cannot be inspected before
+# teeup.sh clones it, so it leaves the variable empty.
+wizard_detect_dotfiles_manager() {
+  local src="$1"
+  WIZARD_DOTFILES_MANAGER=""
+  case "$src" in
+    *://*|git@*:*) return 0 ;;
+  esac
+  WIZARD_DOTFILES_MANAGER="$(detect_dotfiles_manager "$src")"
+}
+
+# Human label for WIZARD_DOTFILES_MANAGER.
+wizard_dotfiles_manager_label() {
+  case "$WIZARD_DOTFILES_MANAGER" in
+    chezmoi|stow) echo "$WIZARD_DOTFILES_MANAGER" ;;
+    native)       echo "teeup symlinks" ;;
+    none)         echo "unrecognised layout" ;;
+    *)            echo "detected after clone" ;;
+  esac
+}
+
 show_additional_options() {
   print_header
   print_section "Step 4: Additional Options"
@@ -1169,7 +1193,8 @@ show_additional_options() {
   echo "Dotfiles (shell aliases, git config, tmux, prompt):"
   echo ""
   if [[ -n "$sibling_dotfiles" ]]; then
-    echo -e "  ${BOLD}1)${RESET} Use existing dotfiles  ${DIM}(detected: $sibling_dotfiles)${RESET}"
+    wizard_detect_dotfiles_manager "$sibling_dotfiles"
+    echo -e "  ${BOLD}1)${RESET} Use existing dotfiles  ${DIM}(detected: $sibling_dotfiles, $(wizard_dotfiles_manager_label))${RESET}"
   else
     echo -e "  ${BOLD}1)${RESET} Use existing dotfiles  ${DIM}(enter a path or git URL)${RESET}"
   fi
@@ -1200,6 +1225,14 @@ show_additional_options() {
           print_warning "No source given; generating a neutral starter instead."
           WIZARD_DOTFILES_MODE="generate"
           WIZARD_INIT_DOTFILES_DIR="$HOME/dotfiles"
+        fi
+      fi
+      if [[ -n "$WIZARD_DOTFILES_SOURCE" ]]; then
+        wizard_detect_dotfiles_manager "$WIZARD_DOTFILES_SOURCE"
+        print_info "Dotfiles will be deployed by: $(wizard_dotfiles_manager_label)"
+        if [[ "$WIZARD_DOTFILES_MANAGER" == "chezmoi" || "$WIZARD_DOTFILES_MANAGER" == "stow" ]] \
+           && ! command -v "$WIZARD_DOTFILES_MANAGER" >/dev/null 2>&1; then
+          print_info "$WIZARD_DOTFILES_MANAGER is not installed; it will be installed first."
         fi
       fi
       ;;
@@ -1341,7 +1374,18 @@ show_summary() {
   fi
 
   case "${WIZARD_DOTFILES_MODE:-}" in
-    existing) echo -e "  Dotfiles: ${CYAN}use existing (${WIZARD_DOTFILES_SOURCE:-auto-detected})${RESET}" ;;
+    existing)
+      echo -e "  Dotfiles: ${CYAN}use existing (${WIZARD_DOTFILES_SOURCE:-auto-detected})${RESET}"
+      case "$WIZARD_DOTFILES_MANAGER" in
+        chezmoi|stow)
+          if command -v "$WIZARD_DOTFILES_MANAGER" >/dev/null 2>&1; then
+            echo -e "  Dotfiles manager: ${CYAN}$WIZARD_DOTFILES_MANAGER${RESET}"
+          else
+            echo -e "  Dotfiles manager: ${CYAN}$WIZARD_DOTFILES_MANAGER${RESET} ${YELLOW}(will be installed)${RESET}"
+          fi
+          ;;
+      esac
+      ;;
     generate) echo -e "  Dotfiles: ${CYAN}generate starter at ${WIZARD_INIT_DOTFILES_DIR:-$HOME/dotfiles}${RESET}" ;;
     none|*)   echo -e "  Dotfiles: ${CYAN}none (minimal managed blocks)${RESET}" ;;
   esac
