@@ -692,6 +692,55 @@ test_stow_packages_filters_shells() {
   assert_equals "common zsh" "$(TARGET_SHELL=bash stow_packages "$single")" "bash target with only zsh package includes zsh"
 }
 
+# A chezmoi-shaped overlay counts as a payload: runtime modules must not write rc blocks
+# and the managed-block fallback must not fire.
+test_chezmoi_layout_counts_as_payload() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+  mock_runtime_commands
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"
+  touch "$df/.chezmoi.toml.tmpl" "$df/dot_bashrc"
+
+  local output
+  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only rust 2>&1)
+
+  assert_contains "$output" "Cargo PATH is handled by dotfiles." "rust module must defer to the manager"
+  assert_contains "$output" "Dotfiles manager: chezmoi" "should report the resolved manager"
+  if [[ "$output" == *"falling back to small managed shell blocks"* ]]; then
+    echo "FAIL: managed-block fallback must not fire for a chezmoi layout"; return 1
+  fi
+  if [[ "$output" == *"Would update $HOME/.bashrc"* ]]; then
+    echo "FAIL: must not write into a chezmoi-managed rc file"; return 1
+  fi
+}
+
+test_dotfiles_manager_override_and_validation() {
+  setup_test_env
+  trap cleanup_test_env RETURN
+  mock_linux_base_commands
+  mock_linux_package_manager_commands
+
+  local df="$TEST_HOME/dotfiles"
+  mkdir -p "$df"; touch "$df/.bashrc"
+
+  local output
+  output=$(DRY_RUN=true TARGET_SHELL=bash PACKAGE_MANAGER=pacman \
+    DOTFILES_DIR="$df" "$PROJECT_DIR/teeup.sh" --only cli --dotfiles-manager stow 2>&1)
+  assert_contains "$output" "Dotfiles manager: stow" "--dotfiles-manager should force stow"
+
+  set +e
+  output=$(DRY_RUN=true PACKAGE_MANAGER=pacman "$PROJECT_DIR/teeup.sh" --only cli --dotfiles-manager yadm 2>&1)
+  local rc=$?
+  set -e
+  assert_failure "$rc" "unknown manager must fail"
+  assert_contains "$output" "DOTFILES_MANAGER" "error should name the variable"
+}
+
 echo ""
 echo "Running tests..."
 echo ""
@@ -870,5 +919,7 @@ run_test "Rust installs rust-analyzer/clippy/rustfmt components" test_rust_insta
 run_test "Rust ensures curl before downloading rustup" test_rust_ensures_curl_before_download
 run_test "detect_dotfiles_manager recognises layouts" test_detect_dotfiles_manager_layouts
 run_test "stow_packages filters by target shell" test_stow_packages_filters_shells
+run_test "chezmoi layout counts as a dotfiles payload" test_chezmoi_layout_counts_as_payload
+run_test "--dotfiles-manager override and validation" test_dotfiles_manager_override_and_validation
 
 print_summary

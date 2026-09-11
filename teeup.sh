@@ -42,6 +42,7 @@ RECONCILE_EXISTING_CONFIG="${RECONCILE_EXISTING_CONFIG:-false}"  # Disable old A
 ZSH_MODE="${ZSH_MODE:-plain}"                       # plain or ohmyzsh
 PROMPT="${PROMPT:-none}"                             # none, powerlevel10k, or starship (prompt tool to install)
 DOTFILES_DIR="${DOTFILES_DIR:-$DEFAULT_DOTFILES_DIR}"
+DOTFILES_MANAGER="${DOTFILES_MANAGER:-auto}"    # auto, chezmoi, stow, or native (teeup's own linker)
 PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, macports, apt, or dnf
 STRICT_PLATFORM="${STRICT_PLATFORM:-false}"         # fail instead of skip when module/platform mismatch
 ALLOW_HOMEBREW_CASK_FALLBACK="${ALLOW_HOMEBREW_CASK_FALLBACK:-false}"  # Use existing Homebrew for casks in MacPorts mode
@@ -88,6 +89,10 @@ EXCEPT_MODULES=""
 INIT_DOTFILES_DIR=""
 DOTFILES_SOURCE=""
 TEMPLATE_DOTFILES_DIR="${TEMPLATE_DOTFILES_DIR:-$SCRIPT_DIR/templates/dotfiles}"
+
+# Set by prepare_dotfiles_source from DOTFILES_MANAGER and the overlay's layout:
+# chezmoi | stow | native | none. "none" means no recognised payload (managed blocks).
+RESOLVED_DOTFILES_MANAGER="none"
 
 # Colima defaults (edit as desired)
 COLIMA_PROFILE="${COLIMA_PROFILE:-default}"
@@ -428,12 +433,31 @@ disable_matching_lines() {
   ok "Disabled stale config in $file: $reason"
 }
 
+# True when the overlay can deliver rc files itself, so teeup must not write any.
+# chezmoi/stow own $HOME once applied; the native layout needs the target shell's
+# rc file to be present in the overlay.
 dotfiles_payload_available() {
   [[ -n "$DOTFILES_DIR" ]] || return 1
+  case "$RESOLVED_DOTFILES_MANAGER" in
+    chezmoi|stow) return 0 ;;
+    none) return 1 ;;
+  esac
   case "${TARGET_SHELL:-}" in
     zsh)  [[ -f "$DOTFILES_DIR/zshrc" ]] ;;
     bash) [[ -f "$DOTFILES_DIR/bashrc" ]] ;;
     *)    [[ -f "$DOTFILES_DIR/zshrc" || -f "$DOTFILES_DIR/bashrc" ]] ;;
+  esac
+}
+
+normalize_dotfiles_manager() {
+  local value_lower
+  value_lower=$(echo "${DOTFILES_MANAGER:-auto}" | tr '[:upper:]' '[:lower:]')
+  case "$value_lower" in
+    auto|chezmoi|stow|native) DOTFILES_MANAGER="$value_lower" ;;
+    *)
+      err "Unknown DOTFILES_MANAGER '${DOTFILES_MANAGER}'. Use auto, chezmoi, stow, or native."
+      exit 1
+      ;;
   esac
 }
 
@@ -504,6 +528,33 @@ prepare_dotfiles_source() {
       DOTFILES_DIR="$DOTFILES_SOURCE"
     fi
   fi
+  resolve_dotfiles_manager
+}
+
+# Pick the manager for DOTFILES_DIR. An explicit DOTFILES_MANAGER wins; otherwise the
+# layout decides. A git URL under --dry-run has no clone yet, so detection cannot run.
+resolve_dotfiles_manager() {
+  normalize_dotfiles_manager
+  RESOLVED_DOTFILES_MANAGER="none"
+  [[ -n "$DOTFILES_DIR" ]] || return 0
+
+  if [[ "$DOTFILES_MANAGER" != "auto" ]]; then
+    RESOLVED_DOTFILES_MANAGER="$DOTFILES_MANAGER"
+  elif [[ ! -d "$DOTFILES_DIR" ]]; then
+    # A missing directory is either a --dry-run git URL (clone previewed, not made)
+    # or a stale path; the dotfiles step already warns about the latter.
+    if [[ -n "$DOTFILES_SOURCE" ]] && looks_like_git_url "$DOTFILES_SOURCE"; then
+      warn "Dotfiles clone is previewed only; the manager is detected after a real clone."
+    fi
+    return 0
+  else
+    RESOLVED_DOTFILES_MANAGER="$(detect_dotfiles_manager "$DOTFILES_DIR")"
+  fi
+
+  case "$RESOLVED_DOTFILES_MANAGER" in
+    none) warn "No recognised dotfiles layout in $DOTFILES_DIR (expected chezmoi, stow, or zshrc/bashrc); managed blocks will be used." ;;
+    *)    ok "Dotfiles manager: $RESOLVED_DOTFILES_MANAGER ($DOTFILES_DIR)" ;;
+  esac
 }
 
 # shellcheck source=lib/platform.sh
@@ -660,6 +711,8 @@ Options:
                         you own, then symlink it. Use this if you have no dotfiles.
   --dotfiles PATH|URL   Use an existing dotfiles directory, or clone a git URL,
                         as the dotfiles overlay (sets DOTFILES_DIR).
+  --dotfiles-manager M  Which tool deploys the overlay: auto (detect from layout,
+                        default), chezmoi, stow, or native (teeup's own symlinks).
   --migrate-to-uv       Migrate from pyenv/poetry/pipx to UV
   --strict-platform     Fail if a selected module is unsupported on this OS
   --reconcile-existing-config
@@ -684,6 +737,7 @@ Environment Variables:
   INSTALL_DOTFILES      Install/symlink dotfiles from DOTFILES_DIR (default: true)
   DOTFILES_DIR          Dotfiles overlay path (default: ../dotfiles when present;
                         otherwise neutral managed blocks, or use --init-dotfiles)
+  DOTFILES_MANAGER      auto, chezmoi, stow, or native (default: auto)
   ALLOW_HOMEBREW_CASK_FALLBACK
                         Use existing Homebrew for GUI casks in MacPorts mode (default: false)
   CLEANUP_HOMEBREW_OVERLAPS
@@ -1025,6 +1079,14 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       DOTFILES_SOURCE="$2"
+      shift 2
+      ;;
+    --dotfiles-manager)
+      if [[ -z "${2:-}" ]]; then
+        err "--dotfiles-manager requires one of: auto, chezmoi, stow, native"
+        exit 1
+      fi
+      DOTFILES_MANAGER="$2"
       shift 2
       ;;
     --migrate-to-uv)
