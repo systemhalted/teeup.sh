@@ -686,6 +686,10 @@ test_stow_packages_filters_shells() {
 
   local flat="$TEST_HOME/flat"; mkdir -p "$flat"; touch "$flat/.bashrc"
   assert_equals "" "$(TARGET_SHELL=bash stow_packages "$flat")" "no package dirs gives empty (flat mirror)"
+
+  local single="$TEST_HOME/single"; mkdir -p "$single/zsh" "$single/common"
+  touch "$single/zsh/.zshrc" "$single/common/.gitconfig"
+  assert_equals "common zsh" "$(TARGET_SHELL=bash stow_packages "$single")" "bash target with only zsh package includes zsh"
 }
 
 echo ""
