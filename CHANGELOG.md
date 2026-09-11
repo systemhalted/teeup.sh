@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **chezmoi and GNU Stow overlays.** `--dotfiles` now recognises a chezmoi source
+  directory (`dot_*`, `.chezmoi.toml.tmpl`) or a Stow package tree and hands
+  `$HOME` to that tool (`chezmoi init --source DIR --apply`, `stow -d DIR -t ~`)
+  after installing it if needed. teeup writes nothing into rc files a manager
+  owns, so `chezmoi diff` stays clean after a teeup run. The flat layout and the
+  managed-block fallback are unchanged. `--dotfiles-manager` (or
+  `DOTFILES_MANAGER`) forces a choice; `STOW_PACKAGES` and `CHEZMOI_INIT_ARGS`
+  tune the hand-off. The wizard shows the detected manager.
 - **pacman support for Arch and derivatives (including Omarchy).**
   `PACKAGE_MANAGER=auto` now resolves to `pacman` from `ID=arch` in
   `/etc/os-release`, or falls back to it when the binary is present;
@@ -57,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once your overlay no longer ships that legacy file, so a back-compat link stays put
   while you migrate. A foreign-target symlink or pre-existing `~/.teeup.common` is
   left untouched.
+- A sibling `../dotfiles` that has moved to chezmoi previously triggered the
+  managed-block fallback and appended a source line to `~/.bashrc`/`~/.zshrc`.
+  It is now applied with chezmoi instead. Remove the stale `# Added by teeup.sh -
+  teeup.common` block from your rc file if one was written, or let `chezmoi apply`
+  overwrite it.
 
 ---
 

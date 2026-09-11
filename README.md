@@ -44,7 +44,7 @@ Through an interactive wizard, teeup provisions a complete development environme
   - **Bruno** and **Obsidian** (macOS-only via Homebrew cask)
 - ✅ Detects your login shell (`bash` or `zsh`) and wires tool init into a shared `~/.teeup.common` sourced by both shells; override with `TARGET_SHELL`
 - ✅ Adds the invoking user to the `docker` group on Linux so `docker` works without `sudo` (after re-login)
-- ✅ Dotfiles your way: use your own repo (`--dotfiles <path|url>` or a sibling `dotfiles`), generate a neutral starter you own (`--init-dotfiles`), or fall back to minimal managed shell blocks
+- ✅ Dotfiles your way: point teeup at a **chezmoi** or **GNU Stow** repo and it installs that tool and hands `$HOME` to it; point it at a flat directory (or `--init-dotfiles` a starter) and teeup symlinks it; with no dotfiles it falls back to minimal managed shell blocks
 - ✅ Can reconcile existing shell config by disabling old Antigen, pyenv, and stale hardcoded path lines
 - ✅ Adds sensible aliases and environment initialization (`pyenv`, `sdkman`, `colima`) for your target shell when no dotfiles repo is present
   - Includes shortcuts like `ll`, `cls`, `grv`, `colima-start`, and `colima-stop`
@@ -310,6 +310,7 @@ TARGET_SHELL="${TARGET_SHELL:-auto}"                # Login shell to configure: 
 PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"          # auto, homebrew, macports, apt, dnf, or pacman
 STRICT_PLATFORM="${STRICT_PLATFORM:-false}"         # fail instead of skipping unsupported modules
 INSTALL_DOTFILES="${INSTALL_DOTFILES:-true}"        # Symlink a dotfiles overlay (see --dotfiles / --init-dotfiles)
+DOTFILES_MANAGER="${DOTFILES_MANAGER:-auto}"        # auto, chezmoi, stow, or native
 RECONCILE_EXISTING_CONFIG="${RECONCILE_EXISTING_CONFIG:-false}"  # Disable old shell config lines
 CLEANUP_HOMEBREW_OVERLAPS="${CLEANUP_HOMEBREW_OVERLAPS:-false}"  # Remove verified overlaps in MacPorts mode
 ALLOW_HOMEBREW_CASK_FALLBACK="${ALLOW_HOMEBREW_CASK_FALLBACK:-false}"  # Use existing Homebrew casks in MacPorts mode
@@ -338,6 +339,21 @@ so it never imposes one person's taste:
   ```
   A sibling `dotfiles/` directory next to `teeup.sh` is auto-detected and used by
   default (so an author's own checkout "just works").
+
+  teeup looks at the directory's layout to decide who deploys it:
+
+  | Layout | Deployed by | What teeup runs |
+  |--------|-------------|-----------------|
+  | `dot_*` files, `.chezmoi.toml.tmpl`, `.chezmoiignore` | chezmoi | `chezmoi init --source DIR --apply` |
+  | package directories (`bash/.bashrc`, `common/.gitconfig`), `.stowrc` | GNU Stow | `stow -d DIR -t ~ <packages>` (only the package for your login shell when both `bash` and `zsh` exist; `STOW_PACKAGES` overrides) |
+  | flat `zshrc`, `bashrc`, `teeup.common` | teeup | the symlinks described below |
+
+  The manager is installed first when missing (chezmoi through the upstream
+  installer on apt and MacPorts, which do not package it). teeup writes nothing
+  into rc files a manager owns. Force a choice with `--dotfiles-manager
+  chezmoi|stow|native`; a flat mirror of `$HOME` needs `--dotfiles-manager stow`.
+  Extra `chezmoi init` words (for example `--promptBool work=true`) go in
+  `CHEZMOI_INIT_ARGS`.
 - **Generate a neutral starter you own** — if you have no dotfiles yet, scaffold a
   clean set from `templates/dotfiles/` (no editor lock-in, no personal aliases),
   then customize and version-control it:
@@ -592,6 +608,7 @@ and your TLS chain. The endpoints used are:
 | SDKMAN!   | `https://get.sdkman.io`                                                      |
 | rustup    | `https://sh.rustup.rs`                                                       |
 | Starship  | `https://starship.rs/install.sh`                                             |
+| chezmoi   | `https://get.chezmoi.io` (apt and MacPorts only)                             |
 
 If you don't want any of these to run, install the corresponding tool
 yourself first (teeup detects existing installs and skips them) or run
@@ -630,6 +647,7 @@ The project includes a test suite to validate both scripts:
 - Target-shell routing (bash vs zsh) and `teeup.common` wiring (incl. `~/.teeupshrc`→`~/.teeup.common` migration)
 - Segregated bash/zsh deployments and opt-in prompt selection (`--prompt`)
 - Linux docker-group membership
+- Dotfiles manager detection (chezmoi / stow / flat) and hand-off, including the apt installer path
 
 **teeup-wizard.sh tests:**
 - Script syntax validation
