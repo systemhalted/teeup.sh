@@ -1,0 +1,9 @@
+summary="zsh login shell with teeup's layered configuration"
+group=shell
+tier=core
+requires="teeup-runtime"
+provides=""
+packages="zsh zsh-completions zsh-autosuggestions zsh-syntax-highlighting"
+casks=""
+apps=""
+interactive=true

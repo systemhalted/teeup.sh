@@ -1,0 +1,112 @@
+# capabilities/zsh/default/env - environment for every zsh, interactive or not.
+# teeup owns this file; it is replaced on every teeup update. Your exports go
+# in ~/.config/zsh/local.zsh or below the source line in ~/.zshenv.
+# POSIX-shaped on purpose: a plain sh that sources it still works.
+
+# --- PATH helpers ------------------------------------------------------------
+# Remove every occurrence of $1 from PATH. POSIX parameter expansion only.
+path_remove() {
+  _pr=":$PATH:"
+  while :; do
+    case "$_pr" in
+      *":$1:"*) _pr="${_pr%%":$1:"*}:${_pr#*":$1:"}" ;;
+      *) break ;;
+    esac
+  done
+  _pr="${_pr#:}"
+  PATH="${_pr%:}"
+  unset _pr
+}
+
+# Put $1 first even when it is already further back. This file is sourced more
+# than once per login (~/.zshenv, then ~/.zprofile after macOS's path_helper
+# and `brew shellenv` have prepended their own directories), and every pass has
+# to restore user-path precedence.
+path_prepend() {
+  [ -d "$1" ] || return 0
+  path_remove "$1"
+  PATH="$1${PATH:+:$PATH}"
+}
+
+# Append only when missing; appended entries are meant to stay last.
+path_append() {
+  [ -d "$1" ] || return 0
+  case ":$PATH:" in
+    *":$1:"*) ;;
+    *) PATH="$PATH:$1" ;;
+  esac
+}
+
+# --- teeup paths -------------------------------------------------------------
+# TEEUP_PATH comes from ~/.config/teeup/env, sourced just before this file.
+# TEEUP_STATE_DIR uses the same formula as lib/core.sh so the shell and the CLI
+# never disagree about where generated files live.
+TEEUP_STATE_DIR="${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
+export TEEUP_STATE_DIR
+
+# --- package manager prefixes ------------------------------------------------
+# MacPorts wins on macOS 12 and older (Darwin 21), where Homebrew dropped
+# support; Homebrew wins otherwise. Doing it here means shells that never run
+# `brew shellenv` (ssh commands, cron, GUI launchers) still find the binaries.
+_teeup_darwin="$(uname -r 2>/dev/null)"
+_teeup_darwin="${_teeup_darwin%%.*}"
+_teeup_brew=""
+if [ -x /opt/homebrew/bin/brew ]; then
+  _teeup_brew=/opt/homebrew
+elif [ -x /usr/local/bin/brew ]; then
+  _teeup_brew=/usr/local
+fi
+if [ "${_teeup_darwin:-99}" -le 21 ] 2>/dev/null; then
+  if [ -n "$_teeup_brew" ]; then
+    path_prepend "$_teeup_brew/sbin"
+    path_prepend "$_teeup_brew/bin"
+  fi
+  path_prepend /opt/local/sbin
+  path_prepend /opt/local/bin
+else
+  path_prepend /opt/local/sbin
+  path_prepend /opt/local/bin
+  if [ -n "$_teeup_brew" ]; then
+    path_prepend "$_teeup_brew/sbin"
+    path_prepend "$_teeup_brew/bin"
+  fi
+fi
+unset _teeup_darwin _teeup_brew
+
+path_prepend "$HOME/.local/bin"
+# mise's own shims let shells without `mise activate` find mise tools. teeup's
+# lazy-install shims come after them and after everything else: a shim exists
+# only to catch a command nothing real provides (spec section 6).
+path_append "$HOME/.local/share/mise/shims"
+path_append "$TEEUP_STATE_DIR/shims"
+export PATH
+
+# --- editor ------------------------------------------------------------------
+if [ -z "${EDITOR:-}" ]; then
+  if command -v emacsclient >/dev/null 2>&1; then
+    # An empty ALTERNATE_EDITOR makes emacsclient start the daemon itself.
+    ALTERNATE_EDITOR=""
+    export ALTERNATE_EDITOR
+    EDITOR="emacsclient -t"
+  elif command -v nvim >/dev/null 2>&1; then
+    EDITOR="nvim"
+  else
+    EDITOR="vim"
+  fi
+  export EDITOR
+fi
+# Defaulted, not forced: a parent process that set VISUAL or SUDO_EDITOR on
+# purpose keeps its value, and an inherited EDITOR does not silently become
+# all three.
+export VISUAL="${VISUAL:-$EDITOR}"
+export SUDO_EDITOR="${SUDO_EDITOR:-$EDITOR}"
+
+# --- everything else ---------------------------------------------------------
+# BAT_THEME is the shell-level theme hook; `teeup theme set` overrides this
+# default through the generated file sourced in default/rc.
+export BAT_THEME="${BAT_THEME:-ansi}"
+export LESS="${LESS:--R}"
+if command -v bat >/dev/null 2>&1; then
+  export MANROFFOPT="-c"
+  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+fi

@@ -1,0 +1,48 @@
+# capabilities/zsh/default/aliases - teeup owns this file. To change or drop
+# one, redefine or `unalias` it in ~/.config/zsh/local.zsh, which loads later.
+
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza -lh --group-directories-first --icons=auto'
+  alias lsa='eza -lha --group-directories-first --icons=auto'
+  alias ll='eza -lh --group-directories-first --icons=auto'
+  alias la='eza -lha --group-directories-first --icons=auto'
+  alias lt='eza --tree --level=2 --long --icons --git'
+else
+  alias ll='ls -lah'
+  alias la='ls -lAh'
+fi
+
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias c='clear'
+alias cls='clear'
+alias pse='ps -ef'
+
+# zoxide's learned directories, with plain cd behaviour for real paths.
+# zd is defined in default/functions.
+command -v zoxide >/dev/null 2>&1 && alias cd='zd'
+
+# git
+alias g='git'
+alias gs='git status'
+alias ga='git add'
+alias gcm='git commit -m'
+alias gcam='git commit -a -m'
+alias gco='git checkout'
+alias gd='git diff'
+alias gl='git log --oneline --graph --decorate'
+alias gp='git push'
+alias gpl='git pull'
+alias grv='git remote -v'
+command -v lazygit >/dev/null 2>&1 && alias lg='lazygit'
+
+# Emacs daemon. Plain `emacs` stays untouched for isolated instances.
+if command -v emacsclient >/dev/null 2>&1; then
+  alias e='emacsclient -c'
+  alias et='emacsclient -t'
+fi
+
+# macOS Finder toggles.
+alias showhidden='defaults write com.apple.finder AppleShowAllFiles YES; killall Finder'
+alias hidehidden='defaults write com.apple.finder AppleShowAllFiles NO; killall Finder'

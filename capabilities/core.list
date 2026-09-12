@@ -5,4 +5,5 @@ xcode-clt
 package-manager
 teeup-runtime
 dev-dirs
+zsh
 secrets

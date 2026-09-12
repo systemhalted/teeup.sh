@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# macOS ships zsh 5.9, so the first install is a no-op on any Mac; it is here
+# for MacPorts machines that want a newer one.
+pkg_install zsh zsh || warn "Continuing with the zsh macOS ships."
+
+# Plain scripts sourced by default/rc, not a framework. Each one is optional:
+# the shell layer skips whatever is missing.
+for plugin in zsh-completions zsh-autosuggestions zsh-syntax-highlighting; do
+  pkg_install "$plugin" || warn "Could not install $plugin; the shell layer will skip it."
+done
+
+# Login shell. /bin/zsh is Apple-signed and already listed in /etc/shells, so
+# chsh takes it without a privileged edit; a package-manager zsh would need
+# /etc/shells patched first.
+login_shell="$(dscl . -read "/Users/${USER:-$(id -un)}" UserShell 2>/dev/null | awk '{print $2}')"
+if [[ "$login_shell" == "/bin/zsh" ]]; then
+  ok "Login shell is already /bin/zsh."
+else
+  log "Changing the login shell to /bin/zsh (macOS asks for your password)..."
+  run_cmd chsh -s /bin/zsh || warn "chsh failed; run it by hand: chsh -s /bin/zsh"
+fi
