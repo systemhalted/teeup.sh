@@ -51,6 +51,15 @@ test_gum_is_used_when_available() {
   cleanup_test_env
 }
 
+test_choose_accepts_leading_zero_number() {
+  setup
+  local err
+  assert_equals "h" "$(echo 08 | ui_choose "Pick" a b c d e f g h i 2>/dev/null)" || return 1
+  err="$(echo 08 | ui_choose "Pick" a b c d e f g h i 2>&1 >/dev/null)"
+  assert_not_contains "$err" "value too great" "no bash diagnostic leaks" || return 1
+  cleanup_test_env
+}
+
 echo "lib/ui.sh"
 run_test "input reads piped answer" test_input_reads_piped_answer
 run_test "input uses default on empty line" test_input_uses_default_on_empty_line
@@ -58,4 +67,5 @@ run_test "confirm yes and no" test_confirm_yes_and_no
 run_test "choose by number and by name" test_choose_by_number_and_by_name
 run_test "choose defaults to first on empty" test_choose_defaults_to_first_on_empty
 run_test "gum is used when available" test_gum_is_used_when_available
+run_test "choose accepts leading zero number" test_choose_accepts_leading_zero_number
 print_summary
