@@ -72,16 +72,25 @@ fi
 # the one that would fix it. ssh runs after git in the core list, so on a first
 # bootstrap the keys do not exist yet: signing turns itself on at the next
 # `teeup configure git` (which `teeup update` runs) once ssh has made them.
-# Every identity in identity_list must have its .pub present, not just the
-# personal one: with a work email on file, a signingkey pointing at a work key
-# that ssh has not made yet would make every commit under ~/Work fail once
-# signing is on. With no work email, identity_list is personal-only, so this
-# is exactly the personal-key check the round-2 fix already relied on.
+# Every identity in identity_list must have BOTH halves of its keypair, not
+# just the .pub: with a work email on file, a signingkey pointing at a work
+# key that ssh has not made yet would make every commit under ~/Work fail once
+# signing is on, and a deleted private key (the .pub left behind) is the same
+# failure with the personal identity. With no work email, identity_list is
+# personal-only, so this is exactly the personal-key check the round-2 fix
+# already relied on.
 gpgsign="true"
 for identity in $(identity_list); do
-  if [[ ! -f "$(identity_key "$identity").pub" ]]; then
+  key="$(identity_key "$identity")"
+  if [[ ! -f "$key" ]]; then
     gpgsign="false"
-    log "No $(identity_key "$identity").pub yet; commit signing stays off."
+    log "No $key yet; commit signing stays off."
+    log "After the ssh capability has made your keys, run: teeup configure git"
+    break
+  fi
+  if [[ ! -f "$key.pub" ]]; then
+    gpgsign="false"
+    log "No $key.pub yet; commit signing stays off."
     log "After the ssh capability has made your keys, run: teeup configure git"
     break
   fi
@@ -112,7 +121,21 @@ GIT_GENERATED
 shopt -u patsub_replacement 2>/dev/null || true
 rendered_git_config="$(mktemp)"
 while IFS= read -r line || [[ -n "$line" ]]; do
-  printf '%s\n' "${line//\~\/.config\/git/$git_dir}"
+  case "$line" in
+    *'path = ~/.config/git'*)
+      # The value is a path, not just a bareword: an XDG_CONFIG_HOME with a
+      # `#` or `;` in it (both comment characters to git's config parser
+      # outside quotes) would otherwise truncate everything after it. Quoting
+      # the whole rendered value, not just substituting $git_dir in place,
+      # makes every such include/includeIf path a proper git-config string.
+      value="${line#*= }"
+      rel="${value#\~/.config/git}"
+      printf '%s = %s\n' "${line%% = *}" "$(git_quote "$git_dir$rel")"
+      ;;
+    *)
+      printf '%s\n' "$line"
+      ;;
+  esac
 done < "$TEEUP_CAP_DIR/config/git/config" > "$rendered_git_config"
 copy_config_once "$rendered_git_config" "$git_dir/config"
 rm -f "$rendered_git_config"
