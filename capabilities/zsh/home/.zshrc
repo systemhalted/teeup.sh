@@ -1,7 +1,7 @@
 # ~/.zshrc - installed once by teeup; this copy is yours to edit.
 # Interactive shells. The thick layer lives in the teeup checkout, so teeup
 # upgrades improve it without touching this file.
-[ -r "$HOME/.config/teeup/env" ] && . "$HOME/.config/teeup/env"
+[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env" ] && . "${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env"
 [ -n "${TEEUP_PATH:-}" ] && [ -r "$TEEUP_PATH/capabilities/zsh/default/rc" ] &&
   . "$TEEUP_PATH/capabilities/zsh/default/rc"
 
