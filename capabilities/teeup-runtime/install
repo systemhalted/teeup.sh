@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# gum draws the wizard and menus; jq reads the menu definition and app settings.
+pkg_backend_path
+pkg_install gum gum
+pkg_install jq jq

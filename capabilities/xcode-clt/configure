@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Nothing to configure. The file exists so `teeup configure xcode-clt` is a
+# recorded no-op rather than an error.
+:

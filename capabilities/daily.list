@@ -1,0 +1,2 @@
+# Daily tier: installed at bootstrap when the answers say TEEUP_DAILY=yes.
+# Later phases append: emacs neovim zed vscode chrome obsidian

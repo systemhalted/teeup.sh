@@ -1,0 +1,6 @@
+summary="teeup state directories, env file and the teeup command"
+group=system
+tier=core
+requires="package-manager"
+provides=""
+interactive=false

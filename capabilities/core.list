@@ -1,0 +1,8 @@
+# Core tier: what every terminal session needs. Ordered; each entry's
+# requires= must already be satisfied by the entries above it.
+# Later phases append: zsh starship cli-tools secrets git ssh github mise
+# wezterm fonts aerospace keyboard macos-defaults theme
+xcode-clt
+package-manager
+teeup-runtime
+dev-dirs
