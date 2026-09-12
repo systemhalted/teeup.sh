@@ -420,3 +420,22 @@ If you have questions about contributing:
 4. Ask in the community
 
 Happy contributing! 🚀
+
+---
+
+## Adding a capability (new runtime)
+
+1. Create `capabilities/<name>/` with `capability`, `install`, `configure`.
+2. `capability` is a sourced `KEY=value` file: `summary`, `group`, `tier`
+   (`core|daily|lazy`), `requires`, `provides`, `packages`, `casks`, `apps`,
+   `interactive`.
+3. `install` only installs packages (`pkg_install`, `cask_install`).
+   `configure` only writes configuration (`copy_config_once`,
+   `write_managed_file`, `append_once`, `run_cmd`). Both are idempotent and
+   run as `bash -eu` with `lib/all.sh` loaded and the answers file sourced.
+4. Never call `sudo`; use `run_privileged`. Never mutate outside `run_cmd`.
+5. `provides` must not list a command macOS already ships (`python3`, `ruby`,
+   `java`, `git`, `perl`).
+6. Add the name to `capabilities/core.list` or `daily.list` if it is not lazy.
+7. Add `tests/capabilities/<name>.sh` using the mock harness; run
+   `./bin/teeup commands --check && ./tests/run.sh` before committing.
