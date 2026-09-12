@@ -168,7 +168,7 @@ cask_installed() { have brew && brew list --cask "$1" >/dev/null 2>&1; }
 cask_install() {
   local cask="$1"
   if ! casks_supported; then
-    log "Casks are not available with MacPorts; install $cask by hand."
+    warn "Casks are not available with MacPorts; install $cask by hand."
     return 0
   fi
   if cask_installed "$cask"; then
