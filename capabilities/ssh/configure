@@ -34,9 +34,28 @@ unset ssh_macos_major
 
 for identity in $(identity_list); do
   key="$(identity_key "$identity")"
-  if [[ -f "$key" ]]; then
+  if [[ -f "$key" && -f "$key.pub" ]]; then
     log "Already present: $key"
+  elif [[ -f "$key" && ! -f "$key.pub" ]]; then
+    # ssh-keygen can succeed after the user declines to overwrite $key.pub at
+    # its interactive prompt, leaving a private key with no matching public
+    # half. Rebuild the public half from the private key instead of asking
+    # ssh-keygen to touch $key again. Routed through `bash -c` (not a bare
+    # `run_cmd ssh-keygen ... > "$key.pub"`) so the redirect is part of the
+    # command run_cmd executes, not a redirect on run_cmd's own stdout, which
+    # would otherwise swallow the "Would execute" line into $key.pub on a
+    # dry run.
+    log "Rebuilding the missing public half for the $identity identity..."
+    if ! run_cmd bash -c 'ssh-keygen -y -f "$1" > "$1.pub"' _ "$key"; then
+      warn "Rebuilding $key.pub failed for the $identity identity; skipping the rest of it."
+      continue
+    fi
   else
+    if [[ -f "$key.pub" && ! -f "$key" ]]; then
+      # A public key with no matching private key is not a usable pair; back
+      # it up so a fresh keygen below does not silently discard it.
+      backup_target "$key.pub" >/dev/null
+    fi
     log "Generating the $identity ed25519 key (you will be asked for a passphrase)..."
     if ! run_cmd ssh-keygen -t ed25519 -C "$(identity_email "$identity")" -f "$key"; then
       warn "ssh-keygen failed for the $identity identity; skipping the rest of it."
