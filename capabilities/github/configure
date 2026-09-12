@@ -4,7 +4,7 @@ if ! have gh; then
   exit 0
 fi
 
-if status_out="$(gh auth status 2>&1)"; then
+if status_out="$(gh auth status -h github.com 2>&1)"; then
   ok "Already signed in to GitHub."
   # A machine that authenticated `gh` before teeup existed may be missing the
   # scopes the key uploads below need. `gh auth status` prints them on a

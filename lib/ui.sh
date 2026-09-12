@@ -14,7 +14,7 @@ ui_input() {
     printf '%s' "$prompt" >&2
     [[ -n "$default" ]] && printf ' [%s]' "$default" >&2
     printf ': ' >&2
-    IFS= read -r answer || answer=""
+    IFS= read -r answer || true
   fi
   [[ -z "$answer" ]] && answer="$default"
   printf '%s\n' "$answer"
@@ -27,7 +27,7 @@ ui_secret() {
     answer="$(gum input --password --prompt "$prompt: ")" || answer=""
   else
     printf '%s: ' "$prompt" >&2
-    IFS= read -rs answer || answer=""
+    IFS= read -rs answer || true
     printf '\n' >&2
   fi
   printf '%s\n' "$answer"

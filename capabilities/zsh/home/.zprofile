@@ -1,6 +1,6 @@
 # ~/.zprofile - installed once by teeup; this copy is yours to edit.
 # Login shells only, after macOS's /etc/zprofile has run path_helper.
-[ -r "$HOME/.config/teeup/env" ] && . "$HOME/.config/teeup/env"
+[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env" ] && . "${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env"
 [ -n "${TEEUP_PATH:-}" ] && [ -r "$TEEUP_PATH/capabilities/zsh/default/profile" ] &&
   . "$TEEUP_PATH/capabilities/zsh/default/profile"
 # A missing profile layer above must not leave the shell on a failing status.
