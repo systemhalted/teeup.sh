@@ -45,33 +45,60 @@ TEEUP_STATE_DIR="${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}
 export TEEUP_STATE_DIR
 
 # --- package manager prefixes ------------------------------------------------
-# MacPorts wins on macOS 12 and older (Darwin 21), where Homebrew dropped
-# support; Homebrew wins otherwise. Doing it here means shells that never run
-# `brew shellenv` (ssh commands, cron, GUI launchers) still find the binaries.
-_teeup_darwin="$(uname -r 2>/dev/null)"
-_teeup_darwin="${_teeup_darwin%%.*}"
+# Whichever backend the wizard recorded wins: path_prepend always wins ties by
+# being the most recent call, so the selected prefix is prepended last and the
+# other one first. Doing it here (rather than relying on `brew shellenv`)
+# means shells that never run it (ssh commands, cron, GUI launchers) still
+# find the binaries. TEEUP_TEST_PREFIX_ROOT is a test-only hook (see
+# TEEUP_TEST_MISSING in lib/core.sh for the same pattern): it relocates the
+# /opt and /usr/local trees below a temp directory so tests never touch the
+# real ones.
+_teeup_prefix_root="${TEEUP_TEST_PREFIX_ROOT:-}"
+
+# The answers file holds only TEEUP_* assignments (teeup's own writer refuses
+# any other key), so sourcing it here cannot leak unrelated shell state beyond
+# the TEEUP_* exports it already contains, TEEUP_PACKAGE_MANAGER among them.
+_teeup_answers="${XDG_CONFIG_HOME:-$HOME/.config}/teeup/answers"
+[ -r "$_teeup_answers" ] && . "$_teeup_answers"
+unset _teeup_answers
+
+# No answer on record (a bare shell before the wizard ever ran, or an answers
+# file that predates this key) falls back to the old Darwin-version heuristic:
+# macOS 12 and older gets MacPorts, since Homebrew dropped support there.
+# Anything else, including a non-Darwin uname, defaults to Homebrew.
+_teeup_backend="${TEEUP_PACKAGE_MANAGER:-}"
+if [ -z "$_teeup_backend" ]; then
+  _teeup_darwin="$(uname -r 2>/dev/null)"
+  _teeup_darwin="${_teeup_darwin%%.*}"
+  if [ "${_teeup_darwin:-99}" -le 21 ] 2>/dev/null; then
+    _teeup_backend=macports
+  fi
+  unset _teeup_darwin
+fi
+[ "$_teeup_backend" = "macports" ] || _teeup_backend=homebrew
+
 _teeup_brew=""
-if [ -x /opt/homebrew/bin/brew ]; then
-  _teeup_brew=/opt/homebrew
-elif [ -x /usr/local/bin/brew ]; then
-  _teeup_brew=/usr/local
+if [ -x "$_teeup_prefix_root/opt/homebrew/bin/brew" ]; then
+  _teeup_brew="$_teeup_prefix_root/opt/homebrew"
+elif [ -x "$_teeup_prefix_root/usr/local/bin/brew" ]; then
+  _teeup_brew="$_teeup_prefix_root/usr/local"
 fi
-if [ "${_teeup_darwin:-99}" -le 21 ] 2>/dev/null; then
+if [ "$_teeup_backend" = "macports" ]; then
   if [ -n "$_teeup_brew" ]; then
     path_prepend "$_teeup_brew/sbin"
     path_prepend "$_teeup_brew/bin"
   fi
-  path_prepend /opt/local/sbin
-  path_prepend /opt/local/bin
+  path_prepend "$_teeup_prefix_root/opt/local/sbin"
+  path_prepend "$_teeup_prefix_root/opt/local/bin"
 else
-  path_prepend /opt/local/sbin
-  path_prepend /opt/local/bin
+  path_prepend "$_teeup_prefix_root/opt/local/sbin"
+  path_prepend "$_teeup_prefix_root/opt/local/bin"
   if [ -n "$_teeup_brew" ]; then
     path_prepend "$_teeup_brew/sbin"
     path_prepend "$_teeup_brew/bin"
   fi
 fi
-unset _teeup_darwin _teeup_brew
+unset _teeup_backend _teeup_brew _teeup_prefix_root
 
 path_prepend "$HOME/.local/bin"
 # mise's own shims let shells without `mise activate` find mise tools. teeup's

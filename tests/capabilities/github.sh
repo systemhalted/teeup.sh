@@ -103,7 +103,7 @@ test_configure_logs_in_with_the_two_scopes() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$(cat "$MOCK_LOG")" "auth login --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "config set git_protocol ssh" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "config set git_protocol ssh --host github.com" || return 1
   cleanup_test_env
 }
 

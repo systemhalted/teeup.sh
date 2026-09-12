@@ -23,7 +23,7 @@ else
   fi
 fi
 
-run_cmd gh config set git_protocol ssh || warn "Could not set gh's git protocol to ssh."
+run_cmd gh config set git_protocol ssh --host github.com || warn "Could not set gh's git protocol to ssh."
 
 # One upload per identity, twice: an authentication key for pushing and a
 # signing key for the SSH commit signatures the git capability turns on.
