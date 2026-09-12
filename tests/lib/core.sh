@@ -83,6 +83,14 @@ test_format_duration() {
   assert_equals "9s" "$(format_duration 9)" || return 1
 }
 
+test_have_honours_test_missing_hook() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  have bash || { echo "bash should be found"; return 1; }
+  TEEUP_TEST_MISSING="bash gum" have bash && { echo "hook should hide bash"; return 1; }
+  cleanup_test_env
+}
+
 echo "lib/core.sh"
 run_test "paths default to XDG under HOME" test_paths_default_to_xdg
 run_test "run_cmd dry run prints and skips" test_run_cmd_dry_run_prints_and_skips
@@ -92,4 +100,5 @@ run_test "run_logged reports failure" test_run_logged_reports_failure_without_ab
 run_test "run_logged closes stdin unless interactive" test_run_logged_closes_stdin_unless_interactive
 run_test "macos_major and arch" test_macos_major_and_arch_use_mocks
 run_test "format_duration" test_format_duration
+run_test "have honours TEEUP_TEST_MISSING hook" test_have_honours_test_missing_hook
 print_summary
