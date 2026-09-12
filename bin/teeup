@@ -113,14 +113,24 @@ cmd_secret() {
         printf "%b %s\n" "🔍" "[DRY-RUN] Would execute: security add-generic-password -U -s teeup -a $name -w <value>"
         return 0
       fi
-      local was_x=0
+      local was_x=0 quoted_name quoted_value store_rc
       case $- in *x*) was_x=1;; esac
       set +x 2>/dev/null
       value="$(ui_secret "Value for $name")"
       [[ -n "$value" ]] || die "Refusing to store an empty value for '$name'."
-      security add-generic-password -U -s teeup -a "$name" -w "$value" >/dev/null ||
-        die "Could not store '$name' in the Keychain."
+      # macOS does not hide other users' argv from ps, so the value must never
+      # be a command-line argument (that would defeat the one command whose
+      # whole purpose is keeping secrets out of sight). Feed the whole
+      # command to `security -i` on stdin instead; both fields are quoted for
+      # security's own command parser, which accepts a double-quoted string
+      # with backslash-escaped \ and ".
+      quoted_name="$(printf '"%s"' "$(printf '%s' "$name" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')")"
+      quoted_value="$(printf '"%s"' "$(printf '%s' "$value" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')")"
+      printf 'add-generic-password -a %s -s teeup -U -w %s\n' "$quoted_name" "$quoted_value" |
+        security -i >/dev/null
+      store_rc=$?
       [[ $was_x == 1 ]] && set -x 2>/dev/null
+      [[ $store_rc -eq 0 ]] || die "Could not store '$name' in the Keychain."
       ok "Stored $name in the Keychain (service: teeup)"
       ;;
     rm)

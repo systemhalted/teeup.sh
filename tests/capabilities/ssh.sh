@@ -58,6 +58,25 @@ test_configure_adds_the_keys_to_the_keychain() {
   cleanup_test_env
 }
 
+test_configure_uses_apple_use_keychain_on_macos_12_and_newer() {
+  setup
+  mock_command sw_vers 0 "12.0"
+  seed_answers ""
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  assert_contains "$(cat "$MOCK_LOG")" "ssh-add --apple-use-keychain $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  cleanup_test_env
+}
+
+test_configure_uses_dash_k_before_macos_12() {
+  setup
+  mock_command sw_vers 0 "11.6"
+  seed_answers ""
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  assert_contains "$(cat "$MOCK_LOG")" "ssh-add -K $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "--apple-use-keychain" || return 1
+  cleanup_test_env
+}
+
 test_configure_installs_the_ssh_config_with_both_hosts() {
   setup
   seed_answers "ada@corp.example"
@@ -137,6 +156,8 @@ echo "capabilities/ssh"
 run_test "configure generates one key without a work email" test_configure_generates_one_key_without_a_work_email
 run_test "configure generates both keys with a work email" test_configure_generates_both_keys_with_a_work_email
 run_test "configure adds the keys to the keychain" test_configure_adds_the_keys_to_the_keychain
+run_test "configure uses --apple-use-keychain on macOS 12 and newer" test_configure_uses_apple_use_keychain_on_macos_12_and_newer
+run_test "configure uses -K before macOS 12" test_configure_uses_dash_k_before_macos_12
 run_test "configure installs the ssh config with both hosts" test_configure_installs_the_ssh_config_with_both_hosts
 run_test "permissions are tightened" test_permissions_are_tightened
 run_test "existing key is not regenerated" test_existing_key_is_not_regenerated

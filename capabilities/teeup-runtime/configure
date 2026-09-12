@@ -7,8 +7,16 @@ for d in "done" toggles migrations shims logs current stock; do
 done
 [[ -d "$TEEUP_CONFIG_DIR/hooks" ]] || run_cmd mkdir -p "$TEEUP_CONFIG_DIR/hooks"
 
+# TEEUP_CONFIG_DIR and TEEUP_STATE_DIR are written here too, not just
+# TEEUP_PATH: the shell layer's home files (capabilities/zsh/configure) bake
+# this file's own path in as an absolute string at configure time, so nothing
+# a login shell reads before ~/.zshenv (XDG_CONFIG_HOME included) can ever
+# make the CLI and the shell disagree about where the rest of teeup's files
+# live.
 write_managed_file "$TEEUP_CONFIG_DIR/env" "teeup env" <<TEEUP_ENV
 export TEEUP_PATH="$TEEUP_PATH"
+export TEEUP_CONFIG_DIR="$TEEUP_CONFIG_DIR"
+export TEEUP_STATE_DIR="$TEEUP_STATE_DIR"
 TEEUP_ENV
 
 link="$HOME/.local/bin/teeup"

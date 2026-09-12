@@ -47,7 +47,13 @@ for _dir in /opt/local/share/zsh/site-functions /opt/local/share/zsh-completions
             "${HOMEBREW_PREFIX:-/opt/homebrew}/share/zsh/site-functions" \
             "${HOMEBREW_PREFIX:-/opt/homebrew}/share/zsh-completions" \
             /usr/local/share/zsh/site-functions /usr/local/share/zsh-completions; do
-  [ -d "$_dir" ] && FPATH="$_dir:$FPATH"
+  # Re-sourcing ~/.zshrc is a documented habit (default/profile does it on
+  # every login too), so this has to dedupe the same way path_append does for
+  # PATH, or FPATH grows by one entry per directory on every re-source.
+  case ":$FPATH:" in
+    *":$_dir:"*) ;;
+    *) [ -d "$_dir" ] && FPATH="$_dir:$FPATH" ;;
+  esac
 done
 unset _dir
 
@@ -85,14 +91,14 @@ _teeup_source_first \
   /opt/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh \
   /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh \
   /usr/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh \
-  "$HOME/.local/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+  "${XDG_DATA_HOME:-$HOME/.local/share}/zsh-autosuggestions/zsh-autosuggestions.zsh"
 
 # Syntax highlighting wraps every widget defined so far, so it goes last.
 _teeup_source_first \
   /opt/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh \
   /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh \
   /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh \
-  "$HOME/.local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+  "${XDG_DATA_HOME:-$HOME/.local/share}/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 
 unset -f _teeup_source_first
 
@@ -108,7 +114,10 @@ unset -f _teeup_source_first
 # The directory while idle, "directory — command" while a command runs.
 autoload -Uz add-zsh-hook
 _teeup_title_idle() { print -Pn '\e]2;%~\a' }
-_teeup_title_run()  { print -Pn '\e]2;%~ — '"${1%% *}"'\a' }
+# The command word is prompt-expanded by print -P, so a literal "%" in it
+# (e.g. a filename with %n or %~ typed as text, not a prompt escape) must be
+# escaped first or it gets expanded into the cwd, host or user.
+_teeup_title_run()  { print -Pn '\e]2;%~ — '"${${1%% *}//\%/%%}"'\a' }
 add-zsh-hook precmd _teeup_title_idle
 add-zsh-hook preexec _teeup_title_run
 

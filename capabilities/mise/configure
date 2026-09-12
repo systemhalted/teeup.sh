@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-copy_config_once "$TEEUP_CAP_DIR/config/mise/config.toml" "$(user_config_dir)/mise/config.toml"
+# MISE_CONFIG_DIR wins when set: mise itself reads its config from there, not
+# from $(user_config_dir)/mise, so teeup's file has to land in the same place
+# mise will actually look.
+copy_config_once "$TEEUP_CAP_DIR/config/mise/config.toml" "${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml"
 
 if ! have mise; then
-  warn "mise is not installed; skipping its settings and pre-commit."
+  warn "mise is not installed; skipping pre-commit."
   exit 0
 fi
-
-# Omarchy's reason for turning pruning off: it deletes a version some running
-# process is still executing from, which breaks daemons on upgrade.
-run_cmd mise settings set upgrade.auto_prune false || warn "Could not set upgrade.auto_prune."
 
 # pre-commit lives here, not in the git capability: it is a mise-managed tool,
 # and git runs before mise in the core list. `teeup update` upgrades it with

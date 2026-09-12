@@ -10,10 +10,24 @@ setup() {
 }
 
 # A Keychain that remembers one item, so get/set/rm can be checked end to end.
+# `-i` mimics real security(1): the whole command arrives on stdin, one line,
+# with fields quoted the same way (a double-quoted string, \ and " escaped
+# with a backslash). Parsing it in bash rather than shelling out again keeps
+# this mock from ever needing the value on an argv of its own.
 mock_security_store() {
   mock_command_script security <<'EOF2'
 store="$HOME/keychain"
 case "$1" in
+  -i)
+    IFS= read -r cmdline
+    rest="${cmdline#*-w \"}"
+    val="${rest%\"}"
+    # Reverse the escaping in the order it was applied: quotes first, then
+    # backslashes (the caller escapes backslashes first, then quotes).
+    val="${val//\\\"/\"}"
+    val="${val//\\\\/\\}"
+    printf '%s\n' "$val" > "$store"
+    ;;
   find-generic-password)
     [ -f "$store" ] || exit 44
     cat "$store"
@@ -38,12 +52,21 @@ test_set_then_get_round_trips() {
   mock_security_store
   printf 's3cret\n' | "$TEEUP" secret set openai_api_key >/dev/null
   assert_equals "s3cret" "$("$TEEUP" secret get openai_api_key)" || return 1
-  # Asserting a plaintext value in a log looks wrong next to this capability's
-  # whole point. It is deliberate: MOCK_LOG is the harness's record of how the
-  # mock was called, inside a temp $HOME, with a fake value. It is what proves
-  # the real `security` would receive the right arguments. Do not "fix" it by
-  # dropping -w from the mock.
-  assert_contains "$(cat "$MOCK_LOG")" "add-generic-password -U -s teeup -a openai_api_key -w s3cret" || return 1
+  # The value must never be a command-line argument (ps can read any local
+  # user's argv): MOCK_LOG only ever records "security -i", so a value there
+  # would prove a regression back to passing -w on argv.
+  assert_not_contains "$(cat "$MOCK_LOG")" "s3cret" || { echo "secret leaked into MOCK_LOG (argv)"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "security -i" || return 1
+  cleanup_test_env
+}
+
+test_set_round_trips_a_value_with_spaces_and_quotes() {
+  setup
+  mock_security_store
+  local value='has "quotes" and \backslash\ and spaces'
+  printf '%s\n' "$value" | "$TEEUP" secret set tricky_key >/dev/null
+  assert_equals "$value" "$("$TEEUP" secret get tricky_key)" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "$value" || { echo "secret leaked into MOCK_LOG (argv)"; return 1; }
   cleanup_test_env
 }
 
@@ -202,6 +225,7 @@ test_teeup_env_hides_the_secret_from_zsh_xtrace() {
 
 echo "capabilities/secrets"
 run_test "set then get round trips" test_set_then_get_round_trips
+run_test "set round trips a value with spaces and quotes" test_set_round_trips_a_value_with_spaces_and_quotes
 run_test "get missing secret fails with a hint" test_get_missing_secret_fails_with_a_hint
 run_test "rm deletes the item" test_rm_deletes_the_item
 run_test "set never prints the value in dry run" test_set_never_prints_the_value_in_dry_run

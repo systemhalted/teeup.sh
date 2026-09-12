@@ -194,15 +194,33 @@ test_configure_prefers_emacsclient_when_present() {
   cleanup_test_env
 }
 
-test_configure_runs_git_lfs_install_and_warns_about_gitconfig() {
+test_configure_ships_the_lfs_filter_and_warns_about_gitconfig() {
   setup
   seed_answers ""
   printf '[user]\n\tname = Old\n' > "$TEST_HOME/.gitconfig"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
-  assert_contains "$(cat "$MOCK_LOG")" "git lfs install --skip-repo" || return 1
+  # The [filter "lfs"] block ships inside the copied config itself now, rather
+  # than being written by a `git lfs install` that would run against the file
+  # copy_config_once just installed on every configure.
+  assert_not_contains "$(cat "$MOCK_LOG")" "git lfs install" || return 1
+  local body
+  body="$(cat "$TEST_HOME/.config/git/config")"
+  assert_contains "$body" '[filter "lfs"]' || return 1
+  assert_contains "$body" "smudge = git-lfs smudge -- %f" || return 1
+  assert_contains "$body" "required = true" || return 1
   assert_contains "$out" "$TEST_HOME/.gitconfig exists and its keys win" || return 1
   assert_file_exists "$TEST_HOME/.gitconfig" || return 1
+  cleanup_test_env
+}
+
+test_configure_warns_when_git_config_global_is_set() {
+  setup
+  seed_answers ""
+  export GIT_CONFIG_GLOBAL="$TEST_HOME/somewhere/global-config"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  assert_contains "$out" "GIT_CONFIG_GLOBAL=$TEST_HOME/somewhere/global-config overrides" || return 1
   cleanup_test_env
 }
 
@@ -352,7 +370,8 @@ run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_con
 run_test "configure renders include paths with XDG_CONFIG_HOME metacharacters" test_configure_renders_include_paths_with_xdg_config_home_metacharacters
 run_test "configure quotes include paths with hash and semicolon in XDG_CONFIG_HOME" test_configure_quotes_include_paths_with_hash_and_semicolon_in_xdg_config_home
 run_test "configure prefers emacsclient when present" test_configure_prefers_emacsclient_when_present
-run_test "configure runs git lfs install and warns about gitconfig" test_configure_runs_git_lfs_install_and_warns_about_gitconfig
+run_test "configure ships the lfs filter and warns about gitconfig" test_configure_ships_the_lfs_filter_and_warns_about_gitconfig
+run_test "configure warns when GIT_CONFIG_GLOBAL is set" test_configure_warns_when_git_config_global_is_set
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name
