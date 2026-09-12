@@ -27,6 +27,7 @@ teeup - your Mac, as a distribution
   teeup configure <capability>   re-run only its configuration
   teeup list [--tier core|daily|lazy]
   teeup has <capability>         exit 0 when installed (for scripts and menus)
+  teeup secret get|set|rm <name>  read, store or delete a Keychain secret
   teeup status                   package manager, answers, installed capabilities
   teeup commands --check         lint capability metadata
   teeup version
@@ -89,6 +90,44 @@ cmd_has() {
   state_done check "cap-$1"
 }
 
+# Secrets live in the login Keychain under the service name "teeup"; nothing
+# secret ever reaches the repo, the answers file or a log. `set` is the one
+# mutation in teeup that does not go through run_cmd: run_cmd echoes its whole
+# argument list in dry run, and the value must not appear there.
+cmd_secret() {
+  local op="${1:-}" name="${2:-}" value
+  case "$op" in
+    get|set|rm) ;;
+    *) die "Usage: teeup secret get|set|rm <name>" ;;
+  esac
+  [[ -n "$name" ]] || die "Usage: teeup secret get|set|rm <name>"
+  have security || die "teeup secret needs macOS's security command."
+  case "$op" in
+    get)
+      security find-generic-password -s teeup -a "$name" -w 2>/dev/null ||
+        die "No secret named '$name'. Store one with: teeup secret set $name"
+      ;;
+    set)
+      value="$(ui_input "Value for $name")"
+      [[ -n "$value" ]] || die "Refusing to store an empty value for '$name'."
+      if [[ "$DRY_RUN" == "true" ]]; then
+        printf "%b %s\n" "🔍" "[DRY-RUN] Would execute: security add-generic-password -U -s teeup -a $name -w <value>"
+        return 0
+      fi
+      security add-generic-password -U -s teeup -a "$name" -w "$value" >/dev/null ||
+        die "Could not store '$name' in the Keychain."
+      ok "Stored $name in the Keychain (service: teeup)"
+      ;;
+    rm)
+      # No >/dev/null here: that would swallow run_cmd's own dry-run line.
+      if ! run_cmd security delete-generic-password -s teeup -a "$name"; then
+        die "No secret named '$name'."
+      fi
+      ok "Removed $name from the Keychain"
+      ;;
+  esac
+}
+
 cmd_status() {
   local total=0 installed=0 name
   echo "teeup $(cat "$TEEUP_PATH/version" 2>/dev/null || echo dev) at $TEEUP_PATH"
@@ -118,6 +157,7 @@ case "$verb" in
   configure) cmd_configure "$@" ;;
   list) cmd_list "$@" ;;
   has) cmd_has "$@" ;;
+  secret) cmd_secret "$@" ;;
   status) cmd_status ;;
   commands) cmd_commands "$@" ;;
   version) cat "$TEEUP_PATH/version" 2>/dev/null || echo dev ;;

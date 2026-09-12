@@ -15,6 +15,8 @@ setup() {
   mock_command_script brew <<'EOF2'
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
+  # /usr/bin/security is macOS-only; 44 is its "no such item" exit code.
+  mock_command security 44 ""
   export TEEUP_TEST_MISSING="brew gum jq"
   export TEEUP_NO_GUM=1
   export DRY_RUN=true
