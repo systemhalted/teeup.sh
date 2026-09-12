@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# The prompt itself. capabilities/zsh/default/init runs `starship init zsh`
+# whenever the binary is on PATH, so there is no wiring step.
+pkg_install starship starship

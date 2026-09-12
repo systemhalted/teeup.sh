@@ -6,4 +6,5 @@ package-manager
 teeup-runtime
 dev-dirs
 zsh
+starship
 secrets

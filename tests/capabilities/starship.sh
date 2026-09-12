@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/../helper.sh"
+
+setup() {
+  setup_test_env
+  mock_macos_base
+  mock_command_script brew <<'EOF2'
+case "$1" in list) exit 1 ;; *) exit 0 ;; esac
+EOF2
+  TEEUP="$TEEUP_PATH/bin/teeup"
+}
+
+test_install_gets_starship() {
+  setup
+  export TEEUP_TEST_MISSING="starship"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" install starship 2>&1)"
+  assert_contains "$out" "Would execute: brew install starship" || return 1
+  cleanup_test_env
+}
+
+test_configure_copies_the_config_once() {
+  setup
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null
+  assert_file_exists "$TEST_HOME/.config/starship.toml" || return 1
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure starship)"
+  assert_contains "$out" "Already installed: $TEST_HOME/.config/starship.toml" || return 1
+  cleanup_test_env
+}
+
+test_shipped_config_carries_the_theme_markers() {
+  setup
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null
+  local body
+  body="$(cat "$TEST_HOME/.config/starship.toml")"
+  assert_contains "$body" "# teeup:theme-palette:start" || return 1
+  assert_contains "$body" "# teeup:theme-palette:end" || return 1
+  assert_contains "$body" "[palettes.teeup-dark]" || return 1
+  assert_contains "$body" "[palettes.teeup-light]" || return 1
+  cleanup_test_env
+}
+
+test_palette_is_selected_at_the_root() {
+  setup
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null
+  local file="$TEST_HOME/.config/starship.toml" p t
+  # A bare key after a [table] header belongs to that table, so `palette` is
+  # only the root-level selector while it precedes every table header. A
+  # substring assertion cannot see the difference; line order can.
+  p="$(grep -n '^palette = ' "$file" | head -1 | cut -d: -f1)"
+  t="$(grep -n '^\[' "$file" | head -1 | cut -d: -f1)"
+  [[ -n "$p" && -n "$t" ]] || { echo "palette line or table header missing"; return 1; }
+  [[ "$p" -lt "$t" ]] ||
+    { echo "palette (line $p) must come before the first table (line $t)"; return 1; }
+  # And, where a TOML parser is available, prove it for real.
+  if command -v python3 >/dev/null 2>&1 &&
+     python3 -c 'import tomllib' >/dev/null 2>&1; then
+    local parsed
+    parsed="$(python3 -c 'import tomllib,sys
+d = tomllib.load(open(sys.argv[1], "rb"))
+print(d.get("palette"), sorted(d.get("palettes", {})))' "$file")"
+    assert_equals "teeup-dark ['teeup-dark', 'teeup-light']" "$parsed" || return 1
+  fi
+  cleanup_test_env
+}
+
+test_configure_dry_run_writes_nothing() {
+  setup
+  DRY_RUN=true "$TEEUP" configure starship >/dev/null
+  [[ ! -e "$TEST_HOME/.config/starship.toml" ]] || { echo "written in dry run"; return 1; }
+  cleanup_test_env
+}
+
+echo "capabilities/starship"
+run_test "install gets starship" test_install_gets_starship
+run_test "configure copies the config once" test_configure_copies_the_config_once
+run_test "shipped config carries the theme markers" test_shipped_config_carries_the_theme_markers
+run_test "palette is selected at the root" test_palette_is_selected_at_the_root
+run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+print_summary
