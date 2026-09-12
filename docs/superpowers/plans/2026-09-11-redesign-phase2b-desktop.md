@@ -476,11 +476,25 @@ EOF2
   mock_command defaults 1 ""
   mock_command ssh-keygen 0 ""
   mock_command ssh-add 0 ""
+  # github capability: signed out, with an empty key list. These two calls are
+  # reads, so they are not covered by DRY_RUN and would otherwise hit the real
+  # gh session and the GitHub API.
   mock_command_script gh <<'EOF2'
-# (2a's gh mock body: "auth status" exits 1, "ssh-key list" is empty)
+case "$1 ${2:-}" in
+  "auth status") exit 1 ;;
+  "ssh-key list") : ;;
+  *) : ;;
+esac
+exit 0
 EOF2
+  # mise capability: `mise which` is a read, so DRY_RUN does not cover it.
+  # Exit 1 = "that tool is not installed", which is the fresh-machine answer.
   mock_command_script mise <<'EOF2'
-# (2a's mise mock body: "which" exits 1, everything else exits 0)
+case "$1" in
+  which) exit 1 ;;
+  *) : ;;
+esac
+exit 0
 EOF2
   export TEEUP_TEST_MISSING="brew gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit"
   export TEEUP_NO_GUM=1
@@ -2436,7 +2450,7 @@ test_configure_installs_both_user_files() {
   DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
   assert_file_exists "$WEZ/wezterm.lua" || return 1
   assert_file_exists "$WEZ/local.lua" || return 1
-  assert_contains "$(cat "$WEZ/wezterm.lua")" 'require("teeup.wezterm")' || return 1
+  assert_contains "$(cat "$WEZ/wezterm.lua")" 'pcall(require, "teeup.wezterm")' || return 1
   assert_contains "$(cat "$WEZ/wezterm.lua")" "capabilities/wezterm/default/?.lua" || return 1
   cleanup_test_env
 }
