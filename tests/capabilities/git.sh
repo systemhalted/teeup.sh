@@ -45,11 +45,11 @@ test_configure_writes_both_identities() {
   local personal work
   personal="$(cat "$TEST_HOME/.config/git/identity-personal")"
   work="$(cat "$TEST_HOME/.config/git/identity-work")"
-  assert_contains "$personal" "email = ada@example.com" || return 1
-  assert_contains "$personal" "name = Ada Lovelace" || return 1
-  assert_contains "$personal" "signingkey = $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
-  assert_contains "$work" "email = ada@corp.example" || return 1
-  assert_contains "$work" "signingkey = $TEST_HOME/.ssh/id_ed25519_work.pub" || return 1
+  assert_contains "$personal" 'email = "ada@example.com"' || return 1
+  assert_contains "$personal" 'name = "Ada Lovelace"' || return 1
+  assert_contains "$personal" "signingkey = \"$TEST_HOME/.ssh/id_ed25519_personal.pub\"" || return 1
+  assert_contains "$work" 'email = "ada@corp.example"' || return 1
+  assert_contains "$work" "signingkey = \"$TEST_HOME/.ssh/id_ed25519_work.pub\"" || return 1
   cleanup_test_env
 }
 
@@ -57,7 +57,7 @@ test_work_identity_falls_back_to_the_personal_email() {
   setup
   seed_answers ""
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
-  assert_contains "$(cat "$TEST_HOME/.config/git/identity-work")" "email = ada@example.com" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/git/identity-work")" 'email = "ada@example.com"' || return 1
   cleanup_test_env
 }
 
@@ -67,7 +67,7 @@ test_work_identity_falls_back_to_the_personal_signingkey() {
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   local work
   work="$(cat "$TEST_HOME/.config/git/identity-work")"
-  assert_contains "$work" "signingkey = $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  assert_contains "$work" "signingkey = \"$TEST_HOME/.ssh/id_ed25519_personal.pub\"" || return 1
   if [[ "$work" == *"id_ed25519_work"* ]]; then
     echo "identity-work should not reference the never-created work key"
     return 1
@@ -245,6 +245,29 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+test_configure_quotes_special_characters_in_the_name() {
+  setup
+  local name='Jane "J" Smith #3 \ x' escaped
+  # Mirror answers_set's own escaping (lib/answers.sh) so the answers file
+  # sources cleanly under bash: without it, this value's quote/backslash
+  # would break the source of the answers file itself, before configure even
+  # runs.
+  escaped="$(printf '%s' "$name" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g' -e 's/`/\\`/g')"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  {
+    printf 'TEEUP_NAME="%s"\n' "$escaped"
+    printf 'TEEUP_EMAIL="ada@example.com"\n'
+    printf 'TEEUP_WORK_EMAIL=""\n'
+  } > "$TEST_HOME/.config/teeup/answers"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  # command -p bypasses the mocked `git` on PATH (see setup) and finds the
+  # real binary, which is what actually has to parse the quoted value.
+  local resolved
+  resolved="$(command -p git config --file "$TEST_HOME/.config/git/identity-personal" user.name)"
+  assert_equals "$name" "$resolved" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/git"
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes both identities" test_configure_writes_both_identities
@@ -262,4 +285,5 @@ run_test "configure prefers emacsclient when present" test_configure_prefers_ema
 run_test "configure runs git lfs install and warns about gitconfig" test_configure_runs_git_lfs_install_and_warns_about_gitconfig
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name
 print_summary
