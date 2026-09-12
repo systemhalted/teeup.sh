@@ -1,0 +1,9 @@
+summary="ed25519 keys per identity, the Keychain agent and GitHub host aliases"
+group=git
+tier=core
+requires="git"
+provides=""
+packages=""
+casks=""
+apps=""
+interactive=true
