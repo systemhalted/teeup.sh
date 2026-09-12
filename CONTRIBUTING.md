@@ -433,7 +433,22 @@ Happy contributing! 🚀
    `configure` only writes configuration (`copy_config_once`,
    `write_managed_file`, `append_once`, `run_cmd`). Both are idempotent and
    run as `bash -eu` with `lib/all.sh` loaded and the answers file sourced.
-4. Never call `sudo`; use `run_privileged`. Never mutate outside `run_cmd`.
+   Judge success by the postcondition, not by the exit code of the last
+   command: end an install with the check that the thing is actually there.
+4. Never call `sudo`; use `run_privileged`. Mutate the machine only through
+   `run_cmd`, or through the file primitives (`copy_config_once`,
+   `write_managed_file`, `append_once`), which carry their own dry-run guard —
+   do not wrap those in `run_cmd`.
+8. Shipped files live in one of three directories, by owner:
+   `config/` is copied once into `~/.config` and belongs to the user after
+   that; `home/` is copied once into `$HOME` under its literal dotfile name
+   (`home/.zshrc` becomes `~/.zshrc`); `default/` stays teeup's and is read at
+   runtime through `$TEEUP_PATH`, so upgrades improve it without touching
+   anything the user edited. Thin user files source thick default files.
+9. Files under `default/` and `home/` are zsh or Lua, not bash: shellcheck
+   does not run on them, so keep them simple and guard every optional tool.
+10. Per-machine overrides go in `machines/<hostname>.conf`, which is committed
+    and sourced last, so it wins over the answers file.
 5. `provides` must not list a command macOS already ships (`python3`, `ruby`,
    `java`, `git`, `perl`).
 6. Add the name to `capabilities/core.list` or `daily.list` if it is not lazy.

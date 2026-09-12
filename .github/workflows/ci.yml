@@ -26,6 +26,15 @@ jobs:
             brew install shellcheck
           fi
 
+      - name: Install zsh (the shell layer's tests need it)
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y zsh
+          fi
+          zsh --version
+
       - name: Shellcheck legacy scripts
         run: shellcheck --severity=warning legacy/teeup.sh legacy/teeup-wizard.sh
 

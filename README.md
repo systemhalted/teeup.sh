@@ -27,11 +27,14 @@ cd ~/.local/share/teeup
 teeup status              # what is installed
 teeup list                # every capability and its tier
 teeup install <name>      # install and configure one capability
+teeup secret set <name>   # store a secret in the macOS Keychain
 ```
 
-Capabilities implemented so far: `xcode-clt`, `package-manager`,
-`teeup-runtime`, `dev-dirs`. The rest arrive phase by phase; `teeup list`
-is always the source of truth.
+~/.local/bin joins your PATH through the shell layer the zsh capability installs, so teeup is spelled ~/.local/bin/teeup until you open a new terminal.
+
+Capabilities implemented so far: `xcode-clt`, `package-manager`, `teeup-runtime`, `dev-dirs`, `zsh`, `starship`, `cli-tools`, `secrets`, `git`, `ssh`, `github`, `mise`. The rest arrive phase by phase; `teeup list` is always the source of truth.
+
+Per-machine overrides live in `machines/<hostname>.conf`, a committed file that is sourced after your answers and wins over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs.
 
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
