@@ -28,11 +28,18 @@ EOF2
   mock_command ssh-add 0 ""
   # github capability: signed out, with an empty key list. These two calls are
   # reads, so they are not covered by DRY_RUN and would otherwise hit the real
-  # gh session and the GitHub API.
+  # gh session and the GitHub API. Shaped like the github suite's mock (a
+  # "Token scopes:" line on a successful auth status, a type column on
+  # ssh-key list) even though this fresh-machine walk never reaches the
+  # signed-in branch, so the two mocks do not drift apart.
   mock_command_script gh <<'EOF2'
 case "$1 ${2:-}" in
-  "auth status") exit 1 ;;
-  "ssh-key list") : ;;
+  "auth status")
+    [ -f "$HOME/gh-session" ] || exit 1
+    echo "github.com"
+    echo "  Token scopes: $(cat "$HOME/gh-session")"
+    ;;
+  "ssh-key list") cat "$HOME/gh-keys" 2>/dev/null || true ;;
   *) : ;;
 esac
 exit 0

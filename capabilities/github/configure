@@ -4,8 +4,17 @@ if ! have gh; then
   exit 0
 fi
 
-if gh auth status >/dev/null 2>&1; then
+if status_out="$(gh auth status 2>&1)"; then
   ok "Already signed in to GitHub."
+  # A machine that authenticated `gh` before teeup existed may be missing the
+  # scopes the key uploads below need. `gh auth status` prints them on a
+  # "Token scopes:" line; refresh rather than assume they are there, or every
+  # `gh ssh-key add` below fails with a scope error and only warns.
+  if [[ "$status_out" != *"admin:public_key"* || "$status_out" != *"admin:ssh_signing_key"* ]]; then
+    log "Refreshing gh's token scopes for SSH key uploads."
+    run_cmd gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key ||
+      warn "Could not refresh gh's auth scopes. Re-run: teeup configure github"
+  fi
 else
   log "Signing in to GitHub. A browser window opens; approve the SSH key scopes."
   if ! run_cmd gh auth login --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key; then
@@ -18,8 +27,20 @@ run_cmd gh config set git_protocol ssh || warn "Could not set gh's git protocol 
 
 # One upload per identity, twice: an authentication key for pushing and a
 # signing key for the SSH commit signatures the git capability turns on.
+# `gh ssh-key list` prints a type column (authentication/signing), so the
+# "already uploaded" check must match on body AND type; a body-only match
+# would let a failed signing upload hide forever behind a successful
+# authentication upload of the same key.
 host="$(hostname -s 2>/dev/null || hostname)"
 listed="$(gh ssh-key list 2>/dev/null || true)"
+_github_key_uploaded() {
+  local body="$1" type="$2" line
+  while IFS= read -r line; do
+    [[ "$line" == *"$body"* ]] || continue
+    [[ "$line" == *"$type"* ]] && return 0
+  done <<<"$listed"
+  return 1
+}
 for identity in $(identity_list); do
   pub="$(identity_key "$identity").pub"
   if [[ ! -f "$pub" ]]; then
@@ -29,12 +50,14 @@ for identity in $(identity_list); do
   # The key body is the second field; comparing on it matches whatever title
   # the key was uploaded under.
   body="$(awk '{print $2}' < "$pub")"
-  if [[ -n "$body" && "$listed" == *"$body"* ]]; then
-    log "Already uploaded: $pub"
-    continue
-  fi
-  run_cmd gh ssh-key add "$pub" --type authentication --title "$host $identity" ||
-    warn "Could not upload $pub as an authentication key."
-  run_cmd gh ssh-key add "$pub" --type signing --title "$host $identity (signing)" ||
-    warn "Could not upload $pub as a signing key."
+  for type in authentication signing; do
+    if [[ -n "$body" ]] && _github_key_uploaded "$body" "$type"; then
+      log "Already uploaded ($type): $pub"
+      continue
+    fi
+    title="$host $identity"
+    [[ "$type" == "signing" ]] && title="$title (signing)"
+    run_cmd gh ssh-key add "$pub" --type "$type" --title "$title" ||
+      warn "Could not upload $pub as a $type key."
+  done
 done

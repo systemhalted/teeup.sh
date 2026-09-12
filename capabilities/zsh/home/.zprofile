@@ -3,5 +3,7 @@
 [ -r "$HOME/.config/teeup/env" ] && . "$HOME/.config/teeup/env"
 [ -n "${TEEUP_PATH:-}" ] && [ -r "$TEEUP_PATH/capabilities/zsh/default/profile" ] &&
   . "$TEEUP_PATH/capabilities/zsh/default/profile"
+# A missing profile layer above must not leave the shell on a failing status.
+true
 
 # Your own login-shell lines below this line.

@@ -140,6 +140,20 @@ test_teeup_env_function_is_shipped_and_parses() {
   cleanup_test_env
 }
 
+test_teeup_env_sanitises_the_variable_name() {
+  setup
+  if ! command -v zsh >/dev/null 2>&1; then
+    echo "zsh is required to run teeup-env"
+    return 1
+  fi
+  mock_security_store
+  printf 's3cret\n' | "$TEEUP" secret set my.api-key >/dev/null
+  local out
+  out="$(PATH="$TEEUP_PATH/bin:$PATH" zsh -f -c "source '$TEEUP_PATH/capabilities/secrets/default/functions.zsh'; teeup-env my.api-key >/dev/null; print -r -- \"\$MY_API_KEY\"" 2>&1)"
+  assert_equals "s3cret" "$out" || return 1
+  cleanup_test_env
+}
+
 test_rejects_invalid_secret_names() {
   setup
   mock_security_store
@@ -181,4 +195,5 @@ run_test "configure twice is a no-op" test_configure_twice_is_a_no_op
 run_test "rejects invalid secret names" test_rejects_invalid_secret_names
 run_test "set never leaks via trace" test_set_never_leaks_via_trace
 run_test "teeup-env function is shipped and parses" test_teeup_env_function_is_shipped_and_parses
+run_test "teeup-env sanitises the variable name" test_teeup_env_sanitises_the_variable_name
 print_summary

@@ -116,7 +116,7 @@ cmd_secret() {
       local was_x=0
       case $- in *x*) was_x=1;; esac
       set +x 2>/dev/null
-      value="$(ui_input "Value for $name")"
+      value="$(ui_secret "Value for $name")"
       [[ -n "$value" ]] || die "Refusing to store an empty value for '$name'."
       security add-generic-password -U -s teeup -a "$name" -w "$value" >/dev/null ||
         die "Could not store '$name' in the Keychain."

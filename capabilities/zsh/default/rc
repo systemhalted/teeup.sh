@@ -35,6 +35,11 @@ SAVEHIST=50000
 setopt APPEND_HISTORY INC_APPEND_HISTORY SHARE_HISTORY
 setopt HIST_IGNORE_ALL_DUPS HIST_IGNORE_SPACE HIST_REDUCE_BLANKS
 setopt AUTO_CD EXTENDED_GLOB INTERACTIVE_COMMENTS NO_BEEP
+# EXTENDED_GLOB is required by the compinit dump-age qualifier below, but on
+# its own it turns "^" into a glob operator, so plain git syntax like
+# `git show HEAD^` dies with "no matches found". NO_NOMATCH makes an unmatched
+# pattern pass through unchanged instead of erroring, which keeps both.
+setopt NO_NOMATCH
 
 # --- completion --------------------------------------------------------------
 # Site functions from whichever package manager is installed.
