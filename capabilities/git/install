@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# No command guard on git itself: macOS ships one with the Command Line Tools,
+# so `pkg_install git git` would be a permanent no-op and the machine would
+# keep a git that trails upstream by about a year.
+pkg_install git || die "git is required and could not be installed."
+
+# delta is the pager the shipped config points at, so a missing one is loud.
+pkg_install git-delta delta || warn "delta is missing; git will fall back to less until you install it."
+pkg_install git-lfs git-lfs || warn "git-lfs is missing; large-file repositories will not clone correctly."
+pkg_install lazygit lazygit || warn "lazygit is missing; the lg alias will not work."

@@ -1,0 +1,9 @@
+summary="git with two identities, SSH signing, delta and lazygit"
+group=git
+tier=core
+requires="dev-dirs cli-tools"
+provides=""
+packages="git git-delta git-lfs lazygit"
+casks=""
+apps=""
+interactive=false

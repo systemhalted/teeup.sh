@@ -1,0 +1,116 @@
+# ~/.config/git/config - installed once by teeup; this copy is yours to edit.
+# Generated pieces (editor, pager, signing, the two identities) live in
+# separate included files so teeup can regenerate them without touching your
+# edits here. Include order is load-bearing: git keeps the LAST value it
+# reads, so teeup-generated is included below the defaults it has to be able
+# to override, and ~/.config/git/local last of all.
+
+[include]
+	# Default identity; the includeIf blocks at the bottom override it per root.
+	path = ~/.config/git/identity-personal
+
+[user]
+	useConfigOnly = true     # never guess an identity from the hostname
+
+[init]
+	defaultBranch = main
+[pull]
+	rebase = true            # rebase instead of merge on pull
+[push]
+	autoSetupRemote = true   # no "set upstream" dance on the first push
+	followTags = true
+[fetch]
+	prune = true
+[diff]
+	algorithm = histogram    # clearer diffs on moved and edited lines
+	colorMoved = plain
+	mnemonicPrefix = true
+	renames = copies
+[merge]
+	conflictstyle = zdiff3
+[commit]
+	verbose = true           # the diff in the commit message template
+	gpgsign = true           # turned off again by teeup-generated until a key exists
+[gpg]
+	format = ssh             # sign with the SSH key; no GPG keyring to manage
+[tag]
+	sort = -version:refname
+[branch]
+	sort = -committerdate
+[column]
+	ui = auto
+[rerere]
+	enabled = true           # record and reuse conflict resolutions
+	autoupdate = true
+[core]
+	pager = delta            # replaced by teeup-generated when delta is missing
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true
+	line-numbers = true
+
+# Editor, pager, diffFilter and commit.gpgsign, as detected by
+# `teeup configure git`. Included here so it overrides the defaults above.
+[include]
+	path = ~/.config/git/teeup-generated
+[credential "https://github.com"]
+	helper =
+	helper = !gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !gh auth git-credential
+
+[alias]
+	aa = !git add . && git add -u . && git status
+	ac = !git add . && git commit
+	acm = !git add . && git commit -m
+	au = !git add -u . && git status
+	branch-name = !git rev-parse --abbrev-ref HEAD
+	br = branch
+	c = commit
+	ca = commit --amend
+	cam = commit -am
+	cm = commit -m
+	co = checkout
+	d = diff
+	f = fetch
+	fo = fetch origin
+	fu = fetch upstream
+	l = log --oneline
+	lf = log --name-only
+	lfo = log --name-only --oneline
+	lg = log --color --graph --pretty=format:'%C(bold white)%h%Creset -%C(bold green)%d%Creset %s %C(bold green)(%cr)%Creset %C(bold blue)<%an>%Creset' --abbrev-commit --date=relative
+	ll = log --oneline --graph --decorate
+	ls-ignored = ls-files --others --exclude-from=.git/info/exclude
+	r = remote
+	ra = remote add
+	rv = remote -v
+	s = status
+
+[color "branch"]
+	current = yellow bold
+	local = green bold
+	remote = cyan bold
+[color "diff"]
+	meta = yellow bold
+	frag = magenta bold
+	old = red bold
+	new = green bold
+	whitespace = red reverse
+[color "status"]
+	added = green bold
+	changed = yellow bold
+	untracked = red bold
+
+# Identity by directory (spec section 8). Both identities live on every
+# machine; where the repository sits decides which one applies.
+[includeIf "gitdir:~/Personal/"]
+	path = ~/.config/git/identity-personal
+[includeIf "gitdir:~/Work/"]
+	path = ~/.config/git/identity-work
+
+# Untracked machine-local overrides, included last so they win over everything
+# above. Create it yourself; teeup never writes it.
+[include]
+	path = ~/.config/git/local
