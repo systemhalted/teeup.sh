@@ -1,0 +1,26 @@
+# ~/.ssh/config - installed once by teeup; this copy is yours to edit.
+# ssh keeps the FIRST value it finds for each keyword, so specific hosts come
+# first and the catch-all Host * block goes last.
+
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_personal
+  IdentitiesOnly yes
+
+# Clone work repositories as git@github.com-work:org/repo.git. That picks the
+# work key here, and cloning into ~/Work picks the work git identity.
+Host github.com-work
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_work
+  IdentitiesOnly yes
+
+Host *
+  # Add a key to the agent on first use and keep its passphrase in the login
+  # Keychain. IdentitiesOnly is deliberately NOT set here: restricting every
+  # host to explicitly named keys breaks agent-forwarded and corporate hosts.
+  AddKeysToAgent yes
+  UseKeychain yes
+  ServerAliveInterval 60
+  ServerAliveCountMax 3

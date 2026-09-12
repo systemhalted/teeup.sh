@@ -23,6 +23,9 @@ EOF2
   mock_command dscl 0 "UserShell: /bin/zsh"
   mock_command chsh 0 ""
   mock_command defaults 1 ""
+  # ssh capability: never let a real keygen or agent call escape a test run.
+  mock_command ssh-keygen 0 ""
+  mock_command ssh-add 0 ""
   export TEEUP_TEST_MISSING="brew gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit"
   export TEEUP_NO_GUM=1
   export DRY_RUN=true

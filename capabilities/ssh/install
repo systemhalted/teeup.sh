@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Nothing to install: ssh, ssh-keygen and ssh-add are part of macOS. The file
+# exists so `teeup install ssh` is a recorded no-op rather than an error.
+:

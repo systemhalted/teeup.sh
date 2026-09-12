@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# One ed25519 key per identity. ssh-keygen prompts for a passphrase; that is
+# why this capability is interactive. --apple-use-keychain then stores it in
+# the login Keychain, so it is typed once and never again.
+ssh_dir="$HOME/.ssh"
+[[ -d "$ssh_dir" ]] || run_cmd mkdir -p "$ssh_dir"
+
+# chmod_once <mode> <path>: only chmod when the mode is actually wrong, so a
+# second configure is the reported no-op the contract asks for and a dry run
+# does not print four "Would execute: chmod" lines for nothing. GNU stat is
+# probed first on purpose: GNU's -f means "filesystem status" and would print
+# something before failing, while BSD stat rejects -c cleanly on stderr.
+chmod_once() {
+  local mode="$1" path="$2" current
+  [[ -e "$path" ]] || return 0
+  current="$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null || true)"
+  [[ "$current" == "$mode" ]] && return 0
+  run_cmd chmod "$mode" "$path"
+}
+
+chmod_once 700 "$ssh_dir"
+
+for identity in $(identity_list); do
+  key="$(identity_key "$identity")"
+  if [[ -f "$key" ]]; then
+    log "Already present: $key"
+  else
+    log "Generating the $identity ed25519 key (you will be asked for a passphrase)..."
+    if ! run_cmd ssh-keygen -t ed25519 -C "$(identity_email "$identity")" -f "$key"; then
+      warn "ssh-keygen failed for the $identity identity; skipping the rest of it."
+      continue
+    fi
+  fi
+  chmod_once 600 "$key"
+  chmod_once 644 "$key.pub"
+  run_cmd ssh-add --apple-use-keychain "$key" || warn "ssh-add failed for $key."
+done
+
+copy_config_once "$TEEUP_CAP_DIR/config/ssh/config" "$ssh_dir/config"
+chmod_once 600 "$ssh_dir/config"
