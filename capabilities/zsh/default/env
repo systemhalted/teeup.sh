@@ -58,7 +58,10 @@ _teeup_prefix_root="${TEEUP_TEST_PREFIX_ROOT:-}"
 # The answers file holds only TEEUP_* assignments (teeup's own writer refuses
 # any other key), so sourcing it here cannot leak unrelated shell state beyond
 # the TEEUP_* exports it already contains, TEEUP_PACKAGE_MANAGER among them.
-_teeup_answers="${XDG_CONFIG_HOME:-$HOME/.config}/teeup/answers"
+# TEEUP_CONFIG_DIR wins when set (the env file sourced just above this file
+# exports it), so a non-default XDG_CONFIG_HOME or TEEUP_CONFIG_DIR can never
+# make this disagree with lib/core.sh's user_config_dir()/answers_file().
+_teeup_answers="${TEEUP_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/teeup}/answers"
 [ -r "$_teeup_answers" ] && . "$_teeup_answers"
 unset _teeup_answers
 
@@ -110,10 +113,13 @@ fi
 unset _teeup_backend _teeup_brew _teeup_prefix_root
 
 path_prepend "$HOME/.local/bin"
-# mise's own shims let shells without `mise activate` find mise tools. teeup's
-# lazy-install shims come after them and after everything else: a shim exists
-# only to catch a command nothing real provides (spec section 6).
-path_append "$HOME/.local/share/mise/shims"
+# mise's own shims let shells without `mise activate` find mise tools. mise
+# itself resolves its data root from MISE_DATA_DIR, then XDG_DATA_HOME, then
+# ~/.local/share (in that order), so this has to match or the shims directory
+# named here is not the one mise actually populates. teeup's lazy-install
+# shims come after them and after everything else: a shim exists only to
+# catch a command nothing real provides (spec section 6).
+path_append "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"
 path_append "$TEEUP_STATE_DIR/shims"
 export PATH
 

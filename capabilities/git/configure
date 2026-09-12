@@ -122,7 +122,10 @@ shopt -u patsub_replacement 2>/dev/null || true
 rendered_git_config="$(mktemp)"
 while IFS= read -r line || [[ -n "$line" ]]; do
   case "$line" in
-    *'path = ~/.config/git'*)
+    # Anchored on the leading tab so a future comment mentioning this same
+    # text (not just an actual "path = ~/.config/git..." key line) can never
+    # be rewritten by mistake.
+    $'\t''path = ~/.config/git'*)
       # The value is a path, not just a bareword: an XDG_CONFIG_HOME with a
       # `#` or `;` in it (both comment characters to git's config parser
       # outside quotes) would otherwise truncate everything after it. Quoting
@@ -149,12 +152,15 @@ if [[ -f "$HOME/.gitconfig" ]]; then
   warn "Move what you want to keep into $git_dir/config or $git_dir/local, then delete it."
 fi
 
-# git-lfs writes its filter block into the global config; --skip-repo stops it
-# from also touching whichever repository happens to be the working directory.
-if have git-lfs; then
-  run_cmd git lfs install --skip-repo || warn "git lfs install failed; run it by hand."
-else
-  log "git-lfs is not installed; skipping git lfs install."
+# GIT_CONFIG_GLOBAL overrides ~/.config/git/config outright, the same failure
+# mode as a leftover ~/.gitconfig, only quieter: nothing under $git_dir is
+# even read.
+if [[ -n "${GIT_CONFIG_GLOBAL:-}" ]]; then
+  warn "GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL overrides $git_dir/config outright."
+fi
+
+if ! have git-lfs; then
+  log "git-lfs is not installed; large-file repositories will not clone correctly."
 fi
 
 log "pre-commit is installed by the mise capability, later in the core list."

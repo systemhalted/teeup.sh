@@ -57,6 +57,12 @@ answers_set() {
   if ! [[ "$key" =~ ^TEEUP_[A-Z0-9_]+$ ]]; then
     die "answers_set: key must look like TEEUP_NAME, got '$key'"
   fi
+  # A newline would split across lines once written, and sort would then
+  # interleave the halves with other keys, leaving the answers file unable to
+  # be sourced at all.
+  case "$value" in
+    *$'\n'*) die "answers_set: value for $key cannot contain a newline" ;;
+  esac
   export "$key=$value"
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would set $key in $f"

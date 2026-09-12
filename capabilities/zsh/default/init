@@ -18,9 +18,11 @@ fi
 
 if command -v fzf >/dev/null 2>&1; then
   # fzf 0.48 and newer ship their integration in the binary; older builds
-  # shipped shell files next to the install prefix.
-  if fzf --zsh >/dev/null 2>&1; then
-    eval "$(fzf --zsh)"
+  # shipped shell files next to the install prefix. Run it once, not once as
+  # a probe and again for real: every interactive shell would otherwise pay
+  # for a second fzf process.
+  if _teeup_fzf_zsh="$(fzf --zsh 2>/dev/null)"; then
+    eval "$_teeup_fzf_zsh"
   else
     for _f in /opt/homebrew/opt/fzf/shell /usr/local/opt/fzf/shell /opt/local/share/fzf/shell; do
       [ -r "$_f/completion.zsh" ] && . "$_f/completion.zsh"
@@ -28,4 +30,5 @@ if command -v fzf >/dev/null 2>&1; then
     done
     unset _f
   fi
+  unset _teeup_fzf_zsh
 fi

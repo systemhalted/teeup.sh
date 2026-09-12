@@ -50,6 +50,16 @@
 	navigate = true
 	line-numbers = true
 
+# What `git lfs install --skip-repo` writes into the global config, shipped
+# here instead so `teeup configure git` never runs it: running it against the
+# file copy_config_once just installed would make teeup mistake its own write
+# for a user edit on every run.
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+
 # Editor, pager, diffFilter and commit.gpgsign, as detected by
 # `teeup configure git`. Included here so it overrides the defaults above.
 [include]

@@ -3,10 +3,14 @@
 # Requires core.sh.
 
 file_sha() {
+  # Read from stdin rather than naming the file on argv: both shasum and
+  # sha256sum prefix the digest with a "\" when the filename itself contains
+  # a backslash (GNU/Perl escaping), which would otherwise corrupt every
+  # comparison against a stock-recorded sha for such a path.
   if have shasum; then
-    shasum -a 256 "$1" | cut -d ' ' -f 1
+    shasum -a 256 < "$1" | cut -d ' ' -f 1
   else
-    sha256sum "$1" | cut -d ' ' -f 1
+    sha256sum < "$1" | cut -d ' ' -f 1
   fi
 }
 
@@ -124,7 +128,7 @@ copy_config_once() {
   stock_record "$dest" "$(file_sha "$src")"
   ok "Installed $dest (your previous file is at $backup)"
   echo "Lines from your previous file that are not in the teeup version:"
-  diff "$dest" "$backup" || true
+  diff "$backup" "$dest" || true
 }
 
 # refresh_config <src> <dest>

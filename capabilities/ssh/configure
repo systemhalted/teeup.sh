@@ -20,6 +20,18 @@ chmod_once() {
 
 chmod_once 700 "$ssh_dir"
 
+# --apple-use-keychain was introduced in macOS 12 (OpenSSH 8.6); macOS 11 and
+# older only accept the older -K spelling. Falling back to -K unconditionally
+# would silently stop storing the passphrase on every Mac this runs on today,
+# so the flag has to be chosen, not just tried-and-warned.
+ssh_macos_major="$(macos_major)"
+if [[ "${ssh_macos_major:-99}" -lt 12 ]] 2>/dev/null; then
+  ssh_keychain_flag="-K"
+else
+  ssh_keychain_flag="--apple-use-keychain"
+fi
+unset ssh_macos_major
+
 for identity in $(identity_list); do
   key="$(identity_key "$identity")"
   if [[ -f "$key" ]]; then
@@ -33,7 +45,7 @@ for identity in $(identity_list); do
   fi
   chmod_once 600 "$key"
   chmod_once 644 "$key.pub"
-  run_cmd ssh-add --apple-use-keychain "$key" || warn "ssh-add failed for $key."
+  run_cmd ssh-add "$ssh_keychain_flag" "$key" || warn "ssh-add failed for $key."
 done
 
 copy_config_once "$TEEUP_CAP_DIR/config/ssh/config" "$ssh_dir/config"

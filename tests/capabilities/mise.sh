@@ -37,7 +37,23 @@ test_configure_writes_the_config_and_the_setting() {
   body="$(cat "$TEST_HOME/.config/mise/config.toml")"
   assert_contains "$body" "idiomatic_version_file_enable_tools = []" || return 1
   assert_contains "$body" "experimental = false" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "mise settings set upgrade.auto_prune false" || return 1
+  # auto_prune ships inside the copied file itself now, so configure never
+  # mutates the file copy_config_once just installed (that used to make
+  # every run after the first look user-edited from teeup's point of view).
+  assert_not_contains "$(cat "$MOCK_LOG")" "settings set" || return 1
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import sys
+try:
+    import tomllib
+except ImportError:
+    sys.exit(0)
+with open(sys.argv[1], "rb") as f:
+    data = tomllib.load(f)
+if data["settings"]["upgrade"]["auto_prune"] is not False:
+    sys.exit(1)
+' "$TEST_HOME/.config/mise/config.toml" || { echo "settings.upgrade.auto_prune is not false"; return 1; }
+  fi
   cleanup_test_env
 }
 

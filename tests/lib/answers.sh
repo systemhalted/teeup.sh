@@ -126,6 +126,16 @@ test_set_preserves_a_final_line_with_no_trailing_newline() {
   cleanup_test_env
 }
 
+test_set_rejects_a_value_with_a_newline() {
+  setup
+  local rc=0 out
+  out="$( (answers_set TEEUP_NOTE "$(printf 'line1\nline2')") 2>&1 )" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "cannot contain a newline" || return 1
+  [[ ! -e "$(answers_file)" ]] || { echo "answers file written for a rejected value"; return 1; }
+  cleanup_test_env
+}
+
 test_identity_helpers_without_work_email() {
   setup
   answers_set TEEUP_EMAIL "ada@example.com"

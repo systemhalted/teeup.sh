@@ -11,5 +11,10 @@ experimental = false
 # Leave .python-version, .nvmrc, .ruby-version and friends to the tools that
 # own them; mise acts only on what this file and a project's mise.toml say.
 idiomatic_version_file_enable_tools = []
+# Omarchy's reason for turning pruning off: it deletes a version some running
+# process is still executing from, which breaks daemons on upgrade. Shipped
+# here rather than set with `mise settings set` so `teeup configure mise`
+# never mutates the file copy_config_once just installed.
+upgrade.auto_prune = false
 
 [tools]

@@ -29,7 +29,14 @@ test_configure_creates_state_env_and_link() {
   for d in "done" toggles migrations shims logs current stock; do
     assert_dir_exists "$TEST_HOME/.local/state/teeup/$d" || return 1
   done
-  assert_equals "export TEEUP_PATH=\"$TEEUP_PATH\"" "$(cat "$TEST_HOME/.config/teeup/env")" || return 1
+  local env_body
+  env_body="$(cat "$TEST_HOME/.config/teeup/env")"
+  assert_contains "$env_body" "export TEEUP_PATH=\"$TEEUP_PATH\"" || return 1
+  # The shell layer's home files bake these two paths in as absolute strings
+  # at configure time (see capabilities/zsh/configure), so the env file has
+  # to carry them too, not just TEEUP_PATH.
+  assert_contains "$env_body" "export TEEUP_CONFIG_DIR=\"$TEST_HOME/.config/teeup\"" || return 1
+  assert_contains "$env_body" "export TEEUP_STATE_DIR=\"$TEST_HOME/.local/state/teeup\"" || return 1
   assert_equals "$TEEUP_PATH/bin/teeup" "$(readlink "$TEST_HOME/.local/bin/teeup")" || return 1
   cleanup_test_env
 }
