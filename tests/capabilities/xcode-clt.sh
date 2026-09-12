@@ -27,7 +27,7 @@ test_missing_clt_uses_softwareupdate_label() {
   local out
   out="$("$TEEUP" install xcode-clt)"
   assert_contains "$out" "Would execute: touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress" || return 1
-  assert_contains "$out" "Would execute: softwareupdate -i Command Line Tools for Xcode-16.2" || return 1
+  assert_contains "$out" "Would execute: sudo softwareupdate -i Command Line Tools for Xcode-16.2" || return 1
   cleanup_test_env
 }
 
@@ -60,7 +60,7 @@ test_rosetta_installed_on_arm_when_missing() {
   mock_command pkgutil 1 ""
   local out
   out="$("$TEEUP" install xcode-clt)"
-  assert_contains "$out" "Would execute: /usr/sbin/softwareupdate --install-rosetta --agree-to-license" || return 1
+  assert_contains "$out" "Would execute: sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license" || return 1
   cleanup_test_env
 }
 

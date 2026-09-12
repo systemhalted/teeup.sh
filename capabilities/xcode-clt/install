@@ -10,7 +10,7 @@ else
   run_cmd touch "$marker"
   label="$(softwareupdate -l 2>/dev/null | grep -o 'Command Line Tools for Xcode-[0-9.]*' | tail -1 || true)"
   if [[ -n "$label" ]]; then
-    run_cmd softwareupdate -i "$label"
+    run_privileged softwareupdate -i "$label"
     run_cmd rm -f "$marker"
   else
     warn "softwareupdate lists no Command Line Tools package; opening the GUI installer."
@@ -29,6 +29,6 @@ if [[ "$(arch)" == "arm64" ]]; then
     ok "Rosetta 2 already installed."
   else
     log "Installing Rosetta 2 (Apple Silicon)..."
-    run_cmd /usr/sbin/softwareupdate --install-rosetta --agree-to-license || warn "Rosetta install may require approval."
+    run_privileged /usr/sbin/softwareupdate --install-rosetta --agree-to-license || warn "Rosetta install may require approval."
   fi
 fi
