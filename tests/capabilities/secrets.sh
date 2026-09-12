@@ -183,6 +183,23 @@ test_set_never_leaks_via_trace() {
   cleanup_test_env
 }
 
+test_teeup_env_hides_the_secret_from_zsh_xtrace() {
+  setup
+  if ! command -v zsh >/dev/null 2>&1; then
+    echo "zsh is required to run teeup-env"
+    return 1
+  fi
+  mock_command security 0 "s3cret"
+  local out
+  # `set +x` runs after teeup-env returns and before the plain `print` below,
+  # so the trace covers exactly the call under test; the readback print is
+  # the test's own assertion mechanism, not part of what teeup-env must hide.
+  out="$(PATH="$TEEUP_PATH/bin:$PATH" zsh -f -c "source '$TEEUP_PATH/capabilities/secrets/default/functions.zsh'; set -x; teeup-env demo >/dev/null; set +x; print -r -- \"\$DEMO\"" 2>"$TEST_HOME/err.txt")"
+  assert_equals "s3cret" "$out" || return 1
+  assert_not_contains "$(cat "$TEST_HOME/err.txt")" "s3cret" || { echo "secret leaked into the zsh xtrace"; return 1; }
+  cleanup_test_env
+}
+
 echo "capabilities/secrets"
 run_test "set then get round trips" test_set_then_get_round_trips
 run_test "get missing secret fails with a hint" test_get_missing_secret_fails_with_a_hint
@@ -196,4 +213,5 @@ run_test "rejects invalid secret names" test_rejects_invalid_secret_names
 run_test "set never leaks via trace" test_set_never_leaks_via_trace
 run_test "teeup-env function is shipped and parses" test_teeup_env_function_is_shipped_and_parses
 run_test "teeup-env sanitises the variable name" test_teeup_env_sanitises_the_variable_name
+run_test "teeup-env hides the secret from zsh xtrace" test_teeup_env_hides_the_secret_from_zsh_xtrace
 print_summary

@@ -6,6 +6,8 @@
 # "1KEY"). `teeup secret set` allows "." and "-" in names, so
 # `teeup-env my.api-key` sets MY_API_KEY. Sourced by capabilities/zsh/default/rc.
 teeup-env() {
+  # Keep the secret out of a caller's `set -x` trace; zsh restores options on return.
+  setopt localoptions noxtrace
   local name="$1" var value
   if [[ -z "$name" ]]; then
     print -u2 "usage: teeup-env <secret-name> [VARIABLE]"
