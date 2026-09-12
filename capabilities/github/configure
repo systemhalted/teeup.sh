@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+if ! have gh; then
+  warn "gh is not installed; skipping the GitHub setup. Re-run: teeup install github"
+  exit 0
+fi
+
+if gh auth status >/dev/null 2>&1; then
+  ok "Already signed in to GitHub."
+else
+  log "Signing in to GitHub. A browser window opens; approve the SSH key scopes."
+  if ! run_cmd gh auth login --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key; then
+    warn "gh auth login did not complete. Re-run: teeup configure github"
+    exit 0
+  fi
+fi
+
+run_cmd gh config set git_protocol ssh || warn "Could not set gh's git protocol to ssh."
+
+# One upload per identity, twice: an authentication key for pushing and a
+# signing key for the SSH commit signatures the git capability turns on.
+host="$(hostname -s 2>/dev/null || hostname)"
+listed="$(gh ssh-key list 2>/dev/null || true)"
+for identity in $(identity_list); do
+  pub="$(identity_key "$identity").pub"
+  if [[ ! -f "$pub" ]]; then
+    warn "No $pub yet. Run: teeup configure ssh"
+    continue
+  fi
+  # The key body is the second field; comparing on it matches whatever title
+  # the key was uploaded under.
+  body="$(awk '{print $2}' < "$pub")"
+  if [[ -n "$body" && "$listed" == *"$body"* ]]; then
+    log "Already uploaded: $pub"
+    continue
+  fi
+  run_cmd gh ssh-key add "$pub" --type authentication --title "$host $identity" ||
+    warn "Could not upload $pub as an authentication key."
+  run_cmd gh ssh-key add "$pub" --type signing --title "$host $identity (signing)" ||
+    warn "Could not upload $pub as a signing key."
+done

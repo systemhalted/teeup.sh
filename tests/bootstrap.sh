@@ -26,6 +26,17 @@ EOF2
   # ssh capability: never let a real keygen or agent call escape a test run.
   mock_command ssh-keygen 0 ""
   mock_command ssh-add 0 ""
+  # github capability: signed out, with an empty key list. These two calls are
+  # reads, so they are not covered by DRY_RUN and would otherwise hit the real
+  # gh session and the GitHub API.
+  mock_command_script gh <<'EOF2'
+case "$1 ${2:-}" in
+  "auth status") exit 1 ;;
+  "ssh-key list") : ;;
+  *) : ;;
+esac
+exit 0
+EOF2
   export TEEUP_TEST_MISSING="brew gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit"
   export TEEUP_NO_GUM=1
   export DRY_RUN=true

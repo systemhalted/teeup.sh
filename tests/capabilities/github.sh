@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/../helper.sh"
+
+setup() {
+  setup_test_env
+  mock_macos_base
+  mock_command_script brew <<'EOF2'
+case "$1" in list) exit 1 ;; *) exit 0 ;; esac
+EOF2
+  # A gh that is signed out until `auth login` runs, and whose key list lives
+  # in a file the test can seed.
+  mock_command_script gh <<'EOF2'
+case "$1 ${2:-}" in
+  "auth status") [ -f "$HOME/gh-session" ] || exit 1 ;;
+  "auth login") : > "$HOME/gh-session" ;;
+  "ssh-key list") cat "$HOME/gh-keys" 2>/dev/null || true ;;
+  # An upload lands in the same list a later run reads back, so running
+  # configure twice can be tested the way GitHub would actually behave.
+  "ssh-key add") cat "$3" >> "$HOME/gh-keys" ;;
+  *) : ;;
+esac
+exit 0
+EOF2
+  TEEUP="$TEEUP_PATH/bin/teeup"
+}
+
+seed_keys() {
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'ssh-ed25519 AAAAPERSONALKEY ada@example.com\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+}
+
+test_install_gets_gh() {
+  setup
+  export TEEUP_TEST_MISSING="gh"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" install github 2>&1)"
+  assert_contains "$out" "Would execute: brew install gh" || return 1
+  cleanup_test_env
+}
+
+test_configure_logs_in_with_the_two_scopes() {
+  setup
+  seed_keys
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "auth login --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "config set git_protocol ssh" || return 1
+  cleanup_test_env
+}
+
+test_configure_uploads_authentication_and_signing_keys() {
+  setup
+  seed_keys
+  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication --title testmac personal" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type signing --title testmac personal (signing)" || return 1
+  cleanup_test_env
+}
+
+test_configure_skips_a_key_github_already_has() {
+  setup
+  seed_keys
+  printf 'laptop  ssh-ed25519 AAAAPERSONALKEY  12345  2026-09-11\n' > "$TEST_HOME/gh-keys"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "Already uploaded" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "ssh-key add" || return 1
+  cleanup_test_env
+}
+
+test_configure_skips_the_login_when_already_signed_in() {
+  setup
+  seed_keys
+  : > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "Already signed in to GitHub." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "auth login" || return 1
+  cleanup_test_env
+}
+
+test_configure_warns_when_the_key_is_missing() {
+  setup
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "teeup configure ssh" || return 1
+  cleanup_test_env
+}
+
+test_configure_dry_run_uploads_nothing() {
+  setup
+  seed_keys
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "Would execute: gh ssh-key add" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "ssh-key add" || return 1
+  cleanup_test_env
+}
+
+test_configure_twice_uploads_nothing_new() {
+  setup
+  seed_keys
+  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  local marker="$TEST_HOME/.idempotency-marker"
+  : > "$marker"
+  : > "$MOCK_LOG"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "Already signed in to GitHub." || return 1
+  assert_contains "$out" "Already uploaded" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "ssh-key add" || return 1
+  # gh config set is the only write the second run makes, and it goes to gh's
+  # own state, not to a file teeup owns.
+  local changed
+  changed="$(find "$TEST_HOME" -newer "$marker" -type f \
+    ! -name 'mock.log' ! -name '.idempotency-marker' 2>/dev/null)"
+  assert_equals "" "$changed" "second configure must write nothing" || return 1
+  cleanup_test_env
+}
+
+echo "capabilities/github"
+run_test "install gets gh" test_install_gets_gh
+run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
+run_test "configure uploads authentication and signing keys" test_configure_uploads_authentication_and_signing_keys
+run_test "configure skips a key GitHub already has" test_configure_skips_a_key_github_already_has
+run_test "configure skips the login when already signed in" test_configure_skips_the_login_when_already_signed_in
+run_test "configure warns when the key is missing" test_configure_warns_when_the_key_is_missing
+run_test "configure dry run uploads nothing" test_configure_dry_run_uploads_nothing
+run_test "configure twice uploads nothing new" test_configure_twice_uploads_nothing_new
+print_summary

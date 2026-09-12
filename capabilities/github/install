@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# gh is also the git credential helper the shipped gitconfig points at, so it
+# is not optional on a machine that clones over HTTPS.
+pkg_install gh gh || warn "gh could not be installed; GitHub sign-in and the credential helper will not work."

@@ -1,0 +1,9 @@
+summary="GitHub CLI, browser sign-in and SSH key upload"
+group=git
+tier=core
+requires="ssh"
+provides=""
+packages="gh"
+casks=""
+apps=""
+interactive=true
