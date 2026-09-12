@@ -1,0 +1,9 @@
+summary="mise, the runtime and tool manager"
+group=languages
+tier=core
+requires="package-manager"
+provides=""
+packages="mise"
+casks=""
+apps=""
+interactive=false

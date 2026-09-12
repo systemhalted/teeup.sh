@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# capabilities/zsh/default/init runs `mise activate zsh` whenever the binary is
+# on PATH, so installing it is the whole wiring step.
+pkg_install mise mise
