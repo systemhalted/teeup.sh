@@ -10,3 +10,7 @@
 # what `configure` used to place the file (lib/core.sh's user_config_dir).
 [ -r "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh" ] &&
   . "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh"
+
+# A missing local.zsh above must not leave the shell on a failing status;
+# starship's prompt character reads $status, and this is the first prompt.
+true

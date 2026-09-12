@@ -124,6 +124,21 @@ test_rc_reports_light_when_defaults_exits_nonzero() {
   cleanup_test_env
 }
 
+test_rc_leaves_git_revision_syntax_alone() {
+  setup
+  require_zsh || return 1
+  # EXTENDED_GLOB alone turns "^" into a glob operator, so `git show HEAD^`
+  # dies with "no matches found"; NO_NOMATCH must be set alongside it so an
+  # unmatched pattern passes through unchanged instead.
+  # stderr is not captured here: on a host where mise has not yet trusted a
+  # parent directory's config, `mise activate` (sourced from init, last in
+  # the rc chain) warns on stderr, which is noise unrelated to this test.
+  local out
+  out="$(zsh -f -c "export TEEUP_PATH='$TEEUP_PATH'; . '$TEEUP_PATH/capabilities/zsh/default/rc'; print -r -- HEAD^" 2>/dev/null)"
+  assert_equals "HEAD^" "$out" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zsh"
 run_test "install gets the plugins and switches the login shell" test_install_gets_the_plugins_and_switches_the_login_shell
 run_test "install leaves an existing zsh login shell alone" test_install_leaves_an_existing_zsh_login_shell_alone
@@ -134,4 +149,5 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "default env appends the shims last" test_default_env_appends_the_shims_last
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero
+run_test "rc leaves git revision syntax alone" test_rc_leaves_git_revision_syntax_alone
 print_summary

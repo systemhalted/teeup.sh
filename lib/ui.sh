@@ -20,6 +20,19 @@ ui_input() {
   printf '%s\n' "$answer"
 }
 
+# ui_secret <prompt> -> prints the answer, without echoing it to the terminal
+ui_secret() {
+  local prompt="$1" answer
+  if _ui_gum; then
+    answer="$(gum input --password --prompt "$prompt: ")" || answer=""
+  else
+    printf '%s: ' "$prompt" >&2
+    IFS= read -rs answer || answer=""
+    printf '\n' >&2
+  fi
+  printf '%s\n' "$answer"
+}
+
 # ui_confirm <prompt> [yes|no]  (default yes)
 ui_confirm() {
   local prompt="$1" default="${2:-yes}" answer hint
