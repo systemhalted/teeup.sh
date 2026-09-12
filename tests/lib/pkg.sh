@@ -34,6 +34,16 @@ test_backend_honours_answer() {
   cleanup_test_env
 }
 
+test_invalid_backend_answer_dies() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=apt
+  local rc=0 out
+  out="$( (pkg_install ripgrep) 2>&1 )" || rc=$?
+  assert_failure "$rc" "invalid backend must fail the caller" || return 1
+  assert_contains "$out" "Unknown TEEUP_PACKAGE_MANAGER 'apt'" || return 1
+  cleanup_test_env
+}
+
 test_intel_homebrew_prefix() {
   setup
   unset TEEUP_PKG_PREFIX
@@ -63,7 +73,6 @@ case "$1" in
   install) exit 0 ;;
 esac
 EOF2
-  # shellcheck disable=SC2034
   DRY_RUN=true
   local out
   out="$(pkg_install ripgrep)"
@@ -75,7 +84,6 @@ test_pkg_install_uses_sudo_port_on_macports() {
   setup
   export TEEUP_PACKAGE_MANAGER=macports
   mock_command port 1 ""
-  # shellcheck disable=SC2034
   DRY_RUN=true
   local out
   out="$(pkg_install ripgrep)"
@@ -103,7 +111,6 @@ test_cask_install_dry_run() {
   mock_command_script brew <<'EOF2'
 case "$1" in list) exit 1 ;; esac
 EOF2
-  # shellcheck disable=SC2034
   DRY_RUN=true
   local out
   out="$(cask_install wezterm)"
@@ -113,7 +120,6 @@ EOF2
 
 test_backend_prepare_installs_homebrew_when_missing() {
   setup
-  # shellcheck disable=SC2034
   DRY_RUN=true
   local out
   out="$(pkg_backend_prepare)"
@@ -133,6 +139,7 @@ echo "lib/pkg.sh"
 run_test "backend defaults to homebrew on modern macOS" test_backend_defaults_to_homebrew_on_modern_macos
 run_test "backend is macports on macOS 12" test_backend_is_macports_on_macos_12
 run_test "backend honours answer" test_backend_honours_answer
+run_test "invalid backend answer dies" test_invalid_backend_answer_dies
 run_test "intel homebrew prefix" test_intel_homebrew_prefix
 run_test "pkg_install skips when command on PATH" test_pkg_install_skips_when_command_on_path
 run_test "pkg_install calls brew when missing" test_pkg_install_calls_brew_when_missing
