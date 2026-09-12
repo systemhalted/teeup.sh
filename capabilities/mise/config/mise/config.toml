@@ -1,0 +1,15 @@
+# ~/.config/mise/config.toml - installed once by teeup; this copy is yours to
+# edit. `mise use -g <tool>` appends to the [tools] table below, so the file
+# grows as you add tools.
+#
+# Language runtimes are deliberately absent: they arrive with
+# `teeup install dev-env <python|node|java|ruby|rust|go>`, which is lazy on
+# purpose (spec section 6).
+
+[settings]
+experimental = false
+# Leave .python-version, .nvmrc, .ruby-version and friends to the tools that
+# own them; mise acts only on what this file and a project's mise.toml say.
+idiomatic_version_file_enable_tools = []
+
+[tools]

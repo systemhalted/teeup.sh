@@ -37,6 +37,15 @@ case "$1 ${2:-}" in
 esac
 exit 0
 EOF2
+  # mise capability: `mise which` is a read, so DRY_RUN does not cover it.
+  # Exit 1 = "that tool is not installed", which is the fresh-machine answer.
+  mock_command_script mise <<'EOF2'
+case "$1" in
+  which) exit 1 ;;
+  *) : ;;
+esac
+exit 0
+EOF2
   export TEEUP_TEST_MISSING="brew gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit"
   export TEEUP_NO_GUM=1
   export DRY_RUN=true
