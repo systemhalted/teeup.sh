@@ -17,6 +17,7 @@ EOF2
   # host, github.com first, the way the real multi-host CLI does, so a test
   # can prove that only `-h github.com`'s own scopes decide teeup's refresh.
   mock_command_script gh <<'EOF2'
+echo "GH_HOST=$GH_HOST" >> "$MOCK_LOG"
 host=""
 prev=""
 for a in "$@"; do
@@ -68,12 +69,20 @@ case "$1 ${2:-}" in
     pubfile="$3"
     shift 3
     ssh_key_type=""
+    ssh_key_title=""
     while [ $# -gt 0 ]; do
-      case "$1" in --type) ssh_key_type="$2" ;; esac
+      case "$1" in
+        --type) ssh_key_type="$2" ;;
+        --title) ssh_key_title="$2" ;;
+      esac
       shift
     done
+    [ -n "$ssh_key_title" ] || ssh_key_title="title"
     ssh_key_body="$(awk '{print $2}' < "$pubfile")"
-    printf 'title  ssh-ed25519 %s  id  2026-09-11  %s\n' "$ssh_key_body" "$ssh_key_type" >> "$HOME/gh-keys"
+    # Tab-separated, matching the real `gh ssh-key list`: TITLE, KEY, TYPE,
+    # ADDED. The title is free text (it may itself contain the word
+    # "signing"), so it must never be what the dedupe check parses.
+    printf '%s\tssh-ed25519 %s\t%s\t2026-09-11\n' "$ssh_key_title" "$ssh_key_body" "$ssh_key_type" >> "$HOME/gh-keys"
     ;;
   *) : ;;
 esac
@@ -102,7 +111,7 @@ test_configure_logs_in_with_the_two_scopes() {
   seed_keys
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$(cat "$MOCK_LOG")" "auth login --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "auth login --hostname github.com --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "config set git_protocol ssh --host github.com" || return 1
   cleanup_test_env
 }
@@ -121,8 +130,8 @@ test_configure_uploads_authentication_and_signing_keys() {
 test_configure_skips_a_key_github_already_has() {
   setup
   seed_keys
-  printf 'laptop  ssh-ed25519 AAAAPERSONALKEY  12345  2026-09-11  authentication\n' > "$TEST_HOME/gh-keys"
-  printf 'laptop (signing)  ssh-ed25519 AAAAPERSONALKEY  67890  2026-09-11  signing\n' >> "$TEST_HOME/gh-keys"
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\tauthentication\t2026-09-11\n' > "$TEST_HOME/gh-keys"
+  printf 'laptop (signing)\tssh-ed25519 AAAAPERSONALKEY\tsigning\t2026-09-11\n' >> "$TEST_HOME/gh-keys"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already uploaded" || return 1
@@ -162,7 +171,7 @@ test_configure_retries_the_signing_upload_when_only_authentication_is_present() 
   setup
   seed_keys
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
-  printf 'laptop  ssh-ed25519 AAAAPERSONALKEY  12345  2026-09-11  authentication\n' > "$TEST_HOME/gh-keys"
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\tauthentication\t2026-09-11\n' > "$TEST_HOME/gh-keys"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   local calls
@@ -189,6 +198,36 @@ test_configure_warns_when_the_key_is_missing() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "teeup configure ssh" || return 1
+  cleanup_test_env
+}
+
+test_configure_pins_gh_host_to_github_com() {
+  setup
+  seed_keys
+  export GH_HOST=enterprise.invalid
+  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$calls" "GH_HOST=github.com" || return 1
+  assert_not_contains "$calls" "GH_HOST=enterprise.invalid" || return 1
+  assert_contains "$calls" "auth login --hostname github.com" || return 1
+  cleanup_test_env
+}
+
+test_configure_does_not_let_a_signing_titled_authentication_key_suppress_signing() {
+  setup
+  seed_keys
+  # An authentication key whose title happens to contain the word "signing"
+  # must not be mistaken for an already-uploaded signing key: only the KEY
+  # and TYPE columns count, never the title.
+  printf 'laptop signing key\tssh-ed25519 AAAAPERSONALKEY\tauthentication\t2026-09-11\n' > "$TEST_HOME/gh-keys"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Already uploaded (authentication)" || return 1
+  assert_not_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type signing --title testmac personal (signing)" || return 1
   cleanup_test_env
 }
 
@@ -233,6 +272,8 @@ run_test "configure lets github.com scopes decide over another host" test_config
 run_test "configure retries the signing upload when only authentication is present" test_configure_retries_the_signing_upload_when_only_authentication_is_present
 run_test "configure skips the login when already signed in" test_configure_skips_the_login_when_already_signed_in
 run_test "configure warns when the key is missing" test_configure_warns_when_the_key_is_missing
+run_test "configure pins GH_HOST to github.com" test_configure_pins_gh_host_to_github_com
+run_test "configure does not let a signing-titled authentication key suppress signing" test_configure_does_not_let_a_signing_titled_authentication_key_suppress_signing
 run_test "configure dry run uploads nothing" test_configure_dry_run_uploads_nothing
 run_test "configure twice uploads nothing new" test_configure_twice_uploads_nothing_new
 print_summary

@@ -121,6 +121,34 @@ test_signing_and_delta_are_enabled_once_they_exist() {
   cleanup_test_env
 }
 
+test_signing_stays_off_with_a_work_email_and_no_work_key() {
+  setup
+  seed_answers "ada@corp.example"
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'ssh-ed25519 AAAAFAKE ada@example.com\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  # No id_ed25519_work.pub: the work identity file still points at it (see
+  # identity-work in the test above), so signing must stay off machine-wide
+  # rather than fail every commit under ~/Work.
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local generated
+  generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
+  assert_contains "$generated" "gpgsign = false" || return 1
+  cleanup_test_env
+}
+
+test_signing_turns_on_once_both_identity_keys_exist() {
+  setup
+  seed_answers "ada@corp.example"
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'ssh-ed25519 AAAAFAKE ada@example.com\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  printf 'ssh-ed25519 AAAAWORK ada@corp.example\n' > "$TEST_HOME/.ssh/id_ed25519_work.pub"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local generated
+  generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
+  assert_contains "$generated" "gpgsign = true" || return 1
+  cleanup_test_env
+}
+
 test_generated_include_is_read_after_the_defaults() {
   setup
   seed_answers ""
@@ -177,6 +205,27 @@ test_configure_renders_include_paths_for_a_custom_xdg_config_home() {
   cleanup_test_env
 }
 
+test_configure_renders_include_paths_with_xdg_config_home_metacharacters() {
+  setup
+  seed_answers ""
+  # sed replacement metacharacters (&, |, \) in the directory name would
+  # corrupt a `sed "s|~/.config/git|$git_dir|g"` render; the bash substitution
+  # loop that replaced it has none of that.
+  export XDG_CONFIG_HOME="$TEST_HOME/con&fig|x"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local cfg="$XDG_CONFIG_HOME/git/config"
+  assert_file_exists "$cfg" || return 1
+  local body
+  body="$(cat "$cfg")"
+  assert_contains "$body" "path = $XDG_CONFIG_HOME/git/identity-personal" || return 1
+  assert_contains "$body" "path = $XDG_CONFIG_HOME/git/teeup-generated" || return 1
+  assert_contains "$body" "path = $XDG_CONFIG_HOME/git/local" || return 1
+  local resolved
+  resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Work/.path')"
+  assert_equals "$XDG_CONFIG_HOME/git/identity-work" "$resolved" || return 1
+  cleanup_test_env
+}
+
 test_configure_is_idempotent() {
   setup
   seed_answers ""
@@ -204,8 +253,11 @@ run_test "work identity falls back to the personal signingkey" test_work_identit
 run_test "configure without answers warns and writes no identity" test_configure_without_answers_warns_and_writes_no_identity
 run_test "configure ships the config and the editor" test_configure_ships_the_config_and_the_editor
 run_test "signing and delta are enabled once they exist" test_signing_and_delta_are_enabled_once_they_exist
+run_test "signing stays off with a work email and no work key" test_signing_stays_off_with_a_work_email_and_no_work_key
+run_test "signing turns on once both identity keys exist" test_signing_turns_on_once_both_identity_keys_exist
 run_test "generated include is read after the defaults" test_generated_include_is_read_after_the_defaults
 run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_configure_renders_include_paths_for_a_custom_xdg_config_home
+run_test "configure renders include paths with XDG_CONFIG_HOME metacharacters" test_configure_renders_include_paths_with_xdg_config_home_metacharacters
 run_test "configure prefers emacsclient when present" test_configure_prefers_emacsclient_when_present
 run_test "configure runs git lfs install and warns about gitconfig" test_configure_runs_git_lfs_install_and_warns_about_gitconfig
 run_test "configure is idempotent" test_configure_is_idempotent
