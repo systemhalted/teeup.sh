@@ -1,0 +1,9 @@
+summary="Starship prompt"
+group=shell
+tier=core
+requires="zsh"
+provides=""
+packages="starship"
+casks=""
+apps=""
+interactive=false
