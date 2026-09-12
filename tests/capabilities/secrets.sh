@@ -140,6 +140,35 @@ test_teeup_env_function_is_shipped_and_parses() {
   cleanup_test_env
 }
 
+test_rejects_invalid_secret_names() {
+  setup
+  mock_security_store
+  local rc=0 out
+  # Test name with leading dash
+  out="$("$TEEUP" secret get -- -badname 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Secret names use letters, digits, dot, underscore and dash, and cannot start with a dash" || return 1
+  # Test name with spaces
+  rc=0
+  out="$("$TEEUP" secret get "a b" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Secret names use letters, digits, dot, underscore and dash, and cannot start with a dash" || return 1
+  cleanup_test_env
+}
+
+test_set_never_leaks_via_trace() {
+  setup
+  mock_security_store
+  local out
+  # Run with bash -x to enable trace mode, capture all output
+  out="$(printf 's3cr3t\n' | bash -x "$TEEUP" secret set traced_key 2>&1)"
+  # Verify the secret value does not appear anywhere in the trace
+  assert_not_contains "$out" "s3cr3t" || { echo "secret leaked in bash -x trace"; return 1; }
+  # Verify the command succeeded
+  assert_contains "$out" "Stored traced_key" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/secrets"
 run_test "set then get round trips" test_set_then_get_round_trips
 run_test "get missing secret fails with a hint" test_get_missing_secret_fails_with_a_hint
@@ -149,5 +178,7 @@ run_test "set refuses an empty value" test_set_refuses_an_empty_value
 run_test "usage without a name" test_usage_without_a_name
 run_test "configure reports the keychain is usable" test_configure_reports_the_keychain_is_usable
 run_test "configure twice is a no-op" test_configure_twice_is_a_no_op
+run_test "rejects invalid secret names" test_rejects_invalid_secret_names
+run_test "set never leaks via trace" test_set_never_leaks_via_trace
 run_test "teeup-env function is shipped and parses" test_teeup_env_function_is_shipped_and_parses
 print_summary
