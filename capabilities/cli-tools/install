@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# package:command pairs, because the package name and the binary differ for
+# half of them and pkg_install skips whatever is already on PATH.
+# lazygit belongs to the git capability and gh to github: packages= drives the
+# generic update and remove verbs, so every package has exactly one owner.
+failed=""
+for pair in ripgrep:rg fd:fd fzf:fzf bat:bat eza:eza zoxide:zoxide jq:jq \
+            yq:yq btop:btop tree:tree wget:wget curl:curl gnupg:gpg \
+            tldr:tldr dust:dust; do
+  pkg="${pair%%:*}"
+  cmd="${pair##*:}"
+  pkg_install "$pkg" "$cmd" || failed="$failed $pkg"
+done
+
+# One missing port on a MacPorts machine must not abort the core tier; the
+# shell layer guards on each tool and `teeup doctor` will report the gap.
+if [[ -n "$failed" ]]; then
+  warn "Could not install:$failed. Install them by hand, or re-run: teeup install cli-tools"
+fi

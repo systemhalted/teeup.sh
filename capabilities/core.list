@@ -7,4 +7,5 @@ teeup-runtime
 dev-dirs
 zsh
 starship
+cli-tools
 secrets
