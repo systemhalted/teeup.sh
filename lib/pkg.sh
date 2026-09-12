@@ -16,15 +16,10 @@ run_privileged() {
   return 1
 }
 
-# pkg_backend -> homebrew | macports
-# Resolution order: TEEUP_PACKAGE_MANAGER (answers or machine file), then
-# macOS 12 or older means MacPorts (Homebrew no longer supports them), else
-# Homebrew. Cached in TEEUP_PKG_BACKEND for the process.
-pkg_backend() {
-  if [[ -n "${TEEUP_PKG_BACKEND:-}" ]]; then
-    printf '%s\n' "$TEEUP_PKG_BACKEND"
-    return 0
-  fi
+# Resolves once into TEEUP_PKG_BACKEND in the caller's shell, so `die` on an
+# invalid answer really exits and the cache survives across calls.
+_pkg_backend_resolve() {
+  [[ -n "${TEEUP_PKG_BACKEND:-}" ]] && return 0
   local answer major
   answer="$(answers_get TEEUP_PACKAGE_MANAGER)"
   case "$answer" in
@@ -40,11 +35,20 @@ pkg_backend() {
     *) die "Unknown TEEUP_PACKAGE_MANAGER '$answer' (expected homebrew or macports)" ;;
   esac
   export TEEUP_PKG_BACKEND
+}
+
+# pkg_backend -> homebrew | macports
+# Resolution order: TEEUP_PACKAGE_MANAGER (answers or machine file), then
+# macOS 12 or older means MacPorts (Homebrew no longer supports them), else
+# Homebrew. Cached in TEEUP_PKG_BACKEND for the process.
+pkg_backend() {
+  _pkg_backend_resolve
   printf '%s\n' "$TEEUP_PKG_BACKEND"
 }
 
 pkg_backend_label() {
-  case "$(pkg_backend)" in
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
     homebrew) echo "Homebrew" ;;
     macports) echo "MacPorts" ;;
   esac
@@ -57,7 +61,8 @@ pkg_prefix() {
     printf '%s\n' "$TEEUP_PKG_PREFIX"
     return 0
   fi
-  case "$(pkg_backend)" in
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
     macports) echo "/opt/local" ;;
     homebrew)
       if [[ "$(arch)" == "arm64" ]]; then echo "/opt/homebrew"; else echo "/usr/local"; fi
@@ -77,7 +82,8 @@ pkg_backend_path() {
 }
 
 pkg_backend_installed() {
-  case "$(pkg_backend)" in
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
     homebrew) have brew || [[ -x "$(pkg_prefix)/bin/brew" ]] ;;
     macports) have port || [[ -x "$(pkg_prefix)/bin/port" ]] ;;
   esac
@@ -86,7 +92,8 @@ pkg_backend_installed() {
 # Install Homebrew if missing, or refresh MacPorts. MacPorts itself is never
 # auto-installed: its installer is a signed pkg tied to the macOS version.
 pkg_backend_prepare() {
-  case "$(pkg_backend)" in
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
     homebrew)
       if pkg_backend_installed; then
         ok "Homebrew already installed."
@@ -111,7 +118,8 @@ pkg_backend_prepare() {
 # package_candidates <pkg> -> space-separated names to try in order
 package_candidates() {
   local pkg="$1"
-  case "$(pkg_backend):$pkg" in
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND:$pkg" in
     homebrew:bash-completion) echo "bash-completion@2 bash-completion" ;;
     macports:gnupg) echo "gnupg2 gnupg" ;;
     macports:gh) echo "gh github-cli" ;;
@@ -121,14 +129,16 @@ package_candidates() {
 
 pkg_installed() {
   local pkg="$1"
-  case "$(pkg_backend)" in
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
     homebrew) have brew && brew list --formula "$pkg" >/dev/null 2>&1 ;;
     macports) have port && port installed "$pkg" 2>/dev/null | grep -q '(active)' ;;
   esac
 }
 
 _pkg_install_candidate() {
-  case "$(pkg_backend)" in
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
     homebrew) run_cmd brew install "$1" ;;
     macports) run_privileged port install "$1" ;;
   esac
@@ -158,7 +168,7 @@ pkg_install() {
   return 1
 }
 
-casks_supported() { [[ "$(pkg_backend)" == "homebrew" ]]; }
+casks_supported() { _pkg_backend_resolve; [[ "$TEEUP_PKG_BACKEND" == "homebrew" ]]; }
 
 cask_installed() { have brew && brew list --cask "$1" >/dev/null 2>&1; }
 
