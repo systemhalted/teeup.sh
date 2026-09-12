@@ -13,10 +13,19 @@ done
 # a login shell reads before ~/.zshenv (XDG_CONFIG_HOME included) can ever
 # make the CLI and the shell disagree about where the rest of teeup's files
 # live.
+# Each value is %q-escaped before it lands inside the double-quoted-looking
+# assignment below: a raw $, `, " or \ in one of these paths would otherwise
+# break out of the export line and corrupt the rest of the file. bash 3.2's
+# %q emits backslash escapes or a $'...' literal; zsh 5.9 parses both forms
+# identically for these characters, so the same env file works for both
+# shells that source it.
+teeup_path_q="$(printf '%q' "$TEEUP_PATH")"
+teeup_config_dir_q="$(printf '%q' "$TEEUP_CONFIG_DIR")"
+teeup_state_dir_q="$(printf '%q' "$TEEUP_STATE_DIR")"
 write_managed_file "$TEEUP_CONFIG_DIR/env" "teeup env" <<TEEUP_ENV
-export TEEUP_PATH="$TEEUP_PATH"
-export TEEUP_CONFIG_DIR="$TEEUP_CONFIG_DIR"
-export TEEUP_STATE_DIR="$TEEUP_STATE_DIR"
+export TEEUP_PATH=$teeup_path_q
+export TEEUP_CONFIG_DIR=$teeup_config_dir_q
+export TEEUP_STATE_DIR=$teeup_state_dir_q
 TEEUP_ENV
 
 link="$HOME/.local/bin/teeup"

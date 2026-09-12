@@ -74,13 +74,34 @@ test_configure_bakes_the_absolute_env_path_for_a_custom_xdg_config_home() {
   local out expected_state
   # The state dir formula follows XDG_STATE_HOME, not XDG_CONFIG_HOME; compare
   # against what teeup-runtime actually recorded rather than re-deriving it.
-  expected_state="$(grep '^export TEEUP_STATE_DIR=' "$XDG_CONFIG_HOME/teeup/env" | sed -e 's/^export TEEUP_STATE_DIR="//' -e 's/"$//')"
+  # Values are %q-escaped rather than double-quoted, so a plain path with no
+  # shell metacharacters comes out unquoted; strip only the "export NAME="
+  # prefix.
+  expected_state="$(grep '^export TEEUP_STATE_DIR=' "$XDG_CONFIG_HOME/teeup/env" | sed -e 's/^export TEEUP_STATE_DIR=//')"
   # Nothing macOS reads before ~/.zshenv sets XDG_CONFIG_HOME, so unsetting it
   # here is exactly the fresh-login-shell scenario B1 broke: the installed
   # .zshenv must still find the env file and set both TEEUP_PATH and
   # TEEUP_STATE_DIR from it.
   out="$(env -u XDG_CONFIG_HOME zsh -f -c "source '$TEST_HOME/.zshenv'; print -r -- \$TEEUP_PATH \$TEEUP_STATE_DIR")"
   assert_equals "$TEEUP_PATH $expected_state" "$out" || return 1
+  cleanup_test_env
+}
+
+test_configure_quotes_a_path_with_shell_metacharacters() {
+  setup
+  require_zsh || return 1
+  export XDG_CONFIG_HOME="$TEST_HOME/we\`ird \$dir \"q\" \\b"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  local zshenv="$TEST_HOME/.zshenv"
+  assert_file_exists "$zshenv" || return 1
+  local out
+  # Passed as an argv element ($1), not interpolated into the -c script text:
+  # the point of the fix is that a backtick, dollar, double quote or
+  # backslash baked into the rendered .zshenv must not be re-parsed as shell
+  # syntax when that file is sourced.
+  out="$(zsh -f -c 'source "$1"; print -r -- $TEEUP_PATH $TEEUP_CONFIG_DIR' _ "$zshenv")"
+  assert_equals "$TEEUP_PATH $XDG_CONFIG_HOME/teeup" "$out" || return 1
   cleanup_test_env
 }
 
@@ -298,6 +319,7 @@ run_test "install gets the plugins and switches the login shell" test_install_ge
 run_test "install leaves an existing zsh login shell alone" test_install_leaves_an_existing_zsh_login_shell_alone
 run_test "configure installs the thin home files" test_configure_installs_the_thin_home_files
 run_test "configure bakes the absolute env path for a custom XDG_CONFIG_HOME" test_configure_bakes_the_absolute_env_path_for_a_custom_xdg_config_home
+run_test "configure quotes a path with shell metacharacters" test_configure_quotes_a_path_with_shell_metacharacters
 run_test "configure installs under ZDOTDIR" test_configure_installs_under_zdotdir
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure backs up a foreign zshrc" test_configure_backs_up_a_foreign_zshrc

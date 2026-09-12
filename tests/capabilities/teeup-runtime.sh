@@ -31,13 +31,35 @@ test_configure_creates_state_env_and_link() {
   done
   local env_body
   env_body="$(cat "$TEST_HOME/.config/teeup/env")"
-  assert_contains "$env_body" "export TEEUP_PATH=\"$TEEUP_PATH\"" || return 1
+  # Values are %q-escaped, not double-quoted; a plain path with no shell
+  # metacharacters comes out of %q unquoted, so the export lines carry the
+  # raw path directly (see test_configure_quotes_a_path_with_shell_metacharacters
+  # below for the case where that matters).
+  assert_contains "$env_body" "export TEEUP_PATH=$TEEUP_PATH" || return 1
   # The shell layer's home files bake these two paths in as absolute strings
   # at configure time (see capabilities/zsh/configure), so the env file has
   # to carry them too, not just TEEUP_PATH.
-  assert_contains "$env_body" "export TEEUP_CONFIG_DIR=\"$TEST_HOME/.config/teeup\"" || return 1
-  assert_contains "$env_body" "export TEEUP_STATE_DIR=\"$TEST_HOME/.local/state/teeup\"" || return 1
+  assert_contains "$env_body" "export TEEUP_CONFIG_DIR=$TEST_HOME/.config/teeup" || return 1
+  assert_contains "$env_body" "export TEEUP_STATE_DIR=$TEST_HOME/.local/state/teeup" || return 1
   assert_equals "$TEEUP_PATH/bin/teeup" "$(readlink "$TEST_HOME/.local/bin/teeup")" || return 1
+  cleanup_test_env
+}
+
+test_configure_quotes_a_path_with_shell_metacharacters() {
+  setup
+  export XDG_CONFIG_HOME="$TEST_HOME/we\`ird \$dir \"q\" \\b"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  local env_file out
+  env_file="$XDG_CONFIG_HOME/teeup/env"
+  assert_file_exists "$env_file" || return 1
+  # Passed as an argv element ($1), not interpolated into the script text: a
+  # backtick, dollar, double quote or backslash in the path must not be
+  # re-parsed as shell syntax here any more than it should be in the file
+  # capabilities/teeup-runtime/configure writes.
+  out="$(bash -c 'source "$1"; printf %s "$TEEUP_CONFIG_DIR"' _ "$env_file")"
+  assert_equals "$XDG_CONFIG_HOME/teeup" "$out" || return 1
+  out="$(bash -c 'source "$1"; printf %s "$TEEUP_PATH"' _ "$env_file")"
+  assert_equals "$TEEUP_PATH" "$out" || return 1
   cleanup_test_env
 }
 
@@ -79,6 +101,7 @@ test_configure_backs_up_a_regular_file_at_the_link() {
 echo "capabilities/teeup-runtime"
 run_test "install gets gum and jq" test_install_gets_gum_and_jq
 run_test "configure creates state, env and link" test_configure_creates_state_env_and_link
+run_test "configure quotes a path with shell metacharacters" test_configure_quotes_a_path_with_shell_metacharacters
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure backs up a regular file at the link" test_configure_backs_up_a_regular_file_at_the_link

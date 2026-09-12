@@ -1,7 +1,10 @@
 # ~/.zshrc - installed once by teeup; this copy is yours to edit.
 # Interactive shells. The thick layer lives in the teeup checkout, so teeup
 # upgrades improve it without touching this file.
-[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env" ] && . "${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env"
+# configure renders the line below to a %q-quoted absolute path, which is why
+# it carries no double quotes of its own; unrendered, it still works for the
+# common case of an unquoted $HOME/XDG_CONFIG_HOME with no special characters.
+[ -r ${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env ] && . ${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env
 [ -n "${TEEUP_PATH:-}" ] && [ -r "$TEEUP_PATH/capabilities/zsh/default/rc" ] &&
   . "$TEEUP_PATH/capabilities/zsh/default/rc"
 

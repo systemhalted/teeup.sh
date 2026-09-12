@@ -4,12 +4,14 @@
 # you edited and backs up a foreign one with a diff.
 #
 # The shipped files look up the env file via
-# ${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env, and nothing macOS reads before
-# ~/.zshenv ever sets XDG_CONFIG_HOME, so a non-default XDG_CONFIG_HOME (or a
-# TEEUP_CONFIG_DIR override) would leave a fresh shell unable to find it.
+# ${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env, unquoted (no double quotes
+# around the token), and nothing macOS reads before ~/.zshenv ever sets
+# XDG_CONFIG_HOME, so a non-default XDG_CONFIG_HOME (or a TEEUP_CONFIG_DIR
+# override) would leave a fresh shell unable to find it.
 # Render that token to the resolved, absolute env-file path at configure time
 # instead, the same way capabilities/git/configure renders ~/.config/git into
-# its include paths, so the installed files carry the real path.
+# its include paths, so the installed files carry the real path, already
+# %q-quoted so the token needs no surrounding double quotes of its own.
 # A bash substitution loop, not sed: $TEEUP_CONFIG_DIR can contain |, \ or &
 # (all sed replacement metacharacters).
 # bash 5.2+ treats & in a ${var//pat/repl} replacement as the matched text
@@ -22,10 +24,16 @@ shopt -u patsub_replacement 2>/dev/null || true
 zsh_home_dir="${ZDOTDIR:-$HOME}"
 [[ -d "$zsh_home_dir" ]] || run_cmd mkdir -p "$zsh_home_dir"
 
+# %q-escaped so a $, `, " or \ in TEEUP_CONFIG_DIR cannot break the rendered
+# home file: the shipped placeholder line below carries no double quotes of
+# its own around the token, so the %q form (backslash escapes or $'...',
+# both parsed the same way by zsh 5.9) has to supply all of the quoting.
+env_path_q="$(printf '%q' "$TEEUP_CONFIG_DIR/env")"
+
 for f in .zshenv .zprofile .zshrc; do
   rendered_home_file="$(mktemp)"
   while IFS= read -r line || [[ -n "$line" ]]; do
-    printf '%s\n' "${line//'${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env'/$TEEUP_CONFIG_DIR/env}"
+    printf '%s\n' "${line//'${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env'/$env_path_q}"
   done < "$TEEUP_CAP_DIR/home/$f" > "$rendered_home_file"
   copy_config_once "$rendered_home_file" "$zsh_home_dir/$f"
   rm -f "$rendered_home_file"

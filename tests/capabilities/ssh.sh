@@ -7,8 +7,17 @@ setup() {
   mock_macos_base
   mock_command ssh-add 0 ""
   # A keygen that actually leaves the two files behind, so the permission and
-  # idempotency steps have something to act on.
+  # idempotency steps have something to act on. `-y -f <key>` (the partial-pair
+  # repair path) prints a fake public key to stdout instead, matching real
+  # ssh-keygen -y, since the caller redirects that into place itself.
   mock_command_script ssh-keygen <<'EOF2'
+if [ "$1" = "-y" ]; then
+  shift
+  [ "$1" = "-f" ] && shift
+  [ -f "$1" ] || exit 1
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY rebuilt\n'
+  exit 0
+fi
 out=""
 while [ $# -gt 0 ]; do
   [ "$1" = "-f" ] && { shift; out="$1"; }
@@ -133,6 +142,72 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+test_configure_rebuilds_a_missing_public_half() {
+  setup
+  seed_answers ""
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'MINE-PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Rebuilding the missing public half" || return 1
+  assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" "rebuilt" || return 1
+  # The private half must be untouched: ssh-keygen was never asked to
+  # regenerate it, only to derive the public half (-y).
+  assert_equals "MINE-PRIVATE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "ssh-keygen -y -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  cleanup_test_env
+}
+
+test_configure_dry_run_rebuild_prints_the_command_and_writes_nothing() {
+  setup
+  seed_answers ""
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'MINE-PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Would execute:" || return 1
+  assert_contains "$out" "ssh-keygen -y -f" || return 1
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_personal.pub" ]] || { echo "pub written in dry run"; return 1; }
+  assert_equals "MINE-PRIVATE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
+  cleanup_test_env
+}
+
+test_configure_backs_up_a_pub_only_key_and_regenerates_the_pair() {
+  setup
+  seed_answers ""
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'ssh-ed25519 ORPHAN comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Backed up $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_equals "PRIVATE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
+  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" "AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY comment" || return 1
+  local backup="" f
+  for f in "$TEST_HOME"/.ssh/id_ed25519_personal.pub.teeup_backup_*; do
+    [[ -e "$f" ]] && backup="$f"
+  done
+  [[ -n "$backup" ]] || { echo "orphan pub key not backed up"; return 1; }
+  assert_contains "$(cat "$backup")" "ORPHAN" || return 1
+  cleanup_test_env
+}
+
+test_configure_dry_run_pub_only_backs_up_nothing_and_generates_nothing() {
+  setup
+  seed_answers ""
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'ssh-ed25519 ORPHAN comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Would back up" || return 1
+  assert_contains "$out" "Would execute: ssh-keygen -t ed25519" || return 1
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "private key written in dry run"; return 1; }
+  assert_equals "ssh-ed25519 ORPHAN comment" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" || return 1
+  cleanup_test_env
+}
+
 test_configure_twice_changes_nothing() {
   setup
   seed_answers "ada@corp.example"
@@ -162,5 +237,9 @@ run_test "configure installs the ssh config with both hosts" test_configure_inst
 run_test "permissions are tightened" test_permissions_are_tightened
 run_test "existing key is not regenerated" test_existing_key_is_not_regenerated
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure rebuilds a missing public half" test_configure_rebuilds_a_missing_public_half
+run_test "configure dry run rebuild prints the command and writes nothing" test_configure_dry_run_rebuild_prints_the_command_and_writes_nothing
+run_test "configure backs up a pub-only key and regenerates the pair" test_configure_backs_up_a_pub_only_key_and_regenerates_the_pair
+run_test "configure dry run pub-only backs up nothing and generates nothing" test_configure_dry_run_pub_only_backs_up_nothing_and_generates_nothing
 run_test "configure twice changes nothing" test_configure_twice_changes_nothing
 print_summary
