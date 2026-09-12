@@ -52,9 +52,27 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+test_configure_backs_up_a_regular_file_at_the_link() {
+  setup
+  mkdir -p "$TEST_HOME/.local/bin"
+  printf 'mine\n' > "$TEST_HOME/.local/bin/teeup"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure teeup-runtime 2>&1)"
+  assert_contains "$out" "Replacing a regular file" || return 1
+  assert_equals "$TEEUP_PATH/bin/teeup" "$(readlink "$TEST_HOME/.local/bin/teeup")" || return 1
+  # A glob loop, not `ls | grep`: shellcheck rejects the latter (SC2010).
+  local backup="" f
+  for f in "$TEST_HOME"/.local/bin/teeup.teeup_backup_*; do
+    [[ -e "$f" ]] && backup="$f"
+  done
+  [[ -n "$backup" ]] || { echo "no backup kept"; return 1; }
+  cleanup_test_env
+}
+
 echo "capabilities/teeup-runtime"
 run_test "install gets gum and jq" test_install_gets_gum_and_jq
 run_test "configure creates state, env and link" test_configure_creates_state_env_and_link
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure backs up a regular file at the link" test_configure_backs_up_a_regular_file_at_the_link
 print_summary

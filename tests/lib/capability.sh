@@ -125,6 +125,16 @@ test_check_reports_problems() {
   cleanup_test_env
 }
 
+test_cap_order_fails_on_unknown_requires() {
+  setup
+  make_cap orphan core "ghost"
+  local rc=0 out
+  out="$( (cap_order orphan) 2>&1 )" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Unknown capability: ghost" || return 1
+  cleanup_test_env
+}
+
 echo "lib/capability.sh"
 run_test "list and exists" test_list_and_exists
 run_test "meta get with default" test_meta_get_with_default
@@ -136,4 +146,5 @@ run_test "run missing verb fails clearly" test_run_missing_verb_fails_clearly
 run_test "skipped reads TEEUP_SKIP" test_skipped_reads_teeup_skip
 run_test "check passes on valid fixture" test_check_passes_on_valid_fixture
 run_test "check reports problems" test_check_reports_problems
+run_test "cap_order fails on unknown requires" test_cap_order_fails_on_unknown_requires
 print_summary

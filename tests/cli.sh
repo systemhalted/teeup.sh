@@ -127,6 +127,26 @@ test_dry_run_env_reaches_scripts() {
   cleanup_test_env
 }
 
+test_configure_refuses_skipped_capability() {
+  setup
+  local rc=0 out
+  out="$(TEEUP_SKIP=alpha "$TEEUP" configure alpha 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "alpha is skipped on this machine (TEEUP_SKIP)" || return 1
+  cleanup_test_env
+}
+
+test_list_tier_without_a_value_errors() {
+  setup
+  local rc=0 out
+  out="$("$TEEUP" list --tier 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Usage: teeup list [--tier core|daily|lazy]" || return 1
+  out="$("$TEEUP" list --tier nope 2>&1)" || rc=$?
+  assert_contains "$out" "Unknown tier 'nope'" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
@@ -139,4 +159,6 @@ run_test "unknown verb exits 2" test_unknown_verb_exits_2
 run_test "help lists verbs" test_help_lists_verbs
 run_test "TEEUP_PATH derives from location" test_teeup_path_derives_from_location
 run_test "dry run env reaches scripts" test_dry_run_env_reaches_scripts
+run_test "configure refuses skipped capability" test_configure_refuses_skipped_capability
+run_test "list --tier without a value errors" test_list_tier_without_a_value_errors
 print_summary

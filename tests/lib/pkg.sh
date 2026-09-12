@@ -147,6 +147,16 @@ test_run_privileged_prefixes_sudo() {
   cleanup_test_env
 }
 
+test_cask_install_dies_on_invalid_backend() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=apt
+  local rc=0 out
+  out="$( (cask_install wezterm) 2>&1 )" || rc=$?
+  assert_failure "$rc" "invalid backend must fail the caller" || return 1
+  assert_contains "$out" "Unknown TEEUP_PACKAGE_MANAGER 'apt'" || return 1
+  cleanup_test_env
+}
+
 echo "lib/pkg.sh"
 run_test "backend defaults to homebrew on modern macOS" test_backend_defaults_to_homebrew_on_modern_macos
 run_test "backend is macports on macOS 12" test_backend_is_macports_on_macos_12
@@ -162,4 +172,5 @@ run_test "cask_install dry run" test_cask_install_dry_run
 run_test "backend prepare installs homebrew" test_backend_prepare_installs_homebrew_when_missing
 run_test "backend prepare fails when installer fails" test_backend_prepare_fails_when_installer_fails
 run_test "run_privileged prefixes sudo" test_run_privileged_prefixes_sudo
+run_test "cask_install dies on invalid backend" test_cask_install_dies_on_invalid_backend
 print_summary

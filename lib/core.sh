@@ -71,6 +71,10 @@ is_macos()    { [[ "$(uname -s)" == "Darwin" ]]; }
 arch()        { uname -m; }
 macos_major() { sw_vers -productVersion 2>/dev/null | awk -F. '{print $1}'; }
 
+# The directory capabilities/<cap>/config/ maps onto. TEEUP_CONFIG_DIR is
+# teeup's own subdirectory of this one.
+user_config_dir() { printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}"; }
+
 format_duration() {
   local total="$1" hours minutes seconds
   hours=$((total / 3600))

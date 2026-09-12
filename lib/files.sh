@@ -140,7 +140,7 @@ refresh_config() {
     printf "%b %s\n" "🔍" "[DRY-RUN] Would reset $dest to $src"
     return 0
   fi
-  backup="$(backup_target "$dest" 2>/dev/null)"
+  backup="$(backup_target "$dest")"
   cp "$src" "$dest"
   stock_record "$dest" "$(file_sha "$src")"
   if cmp -s "$dest" "$backup"; then

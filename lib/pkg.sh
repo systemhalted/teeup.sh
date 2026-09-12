@@ -152,6 +152,7 @@ _pkg_install_candidate() {
 # Skips when <command> is already on PATH or any candidate is installed.
 # Tries each candidate in order; warns and returns 1 when none installs.
 pkg_install() {
+  _pkg_backend_resolve
   local pkg="$1" command_name="${2:-}" candidate
   if [[ -n "$command_name" ]] && have "$command_name"; then
     log "Already available on PATH: $command_name (skipping install for $pkg)"
@@ -180,6 +181,7 @@ cask_installed() { have brew && brew list --cask "$1" >/dev/null 2>&1; }
 # On MacPorts machines GUI apps are skipped with a note rather than failing,
 # so a capability that is mostly CLI still installs its CLI half.
 cask_install() {
+  _pkg_backend_resolve
   local cask="$1"
   if ! casks_supported; then
     warn "Casks are not available with MacPorts; install $cask by hand."

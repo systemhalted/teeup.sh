@@ -56,6 +56,7 @@ cap_order() {
 _cap_visit() {
   local c="$1" r
   case "$_TEEUP_CAP_VISITED" in *" $c "*) return 0 ;; esac
+  cap_exists "$c" || die "Unknown capability: $c"
   _TEEUP_CAP_VISITED="$_TEEUP_CAP_VISITED$c "
   for r in $(cap_meta_get "$c" requires); do _cap_visit "$r"; done
   printf '%s\n' "$c"
