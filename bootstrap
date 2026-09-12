@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# bootstrap - set up a fresh Mac with teeup.
+#
+#   git clone <repo> ~/.local/share/teeup && cd ~/.local/share/teeup && ./bootstrap
+#
+# bash 3.2, no dependencies beyond a fresh macOS. Safe to re-run: every step
+# is idempotent, so re-running is also the repair path.
+set -eu
+
+TEEUP_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export TEEUP_PATH
+# shellcheck source=lib/all.sh
+source "$TEEUP_PATH/lib/all.sh"
+
+RECONFIGURE=false
+SKIP_DAILY=false
+
+usage() {
+  cat <<'USAGE'
+Usage: ./bootstrap [--dry-run] [--reconfigure] [--skip-daily]
+
+  --dry-run      print every command instead of running it
+  --reconfigure  ask the setup questions again even if answers exist
+  --skip-daily   install only the core tier this run
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true ;;
+    --reconfigure) RECONFIGURE=true ;;
+    --skip-daily) SKIP_DAILY=true ;;
+    -h|--help) usage; exit 0 ;;
+    *) err "Unknown option: $1"; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+export DRY_RUN
+
+if [[ "$DRY_RUN" != "true" ]]; then
+  TEEUP_LOG_FILE="${TEEUP_LOG_FILE:-$TEEUP_STATE_DIR/logs/bootstrap.log}"
+fi
+export TEEUP_LOG_FILE
+
+started="$(date +%s)"
+
+# --- 0. preflight -----------------------------------------------------------
+is_macos || die "teeup targets macOS only (uname -s reports $(uname -s))."
+[[ "$(id -u)" -ne 0 ]] || die "Run bootstrap as your user, not root."
+if [[ "$DRY_RUN" == "true" ]]; then
+  log "Dry run: nothing will be changed."
+else
+  sudo -v || die "sudo is required for the package manager and system settings."
+  # shellcheck disable=SC2064
+  ( while true; do sudo -n true; sleep 60; done ) 2>/dev/null &
+  SUDO_KEEPALIVE_PID=$!
+  trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null' EXIT
+fi
+log "macOS $(sw_vers -productVersion 2>/dev/null || echo '?') on $(arch), teeup at $TEEUP_PATH"
+
+# --- helpers ----------------------------------------------------------------
+run_capability() {
+  # run_capability <name> -> install then configure, then mark done.
+  local name="$1"
+  cap_run "$name" install || return 1
+  cap_run "$name" configure || return 1
+  state_done mark "cap-$name"
+}
+
+run_tier() {
+  # run_tier <core|daily>. Core failures abort; daily failures warn.
+  local tier="$1" name
+  for name in $(cap_tier_list "$tier"); do
+    if ! cap_exists "$name"; then
+      warn "$name is listed in $tier.list but not implemented yet; skipping."
+      continue
+    fi
+    if cap_skipped "$name"; then
+      warn "Skipping $name (TEEUP_SKIP)"
+      continue
+    fi
+    if ! run_capability "$name"; then
+      if [[ "$tier" == "core" ]]; then
+        die "Core capability $name failed. See ${TEEUP_LOG_FILE:-the output above}, fix the cause, and re-run ./bootstrap."
+      fi
+      warn "Daily capability $name failed; continuing. Re-run with: teeup install $name"
+    fi
+  done
+}
+
+wizard() {
+  local name email work_email pm theme daily
+  echo ""
+  echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: teeup config set"
+  echo ""
+  name="$(ui_input "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")")"
+  email="$(ui_input "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)")"
+  work_email="$(ui_input "Work email (git identity under ~/Work, empty for none)" "$(answers_get TEEUP_WORK_EMAIL)")"
+  pm="$(ui_choose "Package manager" "$(pkg_backend)" "$(if [[ "$(pkg_backend)" == homebrew ]]; then echo macports; else echo homebrew; fi)")"
+  theme="$(ui_choose "Theme (applied once the theme capability lands)" catppuccin tokyo-night gruvbox nord)"
+  if ui_confirm "Install the daily set too (Emacs, Neovim, Zed, VS Code, Chrome, Obsidian)?" yes; then
+    daily=yes
+  else
+    daily=no
+  fi
+  answers_set TEEUP_NAME "$name"
+  answers_set TEEUP_EMAIL "$email"
+  answers_set TEEUP_WORK_EMAIL "$work_email"
+  answers_set TEEUP_PACKAGE_MANAGER "$pm"
+  answers_set TEEUP_THEME "$theme"
+  answers_set TEEUP_DAILY "$daily"
+  unset TEEUP_PKG_BACKEND
+  answers_load
+}
+
+# --- 1. Xcode Command Line Tools, Rosetta ------------------------------------
+cap_run xcode-clt install || die "Xcode Command Line Tools are required. Complete the installer and re-run ./bootstrap."
+
+# --- 2. package manager -------------------------------------------------------
+answers_load
+run_capability package-manager || die "Core capability package-manager failed. Fix the cause and re-run ./bootstrap."
+pkg_backend_path
+
+# --- 3. teeup runtime (env file, command link, gum, jq) -----------------------
+run_capability teeup-runtime || die "Core capability teeup-runtime failed. Fix the cause and re-run ./bootstrap."
+
+# --- 4. answers ---------------------------------------------------------------
+if answers_exist && [[ "$RECONFIGURE" != "true" ]]; then
+  log "Using existing answers from $(answers_file) (pass --reconfigure to change them)."
+else
+  wizard
+fi
+
+# --- 5 and 6. tiers -----------------------------------------------------------
+run_tier core
+if [[ "$SKIP_DAILY" == "true" ]]; then
+  log "Skipping the daily tier (--skip-daily)."
+elif [[ "$(answers_get TEEUP_DAILY yes)" == "no" ]]; then
+  log "Skipping the daily tier (TEEUP_DAILY=no)."
+else
+  run_tier daily
+fi
+
+# --- 7. theme and state -------------------------------------------------------
+if cap_exists theme; then
+  cap_run theme configure || warn "Theme configuration failed; run: teeup theme set $(answers_get TEEUP_THEME)"
+fi
+if ! state_done check bootstrap; then
+  # A fresh install starts with every shipped migration already applied.
+  for m in "$TEEUP_PATH"/migrations/*.sh; do
+    [[ -f "$m" ]] || continue
+    state_migration_mark "$(basename "$m")"
+  done
+fi
+state_done mark bootstrap
+
+# --- 8. summary ---------------------------------------------------------------
+echo ""
+ok "Bootstrap finished in $(format_duration $(( $(date +%s) - started )))."
+echo "Open a new terminal (or run: exec zsh) and try: teeup status"
