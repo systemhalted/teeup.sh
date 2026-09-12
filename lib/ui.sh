@@ -47,7 +47,7 @@ ui_confirm() {
 ui_choose() {
   local prompt="$1"
   shift
-  local answer i n=$#
+  local answer i opt n=$#
   if _ui_gum; then
     gum choose --header "$prompt" "$@"
     return $?
@@ -64,10 +64,10 @@ ui_choose() {
     printf '%s\n' "$1"
     return 0
   fi
-  if [[ "$answer" =~ ^[0-9]+$ ]] && [[ "$answer" -ge 1 && "$answer" -le "$n" ]]; then
+  if [[ "$answer" =~ ^[0-9]+$ ]] && (( 10#$answer >= 1 && 10#$answer <= n )); then
     i=1
     for opt in "$@"; do
-      if [[ "$i" -eq "$answer" ]]; then printf '%s\n' "$opt"; return 0; fi
+      if (( i == 10#$answer )); then printf '%s\n' "$opt"; return 0; fi
       i=$((i + 1))
     done
   fi
