@@ -23,7 +23,7 @@ EOF2
   mock_command dscl 0 "UserShell: /bin/zsh"
   mock_command chsh 0 ""
   mock_command defaults 1 ""
-  export TEEUP_TEST_MISSING="brew gum jq starship"
+  export TEEUP_TEST_MISSING="brew gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg"
   export TEEUP_NO_GUM=1
   export DRY_RUN=true
 }

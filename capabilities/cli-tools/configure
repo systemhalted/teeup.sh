@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# bat is the only one of these with a config file worth shipping. The theme is
+# deliberately absent from it: bat reads $BAT_THEME, which capabilities/zsh
+# exports and `teeup theme set` overrides, and a --theme line here would win
+# over both.
+copy_config_once "$TEEUP_CAP_DIR/config/bat/config" "$(user_config_dir)/bat/config"

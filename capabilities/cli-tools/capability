@@ -1,0 +1,9 @@
+summary="The modern CLI set: ripgrep, fd, fzf, bat, eza, zoxide and friends"
+group=shell
+tier=core
+requires="package-manager"
+provides=""
+packages="ripgrep fd fzf bat eza zoxide jq yq btop tree wget curl gnupg tldr dust"
+casks=""
+apps=""
+interactive=false
