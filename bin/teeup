@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# teeup - dispatcher for the teeup macOS environment.
+# Usage: teeup <verb> [capability] [args]
+set -eu
+
+# Resolve the checkout even when invoked through the ~/.local/bin symlink.
+# macOS readlink has no -f, so follow links by hand.
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
+TEEUP_PATH="${TEEUP_PATH:-$(cd "$(dirname "$_self")/.." && pwd)}"
+export TEEUP_PATH
+unset _self _dir
+
+# shellcheck source=lib/all.sh
+source "$TEEUP_PATH/lib/all.sh"
+answers_load
+
+usage() {
+  cat <<'USAGE'
+teeup - your Mac, as a distribution
+
+  teeup install <capability>     install and configure it (and what it requires)
+  teeup configure <capability>   re-run only its configuration
+  teeup list [--tier core|daily|lazy]
+  teeup has <capability>         exit 0 when installed (for scripts and menus)
+  teeup status                   package manager, answers, installed capabilities
+  teeup commands --check         lint capability metadata
+  teeup version
+  teeup help
+USAGE
+}
+
+cmd_install() {
+  local target="${1:-}" c
+  [[ -n "$target" ]] || die "Usage: teeup install <capability>"
+  cap_exists "$target" || die "Unknown capability: $target"
+  if cap_skipped "$target"; then
+    die "$target is skipped on this machine (TEEUP_SKIP)"
+  fi
+  for c in $(cap_order "$target"); do
+    if cap_skipped "$c"; then
+      warn "Skipping $c (TEEUP_SKIP)"
+      continue
+    fi
+    cap_run "$c" install
+    cap_run "$c" configure
+    state_done mark "cap-$c"
+  done
+}
+
+cmd_configure() {
+  local target="${1:-}"
+  [[ -n "$target" ]] || die "Usage: teeup configure <capability>"
+  cap_exists "$target" || die "Unknown capability: $target"
+  cap_run "$target" configure
+}
+
+cmd_list() {
+  local tier_filter="" name tier
+  if [[ "${1:-}" == "--tier" ]]; then
+    tier_filter="${2:-}"
+  fi
+  for name in $(cap_list); do
+    tier="$(cap_meta_get "$name" tier)"
+    [[ -z "$tier_filter" || "$tier" == "$tier_filter" ]] || continue
+    printf '%-18s %-6s %s\n' "$name" "$tier" "$(cap_meta_get "$name" summary)"
+  done
+}
+
+cmd_has() {
+  [[ -n "${1:-}" ]] || die "Usage: teeup has <capability>"
+  state_done check "cap-$1"
+}
+
+cmd_status() {
+  local total=0 installed=0 name
+  echo "teeup $(cat "$TEEUP_PATH/version" 2>/dev/null || echo dev) at $TEEUP_PATH"
+  echo "Package manager: $(pkg_backend)"
+  if answers_exist; then echo "Answers: $(answers_file)"; else echo "Answers: missing (run ./bootstrap)"; fi
+  for name in $(cap_list); do
+    total=$((total + 1))
+    if state_done check "cap-$name"; then
+      installed=$((installed + 1))
+      printf '  %-18s installed\n' "$name"
+    fi
+  done
+  echo "Installed: $installed of $total capabilities"
+}
+
+cmd_commands() {
+  case "${1:-}" in
+    --check) cap_check ;;
+    *) cap_list ;;
+  esac
+}
+
+verb="${1:-help}"
+[[ $# -gt 0 ]] && shift
+case "$verb" in
+  install) cmd_install "$@" ;;
+  configure) cmd_configure "$@" ;;
+  list) cmd_list "$@" ;;
+  has) cmd_has "$@" ;;
+  status) cmd_status ;;
+  commands) cmd_commands "$@" ;;
+  version) cat "$TEEUP_PATH/version" 2>/dev/null || echo dev ;;
+  help|-h|--help) usage ;;
+  *)
+    err "Unknown verb: $verb"
+    usage >&2
+    exit 2
+    ;;
+esac
