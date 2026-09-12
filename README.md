@@ -12,10 +12,26 @@
 </p>
 
 > **Redesign in progress.** teeup is being rebuilt as a modular, macOS-only
-> environment distribution. The design is in
-> `docs/superpowers/specs/2026-09-11-omarchy-inspired-redesign-design.md`.
-> The previous installer still works and lives under `legacy/`:
-> `./legacy/teeup.sh --help`.
+> environment distribution (design:
+> `docs/superpowers/specs/2026-09-11-omarchy-inspired-redesign-design.md`).
+> The new runtime lives in `bootstrap`, `bin/teeup`, `lib/` and
+> `capabilities/`. The previous installer still works from `legacy/`.
+
+## New runtime (preview)
+
+```bash
+git clone https://github.com/systemhalted/teeup.sh ~/.local/share/teeup
+cd ~/.local/share/teeup
+./bootstrap --dry-run     # preview everything it would do
+./bootstrap               # run it
+teeup status              # what is installed
+teeup list                # every capability and its tier
+teeup install <name>      # install and configure one capability
+```
+
+Capabilities implemented so far: `xcode-clt`, `package-manager`,
+`teeup-runtime`, `dev-dirs`. The rest arrive phase by phase; `teeup list`
+is always the source of truth.
 
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
