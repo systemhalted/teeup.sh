@@ -91,7 +91,7 @@ run_tier() {
 wizard() {
   local name email work_email pm theme daily
   echo ""
-  echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: teeup config set"
+  echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
   name="$(ui_input "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")")"
   email="$(ui_input "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)")"
@@ -157,4 +157,4 @@ state_done mark bootstrap
 # --- 8. summary ---------------------------------------------------------------
 echo ""
 ok "Bootstrap finished in $(format_duration $(( $(date +%s) - started )))."
-echo "Open a new terminal (or run: exec zsh) and try: teeup status"
+echo "Try: ~/.local/bin/teeup status   (the zsh capability puts ~/.local/bin on PATH for new terminals)"
