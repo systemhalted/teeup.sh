@@ -113,6 +113,12 @@ test_help_lists_verbs() {
   cleanup_test_env
 }
 
+test_teeup_path_derives_from_location() {
+  setup
+  assert_equals "0.1.0-dev" "$(TEEUP_PATH=/nonexistent "$TEEUP" version)" || return 1
+  cleanup_test_env
+}
+
 test_dry_run_env_reaches_scripts() {
   setup
   printf '#!/usr/bin/env bash\nrun_cmd touch "$HOME/made"\n' > "$TEEUP_CAPS_DIR/alpha/install"
@@ -131,5 +137,6 @@ run_test "status reports backend and installed" test_status_reports_backend_and_
 run_test "commands --check delegates" test_commands_check_delegates_to_cap_check
 run_test "unknown verb exits 2" test_unknown_verb_exits_2
 run_test "help lists verbs" test_help_lists_verbs
+run_test "TEEUP_PATH derives from location" test_teeup_path_derives_from_location
 run_test "dry run env reaches scripts" test_dry_run_env_reaches_scripts
 print_summary

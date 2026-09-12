@@ -99,7 +99,11 @@ pkg_backend_prepare() {
         ok "Homebrew already installed."
       else
         log "Installing Homebrew..."
-        run_cmd bash -c 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+        run_cmd bash -c 'script="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || exit 1; NONINTERACTIVE=1 /bin/bash -c "$script"' || { err "Homebrew installation failed."; return 1; }
+        if [[ "$DRY_RUN" != "true" ]] && ! pkg_backend_installed; then
+          err "Homebrew installer finished but brew is not at $(pkg_prefix)/bin/brew."
+          return 1
+        fi
       fi
       pkg_backend_path
       run_cmd brew update || warn "brew update returned non-zero."

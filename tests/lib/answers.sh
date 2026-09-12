@@ -65,6 +65,15 @@ test_answers_exist() {
   cleanup_test_env
 }
 
+test_answers_exist_needs_wizard_key() {
+  setup
+  answers_set TEEUP_PACKAGE_MANAGER homebrew
+  answers_exist && { echo "should not exist without TEEUP_NAME"; return 1; }
+  answers_set TEEUP_NAME x
+  answers_exist || { echo "should exist once TEEUP_NAME is set"; return 1; }
+  cleanup_test_env
+}
+
 test_dry_run_set_exports_without_writing() {
   setup
   # shellcheck disable=SC2034
@@ -82,5 +91,6 @@ run_test "get default when unset" test_get_default_when_unset
 run_test "machine file wins" test_machine_file_wins
 run_test "values with spaces and quotes survive" test_values_with_spaces_and_quotes_survive
 run_test "answers_exist" test_answers_exist
+run_test "answers_exist needs wizard key" test_answers_exist_needs_wizard_key
 run_test "dry run set exports without writing" test_dry_run_set_exports_without_writing
 print_summary

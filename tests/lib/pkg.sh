@@ -127,6 +127,18 @@ test_backend_prepare_installs_homebrew_when_missing() {
   cleanup_test_env
 }
 
+test_backend_prepare_fails_when_installer_fails() {
+  setup
+  export TEEUP_TEST_MISSING=brew
+  mock_command curl 1 ""
+  DRY_RUN=false
+  local rc=0 out
+  out="$(pkg_backend_prepare 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Homebrew installation failed" || return 1
+  cleanup_test_env
+}
+
 test_run_privileged_prefixes_sudo() {
   setup
   # shellcheck disable=SC2034
@@ -148,5 +160,6 @@ run_test "candidates map bash-completion" test_candidates_map_bash_completion_on
 run_test "cask_install skipped on macports" test_cask_install_skipped_on_macports
 run_test "cask_install dry run" test_cask_install_dry_run
 run_test "backend prepare installs homebrew" test_backend_prepare_installs_homebrew_when_missing
+run_test "backend prepare fails when installer fails" test_backend_prepare_fails_when_installer_fails
 run_test "run_privileged prefixes sudo" test_run_privileged_prefixes_sudo
 print_summary

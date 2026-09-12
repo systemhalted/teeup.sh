@@ -86,6 +86,16 @@ test_existing_answers_skip_wizard() {
   cleanup_test_env
 }
 
+test_wizard_runs_when_only_backend_recorded() {
+  setup
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEST_HOME/.config/teeup/answers"
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_contains "$out" "Your full name" || return 1
+  cleanup_test_env
+}
+
 test_reconfigure_reruns_wizard() {
   setup
   mkdir -p "$TEST_HOME/.config/teeup"
@@ -140,6 +150,7 @@ run_test "unknown flag exits 2" test_unknown_flag_exits_2
 run_test "dry run walks core tier in order" test_dry_run_walks_core_tier_in_order
 run_test "dry run touches nothing" test_dry_run_touches_nothing
 run_test "existing answers skip wizard" test_existing_answers_skip_wizard
+run_test "wizard runs when only backend recorded" test_wizard_runs_when_only_backend_recorded
 run_test "--reconfigure reruns wizard" test_reconfigure_reruns_wizard
 run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tier
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
