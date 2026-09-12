@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Pinned before anything else runs: a GH_HOST left over in the caller's
+# environment (set for some other gh workflow) would silently redirect every
+# unscoped call below (auth login, ssh-key list, ssh-key add) to that other
+# host instead of github.com.
+export GH_HOST=github.com
+
 if ! have gh; then
   warn "gh is not installed; skipping the GitHub setup. Re-run: teeup install github"
   exit 0
@@ -17,7 +23,7 @@ if status_out="$(gh auth status -h github.com 2>&1)"; then
   fi
 else
   log "Signing in to GitHub. A browser window opens; approve the SSH key scopes."
-  if ! run_cmd gh auth login --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key; then
+  if ! run_cmd gh auth login --hostname github.com --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key; then
     warn "gh auth login did not complete. Re-run: teeup configure github"
     exit 0
   fi
@@ -27,17 +33,22 @@ run_cmd gh config set git_protocol ssh --host github.com || warn "Could not set 
 
 # One upload per identity, twice: an authentication key for pushing and a
 # signing key for the SSH commit signatures the git capability turns on.
-# `gh ssh-key list` prints a type column (authentication/signing), so the
-# "already uploaded" check must match on body AND type; a body-only match
-# would let a failed signing upload hide forever behind a successful
-# authentication upload of the same key.
+# `gh ssh-key list` prints TITLE, KEY, TYPE(authentication|signing), ADDED as
+# tab-separated columns, so the "already uploaded" check must parse the KEY
+# and TYPE columns specifically: a substring match over the whole line would
+# let a title like "laptop signing key" fool an authentication key into
+# looking like an already-uploaded signing key.
 host="$(hostname -s 2>/dev/null || hostname)"
 listed="$(gh ssh-key list 2>/dev/null || true)"
 _github_key_uploaded() {
-  local body="$1" type="$2" line
+  local body="$1" type="$2" line line_key line_type
   while IFS= read -r line; do
-    [[ "$line" == *"$body"* ]] || continue
-    [[ "$line" == *"$type"* ]] && return 0
+    [[ -n "$line" ]] || continue
+    # The key body is the column starting with "ssh-", never the title. TYPE
+    # is the second-to-last column (ADDED is last).
+    line_key="$(awk -F'\t' '{ for (i = 1; i <= NF; i++) if (index($i, "ssh-") == 1) { print $i; exit } }' <<<"$line")"
+    line_type="$(awk -F'\t' '{print $(NF-1)}' <<<"$line")"
+    [[ -n "$line_key" && "$line_key" == *"$body"* && "$line_type" == "$type" ]] && return 0
   done <<<"$listed"
   return 1
 }

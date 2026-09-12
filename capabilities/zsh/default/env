@@ -62,6 +62,15 @@ _teeup_answers="${XDG_CONFIG_HOME:-$HOME/.config}/teeup/answers"
 [ -r "$_teeup_answers" ] && . "$_teeup_answers"
 unset _teeup_answers
 
+# The machine file overrides the answers file (answers_load in lib/answers.sh
+# sources it last, for the same reason): it encodes hard constraints such as
+# the package manager, and the CLI and this shell layer must agree on which
+# backend is in effect. `hostname -s` matches machine_file()'s lookup, with
+# the same fallback to a bare `hostname` for a `-s` that is not supported.
+_teeup_machine="$TEEUP_PATH/machines/$(hostname -s 2>/dev/null || hostname).conf"
+[ -r "$_teeup_machine" ] && . "$_teeup_machine"
+unset _teeup_machine
+
 # No answer on record (a bare shell before the wizard ever ran, or an answers
 # file that predates this key) falls back to the old Darwin-version heuristic:
 # macOS 12 and older gets MacPorts, since Homebrew dropped support there.
