@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# The three home files are thin: they source teeup's default layer and leave
+# room underneath for your own lines. copy_config_once never overwrites a file
+# you edited and backs up a foreign one with a diff.
+for f in .zshenv .zprofile .zshrc; do
+  copy_config_once "$TEEUP_CAP_DIR/home/$f" "$HOME/$f"
+done
+
+# The documented home for machine-specific and personal lines, shipped as a
+# comment-only stub so ~/.zshrc can source it unconditionally.
+copy_config_once "$TEEUP_CAP_DIR/config/zsh/local.zsh" "$(user_config_dir)/zsh/local.zsh"
+
+log "Open a new terminal, or run: exec zsh"

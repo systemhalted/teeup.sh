@@ -1,0 +1,110 @@
+# capabilities/zsh/default/rc - interactive zsh, sourced by ~/.zshrc.
+# teeup owns this file. Order matters: environment, then appearance, history
+# and completion, then plugins (syntax highlighting hooks every widget, so it
+# goes last), then teeup's aliases and functions, then tool activation.
+
+: "${TEEUP_PATH:=$HOME/.local/share/teeup}"
+_teeup_zsh="$TEEUP_PATH/capabilities/zsh/default"
+
+# Idempotent, so an interactive shell started from a stripped environment
+# still gets the full PATH.
+[ -r "$_teeup_zsh/env" ] && . "$_teeup_zsh/env"
+
+# --- appearance and the generated theme environment --------------------------
+# TEEUP_APPEARANCE is the contract the theme system reads: exactly "dark" or
+# "light". `defaults read -g AppleInterfaceStyle` exits 1 in light mode. The
+# guard means a child shell inherits the value instead of forking again.
+if [ -z "${TEEUP_APPEARANCE:-}" ]; then
+  if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" = "Dark" ]; then
+    TEEUP_APPEARANCE=dark
+  else
+    TEEUP_APPEARANCE=light
+  fi
+  export TEEUP_APPEARANCE
+fi
+# Written by `teeup theme set` (capabilities/theme); absent until that lands.
+# Sourced after BAT_THEME's default so the generated value wins.
+if [ -r "$TEEUP_STATE_DIR/current/theme/$TEEUP_APPEARANCE/env.sh" ]; then
+  . "$TEEUP_STATE_DIR/current/theme/$TEEUP_APPEARANCE/env.sh"
+fi
+
+# --- history -----------------------------------------------------------------
+HISTFILE="${HISTFILE:-$HOME/.zsh_history}"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt APPEND_HISTORY INC_APPEND_HISTORY SHARE_HISTORY
+setopt HIST_IGNORE_ALL_DUPS HIST_IGNORE_SPACE HIST_REDUCE_BLANKS
+setopt AUTO_CD EXTENDED_GLOB INTERACTIVE_COMMENTS NO_BEEP
+
+# --- completion --------------------------------------------------------------
+# Site functions from whichever package manager is installed.
+for _dir in /opt/local/share/zsh/site-functions /opt/local/share/zsh-completions \
+            "${HOMEBREW_PREFIX:-/opt/homebrew}/share/zsh/site-functions" \
+            "${HOMEBREW_PREFIX:-/opt/homebrew}/share/zsh-completions" \
+            /usr/local/share/zsh/site-functions /usr/local/share/zsh-completions; do
+  [ -d "$_dir" ] && FPATH="$_dir:$FPATH"
+done
+unset _dir
+
+autoload -Uz compinit
+# The full compinit, with its compaudit security scan, at most once a day;
+# the rest of the time trust the dump, which is far faster. The glob has to
+# run in an array assignment: zsh does no filename generation inside [[ ]], so
+# the tempting `[[ -n …(#qN…) ]]` is always true and the fast path dies.
+# (#qN.mh-24) = exists, modified less than 24 hours ago.
+_teeup_dump=("${ZDOTDIR:-$HOME}"/.zcompdump(#qN.mh-24))
+if (( ${#_teeup_dump} )); then
+  compinit -C
+else
+  compinit -i
+fi
+unset _teeup_dump
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
+
+# --- plugins -----------------------------------------------------------------
+# Source the first readable candidate: MacPorts, Homebrew on either prefix, or
+# a manual checkout under ~/.local/share.
+_teeup_source_first() {
+  local f
+  for f in "$@"; do
+    if [ -r "$f" ]; then
+      . "$f"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_teeup_source_first \
+  /opt/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh \
+  /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh \
+  /usr/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh \
+  "$HOME/.local/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+
+# Syntax highlighting wraps every widget defined so far, so it goes last.
+_teeup_source_first \
+  /opt/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh \
+  /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh \
+  /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh \
+  "$HOME/.local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+
+unset -f _teeup_source_first
+
+# --- teeup's own shell surface ----------------------------------------------
+[ -r "$_teeup_zsh/aliases" ] && . "$_teeup_zsh/aliases"
+[ -r "$_teeup_zsh/functions" ] && . "$_teeup_zsh/functions"
+# teeup-env, shipped by the secrets capability (spec section 7).
+[ -r "$TEEUP_PATH/capabilities/secrets/default/functions.zsh" ] &&
+  . "$TEEUP_PATH/capabilities/secrets/default/functions.zsh"
+[ -r "$_teeup_zsh/init" ] && . "$_teeup_zsh/init"
+
+# --- terminal title ----------------------------------------------------------
+# The directory while idle, "directory — command" while a command runs.
+autoload -Uz add-zsh-hook
+_teeup_title_idle() { print -Pn '\e]2;%~\a' }
+_teeup_title_run()  { print -Pn '\e]2;%~ — '"${1%% *}"'\a' }
+add-zsh-hook precmd _teeup_title_idle
+add-zsh-hook preexec _teeup_title_run
+
+unset _teeup_zsh

@@ -1,0 +1,31 @@
+# capabilities/zsh/default/init - tool activation, last in the rc chain.
+# Every block is guarded: on a machine without the tool the shell pays nothing
+# and prints nothing.
+
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate zsh)"
+  # mise rewrites PATH per directory, so command hashing has to be off.
+  setopt NO_HASH_CMDS
+fi
+
+if command -v starship >/dev/null 2>&1 && [[ "${TERM:-}" != "dumb" ]]; then
+  eval "$(starship init zsh)"
+fi
+
+if command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init zsh)"
+fi
+
+if command -v fzf >/dev/null 2>&1; then
+  # fzf 0.48 and newer ship their integration in the binary; older builds
+  # shipped shell files next to the install prefix.
+  if fzf --zsh >/dev/null 2>&1; then
+    eval "$(fzf --zsh)"
+  else
+    for _f in /opt/homebrew/opt/fzf/shell /usr/local/opt/fzf/shell /opt/local/share/fzf/shell; do
+      [ -r "$_f/completion.zsh" ] && . "$_f/completion.zsh"
+      [ -r "$_f/key-bindings.zsh" ] && . "$_f/key-bindings.zsh"
+    done
+    unset _f
+  fi
+fi

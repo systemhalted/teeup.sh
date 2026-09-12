@@ -1,0 +1,23 @@
+# capabilities/zsh/default/profile - login shells, sourced by ~/.zprofile.
+# teeup owns this file.
+
+# macOS has no C.UTF-8 locale; normalise it before child processes warn.
+if [ "${LC_ALL:-}" = "C.UTF-8" ] || [ "${LANG:-}" = "C.UTF-8" ]; then
+  export LANG="en_US.UTF-8"
+  export LC_ALL="en_US.UTF-8"
+fi
+
+# brew shellenv exports HOMEBREW_PREFIX, MANPATH and INFOPATH. It skips PATH
+# entries that are already present, which the env layer has usually added.
+if [ -x /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [ -x /usr/local/bin/brew ]; then
+  eval "$(/usr/local/bin/brew shellenv)"
+fi
+
+# macOS's /etc/zprofile ran path_helper before this file and moved the system
+# directories to the front. Re-source the environment layer to put the user
+# directories back in front; path_prepend is idempotent.
+if [ -n "${TEEUP_PATH:-}" ] && [ -r "$TEEUP_PATH/capabilities/zsh/default/env" ]; then
+  . "$TEEUP_PATH/capabilities/zsh/default/env"
+fi

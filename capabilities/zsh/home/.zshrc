@@ -1,0 +1,12 @@
+# ~/.zshrc - installed once by teeup; this copy is yours to edit.
+# Interactive shells. The thick layer lives in the teeup checkout, so teeup
+# upgrades improve it without touching this file.
+[ -r "$HOME/.config/teeup/env" ] && . "$HOME/.config/teeup/env"
+[ -n "${TEEUP_PATH:-}" ] && [ -r "$TEEUP_PATH/capabilities/zsh/default/rc" ] &&
+  . "$TEEUP_PATH/capabilities/zsh/default/rc"
+
+# Machine-specific and personal lines belong in ~/.config/zsh/local.zsh, which
+# is sourced last so it wins over everything above. The XDG expansion matches
+# what `configure` used to place the file (lib/core.sh's user_config_dir).
+[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh" ] &&
+  . "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh"

@@ -17,6 +17,12 @@ case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
   # /usr/bin/security is macOS-only; 44 is its "no such item" exit code.
   mock_command security 44 ""
+  # zsh capability: the login-shell probe, the change itself, and the
+  # appearance read the shell layer performs (never reached from bootstrap,
+  # mocked so a stray call cannot touch the host).
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  mock_command chsh 0 ""
+  mock_command defaults 1 ""
   export TEEUP_TEST_MISSING="brew gum jq"
   export TEEUP_NO_GUM=1
   export DRY_RUN=true

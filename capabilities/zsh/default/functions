@@ -1,0 +1,52 @@
+# capabilities/zsh/default/functions - teeup owns this file.
+
+# zd - cd that falls back to zoxide's database. `alias cd=zd` lives in
+# default/aliases, so plain paths keep working exactly as before.
+if command -v zoxide >/dev/null 2>&1; then
+  zd() {
+    if [[ $# -eq 0 ]]; then
+      builtin cd ~ || return
+    elif [[ -d "$1" ]]; then
+      builtin cd "$1" || return
+    else
+      z "$@" || { print -u2 "zd: no directory or match for: $1"; return 1; }
+      print -r -- "$PWD"
+    fi
+  }
+fi
+
+# n - nvim, on the current directory when given nothing.
+n() {
+  if [[ $# -eq 0 ]]; then
+    command nvim .
+  else
+    command nvim "$@"
+  fi
+}
+
+# javav [version|spec] - switch this shell's Java through mise.
+#   javav          show the current Java
+#   javav 21       $JAVAV_VENDOR-21 (default vendor: corretto)
+#   javav zulu-17  any full mise java spec, passed through unchanged
+# Needs `mise activate`, which default/init does: `mise shell` only affects the
+# current session.
+javav() {
+  local spec
+  if ! command -v mise >/dev/null 2>&1; then
+    print -u2 "javav: mise is not installed"
+    return 1
+  fi
+  if [[ $# -gt 0 ]]; then
+    case "$1" in
+      *-*) spec="$1" ;;
+      *)   spec="${JAVAV_VENDOR:-corretto}-$1" ;;
+    esac
+    mise install "java@$spec" || return 1
+    mise shell "java@$spec" || return 1
+    hash -r 2>/dev/null || true
+    print "javav: using Java $spec from mise"
+  fi
+  print "JAVA_HOME=${JAVA_HOME:-unset}"
+  command -v java
+  java -version
+}
