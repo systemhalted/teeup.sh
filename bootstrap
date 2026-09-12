@@ -51,8 +51,8 @@ if [[ "$DRY_RUN" == "true" ]]; then
   log "Dry run: nothing will be changed."
 else
   sudo -v || die "sudo is required for the package manager and system settings."
-  # shellcheck disable=SC2064
-  ( while true; do sudo -n true; sleep 60; done ) 2>/dev/null &
+  parent=$$
+  ( while kill -0 "$parent" 2>/dev/null; do sudo -n true; sleep 60; done ) 2>/dev/null &
   SUDO_KEEPALIVE_PID=$!
   trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null' EXIT
 fi

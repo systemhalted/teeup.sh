@@ -124,6 +124,15 @@ test_core_failure_aborts() {
   cleanup_test_env
 }
 
+test_dry_run_answers_take_effect() {
+  setup
+  local out wizard_no_daily
+  wizard_no_daily=$'Ada Lovelace\nada@example.com\n\n1\n1\nn\n'
+  out="$("$BOOT" --dry-run <<<"$wizard_no_daily")"
+  assert_contains "$out" "Skipping the daily tier (TEEUP_DAILY=no)" || return 1
+  cleanup_test_env
+}
+
 echo "bootstrap"
 run_test "refuses non-macOS" test_refuses_non_macos
 run_test "refuses root" test_refuses_root
@@ -135,4 +144,5 @@ run_test "--reconfigure reruns wizard" test_reconfigure_reruns_wizard
 run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tier
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
 run_test "core failure aborts" test_core_failure_aborts
+run_test "dry run answers take effect" test_dry_run_answers_take_effect
 print_summary

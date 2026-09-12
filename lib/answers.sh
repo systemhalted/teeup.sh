@@ -52,6 +52,7 @@ answers_set() {
     TEEUP_[A-Z0-9_]*) ;;
     *) die "answers_set: key must look like TEEUP_NAME, got '$key'" ;;
   esac
+  export "$key=$value"
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would set $key in $f"
     return 0
@@ -63,5 +64,4 @@ answers_set() {
   { grep -v "^${key}=" "$f" || true; printf '%s="%s"\n' "$key" "$escaped"; } | sort > "$tmp"
   mv "$tmp" "$f"
   chmod 600 "$f"
-  export "$key=$value"
 }

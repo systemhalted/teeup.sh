@@ -65,6 +65,16 @@ test_answers_exist() {
   cleanup_test_env
 }
 
+test_dry_run_set_exports_without_writing() {
+  setup
+  # shellcheck disable=SC2034
+  DRY_RUN=true
+  answers_set TEEUP_DAILY no >/dev/null
+  assert_equals "no" "$(answers_get TEEUP_DAILY yes)" "value visible in-process" || return 1
+  [[ ! -e "$(answers_file)" ]] || { echo "answers file written in dry run"; return 1; }
+  cleanup_test_env
+}
+
 echo "lib/answers.sh"
 run_test "set then get" test_set_then_get
 run_test "set replaces existing key" test_set_replaces_existing_key
@@ -72,4 +82,5 @@ run_test "get default when unset" test_get_default_when_unset
 run_test "machine file wins" test_machine_file_wins
 run_test "values with spaces and quotes survive" test_values_with_spaces_and_quotes_survive
 run_test "answers_exist" test_answers_exist
+run_test "dry run set exports without writing" test_dry_run_set_exports_without_writing
 print_summary
