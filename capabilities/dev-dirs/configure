@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Two roots. The git capability keys identity off them (includeIf), so they
+# must exist before git is configured.
+for d in "$HOME/Work" "$HOME/Personal"; do
+  if [[ -d "$d" ]]; then
+    log "Already present: $d"
+  else
+    run_cmd mkdir -p "$d"
+    ok "Created $d"
+  fi
+done

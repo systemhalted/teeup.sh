@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Installs Homebrew when missing (its installer asks for sudo, hence
+# interactive=true) or refreshes MacPorts. MacPorts is never auto-installed.
+pkg_backend_prepare

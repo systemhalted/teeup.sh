@@ -1,0 +1,6 @@
+summary="Homebrew, or MacPorts on macOS 12 and older"
+group=system
+tier=core
+requires="xcode-clt"
+provides=""
+interactive=true

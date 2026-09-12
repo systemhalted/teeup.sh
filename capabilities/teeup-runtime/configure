@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# State lives under ~/.local/state/teeup as plain files; the env file tells
+# shells and LaunchAgents where the checkout is; ~/.local/bin/teeup is the
+# command users type.
+for d in "done" toggles migrations shims logs current stock; do
+  [[ -d "$TEEUP_STATE_DIR/$d" ]] || run_cmd mkdir -p "$TEEUP_STATE_DIR/$d"
+done
+[[ -d "$TEEUP_CONFIG_DIR/hooks" ]] || run_cmd mkdir -p "$TEEUP_CONFIG_DIR/hooks"
+
+write_managed_file "$TEEUP_CONFIG_DIR/env" "teeup env" <<TEEUP_ENV
+export TEEUP_PATH="$TEEUP_PATH"
+TEEUP_ENV
+
+link="$HOME/.local/bin/teeup"
+[[ -d "$HOME/.local/bin" ]] || run_cmd mkdir -p "$HOME/.local/bin"
+if [[ "$(readlink "$link" 2>/dev/null)" == "$TEEUP_PATH/bin/teeup" ]]; then
+  log "Already linked: $link"
+else
+  run_cmd ln -sfn "$TEEUP_PATH/bin/teeup" "$link"
+  ok "Linked $link"
+fi

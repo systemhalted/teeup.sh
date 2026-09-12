@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Command Line Tools first, because Homebrew and every compiler need them.
+# Unattended path: the on-demand marker makes softwareupdate list the CLT
+# package; fall back to the GUI installer when it does not.
+if xcode-select -p >/dev/null 2>&1; then
+  ok "Xcode Command Line Tools present."
+else
+  log "Installing Xcode Command Line Tools..."
+  marker="/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
+  run_cmd touch "$marker"
+  label="$(softwareupdate -l 2>/dev/null | grep -o 'Command Line Tools for Xcode-[0-9.]*' | tail -1 || true)"
+  if [[ -n "$label" ]]; then
+    run_cmd softwareupdate -i "$label"
+  else
+    warn "softwareupdate lists no Command Line Tools package; opening the GUI installer."
+    run_cmd xcode-select --install || true
+    warn "Complete the dialog, then re-run ./bootstrap."
+  fi
+  run_cmd rm -f "$marker"
+fi
+
+# Rosetta 2 lets Intel-only casks and tools run on Apple Silicon.
+if [[ "$(arch)" == "arm64" ]]; then
+  if pkgutil --pkg-info com.apple.pkg.RosettaUpdateAuto >/dev/null 2>&1; then
+    ok "Rosetta 2 already installed."
+  else
+    log "Installing Rosetta 2 (Apple Silicon)..."
+    run_cmd /usr/sbin/softwareupdate --install-rosetta --agree-to-license || warn "Rosetta install may require approval."
+  fi
+fi
