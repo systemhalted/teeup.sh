@@ -14,8 +14,10 @@ file_sha() {
 # copied into place. It is how copy_config_once tells "still pristine" from
 # "the user edited this" without ever diffing against the current shipped file.
 _stock_record_path() {
-  local dest="$1"
-  printf '%s/stock/%s\n' "$TEEUP_STATE_DIR" "$(printf '%s' "$dest" | sed -e "s#^$HOME/##" -e 's#/#__#g')"
+  local dest="$1" rel
+  rel="${dest#"$HOME"/}"
+  rel="${rel//\//__}"
+  printf '%s/stock/%s\n' "$TEEUP_STATE_DIR" "$rel"
 }
 
 stock_record() {
