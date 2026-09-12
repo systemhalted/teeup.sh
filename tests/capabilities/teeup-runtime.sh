@@ -13,11 +13,13 @@ EOF2
 
 test_install_gets_gum_and_jq() {
   setup
+  export TEEUP_TEST_MISSING="gum jq"
   local out
   out="$(DRY_RUN=true "$TEEUP" install teeup-runtime)"
   assert_contains "$out" "Would execute: brew install gum" || return 1
   assert_contains "$out" "Would execute: brew install jq" || return 1
   cleanup_test_env
+  unset TEEUP_TEST_MISSING
 }
 
 test_configure_creates_state_env_and_link() {

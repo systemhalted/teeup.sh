@@ -15,7 +15,16 @@ ok()   { printf "%b %s\n" "✅" "$*"; }
 warn() { printf "%b %s\n" "⚠️" "$*" >&2; }
 err()  { printf "%b %s\n" "❌" "$*" >&2; }
 die()  { err "$@"; exit 1; }
-have() { command -v "$1" >/dev/null 2>&1; }
+# have <command>
+# TEEUP_TEST_MISSING is a test-only hook: a space-separated list of commands
+# the harness pretends are absent, so a test can simulate a fresh Mac on a
+# host that already has them.
+have() {
+  case " ${TEEUP_TEST_MISSING:-} " in
+    *" $1 "*) return 1 ;;
+  esac
+  command -v "$1" >/dev/null 2>&1
+}
 
 # Every mutation goes through here so DRY_RUN=true is a faithful preview.
 run_cmd() {
