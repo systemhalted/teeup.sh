@@ -101,6 +101,7 @@ cmd_secret() {
     *) die "Usage: teeup secret get|set|rm <name>" ;;
   esac
   [[ -n "$name" ]] || die "Usage: teeup secret get|set|rm <name>"
+  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "Secret names use letters, digits, dot, underscore and dash, and cannot start with a dash"
   have security || die "teeup secret needs macOS's security command."
   case "$op" in
     get)
@@ -108,14 +109,18 @@ cmd_secret() {
         die "No secret named '$name'. Store one with: teeup secret set $name"
       ;;
     set)
-      value="$(ui_input "Value for $name")"
-      [[ -n "$value" ]] || die "Refusing to store an empty value for '$name'."
       if [[ "$DRY_RUN" == "true" ]]; then
         printf "%b %s\n" "🔍" "[DRY-RUN] Would execute: security add-generic-password -U -s teeup -a $name -w <value>"
         return 0
       fi
+      local was_x=0
+      case $- in *x*) was_x=1;; esac
+      set +x 2>/dev/null
+      value="$(ui_input "Value for $name")"
+      [[ -n "$value" ]] || die "Refusing to store an empty value for '$name'."
       security add-generic-password -U -s teeup -a "$name" -w "$value" >/dev/null ||
         die "Could not store '$name' in the Keychain."
+      [[ $was_x == 1 ]] && set -x 2>/dev/null
       ok "Stored $name in the Keychain (service: teeup)"
       ;;
     rm)
