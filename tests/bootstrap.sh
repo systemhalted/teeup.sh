@@ -33,11 +33,19 @@ EOF2
   # ssh-key list) even though this fresh-machine walk never reaches the
   # signed-in branch, so the two mocks do not drift apart.
   mock_command_script gh <<'EOF2'
+host=""
+prev=""
+for a in "$@"; do
+  [ "$prev" = "-h" ] && host="$a"
+  prev="$a"
+done
 case "$1 ${2:-}" in
   "auth status")
-    [ -f "$HOME/gh-session" ] || exit 1
-    echo "github.com"
-    echo "  Token scopes: $(cat "$HOME/gh-session")"
+    session_file="$HOME/gh-session"
+    [ -z "$host" ] || [ "$host" = "github.com" ] || session_file="$HOME/gh-session-$host"
+    [ -f "$session_file" ] || exit 1
+    echo "${host:-github.com}"
+    echo "  Token scopes: $(cat "$session_file")"
     ;;
   "ssh-key list") cat "$HOME/gh-keys" 2>/dev/null || true ;;
   *) : ;;

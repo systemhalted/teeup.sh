@@ -112,6 +112,20 @@ test_set_replaces_only_the_exact_key() {
   cleanup_test_env
 }
 
+test_set_preserves_a_final_line_with_no_trailing_newline() {
+  setup
+  answers_set TEEUP_EMAIL "ada@example.com"
+  # Strip the trailing newline answers_set always writes, so the file's last
+  # line has none, then rewrite via the key it belongs to.
+  printf '%s' "$(cat "$(answers_file)")" > "$(answers_file)"
+  [[ "$(tail -c 1 "$(answers_file)")" != "" ]] || { echo "test setup did not strip the trailing newline"; return 1; }
+  answers_set TEEUP_NAME "Ada Lovelace"
+  answers_load
+  assert_equals "ada@example.com" "$(answers_get TEEUP_EMAIL)" || return 1
+  assert_equals "Ada Lovelace" "$(answers_get TEEUP_NAME)" || return 1
+  cleanup_test_env
+}
+
 test_identity_helpers_without_work_email() {
   setup
   answers_set TEEUP_EMAIL "ada@example.com"
@@ -148,6 +162,7 @@ run_test "dry run set exports without writing" test_dry_run_set_exports_without_
 run_test "set rejects a key with regex characters" test_set_rejects_a_key_with_regex_characters
 run_test "set rejects a bare prefix" test_set_rejects_a_bare_prefix
 run_test "set replaces only the exact key" test_set_replaces_only_the_exact_key
+run_test "set preserves a final line with no trailing newline" test_set_preserves_a_final_line_with_no_trailing_newline
 run_test "identity helpers without work email" test_identity_helpers_without_work_email
 run_test "identity helpers with work email" test_identity_helpers_with_work_email
 print_summary

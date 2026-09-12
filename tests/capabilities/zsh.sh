@@ -55,7 +55,7 @@ test_configure_installs_the_thin_home_files() {
   assert_file_exists "$TEST_HOME/.zshenv" || return 1
   assert_file_exists "$TEST_HOME/.config/zsh/local.zsh" || return 1
   assert_contains "$(cat "$TEST_HOME/.zshrc")" 'capabilities/zsh/default/rc' || return 1
-  assert_contains "$(cat "$TEST_HOME/.zshenv")" '.config/teeup/env' || return 1
+  assert_contains "$(cat "$TEST_HOME/.zshenv")" 'XDG_CONFIG_HOME:-$HOME/.config}/teeup/env' || return 1
   cleanup_test_env
 }
 
@@ -87,6 +87,30 @@ test_configure_dry_run_writes_nothing() {
   setup
   DRY_RUN=true "$TEEUP" configure zsh >/dev/null
   [[ ! -e "$TEST_HOME/.zshrc" ]] || { echo ".zshrc written in dry run"; return 1; }
+  cleanup_test_env
+}
+
+test_zshenv_sources_teeup_env_from_xdg_config_home() {
+  setup
+  require_zsh || return 1
+  local xdg="$TEST_HOME/xdg"
+  mkdir -p "$xdg/teeup"
+  printf 'export TEEUP_PATH="from-xdg"\n' > "$xdg/teeup/env"
+  local out
+  out="$(XDG_CONFIG_HOME="$xdg" zsh -f -c "source '$TEEUP_PATH/capabilities/zsh/home/.zshenv'; print -r -- \$TEEUP_PATH")"
+  assert_equals "from-xdg" "$out" || return 1
+  cleanup_test_env
+}
+
+test_zprofile_sources_teeup_env_from_xdg_config_home() {
+  setup
+  require_zsh || return 1
+  local xdg="$TEST_HOME/xdg"
+  mkdir -p "$xdg/teeup"
+  printf 'export TEEUP_PATH="from-xdg"\n' > "$xdg/teeup/env"
+  local out
+  out="$(XDG_CONFIG_HOME="$xdg" zsh -f -c "source '$TEEUP_PATH/capabilities/zsh/home/.zprofile'; print -r -- \$TEEUP_PATH")"
+  assert_equals "from-xdg" "$out" || return 1
   cleanup_test_env
 }
 
@@ -146,6 +170,8 @@ run_test "configure installs the thin home files" test_configure_installs_the_th
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure backs up a foreign zshrc" test_configure_backs_up_a_foreign_zshrc
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "zshenv sources teeup env from XDG_CONFIG_HOME" test_zshenv_sources_teeup_env_from_xdg_config_home
+run_test "zprofile sources teeup env from XDG_CONFIG_HOME" test_zprofile_sources_teeup_env_from_xdg_config_home
 run_test "default env appends the shims last" test_default_env_appends_the_shims_last
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero

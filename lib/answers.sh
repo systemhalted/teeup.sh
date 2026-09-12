@@ -68,7 +68,7 @@ answers_set() {
   tmp="$(mktemp)"
   # Drop the old line for KEY with the shell rather than grep, so the key is
   # never interpreted as a regular expression.
-  while IFS= read -r line; do
+  while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in "$key="*) continue ;; esac
     printf '%s\n' "$line"
   done < "$f" > "$tmp"

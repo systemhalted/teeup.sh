@@ -42,6 +42,18 @@ test_choose_defaults_to_first_on_empty() {
   cleanup_test_env
 }
 
+test_input_reads_a_value_with_no_trailing_newline() {
+  setup
+  assert_equals "Ada" "$(printf Ada | ui_input "Name" "Nobody")" || return 1
+  cleanup_test_env
+}
+
+test_secret_reads_a_value_with_no_trailing_newline() {
+  setup
+  assert_equals "s3cret" "$(printf s3cret | ui_secret "Value" 2>/dev/null)" || return 1
+  cleanup_test_env
+}
+
 test_secret_reads_a_piped_value_without_echoing_it() {
   setup
   local out err
@@ -82,6 +94,8 @@ test_choose_accepts_leading_zero_number() {
 echo "lib/ui.sh"
 run_test "input reads piped answer" test_input_reads_piped_answer
 run_test "input uses default on empty line" test_input_uses_default_on_empty_line
+run_test "input reads a value with no trailing newline" test_input_reads_a_value_with_no_trailing_newline
+run_test "secret reads a value with no trailing newline" test_secret_reads_a_value_with_no_trailing_newline
 run_test "confirm yes and no" test_confirm_yes_and_no
 run_test "choose by number and by name" test_choose_by_number_and_by_name
 run_test "choose defaults to first on empty" test_choose_defaults_to_first_on_empty
