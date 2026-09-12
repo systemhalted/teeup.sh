@@ -126,6 +126,46 @@ test_default_env_appends_the_shims_last() {
   cleanup_test_env
 }
 
+test_default_env_prefers_macports_when_recorded() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/prefixroot"
+  mkdir -p "$root/opt/local/bin" "$root/opt/local/sbin"
+  mkdir -p "$root/opt/homebrew/bin" "$root/opt/homebrew/sbin"
+  : > "$root/opt/homebrew/bin/brew"
+  chmod +x "$root/opt/homebrew/bin/brew"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEST_HOME/.config/teeup/answers"
+  local out
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" zsh -f -c ". '$TEEUP_PATH/capabilities/zsh/default/env'; printf '%s\n' \"\$PATH\"")"
+  local macports_pos brew_pos
+  macports_pos="$(printf '%s' "$out" | tr ':' '\n' | grep -n "^$root/opt/local/bin\$" | head -1 | cut -d: -f1)"
+  brew_pos="$(printf '%s' "$out" | tr ':' '\n' | grep -n "^$root/opt/homebrew/bin\$" | head -1 | cut -d: -f1)"
+  [[ -n "$macports_pos" && -n "$brew_pos" ]] || { echo "expected both prefixes on PATH, got: $out"; return 1; }
+  [[ "$macports_pos" -lt "$brew_pos" ]] || { echo "expected MacPorts before Homebrew, got: $out"; return 1; }
+  cleanup_test_env
+}
+
+test_default_env_prefers_homebrew_when_recorded() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/prefixroot"
+  mkdir -p "$root/opt/local/bin" "$root/opt/local/sbin"
+  mkdir -p "$root/opt/homebrew/bin" "$root/opt/homebrew/sbin"
+  : > "$root/opt/homebrew/bin/brew"
+  chmod +x "$root/opt/homebrew/bin/brew"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEST_HOME/.config/teeup/answers"
+  local out
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" zsh -f -c ". '$TEEUP_PATH/capabilities/zsh/default/env'; printf '%s\n' \"\$PATH\"")"
+  local macports_pos brew_pos
+  macports_pos="$(printf '%s' "$out" | tr ':' '\n' | grep -n "^$root/opt/local/bin\$" | head -1 | cut -d: -f1)"
+  brew_pos="$(printf '%s' "$out" | tr ':' '\n' | grep -n "^$root/opt/homebrew/bin\$" | head -1 | cut -d: -f1)"
+  [[ -n "$macports_pos" && -n "$brew_pos" ]] || { echo "expected both prefixes on PATH, got: $out"; return 1; }
+  [[ "$brew_pos" -lt "$macports_pos" ]] || { echo "expected Homebrew before MacPorts, got: $out"; return 1; }
+  cleanup_test_env
+}
+
 test_rc_exports_appearance_and_sources_the_theme_env() {
   setup
   require_zsh || return 1
@@ -173,6 +213,8 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "zshenv sources teeup env from XDG_CONFIG_HOME" test_zshenv_sources_teeup_env_from_xdg_config_home
 run_test "zprofile sources teeup env from XDG_CONFIG_HOME" test_zprofile_sources_teeup_env_from_xdg_config_home
 run_test "default env appends the shims last" test_default_env_appends_the_shims_last
+run_test "default env prefers macports when recorded" test_default_env_prefers_macports_when_recorded
+run_test "default env prefers homebrew when recorded" test_default_env_prefers_homebrew_when_recorded
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero
 run_test "rc leaves git revision syntax alone" test_rc_leaves_git_revision_syntax_alone

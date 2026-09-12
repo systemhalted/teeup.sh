@@ -61,6 +61,20 @@ test_work_identity_falls_back_to_the_personal_email() {
   cleanup_test_env
 }
 
+test_work_identity_falls_back_to_the_personal_signingkey() {
+  setup
+  seed_answers ""
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local work
+  work="$(cat "$TEST_HOME/.config/git/identity-work")"
+  assert_contains "$work" "signingkey = $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  if [[ "$work" == *"id_ed25519_work"* ]]; then
+    echo "identity-work should not reference the never-created work key"
+    return 1
+  fi
+  cleanup_test_env
+}
+
 test_configure_without_answers_warns_and_writes_no_identity() {
   setup
   local out
@@ -186,6 +200,7 @@ echo "capabilities/git"
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes both identities" test_configure_writes_both_identities
 run_test "work identity falls back to the personal email" test_work_identity_falls_back_to_the_personal_email
+run_test "work identity falls back to the personal signingkey" test_work_identity_falls_back_to_the_personal_signingkey
 run_test "configure without answers warns and writes no identity" test_configure_without_answers_warns_and_writes_no_identity
 run_test "configure ships the config and the editor" test_configure_ships_the_config_and_the_editor
 run_test "signing and delta are enabled once they exist" test_signing_and_delta_are_enabled_once_they_exist
