@@ -439,6 +439,11 @@ Happy contributing! 🚀
    `run_cmd`, or through the file primitives (`copy_config_once`,
    `write_managed_file`, `append_once`), which carry their own dry-run guard —
    do not wrap those in `run_cmd`.
+5. `provides` must not list a command macOS already ships (`python3`, `ruby`,
+   `java`, `git`, `perl`).
+6. Add the name to `capabilities/core.list` or `daily.list` if it is not lazy.
+7. Add `tests/capabilities/<name>.sh` using the mock harness; run
+   `./bin/teeup commands --check && ./tests/run.sh` before committing.
 8. Shipped files live in one of three directories, by owner:
    `config/` is copied once into `~/.config` and belongs to the user after
    that; `home/` is copied once into `$HOME` under its literal dotfile name
@@ -449,8 +454,3 @@ Happy contributing! 🚀
    does not run on them, so keep them simple and guard every optional tool.
 10. Per-machine overrides go in `machines/<hostname>.conf`, which is committed
     and sourced last, so it wins over the answers file.
-5. `provides` must not list a command macOS already ships (`python3`, `ruby`,
-   `java`, `git`, `perl`).
-6. Add the name to `capabilities/core.list` or `daily.list` if it is not lazy.
-7. Add `tests/capabilities/<name>.sh` using the mock harness; run
-   `./bin/teeup commands --check && ./tests/run.sh` before committing.
