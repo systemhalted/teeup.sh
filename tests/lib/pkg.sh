@@ -93,7 +93,7 @@ test_cask_install_skipped_on_macports() {
   setup
   export TEEUP_PACKAGE_MANAGER=macports
   local out
-  out="$(cask_install wezterm)"
+  out="$(cask_install wezterm 2>&1)"
   assert_contains "$out" "Casks are not available with MacPorts" || return 1
   cleanup_test_env
 }
