@@ -52,12 +52,11 @@ answers_get() {
 # quoting; backslashes, dollars and double quotes are escaped by hand because
 # the file is sourced by bash.
 answers_set() {
-  local key="$1" value="$2" f tmp escaped
+  local key="$1" value="$2" f tmp escaped line
   f="$(answers_file)"
-  case "$key" in
-    TEEUP_[A-Z0-9_]*) ;;
-    *) die "answers_set: key must look like TEEUP_NAME, got '$key'" ;;
-  esac
+  if ! [[ "$key" =~ ^TEEUP_[A-Z0-9_]+$ ]]; then
+    die "answers_set: key must look like TEEUP_NAME, got '$key'"
+  fi
   export "$key=$value"
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would set $key in $f"
@@ -67,7 +66,43 @@ answers_set() {
   touch "$f"
   escaped="$(printf '%s' "$value" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g' -e 's/`/\\`/g')"
   tmp="$(mktemp)"
-  { grep -v "^${key}=" "$f" || true; printf '%s="%s"\n' "$key" "$escaped"; } | sort > "$tmp"
+  # Drop the old line for KEY with the shell rather than grep, so the key is
+  # never interpreted as a regular expression.
+  while IFS= read -r line; do
+    case "$line" in "$key="*) continue ;; esac
+    printf '%s\n' "$line"
+  done < "$f" > "$tmp"
+  printf '%s="%s"\n' "$key" "$escaped" >> "$tmp"
+  sort -o "$tmp" "$tmp"
   mv "$tmp" "$f"
   chmod 600 "$f"
+}
+
+# Identity helpers. git, ssh and github all key off the same two identities,
+# so the mapping from identity name to email and key path lives here once.
+# Work exists only when the wizard was given a work email; otherwise both
+# directory roots use the personal identity.
+answers_has_work() { [[ -n "$(answers_get TEEUP_WORK_EMAIL)" ]]; }
+
+identity_list() {
+  printf 'personal\n'
+  answers_has_work && printf 'work\n'
+  return 0
+}
+
+identity_email() {
+  case "$1" in
+    personal) answers_get TEEUP_EMAIL ;;
+    work)
+      if answers_has_work; then answers_get TEEUP_WORK_EMAIL; else answers_get TEEUP_EMAIL; fi
+      ;;
+    *) die "identity_email: unknown identity '$1' (expected personal or work)" ;;
+  esac
+}
+
+identity_key() {
+  case "$1" in
+    personal|work) printf '%s/.ssh/id_ed25519_%s\n' "$HOME" "$1" ;;
+    *) die "identity_key: unknown identity '$1' (expected personal or work)" ;;
+  esac
 }

@@ -102,6 +102,16 @@ test_refresh_config_removes_backup_when_unchanged() {
   cleanup_test_env
 }
 
+test_refresh_prints_the_backup_path() {
+  setup
+  printf 'shipped\n' > "$TEST_HOME/src"
+  printf 'mine\n' > "$TEST_HOME/dest"
+  local out
+  out="$(refresh_config "$TEST_HOME/src" "$TEST_HOME/dest" 2>&1)"
+  assert_contains "$out" "Backed up $TEST_HOME/dest to" || return 1
+  cleanup_test_env
+}
+
 echo "lib/files.sh"
 run_test "append_once is idempotent" test_append_once_is_idempotent
 run_test "write_managed_file noops when identical" test_write_managed_file_noops_when_identical
@@ -112,4 +122,5 @@ run_test "copy_config_once backs up foreign file" test_copy_config_once_backs_up
 run_test "copy_config_once dry run touches nothing" test_copy_config_once_dry_run_touches_nothing
 run_test "refresh_config backs up and diffs" test_refresh_config_backs_up_and_diffs
 run_test "refresh_config removes backup when unchanged" test_refresh_config_removes_backup_when_unchanged
+run_test "refresh prints the backup path" test_refresh_prints_the_backup_path
 print_summary

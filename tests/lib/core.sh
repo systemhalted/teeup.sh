@@ -91,6 +91,15 @@ test_have_honours_test_missing_hook() {
   cleanup_test_env
 }
 
+test_user_config_dir_follows_xdg() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  assert_equals "$TEST_HOME/.config" "$(user_config_dir)" || return 1
+  # In a subshell, so XDG_CONFIG_HOME stays set for the rest of the file.
+  assert_equals "$HOME/.config" "$(unset XDG_CONFIG_HOME; user_config_dir)" || return 1
+  cleanup_test_env
+}
+
 echo "lib/core.sh"
 run_test "paths default to XDG under HOME" test_paths_default_to_xdg
 run_test "run_cmd dry run prints and skips" test_run_cmd_dry_run_prints_and_skips
@@ -101,4 +110,5 @@ run_test "run_logged closes stdin unless interactive" test_run_logged_closes_std
 run_test "macos_major and arch" test_macos_major_and_arch_use_mocks
 run_test "format_duration" test_format_duration
 run_test "have honours TEEUP_TEST_MISSING hook" test_have_honours_test_missing_hook
+run_test "user_config_dir follows XDG" test_user_config_dir_follows_xdg
 print_summary

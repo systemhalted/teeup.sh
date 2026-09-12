@@ -84,6 +84,58 @@ test_dry_run_set_exports_without_writing() {
   cleanup_test_env
 }
 
+test_set_rejects_a_key_with_regex_characters() {
+  setup
+  local rc=0 out
+  out="$( (answers_set 'TEEUP_A.*' hi) 2>&1 )" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "key must look like TEEUP_NAME" || return 1
+  cleanup_test_env
+}
+
+test_set_rejects_a_bare_prefix() {
+  setup
+  local rc=0
+  ( answers_set 'TEEUP_' hi ) >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" || return 1
+  cleanup_test_env
+}
+
+test_set_replaces_only_the_exact_key() {
+  setup
+  answers_set TEEUP_EMAIL "old@example.com"
+  answers_set TEEUP_WORK_EMAIL "work@example.com"
+  answers_set TEEUP_EMAIL "new@example.com"
+  answers_load
+  assert_equals "new@example.com" "$(answers_get TEEUP_EMAIL)" || return 1
+  assert_equals "work@example.com" "$(answers_get TEEUP_WORK_EMAIL)" || return 1
+  cleanup_test_env
+}
+
+test_identity_helpers_without_work_email() {
+  setup
+  answers_set TEEUP_EMAIL "ada@example.com"
+  answers_set TEEUP_WORK_EMAIL ""
+  answers_load
+  assert_equals "personal" "$(identity_list)" || return 1
+  assert_equals "ada@example.com" "$(identity_email personal)" || return 1
+  assert_equals "ada@example.com" "$(identity_email work)" || return 1
+  assert_equals "$HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+test_identity_helpers_with_work_email() {
+  setup
+  answers_set TEEUP_EMAIL "ada@example.com"
+  answers_set TEEUP_WORK_EMAIL "ada@corp.example"
+  answers_load
+  assert_equals "personal
+work" "$(identity_list)" || return 1
+  assert_equals "ada@corp.example" "$(identity_email work)" || return 1
+  assert_equals "$HOME/.ssh/id_ed25519_work" "$(identity_key work)" || return 1
+  cleanup_test_env
+}
+
 echo "lib/answers.sh"
 run_test "set then get" test_set_then_get
 run_test "set replaces existing key" test_set_replaces_existing_key
@@ -93,4 +145,9 @@ run_test "values with spaces and quotes survive" test_values_with_spaces_and_quo
 run_test "answers_exist" test_answers_exist
 run_test "answers_exist needs wizard key" test_answers_exist_needs_wizard_key
 run_test "dry run set exports without writing" test_dry_run_set_exports_without_writing
+run_test "set rejects a key with regex characters" test_set_rejects_a_key_with_regex_characters
+run_test "set rejects a bare prefix" test_set_rejects_a_bare_prefix
+run_test "set replaces only the exact key" test_set_replaces_only_the_exact_key
+run_test "identity helpers without work email" test_identity_helpers_without_work_email
+run_test "identity helpers with work email" test_identity_helpers_with_work_email
 print_summary

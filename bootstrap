@@ -157,4 +157,5 @@ state_done mark bootstrap
 # --- 8. summary ---------------------------------------------------------------
 echo ""
 ok "Bootstrap finished in $(format_duration $(( $(date +%s) - started )))."
-echo "Try: ~/.local/bin/teeup status   (the zsh capability puts ~/.local/bin on PATH for new terminals)"
+echo "Open a new terminal (the zsh capability puts ~/.local/bin on PATH) and try: teeup status"
+echo "In this shell, use the full path: $HOME/.local/bin/teeup status"

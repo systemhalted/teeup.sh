@@ -16,6 +16,12 @@ link="$HOME/.local/bin/teeup"
 if [[ "$(readlink "$link" 2>/dev/null)" == "$TEEUP_PATH/bin/teeup" ]]; then
   log "Already linked: $link"
 else
+  # A real file here is somebody's script, not our symlink; every other
+  # user-facing write goes through backup_target, so this one does too.
+  if [[ -e "$link" && ! -L "$link" ]]; then
+    warn "Replacing a regular file at $link"
+    backup_target "$link" >/dev/null
+  fi
   run_cmd ln -sfn "$TEEUP_PATH/bin/teeup" "$link"
   ok "Linked $link"
 fi
