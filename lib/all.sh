@@ -7,9 +7,7 @@ export TEEUP_PATH
 # shellcheck source=lib/core.sh
 source "$_teeup_lib_dir/core.sh"
 for _teeup_lib in files state answers pkg ui capability; do
-  if [[ -f "$_teeup_lib_dir/$_teeup_lib.sh" ]]; then
-    # shellcheck source=/dev/null
-    source "$_teeup_lib_dir/$_teeup_lib.sh"
-  fi
+  # shellcheck source=/dev/null
+  source "$_teeup_lib_dir/$_teeup_lib.sh"
 done
 unset _teeup_lib _teeup_lib_dir
