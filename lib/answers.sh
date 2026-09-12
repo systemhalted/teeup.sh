@@ -14,7 +14,13 @@ machine_file() {
   printf '%s/%s.conf\n' "$TEEUP_MACHINES_DIR" "$host"
 }
 
-answers_exist() { [[ -s "$(answers_file)" ]]; }
+# The wizard is the only writer of TEEUP_NAME, so its presence means the
+# questions were answered; capabilities may record other keys earlier.
+answers_exist() {
+  local f
+  f="$(answers_file)"
+  [[ -s "$f" ]] && grep -q '^TEEUP_NAME=' "$f"
+}
 
 # Load answers, then the machine file. The machine file is sourced last on
 # purpose: it encodes hard constraints (package manager, skipped capabilities).

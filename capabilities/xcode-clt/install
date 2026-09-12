@@ -11,12 +11,16 @@ else
   label="$(softwareupdate -l 2>/dev/null | grep -o 'Command Line Tools for Xcode-[0-9.]*' | tail -1 || true)"
   if [[ -n "$label" ]]; then
     run_cmd softwareupdate -i "$label"
+    run_cmd rm -f "$marker"
   else
     warn "softwareupdate lists no Command Line Tools package; opening the GUI installer."
     run_cmd xcode-select --install || true
     warn "Complete the dialog, then re-run ./bootstrap."
+    run_cmd rm -f "$marker"
+    # Outside a dry run the tools are still missing, so stop here instead of
+    # letting bootstrap continue into Homebrew without a compiler.
+    [[ "$DRY_RUN" == "true" ]] || exit 1
   fi
-  run_cmd rm -f "$marker"
 fi
 
 # Rosetta 2 lets Intel-only casks and tools run on Apple Silicon.

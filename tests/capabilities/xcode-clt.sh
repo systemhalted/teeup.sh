@@ -41,6 +41,20 @@ test_missing_clt_falls_back_to_gui() {
   cleanup_test_env
 }
 
+test_missing_clt_gui_fallback_fails_outside_dry_run() {
+  setup
+  export DRY_RUN=false
+  mock_command xcode-select 2 ""
+  mock_command softwareupdate 0 "No new software available."
+  mock_command touch 0 ""
+  mock_command rm 0 ""
+  local rc=0 out
+  out="$("$TEEUP" install xcode-clt 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Complete the dialog" || return 1
+  cleanup_test_env
+}
+
 test_rosetta_installed_on_arm_when_missing() {
   setup
   mock_command pkgutil 1 ""
@@ -64,6 +78,7 @@ echo "capabilities/xcode-clt"
 run_test "present CLT and Rosetta are no-ops" test_present_clt_and_rosetta_are_noops
 run_test "missing CLT uses softwareupdate label" test_missing_clt_uses_softwareupdate_label
 run_test "missing CLT falls back to GUI" test_missing_clt_falls_back_to_gui
+run_test "missing CLT GUI fallback fails outside dry run" test_missing_clt_gui_fallback_fails_outside_dry_run
 run_test "Rosetta installed on arm when missing" test_rosetta_installed_on_arm_when_missing
 run_test "Rosetta skipped on Intel" test_rosetta_skipped_on_intel
 print_summary

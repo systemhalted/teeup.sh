@@ -11,7 +11,7 @@ while [[ -L "$_self" ]]; do
   _self="$(readlink "$_self")"
   [[ "$_self" != /* ]] && _self="$_dir/$_self"
 done
-TEEUP_PATH="${TEEUP_PATH:-$(cd "$(dirname "$_self")/.." && pwd)}"
+TEEUP_PATH="$(cd "$(dirname "$_self")/.." && pwd)"
 export TEEUP_PATH
 unset _self _dir
 
