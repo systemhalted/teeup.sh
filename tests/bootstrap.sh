@@ -61,6 +61,7 @@ EOF2
   # it. Succeeding with no output is the fresh-machine answer: the global
   # mise.toml asks for no tools yet.
   mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
 case "$1 ${2:-}" in
   "ls --global") : ;;
   *) : ;;
@@ -210,6 +211,49 @@ test_reconfigure_reruns_wizard() {
   cleanup_test_env
 }
 
+test_reconfigure_does_not_ask_for_a_pinned_package_manager() {
+  setup
+  # machines/<hostname>.conf pins the backend. Asking anyway would export the
+  # answer into bootstrap's own shell while every capability (which reloads
+  # the machine file) ignored it, so pkg_backend_path in bootstrap would add
+  # the wrong bin dir and lose the gum the capability had just installed.
+  # The question is only reachable with --reconfigure, so that is the probe.
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEST_HOME/machines" "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEST_HOME/machines/testmac.conf"
+  printf 'TEEUP_NAME="Ada"\n' > "$TEST_HOME/.config/teeup/answers"
+  # The wizard input minus the package-manager line: it must not be asked.
+  local out
+  out="$("$BOOT" --dry-run --reconfigure 2>&1 <<<$'Ada Lovelace\nada@example.com\n\n1\ny\n')"
+  assert_contains "$out" "Package manager is pinned to homebrew by $TEST_HOME/machines/testmac.conf" || return 1
+  assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Package manager')" || return 1
+  assert_not_contains "$out" "Would set TEEUP_PACKAGE_MANAGER" || return 1
+  assert_contains "$out" "Homebrew/install/HEAD/install.sh" || return 1
+  assert_contains "$out" "Your full name" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_an_empty_machine_pin_is_still_a_pin() {
+  setup
+  # `TEEUP_PACKAGE_MANAGER=""` in the machine file pins the backend to
+  # detection. A non-emptiness test read it as "not pinned" and asked, and the
+  # answer was then exported here and ignored everywhere else.
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEST_HOME/machines"
+  printf 'TEEUP_PACKAGE_MANAGER=""\n' > "$TEST_HOME/machines/testmac.conf"
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'Ada Lovelace\nada@example.com\n\n1\ny\n')"
+  assert_contains "$out" "Package manager is pinned to auto-detection by $TEST_HOME/machines/testmac.conf" || return 1
+  assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Package manager')" || return 1
+  # The package-manager capability still records the backend it detected (an
+  # answer the machine file keeps overriding to ""); what must not happen is
+  # the question, and the prompt-line count above is what proves it.
+  assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
 test_skip_daily_and_daily_no_skip_the_tier() {
   setup
   local out
@@ -259,6 +303,8 @@ run_test "dry run touches nothing" test_dry_run_touches_nothing
 run_test "existing answers skip wizard" test_existing_answers_skip_wizard
 run_test "wizard runs when only backend recorded" test_wizard_runs_when_only_backend_recorded
 run_test "--reconfigure reruns wizard" test_reconfigure_reruns_wizard
+run_test "--reconfigure does not ask for a pinned package manager" test_reconfigure_does_not_ask_for_a_pinned_package_manager
+run_test "an empty machine pin is still a pin" test_an_empty_machine_pin_is_still_a_pin
 run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tier
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
 run_test "core failure aborts" test_core_failure_aborts

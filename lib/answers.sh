@@ -35,6 +35,25 @@ answers_load() {
   return 0
 }
 
+# machine_get <KEY> -> prints the value machines/<hostname>.conf sets for KEY
+# and exits 0; exits 1 (printing nothing) when the file does not set it. An
+# empty value counts as set: `TEEUP_PACKAGE_MANAGER=""` in the machine file is
+# a pin too (it means "detect", and answers_load will enforce it). Read in a
+# subshell so the lookup neither changes this shell nor is fooled by a KEY
+# already exported from the answers file.
+machine_get() {
+  local key="$1" f
+  f="$(machine_file)"
+  [[ -f "$f" ]] || return 1
+  (
+    unset "$key"
+    # shellcheck source=/dev/null
+    source "$f"
+    [[ -n "${!key+x}" ]] || exit 1
+    printf '%s\n' "${!key}"
+  )
+}
+
 # answers_get <KEY> [default]
 answers_get() {
   local key="$1" default="${2:-}" value

@@ -297,6 +297,74 @@ test_configure_does_not_let_a_signing_titled_authentication_key_suppress_signing
   cleanup_test_env
 }
 
+test_configure_does_not_let_a_key_titled_exactly_signing_suppress_signing() {
+  setup
+  seed_keys
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  # The title is the first column and free text. A forward scan for "the
+  # field that equals a type" stopped on this title, called the row a signing
+  # key, skipped the signing upload and retried the authentication one.
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Already uploaded (authentication)" || return 1
+  assert_not_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type signing --title testmac personal (signing)" || return 1
+  cleanup_test_env
+}
+
+test_configure_reads_the_type_from_the_last_column_whatever_the_title() {
+  setup
+  seed_keys
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  # Our authentication key is up under the title "signing"; someone else's
+  # signing key is up under the title "authentication". Only the last column
+  # may decide: a title-driven reading swaps the two, re-uploads the
+  # authentication key and skips the signing one.
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'authentication\tssh-ed25519 SOMEONEELSE\t2026-09-11T09:12:34Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Already uploaded (authentication)" || return 1
+  assert_not_contains "$out" "Already uploaded (signing)" || return 1
+  assert_not_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type signing" || return 1
+  cleanup_test_env
+}
+
+test_configure_never_matches_the_key_body_against_the_title() {
+  setup
+  seed_keys
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  # A foreign key whose *title* is our key body. The backward scan for the
+  # KEY column must stop before field 1, or this row suppresses our upload.
+  printf 'someone AAAAPERSONALKEY\tssh-ed25519 SOMEONEELSE\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_not_contains "$out" "Already uploaded" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  cleanup_test_env
+}
+
+test_configure_compares_the_key_body_exactly() {
+  setup
+  seed_keys
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  # Someone else's key whose body merely contains ours is not ours: a
+  # substring match would have skipped both uploads.
+  printf 'other laptop\tssh-ed25519 AAAAPERSONALKEYEXTRA\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'other laptop (signing)\tssh-ed25519 XAAAAPERSONALKEY\t2026-09-11T09:12:34Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$out" "Already uploaded" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type signing" || return 1
+  cleanup_test_env
+}
+
 test_configure_dry_run_uploads_nothing() {
   setup
   seed_keys
@@ -343,6 +411,10 @@ run_test "configure skips the login when already signed in" test_configure_skips
 run_test "configure warns when the key is missing" test_configure_warns_when_the_key_is_missing
 run_test "configure pins GH_HOST to github.com" test_configure_pins_gh_host_to_github_com
 run_test "configure does not let a signing-titled authentication key suppress signing" test_configure_does_not_let_a_signing_titled_authentication_key_suppress_signing
+run_test "configure does not let a key titled exactly 'signing' suppress signing" test_configure_does_not_let_a_key_titled_exactly_signing_suppress_signing
+run_test "configure reads the type from the last column whatever the title" test_configure_reads_the_type_from_the_last_column_whatever_the_title
+run_test "configure compares the key body exactly" test_configure_compares_the_key_body_exactly
+run_test "configure never matches the key body against the title" test_configure_never_matches_the_key_body_against_the_title
 run_test "configure dry run uploads nothing" test_configure_dry_run_uploads_nothing
 run_test "configure twice uploads nothing new" test_configure_twice_uploads_nothing_new
 print_summary

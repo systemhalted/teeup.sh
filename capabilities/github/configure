@@ -43,24 +43,28 @@ run_cmd gh config set git_protocol ssh --host github.com || warn "Could not set 
 # signing key for the SSH commit signatures the git capability turns on.
 # `gh ssh-key list` is captured here, so gh takes its non-TTY path and prints
 # tab-separated columns. Verified against the installed gh 2.100.0: that
-# format is TITLE, KEY, ADDED, ID, TYPE -- the type is last and the numeric
-# ID sits where a TITLE/KEY/TYPE/ADDED reading would look for it. Rather than
-# depend on any column order, both columns are found by what they contain:
-# the key body is the field starting with "ssh-", the type is the field that
-# is exactly "authentication" or "signing". Parsing the columns and not the
-# whole line also stops a title like "laptop signing key" from fooling an
-# authentication key into looking like an already-uploaded signing key.
+# format is TITLE, KEY, ADDED, ID, TYPE. The title is the one column the user
+# types, and it comes first, so nothing may be found by scanning forward for
+# "the first field that looks like X": a key titled exactly `signing` (or
+# `ssh-laptop`) wins such a scan, teeup then believes the signing key is
+# already up and retries the authentication one as a duplicate instead. So the
+# type is the LAST field, full stop, and the key is found scanning backwards
+# from the type towards the title, stopping before field 1 so a title that
+# happens to hold our key body (a key that is not ours, titled with it) can
+# never count. The match is the field whose second word is exactly the public
+# key body ("ssh-ed25519 <body>"). Exact, not substring: a body that merely
+# contains ours is someone else's key.
 host="$(hostname -s 2>/dev/null || hostname)"
 listed="$(gh ssh-key list 2>/dev/null || true)"
 _github_key_uploaded() {
-  local body="$1" type="$2" line line_key line_type
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    line_key="$(awk -F'\t' '{ for (i = 1; i <= NF; i++) if (index($i, "ssh-") == 1) { print $i; exit } }' <<<"$line")"
-    line_type="$(awk -F'\t' '{ for (i = 1; i <= NF; i++) if ($i == "authentication" || $i == "signing") { print $i; exit } }' <<<"$line")"
-    [[ -n "$line_key" && "$line_key" == *"$body"* && "$line_type" == "$type" ]] && return 0
-  done <<<"$listed"
-  return 1
+  printf '%s\n' "$listed" | awk -F'\t' -v body="$1" -v type="$2" '
+    NF < 2 || $NF != type { next }
+    {
+      for (i = NF - 1; i >= 2; i--) {
+        if (split($i, w, " ") >= 2 && w[2] == body) { found = 1; exit }
+      }
+    }
+    END { exit found ? 0 : 1 }'
 }
 for identity in $(identity_list); do
   pub="$(identity_key "$identity").pub"

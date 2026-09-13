@@ -49,6 +49,27 @@ test_machine_file_wins() {
   cleanup_test_env
 }
 
+test_machine_get_reads_only_the_machine_file() {
+  setup
+  # No machine file: not set, even when the answers file has the key exported.
+  answers_set TEEUP_PACKAGE_MANAGER homebrew
+  answers_load
+  ! machine_get TEEUP_PACKAGE_MANAGER >/dev/null || { echo "reported a pin with no machine file"; return 1; }
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  assert_equals "macports" "$(machine_get TEEUP_PACKAGE_MANAGER)" || return 1
+  # A key the machine file does not mention is not set, even though it is
+  # exported here from the answers file.
+  answers_set TEEUP_THEME catppuccin
+  ! machine_get TEEUP_THEME >/dev/null || { echo "reported a pin for an unmentioned key"; return 1; }
+  # An empty value is a pin (set-ness, not non-emptiness).
+  printf 'TEEUP_PACKAGE_MANAGER=""\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  machine_get TEEUP_PACKAGE_MANAGER >/dev/null || { echo "an empty pin was reported as unset"; return 1; }
+  assert_equals "" "$(machine_get TEEUP_PACKAGE_MANAGER)" || return 1
+  # The lookup leaves this shell's values alone.
+  assert_equals "homebrew" "$TEEUP_PACKAGE_MANAGER" || return 1
+  cleanup_test_env
+}
+
 test_values_with_spaces_and_quotes_survive() {
   setup
   answers_set TEEUP_NAME 'O'"'"'Brien "The" Dev'
@@ -165,6 +186,7 @@ run_test "set then get" test_set_then_get
 run_test "set replaces existing key" test_set_replaces_existing_key
 run_test "get default when unset" test_get_default_when_unset
 run_test "machine file wins" test_machine_file_wins
+run_test "machine_get reads only the machine file" test_machine_get_reads_only_the_machine_file
 run_test "values with spaces and quotes survive" test_values_with_spaces_and_quotes_survive
 run_test "answers_exist" test_answers_exist
 run_test "answers_exist needs wizard key" test_answers_exist_needs_wizard_key
