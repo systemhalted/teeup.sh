@@ -10,11 +10,120 @@ local wezterm = require("wezterm")
 -- for exactly this case.
 --
 -- teeup-runtime runs every value through bash's `printf '%q'` before writing
--- it (capabilities/teeup-runtime/configure), which backslash-escapes spaces
--- and shell metacharacters rather than wrapping the whole value in quotes:
--- `export TEEUP_PATH=/Users/ada/My\ Code/teeup`. Undo that escaping once the
--- whole line has matched, or a checkout path with a space would come back
--- truncated at the first escaped character.
+-- it (capabilities/teeup-runtime/configure). `%q` does not always produce
+-- the simple backslash-escaped form (`/Users/ada/My\ Code/teeup`): any
+-- non-ASCII byte in the value makes bash 3.2 switch to ANSI-C `$'...'`
+-- quoting with octal byte escapes (`$'/Users/caf\303\251/teeup'`), and a
+-- word can freely mix plain text, '...'  and "..." segments back to back
+-- (that's just how shell words work). bash_unescape_word below is a small
+-- decoder for one such word: it walks the raw text once, byte by byte,
+-- handling each quoting style in turn and concatenating the decoded
+-- segments, the same way the shell itself would reassemble the word before
+-- using it.
+local function bash_unescape_word(s)
+  local out, i, n = {}, 1, #s
+  while i <= n do
+    local c = s:sub(i, i)
+    if c == "'" then
+      -- '...' - everything up to the next ' is literal, no escapes at all.
+      local j = s:find("'", i + 1, true)
+      if not j then
+        return nil
+      end
+      out[#out + 1] = s:sub(i + 1, j - 1)
+      i = j + 1
+    elseif c == '"' then
+      -- "..." - backslash keeps its meaning only before $ ` " \ or a
+      -- newline; anywhere else the backslash is itself literal.
+      local j, buf = i + 1, {}
+      local closed = false
+      while j <= n do
+        local cj = s:sub(j, j)
+        if cj == '"' then
+          closed = true
+          break
+        elseif cj == "\\" then
+          local nx = s:sub(j + 1, j + 1)
+          if nx == "$" or nx == "`" or nx == '"' or nx == "\\" or nx == "\n" then
+            buf[#buf + 1] = nx
+            j = j + 2
+          else
+            buf[#buf + 1] = cj
+            j = j + 1
+          end
+        else
+          buf[#buf + 1] = cj
+          j = j + 1
+        end
+      end
+      if not closed then
+        return nil
+      end
+      out[#out + 1] = table.concat(buf)
+      i = j + 1
+    elseif c == "$" and s:sub(i + 1, i + 1) == "'" then
+      -- $'...' (ANSI-C quoting) - \NNN (1-3 octal digits) and \xHH decode to
+      -- a raw byte via string.char; a run of these is how %q re-encodes a
+      -- multi-byte UTF-8 character, so decoding byte by byte reassembles it.
+      local j, buf = i + 2, {}
+      local closed = false
+      while j <= n do
+        local cj = s:sub(j, j)
+        if cj == "'" then
+          closed = true
+          break
+        elseif cj == "\\" then
+          local nx = s:sub(j + 1, j + 1)
+          local oct = s:sub(j + 1, j + 3):match("^[0-7][0-7]?[0-7]?")
+          local hex = nx == "x" and s:sub(j + 2, j + 3):match("^%x%x?")
+          if oct and oct ~= "" then
+            buf[#buf + 1] = string.char(tonumber(oct, 8) % 256)
+            j = j + 1 + #oct
+          elseif hex then
+            buf[#buf + 1] = string.char(tonumber(hex, 16))
+            j = j + 2 + #hex
+          elseif nx == "a" then buf[#buf + 1] = "\a"; j = j + 2
+          elseif nx == "b" then buf[#buf + 1] = "\b"; j = j + 2
+          elseif nx == "e" or nx == "E" then buf[#buf + 1] = "\27"; j = j + 2
+          elseif nx == "f" then buf[#buf + 1] = "\f"; j = j + 2
+          elseif nx == "n" then buf[#buf + 1] = "\n"; j = j + 2
+          elseif nx == "r" then buf[#buf + 1] = "\r"; j = j + 2
+          elseif nx == "t" then buf[#buf + 1] = "\t"; j = j + 2
+          elseif nx == "v" then buf[#buf + 1] = "\v"; j = j + 2
+          elseif nx == "\\" or nx == "'" or nx == '"' then buf[#buf + 1] = nx; j = j + 2
+          elseif nx == "" then
+            return nil
+          else
+            buf[#buf + 1] = nx
+            j = j + 2
+          end
+        else
+          buf[#buf + 1] = cj
+          j = j + 1
+        end
+      end
+      if not closed then
+        return nil
+      end
+      out[#out + 1] = table.concat(buf)
+      i = j + 1
+    elseif c == "\\" then
+      -- Unquoted backslash: the next byte is literal (this is the plain
+      -- form %q uses when nothing in the value needs ANSI-C quoting).
+      local nx = s:sub(i + 1, i + 1)
+      if nx == "" then
+        return nil
+      end
+      out[#out + 1] = nx
+      i = i + 2
+    else
+      out[#out + 1] = c
+      i = i + 1
+    end
+  end
+  return table.concat(out)
+end
+
 local function read_env_value(path, key)
   local f = io.open(path, "r")
   if not f then
@@ -24,9 +133,10 @@ local function read_env_value(path, key)
   for line in f:lines() do
     local value = line:match(pattern)
     if value and value ~= "" then
-      value = value:gsub("\\(.)", "%1")
       f:close()
-      return value
+      -- An unterminated quote means the word did not decode; fall back
+      -- exactly as if this key had not been found at all.
+      return bash_unescape_word(value)
     end
   end
   f:close()

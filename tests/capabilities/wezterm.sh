@@ -198,6 +198,136 @@ DRIVER
   cleanup_test_env
 }
 
+# capabilities/teeup-runtime/configure writes TEEUP_PATH/TEEUP_STATE_DIR
+# through `printf '%q'`, and %q's output shape depends on the bash that ran
+# it: a plain backslash-escaped word for ASCII specials (space, ', $), but
+# bash 3.2 switches to ANSI-C `$'...'` quoting with octal byte escapes for
+# any non-ASCII byte, while bash 5.x keeps raw UTF-8 with backslash escapes
+# only on the ASCII specials. An override lets a developer point this at a
+# real bash 3.2 binary (there is one already built in this project's CI
+# scratchpad); with no override, it uses /bin/bash only if that happens to
+# already be bash 3.2, which is exactly what macOS (and so this project's
+# macOS CI runners) ships as its system bash. Neither being available skips
+# the bash-3.2 variant with a note rather than failing the suite over it.
+_wezterm_find_bash32() {
+  local candidate
+  for candidate in "${TEEUP_TEST_BASH32:-}" /bin/bash; do
+    [[ -n "$candidate" && -x "$candidate" ]] || continue
+    if "$candidate" --version 2>/dev/null | head -1 | grep -q 'version 3\.2'; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Run the real, installed ~/.config/wezterm/wezterm.lua's TEEUP_PATH/
+# TEEUP_STATE_DIR resolution (not a reimplementation of it) up to the point
+# both are resolved, then hand them back instead of building a whole config:
+# the shipped file is one long chunk with no exported functions, so this
+# extracts everything through `local teeup_state = teeup_state_dir()`
+# (a unique, present-verbatim line in the shipped file) and appends a
+# `return`. Requires only a minimal `wezterm` stub (home_dir/config_dir),
+# since nothing before that line touches any other part of the WezTerm API.
+_wezterm_assert_env_paths_survive() {
+  local lua_bin="$1" bash_bin="$2" label="$3" checkout="$4" state="$5"
+  local env_file="$TEST_HOME/.config/teeup/env" path_q state_q
+  mkdir -p "$TEST_HOME/.config/teeup"
+  path_q="$("$bash_bin" -c 'printf "%q" "$1"' _ "$checkout")"
+  state_q="$("$bash_bin" -c 'printf "%q" "$1"' _ "$state")"
+  {
+    printf 'export TEEUP_PATH=%s\n' "$path_q"
+    printf 'export TEEUP_STATE_DIR=%s\n' "$state_q"
+  } > "$env_file"
+
+  local fake_dir extractor out
+  fake_dir="$(mktemp -d)"
+  cat > "$fake_dir/wezterm.lua" <<'FAKE'
+local M = {}
+M.home_dir = os.getenv("WEZTERM_TEST_HOME") or "/tmp"
+M.config_dir = os.getenv("WEZTERM_TEST_CONFIG_DIR") or "/tmp"
+return M
+FAKE
+
+  extractor="$(mktemp)"
+  cat > "$extractor" <<'LUAEOF'
+local wezterm_file, fake_dir = arg[1], arg[2]
+package.path = fake_dir .. "/?.lua;" .. package.path
+local f = io.open(wezterm_file, "r")
+local src = f:read("*a")
+f:close()
+local marker = "local teeup_state = teeup_state_dir()"
+local idx = src:find(marker, 1, true)
+if not idx then
+  print("EXTRACT_ERROR=marker not found in " .. wezterm_file)
+  os.exit(1)
+end
+local chunk, err = load(src:sub(1, idx + #marker - 1) .. "\nreturn teeup_root, teeup_state\n")
+if not chunk then
+  print("LOAD_ERROR=" .. tostring(err))
+  os.exit(1)
+end
+local root, state = chunk()
+print("TEEUP_ROOT=" .. tostring(root))
+print("TEEUP_STATE=" .. tostring(state))
+LUAEOF
+
+  out="$(
+    unset TEEUP_PATH TEEUP_STATE_DIR
+    WEZTERM_TEST_HOME="$TEST_HOME" WEZTERM_TEST_CONFIG_DIR="$WEZ" \
+      XDG_CONFIG_HOME="$TEST_HOME/.config" "$lua_bin" "$extractor" "$WEZ/wezterm.lua" "$fake_dir" 2>&1
+  )"
+  rm -rf "$fake_dir"
+  rm -f "$extractor"
+
+  local resolved_root resolved_state
+  resolved_root="$(printf '%s\n' "$out" | grep '^TEEUP_ROOT=')"
+  resolved_root="${resolved_root#TEEUP_ROOT=}"
+  resolved_state="$(printf '%s\n' "$out" | grep '^TEEUP_STATE=')"
+  resolved_state="${resolved_state#TEEUP_STATE=}"
+
+  assert_equals "$checkout" "$resolved_root" "$label: TEEUP_PATH should decode byte-for-byte (full output: $out)" || return 1
+  assert_equals "$state" "$resolved_state" "$label: TEEUP_STATE_DIR should decode byte-for-byte (full output: $out)" || return 1
+}
+
+# The Important review finding on round 1: value:gsub("\\(.)", "%1") only
+# undoes plain backslash escapes. A checkout or state dir with a non-ASCII
+# byte makes bash 3.2's %q switch to `$'...'` ANSI-C quoting with octal byte
+# escapes (`$'/Users/caf\303\251/teeup'`), which that gsub does not touch at
+# all: `José` came back as `Jos303251`, require() failed to find the module,
+# and the whole teeup Lua layer silently fell back to WezTerm's own
+# defaults. One path here carries every character class the review named:
+# a space, a single quote, a dollar sign, a non-ASCII (José/Café) byte
+# sequence, and a tab.
+test_teeup_path_and_state_dir_survive_special_bytes() {
+  setup
+  DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
+
+  local lua_bin
+  lua_bin="$(command -v lua || command -v lua5.4 || command -v lua5.3 || true)"
+  if [[ -z "$lua_bin" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return 1
+  fi
+
+  local weird checkout state
+  weird="José's \$Café Dir$(printf '\t')End"
+  checkout="$TEST_HOME/$weird Checkout/teeup"
+  state="$TEST_HOME/$weird State/teeup"
+
+  _wezterm_assert_env_paths_survive "$lua_bin" bash "bash5 ($(bash --version | head -1))" "$checkout" "$state" || return 1
+
+  local bash32
+  if bash32="$(_wezterm_find_bash32)"; then
+    _wezterm_assert_env_paths_survive "$lua_bin" "$bash32" "bash 3.2.0 ($bash32)" "$checkout" "$state" || return 1
+  else
+    echo "note: no bash 3.2 binary found (checked \$TEEUP_TEST_BASH32 and /bin/bash); skipping that variant. CI's macOS runners ship /bin/bash 3.2 natively."
+  fi
+
+  cleanup_test_env
+}
+
 echo "capabilities/wezterm"
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install falls back to a port on macports" test_install_falls_back_to_a_port_on_macports
@@ -209,4 +339,5 @@ run_test "font-apply reloads the config" test_font_apply_reloads_the_config
 run_test "theme renders a wezterm scheme" test_theme_renders_a_wezterm_scheme
 run_test "shipped and rendered Lua parses" test_lua_files_parse
 run_test "TEEUP_PATH and TEEUP_STATE_DIR survive a space" test_teeup_path_and_state_dir_survive_a_space
+run_test "TEEUP_PATH and TEEUP_STATE_DIR survive special bytes" test_teeup_path_and_state_dir_survive_special_bytes
 print_summary
