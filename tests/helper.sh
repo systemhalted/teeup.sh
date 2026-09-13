@@ -30,7 +30,7 @@ setup_test_env() {
   export DRY_RUN="${DRY_RUN:-false}"
   # Keeps tests away from the real /opt/homebrew on macOS CI runners.
   export TEEUP_PKG_PREFIX="$TEST_HOME/pkgprefix"
-  unset TEEUP_CONFIG_DIR TEEUP_STATE_DIR TEEUP_ANSWERS_FILE TEEUP_LOG_FILE
+  unset TEEUP_CONFIG_DIR TEEUP_STATE_DIR TEEUP_ANSWERS_FILE TEEUP_LOG_FILE TEEUP_MACHINES_DIR
 }
 
 cleanup_test_env() {

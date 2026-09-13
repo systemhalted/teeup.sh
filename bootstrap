@@ -122,15 +122,31 @@ wizard() {
 # installed. Asked only when there is no recorded answer yet (or --reconfigure
 # was passed, which is the only way to change it).
 ask_package_manager() {
-  local detected other choice
+  local detected other choice pinned
+  # machines/<hostname>.conf is a hard constraint that answers_load applies
+  # last, so every capability process would ignore a different answer given
+  # here -- while this shell, where answers_set exports the choice, would not:
+  # pkg_backend_path below would then add the ignored backend's bin dir and
+  # the gum the capability just installed would be missing from the wizard.
+  # Reached only with --reconfigure (a pinned value is never "unset"), and
+  # the honest response is to say the value is pinned and not ask.
+  if pinned="$(machine_get TEEUP_PACKAGE_MANAGER)"; then
+    if [[ -n "$pinned" ]]; then
+      log "Package manager is pinned to $pinned by $(machine_file); not asking."
+    else
+      log "Package manager is pinned to auto-detection by $(machine_file) (TEEUP_PACKAGE_MANAGER is empty there); not asking."
+    fi
+    return 0
+  fi
   detected="$(pkg_backend)"
   if [[ "$detected" == "homebrew" ]]; then other=macports; else other=homebrew; fi
   echo ""
   choice="$(ui_choose "Package manager" "$detected" "$other")"
-  # The resolved backend is cached in TEEUP_PKG_BACKEND by the pkg_backend call
-  # above; drop it so the answer just recorded is what every later call reads.
-  unset TEEUP_PKG_BACKEND
   answers_set TEEUP_PACKAGE_MANAGER "$choice"
+  # pkg_backend ran in a command substitution, so it cached nothing here; an
+  # earlier call in this shell could have. Drop the cache so the answer just
+  # recorded is what every later call in this process resolves.
+  unset TEEUP_PKG_BACKEND
 }
 
 # --- 1. Xcode Command Line Tools, Rosetta ------------------------------------

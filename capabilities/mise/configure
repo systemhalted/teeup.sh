@@ -12,33 +12,69 @@ fi
 # pre-commit lives here, not in the git capability: it is a mise-managed tool,
 # and git runs before mise in the core list.
 #
-# `mise which pre-commit` was the wrong question: it answers "is an installed
-# pre-commit active in the configuration stack *here*", which depends on the
-# directory teeup happens to be invoked from. Inside a project whose own
-# mise.toml asks for pre-commit it succeeds, teeup skips the global install,
-# and pre-commit is then missing everywhere else. `mise ls --global` asks about
-# the global config only ("-g, --global  Only show tool versions currently
-# specified in the global mise.toml" -- verified on the installed mise
-# 2026.9.4). A mise too old to have the flag exits non-zero on it; there, fall
-# back to reading the global config file for a pre-commit entry, which is the
-# same file `mise use -g` writes.
+# Every mise call below runs with `-C /` ("Change directory before running
+# command"). mise resolves its configuration stack from the current directory,
+# so run from inside a project whose own mise.toml also asks for pre-commit,
+# `mise ls --global` hides the global row entirely (verified on 2026.9.4: the
+# project's request shadows the global one and only the unshadowed tools are
+# listed), `mise install pre-commit` resolves the *project's* version and
+# `mise where pre-commit` reports the project's active install. Every one of
+# those answers is about the wrong file; `mise which` had the same defect.
+# From `/` no project config is in reach and the global config (MISE_CONFIG_DIR
+# or ~/.config/mise, unaffected by -C) is the whole stack.
+#
+# Two questions, because mise answers them separately. `mise ls --global`
+# ("Only show tool versions currently specified in the global mise.toml") says
+# whether the global config *requests* pre-commit -- but it lists requested
+# versions "whether or not they are installed", so a row there is no proof of
+# a binary: an interrupted install, a manual uninstall or a wiped
+# MISE_DATA_DIR all leave the request behind with the tool gone, and the row
+# reads "3.7.0 (missing)". `--installed` ("Hides tools defined in mise.toml but
+# not installed") answers the second question; with both flags and the tool
+# name, a row comes back only when pre-commit is requested globally *and* on
+# disk (verified: the configured-but-missing case prints nothing, exit 0). A
+# mise that rejects --installed gets `mise where pre-commit` instead, which
+# fails when the globally requested version is not installed.
+#
+#   requested and installed  -> nothing to do
+#   requested but missing    -> `mise install` (honours the pinned version;
+#                               `mise use -g` would rewrite the request)
+#   not requested            -> `mise use -g` (writes the request and installs)
+#
+# A mise too old for --global exits non-zero on it; there, fall back to the
+# global config file for the request (the same file `mise use -g` writes) and
+# to `mise where` for the other half. Neither fallback treats "requested" as
+# "installed" either.
 mise_config_file="${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml"
-mise_has_pre_commit=false
-if mise_global_tools="$(mise ls --global 2>/dev/null)"; then
+mise_pre_commit_requested=false
+mise_pre_commit_installed=false
+if mise_global_tools="$(mise -C / ls --global 2>/dev/null)"; then
   # The tool name is the first column of each row; a header row (if this mise
   # prints one) never spells "pre-commit".
-  if printf '%s
-' "$mise_global_tools" | awk '{print $1}' | grep -qx 'pre-commit'; then
-    mise_has_pre_commit=true
+  if printf '%s\n' "$mise_global_tools" | awk '{print $1}' | grep -qx 'pre-commit'; then
+    mise_pre_commit_requested=true
+    if mise_installed_rows="$(mise -C / ls --global --installed pre-commit 2>/dev/null)"; then
+      if printf '%s\n' "$mise_installed_rows" | awk '{print $1}' | grep -qx 'pre-commit'; then
+        mise_pre_commit_installed=true
+      fi
+    elif mise -C / where pre-commit >/dev/null 2>&1; then
+      mise_pre_commit_installed=true
+    fi
   fi
 elif [[ -f "$mise_config_file" ]]; then
   if grep -qE '^[[:space:]]*("pre-commit"|pre-commit)[[:space:]]*=' "$mise_config_file"; then
-    mise_has_pre_commit=true
+    mise_pre_commit_requested=true
+    if mise -C / where pre-commit >/dev/null 2>&1; then
+      mise_pre_commit_installed=true
+    fi
   fi
 fi
 
-if [[ "$mise_has_pre_commit" == "true" ]]; then
+if [[ "$mise_pre_commit_requested" == "true" && "$mise_pre_commit_installed" == "true" ]]; then
   log "Already installed through mise: pre-commit"
+elif [[ "$mise_pre_commit_requested" == "true" ]]; then
+  log "pre-commit is requested by the global mise config but not installed; installing it."
+  run_cmd mise -C / install pre-commit || warn "Could not install pre-commit through mise."
 else
-  run_cmd mise use -g pre-commit || warn "Could not install pre-commit through mise."
+  run_cmd mise -C / use -g pre-commit || warn "Could not install pre-commit through mise."
 fi

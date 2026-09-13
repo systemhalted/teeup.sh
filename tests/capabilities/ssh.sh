@@ -162,6 +162,54 @@ test_configure_rebuilds_a_missing_public_half() {
   cleanup_test_env
 }
 
+test_configure_rebuilds_a_zero_byte_public_half() {
+  setup
+  seed_answers ""
+  mkdir -p "$TEST_HOME/.ssh"
+  # The state the first version of the rebuild left behind after a mistyped
+  # passphrase: a good private key next to an empty .pub. A -f guard called
+  # that pair "Already present" forever; the empty file must go through the
+  # rebuild like a missing one.
+  printf 'MINE-PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  : > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_not_contains "$out" "Already present" || return 1
+  assert_contains "$out" "Rebuilding the missing public half" || return 1
+  assert_equals "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY rebuilt" \
+    "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" || return 1
+  assert_equals "MINE-PRIVATE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519" || return 1
+  cleanup_test_env
+}
+
+test_configure_replaces_a_zero_byte_private_key() {
+  setup
+  seed_answers ""
+  mkdir -p "$TEST_HOME/.ssh"
+  # The mirror image: an empty private half beside a good .pub. With -f it
+  # was "Already present" forever, ssh-add could only warn, and the github
+  # capability uploaded an orphan .pub. Both files are moved aside (a fresh
+  # ssh-keygen -f on an existing file would otherwise prompt "Overwrite?")
+  # and a new pair is generated.
+  : > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf 'ssh-ed25519 ORPHAN comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Would back up $TEST_HOME/.ssh/id_ed25519_personal to" || return 1
+  assert_contains "$out" "Would execute: ssh-keygen -t ed25519" || return 1
+  [[ ! -s "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "private key changed in dry run"; return 1; }
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_not_contains "$out" "Already present" || return 1
+  assert_contains "$out" "Empty private key at $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_contains "$out" "Backed up $TEST_HOME/.ssh/id_ed25519_personal to" || return 1
+  assert_contains "$out" "Backed up $TEST_HOME/.ssh/id_ed25519_personal.pub to" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  [[ -s "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "no private key generated"; return 1; }
+  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" "AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY comment" || return 1
+  cleanup_test_env
+}
+
 test_configure_leaves_no_pub_behind_when_the_rebuild_fails() {
   setup
   seed_answers ""
@@ -294,6 +342,8 @@ run_test "permissions are tightened" test_permissions_are_tightened
 run_test "existing key is not regenerated" test_existing_key_is_not_regenerated
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure rebuilds a missing public half" test_configure_rebuilds_a_missing_public_half
+run_test "configure rebuilds a zero-byte public half" test_configure_rebuilds_a_zero_byte_public_half
+run_test "configure replaces a zero-byte private key" test_configure_replaces_a_zero_byte_private_key
 run_test "configure leaves no pub behind when the rebuild fails" test_configure_leaves_no_pub_behind_when_the_rebuild_fails
 run_test "configure dry run rebuild prints the command and writes nothing" test_configure_dry_run_rebuild_prints_the_command_and_writes_nothing
 run_test "configure re-runs git configure once the keys exist" test_configure_reruns_git_configure_once_the_keys_exist

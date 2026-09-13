@@ -34,9 +34,17 @@ unset ssh_macos_major
 
 for identity in $(identity_list); do
   key="$(identity_key "$identity")"
-  if [[ -f "$key" && -f "$key.pub" ]]; then
+  # -s, not -f, for both halves: a zero-byte file is a missing one. The first
+  # version of the rebuild below left exactly such a $key.pub behind when the
+  # passphrase was mistyped, and a -f guard then reported the pair "Already
+  # present" on every later run, so the empty file was never repaired and was
+  # what got handed to GitHub. A zero-byte private half (a killed ssh-keygen,
+  # a botched restore) is the mirror image: ssh-add can only warn and the
+  # github capability would upload an orphan .pub. Routing both through the
+  # repair paths is what makes a re-run the repair path again.
+  if [[ -s "$key" && -s "$key.pub" ]]; then
     log "Already present: $key"
-  elif [[ -f "$key" && ! -f "$key.pub" ]]; then
+  elif [[ -s "$key" && ! -s "$key.pub" ]]; then
     # ssh-keygen can succeed after the user declines to overwrite $key.pub at
     # its interactive prompt, leaving a private key with no matching public
     # half. Rebuild the public half from the private key instead of asking
@@ -66,9 +74,16 @@ for identity in $(identity_list); do
       continue
     fi
   else
-    if [[ -f "$key.pub" && ! -f "$key" ]]; then
-      # A public key with no matching private key is not a usable pair; back
-      # it up so a fresh keygen below does not silently discard it.
+    if [[ -e "$key" ]]; then
+      # Zero bytes (the -s tests above failed). Moved aside rather than left
+      # for ssh-keygen, whose "Overwrite (y/n)?" prompt on an existing file
+      # would stall a run that has no answer for it.
+      log "Empty private key at $key; backing it up before generating a fresh pair."
+      backup_target "$key" >/dev/null
+    fi
+    if [[ -e "$key.pub" ]]; then
+      # A public key with no usable private key is not a pair; back it up so
+      # a fresh keygen below does not silently discard it.
       backup_target "$key.pub" >/dev/null
     fi
     log "Generating the $identity ed25519 key (you will be asked for a passphrase)..."

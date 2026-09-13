@@ -126,3 +126,13 @@ findings (I1, I2, I3, Minor 1, Minor 5) are genuinely fixed and independently
 verified against real zsh/gh behavior on this host, matching the fix report's
 claims; the "nothing else changed / no weakened assertions" claim holds against
 the diff.
+
+## Deferred from the review.md round (2026-09-12)
+
+- `bootstrap` (`wizard`): when `machines/<hostname>.conf` pins a wizard key
+  other than the package manager (for example `TEEUP_THEME`), the wizard still
+  asks the question and records an answer that `answers_load` then overrides.
+  Bootstrap itself stays consistent because it reloads at the end, so the cost
+  is one pointless question. Fix with the same `machine_get` guard the
+  package-manager question now uses, once the theme question gains its real
+  option list in phase 2b.
