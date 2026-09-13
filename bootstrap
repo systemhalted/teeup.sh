@@ -91,22 +91,28 @@ run_tier() {
 # The package manager is NOT asked here: step 2 below installs it, and this
 # wizard runs after step 3. See ask_package_manager.
 wizard() {
-  local name email work_email theme daily
+  local name email work_email theme daily themes pinned_theme ask_theme=true
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
   name="$(ui_input "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")")"
   email="$(ui_input "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)")"
   work_email="$(ui_input "Work email (git identity under ~/Work, empty for none)" "$(answers_get TEEUP_WORK_EMAIL)")"
-  # Offer what themes/ actually ships, so an answer can never name a palette
-  # that theme_set would have to fall back from. An empty theme_list (a
-  # checkout with no themes/ directory) still has to give ui_choose something
-  # to offer, so fall back to catppuccin, theme_set's own fallback theme.
-  local themes
-  themes="$(theme_list)"
-  themes="${themes:-catppuccin}"
-  # shellcheck disable=SC2086  # one option per word is exactly what ui_choose wants
-  theme="$(ui_choose "Theme" $themes)"
+  # A theme pinned by machines/<hostname>.conf wins in answers_load, so asking
+  # would record an answer nothing reads (same rule as ask_package_manager).
+  if pinned_theme="$(machine_get TEEUP_THEME)"; then
+    log "Theme is pinned to ${pinned_theme:-catppuccin} by $(machine_file); not asking."
+    ask_theme=false
+  else
+    # Offer what themes/ actually ships, so an answer can never name a palette
+    # that theme_set would have to fall back from. An empty theme_list (a
+    # checkout with no themes/ directory) still has to give ui_choose something
+    # to offer, so fall back to catppuccin, theme_set's own fallback theme.
+    themes="$(theme_list)"
+    themes="${themes:-catppuccin}"
+    # shellcheck disable=SC2086  # one option per word is exactly what ui_choose wants
+    theme="$(ui_choose "Theme" $themes)"
+  fi
   if ui_confirm "Install the daily set too (Emacs, Neovim, Zed, VS Code, Chrome, Obsidian)?" yes; then
     daily=yes
   else
@@ -115,7 +121,7 @@ wizard() {
   answers_set TEEUP_NAME "$name"
   answers_set TEEUP_EMAIL "$email"
   answers_set TEEUP_WORK_EMAIL "$work_email"
-  answers_set TEEUP_THEME "$theme"
+  if [[ "$ask_theme" == "true" ]]; then answers_set TEEUP_THEME "$theme"; fi
   answers_set TEEUP_DAILY "$daily"
   answers_load
 }

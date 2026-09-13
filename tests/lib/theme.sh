@@ -289,6 +289,25 @@ test_list_offers_only_themes_with_both_modes() {
   cleanup_test_env
 }
 
+test_theme_names_are_validated() {
+  setup
+  local d rc out
+  for d in "My Theme" "Bad_Name"; do
+    mkdir -p "$TEST_HOME/.config/teeup/themes/$d"
+    cp "$TEEUP_PATH/themes/catppuccin/dark.toml" "$TEEUP_PATH/themes/catppuccin/light.toml" "$TEST_HOME/.config/teeup/themes/$d/"
+  done
+  out="$(theme_list 2>"$TEST_HOME/list.err")"
+  assert_not_contains "$out" "My" "a name with a space is not offered" || return 1
+  assert_not_contains "$out" "Bad_Name" || return 1
+  assert_contains "$out" "catppuccin" || return 1
+  assert_contains "$(cat "$TEST_HOME/list.err")" "Ignoring theme $TEST_HOME/.config/teeup/themes/My Theme" || return 1
+  rc=0
+  out="$(theme_dir ../../teeup/themes/catppuccin 2>&1)" || rc=$?
+  assert_failure "$rc" "a path is not a theme name" || return 1
+  assert_contains "$out" "Invalid theme name: ../../teeup/themes/catppuccin" || return 1
+  cleanup_test_env
+}
+
 test_list_and_current() {
   setup
   make_fixture_theme
@@ -315,5 +334,6 @@ run_test "set aborts when a template cannot be rendered" test_set_aborts_when_a_
 run_test "set aborts when the palette misses a key" test_set_aborts_when_the_palette_misses_a_key
 run_test "set aborts on an unsafe palette value" test_set_aborts_on_an_unsafe_palette_value
 run_test "list offers only themes with both modes" test_list_offers_only_themes_with_both_modes
+run_test "theme names are validated" test_theme_names_are_validated
 run_test "list and current" test_list_and_current
 print_summary
