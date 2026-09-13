@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Accessibility grants live in the TCC database, which no unprivileged process
+# may read. So doctor checks everything else and prints the one manual step.
+# TEEUP_APPS_DIR is a test hook: without it this script reads the real
+# /Applications and passes or fails depending on the developer's own machine.
+APPS_DIR="${TEEUP_APPS_DIR:-/Applications}"
+problems=0
+
+if [[ -d "$APPS_DIR/AeroSpace.app" ]]; then
+  ok "AeroSpace is installed."
+else
+  err "AeroSpace is not in /Applications. Run: teeup install aerospace"
+  problems=$((problems + 1))
+fi
+
+if [[ -f "$(user_config_dir)/aerospace/aerospace.toml" ]]; then
+  ok "AeroSpace config present."
+else
+  err "No aerospace.toml. Run: teeup configure aerospace"
+  problems=$((problems + 1))
+fi
+
+if pgrep -x AeroSpace >/dev/null 2>&1; then
+  ok "AeroSpace is running."
+else
+  warn "AeroSpace is not running. Start it with: open -a AeroSpace"
+fi
+
+echo "If windows still do not move, turn AeroSpace on under System Settings > Privacy & Security > Accessibility."
+[[ $problems -eq 0 ]]

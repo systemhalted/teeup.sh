@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# AeroSpace ships from its author's tap, so the tap has to exist first. Doing
+# it explicitly (rather than relying on the implicit tap in the cask name)
+# keeps the error legible when GitHub is unreachable.
+if ! casks_supported; then
+  warn "AeroSpace is a cask and MacPorts has none; download it from https://github.com/nikitabobko/AeroSpace/releases"
+  exit 0
+fi
+if brew tap 2>/dev/null | grep -qx nikitabobko/tap; then
+  log "Already tapped: nikitabobko/tap"
+else
+  run_cmd brew tap nikitabobko/tap || warn "Could not tap nikitabobko/tap."
+fi
+cask_install nikitabobko/tap/aerospace

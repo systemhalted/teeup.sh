@@ -1,0 +1,8 @@
+summary="AeroSpace tiling window manager"
+group=macos
+tier=core
+requires="package-manager"
+provides=""
+casks="nikitabobko/tap/aerospace"
+apps="AeroSpace"
+interactive=false
