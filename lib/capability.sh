@@ -89,7 +89,7 @@ cap_run() {
 
 # cap_check -> lints every capability; prints one problem per line.
 cap_check() {
-  local problems=0 name dir tier provides p verb
+  local problems=0 name dir tier provides p verb tpl base other d
   for name in $(cap_list); do
     dir="$(cap_dir "$name")"
     tier="$(cap_meta_get "$name" tier)"
@@ -123,6 +123,25 @@ cap_check() {
     esac
     for p in $(cap_meta_get "$name" requires); do
       cap_exists "$p" || { echo "$name: requires unknown capability $p"; problems=$((problems + 1)); }
+    done
+  done
+  # theme_set renders every capability's themed/*.tpl into one flat directory
+  # per mode, so two capabilities shipping the same basename would silently
+  # render only the first. Globs expand sorted, so each template is compared
+  # with the capabilities before its own.
+  for tpl in "$TEEUP_CAPS_DIR"/*/themed/*.tpl; do
+    [[ -f "$tpl" ]] || continue
+    base="${tpl##*/}"
+    name="${tpl%/themed/*}"
+    name="${name##*/}"
+    for d in "$TEEUP_CAPS_DIR"/*/themed; do
+      other="${d%/themed}"
+      other="${other##*/}"
+      [[ "$other" == "$name" ]] && break
+      if [[ -f "$d/$base" ]]; then
+        echo "$name: themed/$base is also shipped by $other"; problems=$((problems + 1))
+        break
+      fi
     done
   done
   for tier in core daily; do

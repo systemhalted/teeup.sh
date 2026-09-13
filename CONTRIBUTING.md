@@ -459,7 +459,9 @@ Happy contributing! 🚀
     `{{ key_strip }}` (no leading `#`) and `{{ key_rgb }}` (`r,g,b`) replaced
     from `themes/<theme>/{dark,light}.toml`, and stages the results in
     `~/.local/state/teeup/current/theme/<mode>/<file>`. A user template of the
-    same basename in `~/.config/teeup/themed/` wins.
+    same basename in `~/.config/teeup/themed/` wins. Basenames share one
+    namespace, so no two capabilities may ship the same one
+    (`teeup commands --check` fails on a duplicate).
 12. If the tool needs to be told about a new theme or font, add an executable
     `capabilities/<name>/theme-apply` or `capabilities/<name>/font-apply`. Both
     run exactly like `install` and `configure` (`bash -eu`, `lib/all.sh`

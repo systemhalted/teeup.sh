@@ -148,8 +148,8 @@ theme_render() {
 }
 
 # theme_templates -> every template, user copies first.
-# theme_set renders in this order and never overwrites an output that already
-# exists, so a user template of the same basename wins.
+# theme_set renders in this order and renders each basename once, so a user
+# template of the same basename wins.
 theme_templates() {
   local d f
   for f in "$TEEUP_CONFIG_DIR"/themed/*.tpl; do
@@ -192,7 +192,7 @@ TEEUP_THEME_FALLBACK="catppuccin"
 export TEEUP_THEME_FALLBACK
 
 theme_set() {
-  local name="$1" dir mode tpl out current next cap failed=0 missing
+  local name="$1" dir mode tpl base out current next cap failed=0 missing user_bases cap_bases
   if ! dir="$(theme_dir "$name")"; then
     if [[ "$name" == "$TEEUP_THEME_FALLBACK" ]]; then
       if [[ -n "${TEEUP_COLOR_SED:-}" ]]; then rm -f "$TEEUP_COLOR_SED"; fi
@@ -219,9 +219,29 @@ theme_set() {
       return 1
     fi
     run_cmd mkdir -p "$next/$mode"
+    # Rendered files share one flat namespace per mode. A user template
+    # overriding a shipped one of the same basename is the feature and stays
+    # quiet; two capabilities shipping one basename is a collision (cap_check
+    # fails on it), so the one that loses is named, once rather than per mode.
+    user_bases="/"
+    cap_bases="/"
     while IFS= read -r tpl; do
-      out="$next/$mode/$(basename "$tpl" .tpl)"
-      if [[ -e "$out" ]]; then continue; fi
+      base="$(basename "$tpl" .tpl)"
+      out="$next/$mode/$base"
+      if [[ "${tpl%/*}" == "$TEEUP_CONFIG_DIR/themed" ]]; then
+        user_bases="$user_bases$base/"
+      else
+        case "$cap_bases" in
+          *"/$base/"*)
+            if [[ "$mode" == "dark" ]]; then
+              warn "$tpl was not rendered: another capability ships $base.tpl (teeup commands --check names both)"
+            fi
+            continue
+            ;;
+        esac
+        cap_bases="$cap_bases$base/"
+        case "$user_bases" in *"/$base/"*) continue ;; esac
+      fi
       if ! theme_render "$tpl" "$out"; then
         warn "Could not render $tpl"
         failed=1
@@ -260,7 +280,10 @@ theme_set() {
   TEEUP_THEME_DIR="$current"
   TEEUP_THEME_NAME="$name"
   export TEEUP_THEME_DIR TEEUP_THEME_NAME
-  while IFS= read -r cap; do
+  # A for loop over a captured list, not `while read ... < <(cap_list)`: an
+  # interactive=true capability's hook inherits stdin, and reading it would
+  # swallow the names of the capabilities still waiting for their hooks.
+  for cap in $(cap_list); do
     cap_run_optional "$cap" theme-apply
-  done < <(cap_list)
+  done
 }
