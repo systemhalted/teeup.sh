@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# The theme is an answer, so configure means "render what the wizard chose".
+# Re-running it is also how `teeup update` picks up new or changed templates,
+# which is why theme_set always re-renders instead of skipping.
+theme_set "$(answers_get TEEUP_THEME catppuccin)"
