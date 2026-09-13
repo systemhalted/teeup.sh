@@ -8,10 +8,6 @@
 TEEUP_THEMES_DIR="${TEEUP_THEMES_DIR:-$TEEUP_PATH/themes}"
 export TEEUP_THEMES_DIR
 
-# theme_dir <name>
-# A user theme overrides a shipped one of the same name, the same way a user
-# config overrides a shipped config. `die` is not used: this runs inside $( ),
-# where die would only kill the substitution subshell.
 # A theme is complete only with both modes: listing or resolving a half theme
 # would let the wizard offer a name that theme_set then cannot render.
 _theme_complete() { [[ -f "$1/dark.toml" && -f "$1/light.toml" ]]; }
@@ -20,6 +16,10 @@ _theme_complete() { [[ -f "$1/dark.toml" && -f "$1/light.toml" ]]; }
 # the content of current/theme.name, so it is kept to one plain word.
 TEEUP_THEME_NAME_RE='^[a-z0-9][a-z0-9-]*$'
 
+# theme_dir <name>
+# A user theme overrides a shipped one of the same name, the same way a user
+# config overrides a shipped config. `die` is not used: this runs inside $( ),
+# where die would only kill the substitution subshell.
 theme_dir() {
   local name="$1" d
   if ! [[ $name =~ $TEEUP_THEME_NAME_RE ]]; then

@@ -110,12 +110,12 @@ defaults_restore() {
   fi
 }
 
+_launchagent_plist() { printf '%s/Library/LaunchAgents/%s.plist\n' "$HOME" "$1"; }
+
 # launchagent_install <label>   (plist content on stdin)
 # Always reloads, even when the plist did not change: bootout is the cheap way
 # to make the agent match the file, and it is how a manually unloaded agent
 # repairs itself on the next `teeup configure`.
-_launchagent_plist() { printf '%s/Library/LaunchAgents/%s.plist\n' "$HOME" "$1"; }
-
 launchagent_install() {
   local label="$1" dir plist uid
   plist="$(_launchagent_plist "$label")"
