@@ -1,6 +1,5 @@
 # Core tier: what every terminal session needs. Ordered; each entry's
 # requires= must already be satisfied by the entries above it.
-# This plan still inserts, above theme: aerospace keyboard macos-defaults
 xcode-clt
 package-manager
 teeup-runtime

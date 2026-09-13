@@ -27,12 +27,18 @@ cd ~/.local/share/teeup
 teeup status              # what is installed
 teeup list                # every capability and its tier
 teeup install <name>      # install and configure one capability
+teeup theme set catppuccin        # re-render every app's colours, light and dark
+teeup install font "Fira Code"    # switch every tool to another Nerd Font
 teeup secret set <name>   # store a secret in the macOS Keychain
 ```
 
 ~/.local/bin joins your PATH through the shell layer the zsh capability installs, so teeup is spelled ~/.local/bin/teeup until you open a new terminal.
 
-Capabilities implemented so far: `xcode-clt`, `package-manager`, `teeup-runtime`, `dev-dirs`, `zsh`, `starship`, `cli-tools`, `secrets`, `git`, `ssh`, `github`, `mise`. The rest arrive phase by phase; `teeup list` is always the source of truth.
+The core tier is complete: `xcode-clt`, `package-manager`, `teeup-runtime`,
+`dev-dirs`, `zsh`, `starship`, `cli-tools`, `secrets`, `git`, `ssh`, `github`,
+`mise`, `wezterm`, `fonts`, `aerospace`, `keyboard`, `macos-defaults`,
+`theme`. The daily tier and everything lazy arrive in phase 3; `teeup list` is
+always the source of truth.
 
 Per-machine overrides live in `machines/<hostname>.conf`, a committed file that is sourced after your answers and wins over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs.
 

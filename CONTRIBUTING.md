@@ -454,3 +454,22 @@ Happy contributing! 🚀
    does not run on them, so keep them simple and guard every optional tool.
 10. Per-machine overrides go in `machines/<hostname>.conf`, which is committed
     and sourced last, so it wins over the answers file.
+11. If the tool has colours, add `capabilities/<name>/themed/<file>.tpl`.
+    `teeup theme set` renders every template once per mode with `{{ key }}`,
+    `{{ key_strip }}` (no leading `#`) and `{{ key_rgb }}` (`r,g,b`) replaced
+    from `themes/<theme>/{dark,light}.toml`, and stages the results in
+    `~/.local/state/teeup/current/theme/<mode>/<file>`. A user template of the
+    same basename in `~/.config/teeup/themed/` wins.
+12. If the tool needs to be told about a new theme or font, add an executable
+    `capabilities/<name>/theme-apply` or `capabilities/<name>/font-apply`. Both
+    run exactly like `install` and `configure` (`bash -eu`, `lib/all.sh`
+    loaded, answers sourced, `TEEUP_CAP` and `TEEUP_CAP_DIR` exported).
+    `theme-apply` additionally gets `TEEUP_THEME_DIR`
+    (`~/.local/state/teeup/current/theme`) and `TEEUP_THEME_NAME`;
+    `font-apply` gets `TEEUP_FONT_FAMILY`. Both are optional, and a failure
+    warns without aborting the switch, so keep them to "tell the app to
+    reload" rather than real work.
+13. Native macOS settings go through `lib/macos.sh`: `defaults_write` (which
+    records the prior value so `remove` can call `defaults_restore`) and
+    `launchagent_install <label>` with the plist on stdin. Never call
+    `defaults write` or `launchctl` directly.

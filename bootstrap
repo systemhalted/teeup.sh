@@ -98,7 +98,15 @@ wizard() {
   name="$(ui_input "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")")"
   email="$(ui_input "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)")"
   work_email="$(ui_input "Work email (git identity under ~/Work, empty for none)" "$(answers_get TEEUP_WORK_EMAIL)")"
-  theme="$(ui_choose "Theme (applied once the theme capability lands)" catppuccin tokyo-night gruvbox nord)"
+  # Offer what themes/ actually ships, so an answer can never name a palette
+  # that theme_set would have to fall back from. An empty theme_list (a
+  # checkout with no themes/ directory) still has to give ui_choose something
+  # to offer, so fall back to catppuccin, theme_set's own fallback theme.
+  local themes
+  themes="$(theme_list)"
+  themes="${themes:-catppuccin}"
+  # shellcheck disable=SC2086  # one option per word is exactly what ui_choose wants
+  theme="$(ui_choose "Theme" $themes)"
   if ui_confirm "Install the daily set too (Emacs, Neovim, Zed, VS Code, Chrome, Obsidian)?" yes; then
     daily=yes
   else

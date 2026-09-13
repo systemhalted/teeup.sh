@@ -9,7 +9,8 @@ BOOT="$TEEUP_PATH/bootstrap"
 # wizard in step 4:
 # package manager choice, name, email, work email, theme choice, daily confirm.
 # "1" is the detected backend (Homebrew on the mocked modern Mac), "2" the
-# other one.
+# other one; for the theme choice, "1" is the first theme themes/ ships, i.e.
+# catppuccin.
 WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n\n1\ny\n'
 
 setup() {
@@ -117,6 +118,7 @@ test_dry_run_walks_core_tier_in_order() {
   [[ "$x" -lt "$p" && "$p" -lt "$r" && "$r" -lt "$d" ]] || { echo "core tier ran out of order"; return 1; }
   assert_contains "$out" "Homebrew/install/HEAD/install.sh" || return 1
   assert_contains "$out" "Would set TEEUP_NAME" || return 1
+  assert_contains "$out" "Would set TEEUP_THEME" || return 1
   assert_contains "$out" "Would record state: done/bootstrap" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
@@ -154,6 +156,9 @@ test_the_package_manager_is_asked_before_it_is_installed() {
   # The choice is recorded before the capability that installs it runs, so the
   # capability agrees with it instead of recording a backend of its own.
   assert_contains "$out" "Package manager already recorded: homebrew" || return 1
+  # The wizard's theme question offers only what themes/ ships (catppuccin);
+  # ui_choose prints its options on stderr, which this test already captures.
+  assert_not_contains "$out" "tokyo-night" "the wizard must not offer an unshipped theme" || return 1
   cleanup_test_env
 }
 
