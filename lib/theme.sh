@@ -89,15 +89,18 @@ _theme_sed_entry() {
 # bash 3.2 has no associative arrays, so the palette becomes one exported
 # TEEUP_COLOR_<KEY> per key plus a space-separated key list, and the render
 # table is a sed script built once here rather than once per template.
-# The `sed` expression takes the value out of the double quotes, which is why
-# a value may contain spaces (bat_theme) but never a double quote.
+# The `sed` expression takes everything between the first and the last double
+# quote on the line, so a stray quote inside a value reaches the check below
+# instead of silently cutting the value short.
 #
-# Values land inside a shell `export`, Lua strings and TOML strings, and a
-# user theme is untrusted input, so every value must be a colour or a plain
-# name ("#89b4fa", "Monokai Extended Light"). Anything else (`$(...)`, a
-# backtick, a backslash, a quote) makes the whole palette invalid rather than
-# being escaped three different ways.
-TEEUP_PALETTE_VALUE_RE='^[#A-Za-z0-9][A-Za-z0-9 ._-]*$'
+# Values land inside a shell `export`, Lua strings and TOML strings, all of
+# them double-quoted, and a user theme is untrusted input, so every value must
+# be a colour or a plain name ("#89b4fa", "Monokai Extended Light", bat's
+# "Solarized (dark)" and "Visual Studio Dark+"). Anything else (`$`, a
+# backtick, a backslash, a quote, `;`) makes the whole palette invalid rather
+# than being escaped three different ways. `mode` is also rendered unquoted,
+# in starship's `[palettes.teeup-<mode>]` header, so it must be dark or light.
+TEEUP_PALETTE_VALUE_RE='^[#A-Za-z0-9][A-Za-z0-9 ._()+-]*$'
 
 theme_palette_load() {
   local file="$1" key value upper old
@@ -116,14 +119,18 @@ theme_palette_load() {
   while read -r key value; do
     if [[ -z "$key" ]]; then continue; fi
     if ! [[ $value =~ $TEEUP_PALETTE_VALUE_RE ]]; then
-      warn "Invalid palette value in $file: $key = \"$value\" (use a colour like #89b4fa or a name of letters, digits, spaces, dots, underscores and dashes)"
+      warn "Invalid palette value in $file: $key = \"$value\" (use a colour like #89b4fa or a name of letters, digits, spaces and . _ - + ( ))"
+      return 1
+    fi
+    if [[ "$key" == "mode" && "$value" != "dark" && "$value" != "light" ]]; then
+      warn "Invalid palette value in $file: mode = \"$value\" (use dark or light)"
       return 1
     fi
     upper="$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
     export "TEEUP_COLOR_$upper=$value"
     TEEUP_COLOR_KEYS="$TEEUP_COLOR_KEYS$key "
     _theme_sed_entry "$key" "$value"
-  done < <(sed -n 's/^\([a-z][a-z0-9_]*\)[[:space:]]*=[[:space:]]*"\([^"]*\)".*$/\1 \2/p' "$file")
+  done < <(sed -n 's/^\([a-z][a-z0-9_]*\)[[:space:]]*=[[:space:]]*"\(.*\)".*$/\1 \2/p' "$file")
   export TEEUP_COLOR_KEYS
 }
 
