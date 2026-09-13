@@ -135,6 +135,41 @@ test_cap_order_fails_on_unknown_requires() {
   cleanup_test_env
 }
 
+test_run_optional_skips_a_missing_verb() {
+  setup
+  local out rc=0
+  out="$(cap_run_optional alpha theme-apply 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_equals "" "$out" || return 1
+  cleanup_test_env
+}
+
+test_run_optional_respects_teeup_skip() {
+  setup
+  printf '#!/usr/bin/env bash\necho "hook:alpha"\n' > "$TEEUP_CAPS_DIR/alpha/theme-apply"
+  chmod +x "$TEEUP_CAPS_DIR/alpha/theme-apply"
+  export TEEUP_SKIP="alpha"
+  local out
+  out="$(cap_run_optional alpha theme-apply 2>&1)"
+  assert_equals "" "$out" "a skipped capability gets no hook" || return 1
+  unset TEEUP_SKIP
+  cleanup_test_env
+}
+
+test_run_optional_warns_but_succeeds_on_failure() {
+  setup
+  printf '#!/usr/bin/env bash\necho "hook:alpha dir=$TEEUP_THEME_DIR"\nfalse\n' > "$TEEUP_CAPS_DIR/alpha/theme-apply"
+  chmod +x "$TEEUP_CAPS_DIR/alpha/theme-apply"
+  export TEEUP_THEME_DIR=/tmp/theme
+  local out rc=0
+  out="$(cap_run_optional alpha theme-apply 2>&1)" || rc=$?
+  assert_success "$rc" "an optional hook must never fail its caller" || return 1
+  assert_contains "$out" "hook:alpha dir=/tmp/theme" || return 1
+  assert_contains "$out" "alpha theme-apply failed; continuing." || return 1
+  unset TEEUP_THEME_DIR
+  cleanup_test_env
+}
+
 echo "lib/capability.sh"
 run_test "list and exists" test_list_and_exists
 run_test "meta get with default" test_meta_get_with_default
@@ -147,4 +182,7 @@ run_test "skipped reads TEEUP_SKIP" test_skipped_reads_teeup_skip
 run_test "check passes on valid fixture" test_check_passes_on_valid_fixture
 run_test "check reports problems" test_check_reports_problems
 run_test "cap_order fails on unknown requires" test_cap_order_fails_on_unknown_requires
+run_test "run_optional skips a missing verb" test_run_optional_skips_a_missing_verb
+run_test "run_optional respects TEEUP_SKIP" test_run_optional_respects_teeup_skip
+run_test "run_optional warns but succeeds on failure" test_run_optional_warns_but_succeeds_on_failure
 print_summary

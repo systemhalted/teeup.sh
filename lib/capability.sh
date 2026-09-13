@@ -132,3 +132,16 @@ cap_check() {
   done
   [[ $problems -eq 0 ]]
 }
+
+# cap_run_optional <name> <verb>
+# The hook runner behind theme-apply and font-apply: a capability that has no
+# opinion about themes simply ships no theme-apply, and a broken hook warns
+# instead of aborting the switch (Omarchy's hook rule). cap_run itself is the
+# strict version and stays that way, because `teeup configure nope` must fail.
+cap_run_optional() {
+  local name="$1" verb="$2"
+  if cap_skipped "$name"; then return 0; fi
+  [[ -f "$(cap_dir "$name")/$verb" ]] || return 0
+  cap_run "$name" "$verb" || warn "$name $verb failed; continuing."
+  return 0
+}
