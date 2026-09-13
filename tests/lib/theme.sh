@@ -167,8 +167,51 @@ test_user_template_wins_over_the_capability_one() {
   make_fixture_caps
   mkdir -p "$TEST_HOME/.config/teeup/themed"
   printf 'mine %s\n' '{{ accent }}' > "$TEST_HOME/.config/teeup/themed/demo.conf.tpl"
-  theme_set fixture >/dev/null
+  local out
+  out="$(theme_set fixture 2>&1)"
   assert_equals "mine #89b4fa" "$(cat "$TEST_HOME/.local/state/teeup/current/theme/dark/demo.conf")" || return 1
+  assert_not_contains "$out" "shadowed" "a user template overriding a shipped one is the feature, not a problem" || return 1
+  cleanup_test_env
+}
+
+# make_hook_cap <name> <interactive> <verb> <body>
+make_hook_cap() {
+  local name="$1" interactive="$2" verb="$3" body="$4"
+  mkdir -p "$TEEUP_CAPS_DIR/$name"
+  printf 'summary="Fixture %s"\ngroup=system\ntier=lazy\nrequires=""\nprovides=""\ninteractive=%s\n' "$name" "$interactive" > "$TEEUP_CAPS_DIR/$name/capability"
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/$name/install"
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/$name/configure"
+  printf '#!/usr/bin/env bash\n%s\n' "$body" > "$TEEUP_CAPS_DIR/$name/$verb"
+  chmod +x "$TEEUP_CAPS_DIR/$name/install" "$TEEUP_CAPS_DIR/$name/configure" "$TEEUP_CAPS_DIR/$name/$verb"
+}
+
+test_set_warns_when_a_capability_template_is_shadowed() {
+  setup
+  make_fixture_theme
+  make_fixture_caps
+  make_hook_cap zeta false theme-apply ':'
+  mkdir -p "$TEEUP_CAPS_DIR/zeta/themed"
+  printf 'zeta %s\n' '{{ accent }}' > "$TEEUP_CAPS_DIR/zeta/themed/demo.conf.tpl"
+  local out
+  out="$(theme_set fixture 2>&1)"
+  assert_contains "$out" "$TEEUP_CAPS_DIR/zeta/themed/demo.conf.tpl was not rendered: another capability ships demo.conf.tpl" || return 1
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'was not rendered')" "warned once, not once per mode" || return 1
+  assert_equals "accent=#89b4fa strip=89b4fa rgb=137,180,250 mode=dark" "$(cat "$TEST_HOME/.local/state/teeup/current/theme/dark/demo.conf")" || return 1
+  cleanup_test_env
+}
+
+test_set_runs_every_hook_after_an_interactive_one() {
+  setup
+  make_fixture_theme
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  # An interactive capability keeps its stdin; a hook of one that reads stdin
+  # must not eat the list of capabilities still waiting for their hooks.
+  make_hook_cap aaa true theme-apply 'read -r line || true; echo "aaa read:[$line]"'
+  make_hook_cap bbb false theme-apply 'echo "bbb applied"'
+  local out
+  out="$(theme_set fixture 2>&1 </dev/null)"
+  assert_contains "$out" "aaa read:[]" || return 1
+  assert_contains "$out" "bbb applied" || return 1
   cleanup_test_env
 }
 
@@ -327,6 +370,8 @@ run_test "render still escapes sed special characters" test_render_still_escapes
 run_test "set renders both modes and runs hooks" test_set_renders_both_modes_and_runs_hooks
 run_test "set is content idempotent" test_set_is_content_idempotent
 run_test "user template wins over the capability one" test_user_template_wins_over_the_capability_one
+run_test "set warns when a capability template is shadowed" test_set_warns_when_a_capability_template_is_shadowed
+run_test "set runs every hook after an interactive one" test_set_runs_every_hook_after_an_interactive_one
 run_test "set dry run writes nothing" test_set_dry_run_writes_nothing
 run_test "set unknown theme falls back to catppuccin" test_set_unknown_theme_falls_back_to_catppuccin
 run_test "set fails when the fallback itself is missing" test_set_fails_when_the_fallback_itself_is_missing

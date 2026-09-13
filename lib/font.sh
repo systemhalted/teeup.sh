@@ -83,8 +83,9 @@ $family
 FONT_STATE
   TEEUP_FONT_FAMILY="$family"
   export TEEUP_FONT_FAMILY
-  while IFS= read -r cap; do
+  # A for loop, not `while read < <(cap_list)`: see theme_set's hook loop.
+  for cap in $(cap_list); do
     cap_run_optional "$cap" font-apply
-  done < <(cap_list)
+  done
   ok "Font set to $family"
 }

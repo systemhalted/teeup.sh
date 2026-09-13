@@ -125,6 +125,22 @@ test_check_reports_problems() {
   cleanup_test_env
 }
 
+test_check_reports_duplicate_template_basenames() {
+  setup
+  # Rendered templates share one flat namespace per mode, so two capabilities
+  # shipping the same basename would silently render only one of them.
+  mkdir -p "$TEEUP_CAPS_DIR/alpha/themed" "$TEEUP_CAPS_DIR/beta/themed" "$TEEUP_CAPS_DIR/gamma/themed"
+  printf 'x\n' > "$TEEUP_CAPS_DIR/alpha/themed/colors.conf.tpl"
+  printf 'x\n' > "$TEEUP_CAPS_DIR/gamma/themed/other.conf.tpl"
+  cap_check || { echo "distinct basenames should pass"; return 1; }
+  printf 'x\n' > "$TEEUP_CAPS_DIR/beta/themed/colors.conf.tpl"
+  local rc=0 out
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "beta: themed/colors.conf.tpl is also shipped by alpha" || return 1
+  cleanup_test_env
+}
+
 test_cap_order_fails_on_unknown_requires() {
   setup
   make_cap orphan core "ghost"
@@ -181,6 +197,7 @@ run_test "run missing verb fails clearly" test_run_missing_verb_fails_clearly
 run_test "skipped reads TEEUP_SKIP" test_skipped_reads_teeup_skip
 run_test "check passes on valid fixture" test_check_passes_on_valid_fixture
 run_test "check reports problems" test_check_reports_problems
+run_test "check reports duplicate template basenames" test_check_reports_duplicate_template_basenames
 run_test "cap_order fails on unknown requires" test_cap_order_fails_on_unknown_requires
 run_test "run_optional skips a missing verb" test_run_optional_skips_a_missing_verb
 run_test "run_optional respects TEEUP_SKIP" test_run_optional_respects_teeup_skip
