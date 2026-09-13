@@ -151,12 +151,39 @@ test_configure_rebuilds_a_missing_public_half() {
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
   assert_contains "$out" "Rebuilding the missing public half" || return 1
   assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
-  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" "rebuilt" || return 1
+  # Exactly what the mocked `ssh-keygen -y` printed, moved into place whole.
+  assert_equals "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY rebuilt" \
+    "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" || return 1
   # The private half must be untouched: ssh-keygen was never asked to
   # regenerate it, only to derive the public half (-y).
   assert_equals "MINE-PRIVATE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "ssh-keygen -y -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  cleanup_test_env
+}
+
+test_configure_leaves_no_pub_behind_when_the_rebuild_fails() {
+  setup
+  seed_answers ""
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'MINE-PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  # A mistyped or cancelled passphrase: real ssh-keygen -y prints nothing and
+  # exits 1. A plain `> "$key.pub"` redirect has already created and truncated
+  # the target by then, and that zero-byte .pub made every later run see a
+  # complete pair and skip the repair for good.
+  mock_command_script ssh-keygen <<'EOF2'
+[ "$1" = "-y" ] && exit 1
+exit 0
+EOF2
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Rebuilding $TEST_HOME/.ssh/id_ed25519_personal.pub failed" || return 1
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_personal.pub" ]] ||
+    { echo "a .pub survived a failed rebuild: $(wc -c < "$TEST_HOME/.ssh/id_ed25519_personal.pub") bytes"; return 1; }
+  local leftovers
+  leftovers="$(find "$TEST_HOME/.ssh" -name 'id_ed25519_personal.teeup_rebuild_*' 2>/dev/null)"
+  assert_equals "" "$leftovers" "the temp file must not be left behind" || return 1
+  assert_equals "MINE-PRIVATE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
   cleanup_test_env
 }
 
@@ -208,6 +235,35 @@ test_configure_dry_run_pub_only_backs_up_nothing_and_generates_nothing() {
   cleanup_test_env
 }
 
+test_configure_reruns_git_configure_once_the_keys_exist() {
+  setup
+  seed_answers ""
+  # git runs before ssh in the core list, so this is exactly the state a first
+  # bootstrap reaches: a git config generated while no key existed, therefore
+  # with commit signing off.
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  assert_file_exists "$TEST_HOME/.config/git/config" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = false" || return 1
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Re-running the git configuration" || return 1
+  assert_contains "$out" "Completed: git configure" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = true" || return 1
+  cleanup_test_env
+}
+
+test_configure_does_not_rerun_git_when_git_was_never_configured() {
+  setup
+  seed_answers ""
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_not_contains "$out" "Re-running the git configuration" || return 1
+  assert_not_contains "$out" "Completed: git configure" || return 1
+  assert_contains "$out" "commit signing turns on at: teeup configure git" || return 1
+  [[ ! -e "$TEST_HOME/.config/git/config" ]] || { echo "ssh configure wrote a git config"; return 1; }
+  cleanup_test_env
+}
+
 test_configure_twice_changes_nothing() {
   setup
   seed_answers "ada@corp.example"
@@ -238,7 +294,10 @@ run_test "permissions are tightened" test_permissions_are_tightened
 run_test "existing key is not regenerated" test_existing_key_is_not_regenerated
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure rebuilds a missing public half" test_configure_rebuilds_a_missing_public_half
+run_test "configure leaves no pub behind when the rebuild fails" test_configure_leaves_no_pub_behind_when_the_rebuild_fails
 run_test "configure dry run rebuild prints the command and writes nothing" test_configure_dry_run_rebuild_prints_the_command_and_writes_nothing
+run_test "configure re-runs git configure once the keys exist" test_configure_reruns_git_configure_once_the_keys_exist
+run_test "configure does not re-run git when git was never configured" test_configure_does_not_rerun_git_when_git_was_never_configured
 run_test "configure backs up a pub-only key and regenerates the pair" test_configure_backs_up_a_pub_only_key_and_regenerates_the_pair
 run_test "configure dry run pub-only backs up nothing and generates nothing" test_configure_dry_run_pub_only_backs_up_nothing_and_generates_nothing
 run_test "configure twice changes nothing" test_configure_twice_changes_nothing

@@ -70,6 +70,28 @@ test_copy_config_once_backs_up_foreign_file() {
   cleanup_test_env
 }
 
+test_copy_config_once_backs_up_a_dangling_symlink() {
+  setup
+  mkdir -p "$(dirname "$DEST")"
+  # What a dotfile manager leaves behind once its store is moved or removed:
+  # the link is still there, its target is not. `[[ -e ]]` is false for it, so
+  # copy_config_once used to treat it as absent and hand it to `cp`.
+  ln -s "$TEST_HOME/store/tool.conf" "$DEST"
+  [[ -L "$DEST" && ! -e "$DEST" ]] || { echo "the fixture is not a dangling symlink"; return 1; }
+  local out
+  out="$(copy_config_once "$SRC" "$DEST" 2>&1)"
+  [[ ! -L "$DEST" ]] || { echo "dest is still a symlink"; return 1; }
+  assert_equals "shipped=1" "$(cat "$DEST")" || return 1
+  assert_equals "$(file_sha "$SRC")" "$(stock_sha "$DEST")" "recorded sha" || return 1
+  local backup="" f
+  for f in "$(dirname "$DEST")"/tool.conf.teeup_backup_*; do
+    [[ -L "$f" ]] && backup="$f"
+  done
+  [[ -n "$backup" ]] || { echo "the dangling symlink was not backed up: $out"; return 1; }
+  assert_equals "$TEST_HOME/store/tool.conf" "$(readlink "$backup")" || return 1
+  cleanup_test_env
+}
+
 test_copy_config_once_dry_run_touches_nothing() {
   setup
   # shellcheck disable=SC2034
@@ -119,6 +141,7 @@ run_test "backup_target moves and prints path" test_backup_target_moves_and_prin
 run_test "copy_config_once copies and records sha" test_copy_config_once_copies_and_records_sha
 run_test "copy_config_once skips user-edited file" test_copy_config_once_skips_user_edited_file
 run_test "copy_config_once backs up foreign file" test_copy_config_once_backs_up_foreign_file
+run_test "copy_config_once backs up a dangling symlink" test_copy_config_once_backs_up_a_dangling_symlink
 run_test "copy_config_once dry run touches nothing" test_copy_config_once_dry_run_touches_nothing
 run_test "refresh_config backs up and diffs" test_refresh_config_backs_up_and_diffs
 run_test "refresh_config removes backup when unchanged" test_refresh_config_removes_backup_when_unchanged

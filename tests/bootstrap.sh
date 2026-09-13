@@ -4,9 +4,13 @@ source "$(dirname "$0")/helper.sh"
 
 BOOT="$TEEUP_PATH/bootstrap"
 
-# Answers piped to the plain-read wizard, one per prompt:
-# name, email, work email, package manager choice, theme choice, daily confirm.
-WIZARD_INPUT=$'Ada Lovelace\nada@example.com\n\n1\n1\ny\n'
+# Answers piped to the plain-read prompts, one per prompt. The package manager
+# is asked first and on its own, before step 2 installs one; the rest is the
+# wizard in step 4:
+# package manager choice, name, email, work email, theme choice, daily confirm.
+# "1" is the detected backend (Homebrew on the mocked modern Mac), "2" the
+# other one.
+WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n\n1\ny\n'
 
 setup() {
   setup_test_env
@@ -29,9 +33,10 @@ EOF2
   # github capability: signed out, with an empty key list. These two calls are
   # reads, so they are not covered by DRY_RUN and would otherwise hit the real
   # gh session and the GitHub API. Shaped like the github suite's mock (a
-  # "Token scopes:" line on a successful auth status, a type column on
-  # ssh-key list) even though this fresh-machine walk never reaches the
-  # signed-in branch, so the two mocks do not drift apart.
+  # "Token scopes:" line on a successful auth status, and the real five-column
+  # non-TTY `ssh-key list` format TITLE/KEY/ADDED/ID/TYPE) even though this
+  # fresh-machine walk never reaches the signed-in branch, so the two mocks do
+  # not drift apart.
   mock_command_script gh <<'EOF2'
 host=""
 prev=""
@@ -52,11 +57,12 @@ case "$1 ${2:-}" in
 esac
 exit 0
 EOF2
-  # mise capability: `mise which` is a read, so DRY_RUN does not cover it.
-  # Exit 1 = "that tool is not installed", which is the fresh-machine answer.
+  # mise capability: `mise ls --global` is a read, so DRY_RUN does not cover
+  # it. Succeeding with no output is the fresh-machine answer: the global
+  # mise.toml asks for no tools yet.
   mock_command_script mise <<'EOF2'
-case "$1" in
-  which) exit 1 ;;
+case "$1 ${2:-}" in
+  "ls --global") : ;;
   *) : ;;
 esac
 exit 0
@@ -109,6 +115,58 @@ test_dry_run_walks_core_tier_in_order() {
   assert_contains "$out" "Would set TEEUP_NAME" || return 1
   assert_contains "$out" "Would record state: done/bootstrap" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
+test_choosing_macports_runs_the_macports_path() {
+  setup
+  # MacPorts is never auto-installed, so the choice only reaches its path when
+  # `port` is already there; a modern Mac detects Homebrew, so option 2 is
+  # MacPorts. Before this question moved ahead of step 2, the answer arrived
+  # after Homebrew had already been installed and recorded.
+  mock_command port 0 ""
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'2\nAda Lovelace\nada@example.com\n\n1\ny\n')"
+  assert_contains "$out" "Would execute: sudo port selfupdate" || return 1
+  assert_not_contains "$out" "Homebrew/install/HEAD/install.sh" || return 1
+  assert_contains "$out" "Would set TEEUP_PACKAGE_MANAGER" || return 1
+  cleanup_test_env
+}
+
+test_the_package_manager_is_asked_before_it_is_installed() {
+  setup
+  local out pm_line install_line
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  # ui_choose's plain fallback prints the prompt on a line of its own, which
+  # is what -x matches; the capability's "Package manager already recorded"
+  # log lines are not the question.
+  pm_line="$(printf '%s\n' "$out" | grep -nx 'Package manager' | head -1 | cut -d: -f1)"
+  install_line="$(printf '%s\n' "$out" | grep -n 'Starting: package-manager install' | head -1 | cut -d: -f1)"
+  [[ -n "$pm_line" && -n "$install_line" ]] ||
+    { echo "expected both the question and the install:"; printf '%s\n' "$out"; return 1; }
+  [[ "$pm_line" -lt "$install_line" ]] || { echo "the package manager was asked after it was installed"; return 1; }
+  # And it is asked exactly once: the wizard no longer repeats the question.
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -cx 'Package manager')" || return 1
+  # The choice is recorded before the capability that installs it runs, so the
+  # capability agrees with it instead of recording a backend of its own.
+  assert_contains "$out" "Package manager already recorded: homebrew" || return 1
+  cleanup_test_env
+}
+
+test_git_is_reconfigured_after_ssh_makes_the_keys() {
+  setup
+  local out ssh_start git_done ssh_done
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  ssh_start="$(printf '%s\n' "$out" | grep -n 'Starting: ssh configure' | head -1 | cut -d: -f1)"
+  ssh_done="$(printf '%s\n' "$out" | grep -n 'Completed: ssh configure' | head -1 | cut -d: -f1)"
+  git_done="$(printf '%s\n' "$out" | grep -n 'Completed: git configure' | tail -1 | cut -d: -f1)"
+  [[ -n "$ssh_start" && -n "$ssh_done" && -n "$git_done" ]] ||
+    { echo "a step did not complete:"; printf '%s\n' "$out"; return 1; }
+  # git runs before ssh in the core list, so its first pass sees no keys and
+  # writes commit.gpgsign = false. The last `git configure` must therefore be
+  # the one ssh re-runs for itself, nested inside ssh configure.
+  [[ "$git_done" -gt "$ssh_start" && "$git_done" -lt "$ssh_done" ]] ||
+    { echo "git was not reconfigured inside ssh configure (ssh $ssh_start..$ssh_done, git $git_done)"; return 1; }
   cleanup_test_env
 }
 
@@ -183,7 +241,7 @@ test_core_failure_aborts() {
 test_dry_run_answers_take_effect() {
   setup
   local out wizard_no_daily
-  wizard_no_daily=$'Ada Lovelace\nada@example.com\n\n1\n1\nn\n'
+  wizard_no_daily=$'1\nAda Lovelace\nada@example.com\n\n1\nn\n'
   out="$("$BOOT" --dry-run <<<"$wizard_no_daily")"
   assert_contains "$out" "Skipping the daily tier (TEEUP_DAILY=no)" || return 1
   cleanup_test_env
@@ -194,6 +252,9 @@ run_test "refuses non-macOS" test_refuses_non_macos
 run_test "refuses root" test_refuses_root
 run_test "unknown flag exits 2" test_unknown_flag_exits_2
 run_test "dry run walks core tier in order" test_dry_run_walks_core_tier_in_order
+run_test "the package manager is asked before it is installed" test_the_package_manager_is_asked_before_it_is_installed
+run_test "choosing macports runs the MacPorts path" test_choosing_macports_runs_the_macports_path
+run_test "git is reconfigured after ssh makes the keys" test_git_is_reconfigured_after_ssh_makes_the_keys
 run_test "dry run touches nothing" test_dry_run_touches_nothing
 run_test "existing answers skip wizard" test_existing_answers_skip_wizard
 run_test "wizard runs when only backend recorded" test_wizard_runs_when_only_backend_recorded
