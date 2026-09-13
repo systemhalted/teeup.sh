@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # AeroSpace has no include mechanism, so the whole file is copied once and
 # belongs to the user from then on.
-copy_config_once "$TEEUP_CAP_DIR/config/aerospace/aerospace.toml" "$(user_config_dir)/aerospace/aerospace.toml"
+# AeroSpace also reads ~/.aerospace.toml, the location its own guide suggests,
+# and reports a config in both places as ambiguous. An existing one is the
+# user's working setup, so teeup's copy is not installed next to it.
+HOME_AERO="$HOME/.aerospace.toml"
+if [[ -e "$HOME_AERO" ]]; then
+  log "Keeping your $HOME_AERO; teeup's aerospace.toml was not installed, because AeroSpace reports two configs as ambiguous. To use teeup's, move $HOME_AERO aside and run: teeup configure aerospace"
+else
+  copy_config_once "$TEEUP_CAP_DIR/config/aerospace/aerospace.toml" "$(user_config_dir)/aerospace/aerospace.toml"
+fi
 
 if [[ -d "${TEEUP_APPS_DIR:-/Applications}/AeroSpace.app" ]]; then
   log "AeroSpace is installed."
