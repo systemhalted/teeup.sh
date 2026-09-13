@@ -162,6 +162,26 @@ test_theme_verbs() {
   cleanup_test_env
 }
 
+test_a_theme_that_cannot_render_fails_set_and_configure() {
+  setup
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
+  mkdir -p "$TEST_HOME/.config/teeup/themes/mini"
+  cp "$TEEUP_PATH/themes/catppuccin/dark.toml" "$TEST_HOME/.config/teeup/themes/mini/dark.toml"
+  printf 'mode = "light"\naccent = "#ffffff"\n' > "$TEST_HOME/.config/teeup/themes/mini/light.toml"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" theme set mini 2>&1)" || rc=$?
+  assert_equals "1" "$rc" "teeup theme set exits 1" || return 1
+  assert_contains "$out" "wezterm.lua.tpl: the mini light palette has no value for:" || return 1
+  assert_equals "catppuccin" "$(DRY_RUN=false "$TEEUP" theme current)" || return 1
+  printf 'TEEUP_THEME="mini"\n' > "$TEST_HOME/.config/teeup/answers"
+  rc=0
+  out="$(DRY_RUN=false "$TEEUP" configure theme 2>&1)" || rc=$?
+  assert_failure "$rc" "a shipped or chosen theme that cannot render must stop configure" || return 1
+  assert_contains "$out" "Theme mini was not applied" || return 1
+  assert_equals "catppuccin" "$(DRY_RUN=false "$TEEUP" theme current)" || return 1
+  cleanup_test_env
+}
+
 test_theme_apply_refuses_a_block_below_a_table() {
   setup
   mkdir -p "$TEST_HOME/.config"
@@ -191,4 +211,5 @@ run_test "theme-apply without starship is quiet" test_theme_apply_without_starsh
 run_test "theme-apply warns when nothing rendered" test_theme_apply_warns_when_nothing_rendered
 run_test "configure twice is content identical" test_configure_twice_is_content_identical
 run_test "theme verbs" test_theme_verbs
+run_test "a theme that cannot render fails set and configure" test_a_theme_that_cannot_render_fails_set_and_configure
 print_summary

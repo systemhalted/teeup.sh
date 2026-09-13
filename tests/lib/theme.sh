@@ -87,19 +87,43 @@ test_render_replaces_plain_strip_and_rgb_tokens() {
   cleanup_test_env
 }
 
-test_render_escapes_sed_special_characters_in_user_values() {
+test_palette_load_rejects_values_unsafe_for_the_rendered_files() {
   setup
-  # A user theme under ~/.config/teeup/themes/<name>/ is a documented,
-  # supported override point, so its values must survive `&`, `|`, `\` and a
-  # space intact rather than corrupting or breaking the sed script.
+  # A user theme under ~/.config/teeup/themes/<name>/ is a documented override
+  # point, and its values land inside a shell export, Lua strings and TOML
+  # strings. A value that is not a colour or a plain name (bat theme names have
+  # spaces) is refused at load, naming the file, the key and the value.
   mkdir -p "$TEST_HOME/.config/teeup/themes/tricky"
-  cat > "$TEST_HOME/.config/teeup/themes/tricky/dark.toml" <<'EOF2'
-mode = "dark"
-bat_theme = "OneHalfDark"
-accent = "#89b4fa"
-tricky = "#a&b|c\d e"
-EOF2
-  theme_palette_load "$TEST_HOME/.config/teeup/themes/tricky/dark.toml"
+  local file value rc out
+  file="$TEST_HOME/.config/teeup/themes/tricky/dark.toml"
+  for value in '#a&b|c\d e' 'Monokai $(touch PWNED)' 'Monokai `id`' '#89b4fa\q' ''; do
+    printf 'mode = "dark"\nbat_theme = "%s"\naccent = "#89b4fa"\n' "$value" > "$file"
+    rc=0
+    out="$(theme_palette_load "$file" 2>&1)" || rc=$?
+    assert_failure "$rc" "value [$value] must be rejected" || return 1
+    assert_contains "$out" "$file" || return 1
+    assert_contains "$out" "bat_theme" || return 1
+    assert_contains "$out" "\"$value\"" || return 1
+  done
+  cleanup_test_env
+}
+
+test_shipped_palettes_pass_validation() {
+  setup
+  local f
+  for f in "$TEEUP_PATH"/themes/*/dark.toml "$TEEUP_PATH"/themes/*/light.toml; do
+    theme_palette_load "$f" || { echo "shipped palette $f was rejected"; return 1; }
+  done
+  cleanup_test_env
+}
+
+test_render_still_escapes_sed_special_characters() {
+  setup
+  # Load-time validation keeps these characters out of palettes; the sed
+  # escaping stays as a second line of defence for the render table itself.
+  make_fixture_theme
+  theme_palette_load "$TEST_HOME/.config/teeup/themes/fixture/dark.toml"
+  _theme_sed_entry tricky '#a&b|c\d e'
   printf 'plain=%s strip=%s\n' '{{ tricky }}' '{{ tricky_strip }}' > "$TEST_HOME/in.tpl"
   theme_render "$TEST_HOME/in.tpl" "$TEST_HOME/out/rendered.conf"
   assert_equals 'plain=#a&b|c\d e strip=a&b|c\d e' "$(cat "$TEST_HOME/out/rendered.conf")" || return 1
@@ -184,6 +208,87 @@ test_set_fails_when_the_fallback_itself_is_missing() {
   cleanup_test_env
 }
 
+# The staged swap exists so a broken switch leaves the working theme alone.
+# Each case below sets the fixture theme first, breaks something, sets again,
+# and checks the rendered file, the recorded name and the staging directory.
+assert_previous_theme_kept() {
+  local state="$TEST_HOME/.local/state/teeup"
+  cmp -s "$TEST_HOME/before.conf" "$state/current/theme/dark/demo.conf" || { echo "the current theme was replaced"; return 1; }
+  assert_equals "fixture" "$(cat "$state/current/theme.name")" || return 1
+  [[ ! -e "$state/current/next-theme" ]] || { echo "staging dir left behind"; return 1; }
+}
+
+test_set_aborts_when_a_template_cannot_be_rendered() {
+  setup
+  make_fixture_theme
+  make_fixture_caps
+  theme_set fixture >/dev/null
+  cp "$TEST_HOME/.local/state/teeup/current/theme/dark/demo.conf" "$TEST_HOME/before.conf"
+  mkdir -p "$TEST_HOME/.config/teeup/themed"
+  printf 'mine %s\n' '{{ accent }}' > "$TEST_HOME/.config/teeup/themed/demo.conf.tpl"
+  chmod 000 "$TEST_HOME/.config/teeup/themed/demo.conf.tpl"
+  if [[ -r "$TEST_HOME/.config/teeup/themed/demo.conf.tpl" ]]; then
+    echo "(running as root: an unreadable file cannot be simulated; skipped)"
+    cleanup_test_env
+    return 0
+  fi
+  local rc=0 out
+  out="$(theme_set fixture 2>&1)" || rc=$?
+  chmod 644 "$TEST_HOME/.config/teeup/themed/demo.conf.tpl"
+  assert_failure "$rc" "a failed render must fail the switch" || return 1
+  assert_contains "$out" "Could not render $TEST_HOME/.config/teeup/themed/demo.conf.tpl" || return 1
+  assert_contains "$out" "Theme fixture was not applied" || return 1
+  assert_not_contains "$out" "applied:fixture" "no hook runs after an aborted switch" || return 1
+  assert_previous_theme_kept || return 1
+  cleanup_test_env
+}
+
+test_set_aborts_when_the_palette_misses_a_key() {
+  setup
+  make_fixture_theme
+  make_fixture_caps
+  theme_set fixture >/dev/null
+  cp "$TEST_HOME/.local/state/teeup/current/theme/dark/demo.conf" "$TEST_HOME/before.conf"
+  printf 'red=%s\n' '{{ red }}' > "$TEEUP_CAPS_DIR/demo/themed/extra.conf.tpl"
+  local rc=0 out
+  out="$(theme_set fixture 2>&1)" || rc=$?
+  assert_failure "$rc" "unresolved tokens must fail the switch" || return 1
+  assert_contains "$out" "$TEEUP_CAPS_DIR/demo/themed/extra.conf.tpl" || return 1
+  assert_contains "$out" "red" || return 1
+  assert_contains "$out" "Theme fixture was not applied" || return 1
+  assert_previous_theme_kept || return 1
+  cleanup_test_env
+}
+
+test_set_aborts_on_an_unsafe_palette_value() {
+  setup
+  make_fixture_theme
+  make_fixture_caps
+  theme_set fixture >/dev/null
+  cp "$TEST_HOME/.local/state/teeup/current/theme/dark/demo.conf" "$TEST_HOME/before.conf"
+  sed 's/OneHalfLight/Monokai $(id)/' "$TEST_HOME/.config/teeup/themes/fixture/light.toml" > "$TEST_HOME/light.toml"
+  mv "$TEST_HOME/light.toml" "$TEST_HOME/.config/teeup/themes/fixture/light.toml"
+  local rc=0 out
+  out="$(theme_set fixture 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" 'bat_theme = "Monokai $(id)"' || return 1
+  assert_previous_theme_kept || return 1
+  cleanup_test_env
+}
+
+test_list_offers_only_themes_with_both_modes() {
+  setup
+  mkdir -p "$TEST_HOME/.config/teeup/themes/half"
+  printf 'mode = "dark"\naccent = "#89b4fa"\n' > "$TEST_HOME/.config/teeup/themes/half/dark.toml"
+  assert_not_contains "$(theme_list | tr '\n' ' ')" "half" || return 1
+  local rc=0 out
+  out="$(theme_set half 2>&1)" || rc=$?
+  assert_success "$rc" "a half theme is an unknown name, which falls back" || return 1
+  assert_contains "$out" "Falling back to the catppuccin theme" || return 1
+  [[ ! -e "$TEST_HOME/.local/state/teeup/current/next-theme" ]] || { echo "staging dir left behind"; return 1; }
+  cleanup_test_env
+}
+
 test_list_and_current() {
   setup
   make_fixture_theme
@@ -197,12 +302,18 @@ echo "lib/theme.sh"
 run_test "palette load exports every key" test_palette_load_exports_every_key
 run_test "palette load forgets the previous mode" test_palette_load_forgets_the_previous_mode
 run_test "render replaces plain, strip and rgb tokens" test_render_replaces_plain_strip_and_rgb_tokens
-run_test "render escapes sed special characters in user values" test_render_escapes_sed_special_characters_in_user_values
+run_test "palette load rejects values unsafe for the rendered files" test_palette_load_rejects_values_unsafe_for_the_rendered_files
+run_test "shipped palettes pass validation" test_shipped_palettes_pass_validation
+run_test "render still escapes sed special characters" test_render_still_escapes_sed_special_characters
 run_test "set renders both modes and runs hooks" test_set_renders_both_modes_and_runs_hooks
 run_test "set is content idempotent" test_set_is_content_idempotent
 run_test "user template wins over the capability one" test_user_template_wins_over_the_capability_one
 run_test "set dry run writes nothing" test_set_dry_run_writes_nothing
 run_test "set unknown theme falls back to catppuccin" test_set_unknown_theme_falls_back_to_catppuccin
 run_test "set fails when the fallback itself is missing" test_set_fails_when_the_fallback_itself_is_missing
+run_test "set aborts when a template cannot be rendered" test_set_aborts_when_a_template_cannot_be_rendered
+run_test "set aborts when the palette misses a key" test_set_aborts_when_the_palette_misses_a_key
+run_test "set aborts on an unsafe palette value" test_set_aborts_on_an_unsafe_palette_value
+run_test "list offers only themes with both modes" test_list_offers_only_themes_with_both_modes
 run_test "list and current" test_list_and_current
 print_summary
