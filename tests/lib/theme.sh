@@ -331,6 +331,53 @@ test_set_aborts_on_an_unsafe_palette_value() {
   cleanup_test_env
 }
 
+test_set_aborts_when_a_mode_disagrees_with_its_file() {
+  setup
+  make_fixture_theme
+  make_fixture_caps
+  theme_set fixture >/dev/null
+  cp "$TEST_HOME/.local/state/teeup/current/theme/dark/demo.conf" "$TEST_HOME/before.conf"
+  # A custom theme whose dark.toml claims mode = "light": theme_set must
+  # reject it instead of loading a light palette for the dark mode.
+  mkdir -p "$TEST_HOME/.config/teeup/themes/badmode"
+  cat > "$TEST_HOME/.config/teeup/themes/badmode/dark.toml" <<'EOF2'
+mode = "light"
+accent = "#89b4fa"
+EOF2
+  cat > "$TEST_HOME/.config/teeup/themes/badmode/light.toml" <<'EOF2'
+mode = "light"
+accent = "#1e66f5"
+EOF2
+  local rc=0 out
+  out="$(theme_set badmode 2>&1)" || rc=$?
+  assert_failure "$rc" "a mode that disagrees with its file must fail the switch" || return 1
+  assert_contains "$out" "$TEST_HOME/.config/teeup/themes/badmode/dark.toml" || return 1
+  assert_contains "$out" "mode = \"light\"" || return 1
+  assert_contains "$out" "Theme badmode was not applied" || return 1
+  assert_previous_theme_kept || return 1
+  # The shipped theme still passes: this validation only rejects a wrong mode.
+  out="$(theme_set catppuccin 2>&1)"
+  assert_contains "$out" "Theme set to catppuccin" || return 1
+  cleanup_test_env
+}
+
+test_set_aborts_when_a_mode_is_missing() {
+  setup
+  make_fixture_theme
+  make_fixture_caps
+  theme_set fixture >/dev/null
+  cp "$TEST_HOME/.local/state/teeup/current/theme/dark/demo.conf" "$TEST_HOME/before.conf"
+  mkdir -p "$TEST_HOME/.config/teeup/themes/nomode"
+  printf 'accent = "#89b4fa"\n' > "$TEST_HOME/.config/teeup/themes/nomode/dark.toml"
+  cp "$TEST_HOME/.config/teeup/themes/fixture/light.toml" "$TEST_HOME/.config/teeup/themes/nomode/light.toml"
+  local rc=0 out
+  out="$(theme_set nomode 2>&1)" || rc=$?
+  assert_failure "$rc" "a palette with no mode key must fail the switch when a mode is expected" || return 1
+  assert_contains "$out" "$TEST_HOME/.config/teeup/themes/nomode/dark.toml" || return 1
+  assert_previous_theme_kept || return 1
+  cleanup_test_env
+}
+
 test_list_offers_only_themes_with_both_modes() {
   setup
   mkdir -p "$TEST_HOME/.config/teeup/themes/half"
@@ -390,6 +437,8 @@ run_test "set fails when the fallback itself is missing" test_set_fails_when_the
 run_test "set aborts when a template cannot be rendered" test_set_aborts_when_a_template_cannot_be_rendered
 run_test "set aborts when the palette misses a key" test_set_aborts_when_the_palette_misses_a_key
 run_test "set aborts on an unsafe palette value" test_set_aborts_on_an_unsafe_palette_value
+run_test "set aborts when a mode disagrees with its file" test_set_aborts_when_a_mode_disagrees_with_its_file
+run_test "set aborts when a mode is missing" test_set_aborts_when_a_mode_is_missing
 run_test "list offers only themes with both modes" test_list_offers_only_themes_with_both_modes
 run_test "theme names are validated" test_theme_names_are_validated
 run_test "list and current" test_list_and_current

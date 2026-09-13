@@ -183,6 +183,65 @@ EOF2
   cleanup_test_env
 }
 
+test_theme_apply_inserts_a_missing_root_palette() {
+  setup
+  mkdir -p "$TEST_HOME/.config"
+  # No root `palette = ` line at all: theme-apply must insert one rather than
+  # silently leaving starship without a palette selector.
+  cat > "$TEST_HOME/.config/starship.toml" <<'EOF2'
+# teeup:theme-palette:start
+# teeup:theme-palette:end
+
+[character]
+success_symbol = "[>](bold green)"
+EOF2
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null
+  local file="$TEST_HOME/.config/starship.toml" written p s
+  written="$(cat "$file")"
+  assert_contains "$written" "[palettes.teeup-dark]" || return 1
+  assert_contains "$written" "[palettes.teeup-light]" || return 1
+  p="$(grep -n '^palette = ' "$file" | head -1 | cut -d: -f1)"
+  s="$(grep -n -xF '# teeup:theme-palette:start' "$file" | head -1 | cut -d: -f1)"
+  [[ -n "$p" ]] || { echo "no root palette line was inserted"; return 1; }
+  [[ -n "$s" && "$p" -lt "$s" ]] ||
+    { echo "the inserted palette line (line $p) must come before the start marker (line $s)"; return 1; }
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import tomllib' >/dev/null 2>&1; then
+    local parsed
+    parsed="$(python3 -c 'import tomllib, sys
+d = tomllib.load(open(sys.argv[1], "rb"))
+print(d.get("palette"))' "$file")"
+    [[ "$parsed" == "teeup-dark" || "$parsed" == "teeup-light" ]] ||
+      { echo "tomllib read root palette [$parsed], want teeup-dark or teeup-light"; return 1; }
+  fi
+  cleanup_test_env
+}
+
+test_theme_apply_inserts_a_root_palette_beside_a_table_scoped_one() {
+  setup
+  mkdir -p "$TEST_HOME/.config"
+  # No root palette line, but a later table has its own `palette` key: that
+  # key belongs to [custom] and must survive untouched while a root selector
+  # is still inserted before the marker block.
+  cat > "$TEST_HOME/.config/starship.toml" <<'EOF2'
+# teeup:theme-palette:start
+# teeup:theme-palette:end
+
+[custom]
+palette = "mine"
+EOF2
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null
+  local file="$TEST_HOME/.config/starship.toml" written p s
+  written="$(cat "$file")"
+  assert_contains "$written" 'palette = "mine"' "the table-scoped key survives unchanged" || return 1
+  assert_contains "$written" "[palettes.teeup-dark]" || return 1
+  p="$(grep -n '^palette = ' "$file" | head -1 | cut -d: -f1)"
+  s="$(grep -n -xF '# teeup:theme-palette:start' "$file" | head -1 | cut -d: -f1)"
+  [[ -n "$p" ]] || { echo "no root palette line was inserted"; return 1; }
+  [[ -n "$s" && "$p" -lt "$s" ]] ||
+    { echo "the inserted palette line (line $p) must come before the start marker (line $s)"; return 1; }
+  cleanup_test_env
+}
+
 test_theme_apply_survives_a_backslash_in_tmpdir() {
   setup
   mkdir -p "$TEST_HOME/.config" "$TEST_HOME/tmp\new dir"
@@ -349,6 +408,8 @@ run_test "theme-apply replaces a populated block" test_theme_apply_replaces_a_po
 run_test "theme-apply refuses a block below a table" test_theme_apply_refuses_a_block_below_a_table
 run_test "theme-apply refuses malformed markers" test_theme_apply_refuses_malformed_markers
 run_test "theme-apply rewrites only the first palette line" test_theme_apply_rewrites_only_the_first_palette_line
+run_test "theme-apply inserts a missing root palette" test_theme_apply_inserts_a_missing_root_palette
+run_test "theme-apply inserts a root palette beside a table-scoped one" test_theme_apply_inserts_a_root_palette_beside_a_table_scoped_one
 run_test "theme-apply survives a backslash in TMPDIR" test_theme_apply_survives_a_backslash_in_tmpdir
 run_test "theme-apply without starship is quiet" test_theme_apply_without_starship_is_quiet
 run_test "theme-apply warns when nothing rendered" test_theme_apply_warns_when_nothing_rendered

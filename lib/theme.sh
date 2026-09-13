@@ -85,7 +85,7 @@ _theme_sed_entry() {
   esac
 }
 
-# theme_palette_load <file>
+# theme_palette_load <file> [expected_mode]
 # bash 3.2 has no associative arrays, so the palette becomes one exported
 # TEEUP_COLOR_<KEY> per key plus a space-separated key list, and the render
 # table is a sed script built once here rather than once per template.
@@ -100,10 +100,16 @@ _theme_sed_entry() {
 # backtick, a backslash, a quote, `;`) makes the whole palette invalid rather
 # than being escaped three different ways. `mode` is also rendered unquoted,
 # in starship's `[palettes.teeup-<mode>]` header, so it must be dark or light.
+#
+# theme_set passes its own mode ("dark" or "light") as expected_mode: a theme
+# is two files loaded independently, and nothing else confirms dark.toml
+# actually holds the dark palette. When expected_mode is given, a `mode` that
+# disagrees with it -- or a file with no `mode` key at all -- fails the same
+# way an invalid value does, so theme_set aborts before swapping anything in.
 TEEUP_PALETTE_VALUE_RE='^[#A-Za-z0-9][A-Za-z0-9 ._()+-]*$'
 
 theme_palette_load() {
-  local file="$1" key value upper old
+  local file="$1" expected_mode="${2:-}" key value upper old mode_seen=0
   if [[ ! -f "$file" ]]; then
     err "Palette file not found: $file"
     return 1
@@ -122,15 +128,26 @@ theme_palette_load() {
       warn "Invalid palette value in $file: $key = \"$value\" (use a colour like #89b4fa or a name of letters, digits, spaces and . _ - + ( ))"
       return 1
     fi
-    if [[ "$key" == "mode" && "$value" != "dark" && "$value" != "light" ]]; then
-      warn "Invalid palette value in $file: mode = \"$value\" (use dark or light)"
-      return 1
+    if [[ "$key" == "mode" ]]; then
+      if [[ "$value" != "dark" && "$value" != "light" ]]; then
+        warn "Invalid palette value in $file: mode = \"$value\" (use dark or light)"
+        return 1
+      fi
+      mode_seen=1
+      if [[ -n "$expected_mode" && "$value" != "$expected_mode" ]]; then
+        warn "Invalid palette value in $file: mode = \"$value\" (expected $expected_mode)"
+        return 1
+      fi
     fi
     upper="$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
     export "TEEUP_COLOR_$upper=$value"
     TEEUP_COLOR_KEYS="$TEEUP_COLOR_KEYS$key "
     _theme_sed_entry "$key" "$value"
   done < <(sed -n 's/^\([a-z][a-z0-9_]*\)[[:space:]]*=[[:space:]]*"\(.*\)".*$/\1 \2/p' "$file")
+  if [[ -n "$expected_mode" && "$mode_seen" -eq 0 ]]; then
+    warn "Invalid palette value in $file: missing mode key (expected $expected_mode)"
+    return 1
+  fi
   export TEEUP_COLOR_KEYS
 }
 
@@ -221,7 +238,7 @@ theme_set() {
       _theme_set_abort "$next" "$name"
       return 1
     fi
-    if ! theme_palette_load "$dir/$mode.toml"; then
+    if ! theme_palette_load "$dir/$mode.toml" "$mode"; then
       _theme_set_abort "$next" "$name"
       return 1
     fi

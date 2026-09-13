@@ -77,22 +77,40 @@ if [[ ! -s "$block" ]]; then
   exit 0
 fi
 
+# The root palette selector is the first `palette = ` line that sits before
+# the first table header outside the marker block (other_table_line, computed
+# above; the block's own [palettes.*] headers are replaced wholesale and never
+# count as a table for this purpose). A `palette =` inside some other table
+# belongs to that table and must never be rewritten. When no such line exists,
+# root_palette_line stays empty and one is inserted immediately before the
+# start marker instead -- already verified to sit above the first real
+# [table] (checked above), so the insertion lands at the TOML root.
+root_palette_line=""
+while IFS=: read -r candidate_line _; do
+  if [[ "$candidate_line" -ge "$start_line" && "$candidate_line" -le "$end_line" ]]; then
+    continue
+  fi
+  if [[ -n "$other_table_line" && "$candidate_line" -ge "$other_table_line" ]]; then
+    break
+  fi
+  root_palette_line="$candidate_line"
+  break
+done < <(grep -n '^palette *=' "$STARSHIP" || true)
+
 active="teeup-$(appearance)"
 rewritten="$(mktemp)"
-# Both the block and the `palette =` line are above the first [table] (checked
-# above), so rewriting them where they sit keeps the palette key at the TOML
-# root. The block itself holds only [palettes.*] table headers, which is valid
-# anywhere, and the user's own tables all follow it. Only the first `palette =`
-# line is the root key; a later one belongs to some table and is the user's.
 # Values reach awk through ENVIRON, not -v: -v processes backslash escapes, so
-# a TMPDIR containing `\n` would name a different block file.
-TEEUP_AWK_BLOCK="$block" TEEUP_AWK_PALETTE="$active" TEEUP_AWK_START="$START" TEEUP_AWK_END="$END" awk '
+# a TMPDIR containing `\n` would name a different block file. rootline is a
+# line number (or 0, meaning "insert before the start marker instead").
+TEEUP_AWK_BLOCK="$block" TEEUP_AWK_PALETTE="$active" TEEUP_AWK_START="$START" TEEUP_AWK_END="$END" TEEUP_AWK_ROOT_LINE="$root_palette_line" awk '
   BEGIN { blockfile = ENVIRON["TEEUP_AWK_BLOCK"]; pal = ENVIRON["TEEUP_AWK_PALETTE"]
-          start = ENVIRON["TEEUP_AWK_START"]; end = ENVIRON["TEEUP_AWK_END"] }
-  $0 == start { print; skip = 1; while ((getline line < blockfile) > 0) print line; close(blockfile); next }
+          start = ENVIRON["TEEUP_AWK_START"]; end = ENVIRON["TEEUP_AWK_END"]
+          rootline = ENVIRON["TEEUP_AWK_ROOT_LINE"] + 0 }
+  $0 == start { if (rootline == 0) printf "palette = \"%s\"\n", pal
+                print; skip = 1; while ((getline line < blockfile) > 0) print line; close(blockfile); next }
   $0 == end   { skip = 0; print; next }
   skip        { next }
-  !done && /^palette *=/ { printf "palette = \"%s\"\n", pal; done = 1; next }
+  rootline != 0 && NR == rootline { printf "palette = \"%s\"\n", pal; next }
   { print }
 ' "$STARSHIP" > "$rewritten"
 
