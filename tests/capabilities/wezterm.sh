@@ -2,6 +2,12 @@
 set -euo pipefail
 source "$(dirname "$0")/../helper.sh"
 
+# Find lua and luac before the test harness narrows PATH. On macOS, homebrew
+# installs these to /opt/homebrew/bin or /usr/local/bin, which won't be in
+# the restricted PATH that setup_test_env() establishes.
+WEZTERM_LUAC="$(command -v luac || command -v luac5.4 || true)"
+WEZTERM_LUA="$(command -v lua || command -v lua5.4 || command -v lua5.3 || true)"
+
 setup() {
   setup_test_env
   mock_macos_base
@@ -97,7 +103,7 @@ test_lua_files_parse() {
   setup
   # This is the only gate on three shipped Lua files and the rendered scheme,
   # so a missing luac is a failure, not a skip. CI installs lua5.4 / lua.
-  if ! command -v luac >/dev/null 2>&1; then
+  if [[ -z "$WEZTERM_LUAC" ]]; then
     echo "luac is not installed: install lua5.4 (apt) or lua (brew) to run this suite"
     cleanup_test_env
     return 1
@@ -110,7 +116,7 @@ test_lua_files_parse() {
            "$TEEUP_PATH/capabilities/wezterm/default/teeup/wezterm.lua" \
            "$TEST_HOME/.local/state/teeup/current/theme/dark/wezterm.lua" \
            "$TEST_HOME/.local/state/teeup/current/theme/light/wezterm.lua"; do
-    luac -p "$f" || { echo "Lua syntax error in $f"; rc=1; }
+    "$WEZTERM_LUAC" -p "$f" || { echo "Lua syntax error in $f"; rc=1; }
   done
   cleanup_test_env
   return $rc
@@ -135,13 +141,12 @@ test_teeup_path_and_state_dir_survive_a_space() {
   setup
   DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
 
-  local lua_bin
-  lua_bin="$(command -v lua || command -v lua5.4 || command -v lua5.3 || true)"
-  if [[ -z "$lua_bin" ]]; then
+  if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
     return 1
   fi
+  local lua_bin="$WEZTERM_LUA"
 
   local checkout="$TEST_HOME/My Checkout/teeup"
   local state="$TEST_HOME/My State/teeup"
@@ -303,13 +308,12 @@ test_teeup_path_and_state_dir_survive_special_bytes() {
   setup
   DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
 
-  local lua_bin
-  lua_bin="$(command -v lua || command -v lua5.4 || command -v lua5.3 || true)"
-  if [[ -z "$lua_bin" ]]; then
+  if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
     return 1
   fi
+  local lua_bin="$WEZTERM_LUA"
 
   local weird checkout state
   weird="José's \$Café Dir$(printf '\t')End"
