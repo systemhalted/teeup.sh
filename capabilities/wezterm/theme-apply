@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# The default layer adds the rendered theme files to WezTerm's reload watch
+# list, but an instance started before those files existed is watching nothing.
+# Touching the config file it definitely watches always reloads.
+WEZTERM_CONFIG="$(user_config_dir)/wezterm/wezterm.lua"
+if [[ -f "$WEZTERM_CONFIG" ]]; then
+  run_cmd touch "$WEZTERM_CONFIG"
+else
+  log "No $WEZTERM_CONFIG yet; nothing to reload."
+fi

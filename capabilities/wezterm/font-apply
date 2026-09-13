@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# The family is read from current/font when the config loads, so a reload is
+# all that is needed to pick up a new font.
+WEZTERM_CONFIG="$(user_config_dir)/wezterm/wezterm.lua"
+if [[ -f "$WEZTERM_CONFIG" ]]; then
+  run_cmd touch "$WEZTERM_CONFIG"
+else
+  log "No $WEZTERM_CONFIG yet; nothing to reload."
+fi

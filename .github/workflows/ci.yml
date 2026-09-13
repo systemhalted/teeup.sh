@@ -35,6 +35,16 @@ jobs:
           fi
           zsh --version
 
+      - name: Install lua (the wezterm suite parses the shipped Lua)
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get install -y lua5.4 && { command -v luac >/dev/null || sudo ln -s "$(command -v luac5.4)" /usr/local/bin/luac; }
+          else
+            brew install lua
+          fi
+          luac -v
+
       - name: Shellcheck legacy scripts
         run: shellcheck --severity=warning legacy/teeup.sh legacy/teeup-wizard.sh
 
