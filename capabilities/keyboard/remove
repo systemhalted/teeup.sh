@@ -1,16 +1,7 @@
 #!/usr/bin/env bash
 # Unload the agent, drop the plist, and clear the mapping in this session.
 # An empty UserKeyMapping list is hidutil's "no remapping" value.
-PLIST_PATH="$HOME/Library/LaunchAgents/sh.teeup.keyboard.plist"
-# UID is read-only in bash, hence the name.
-UID_NUM="$(id -u)"
-
-if [[ -f "$PLIST_PATH" ]]; then
-  run_cmd launchctl bootout "gui/$UID_NUM" "$PLIST_PATH" || true
-  run_cmd rm -f "$PLIST_PATH"
-else
-  log "No $PLIST_PATH; nothing to unload."
-fi
+launchagent_remove sh.teeup.keyboard
 
 run_cmd hidutil property --set '{"UserKeyMapping":[]}'
 ok "Caps Lock is Caps Lock again."
