@@ -59,12 +59,16 @@ fi
 log "macOS $(sw_vers -productVersion 2>/dev/null || echo '?') on $(arch), teeup at $TEEUP_PATH"
 
 # --- helpers ----------------------------------------------------------------
+# Every capability run_capability completed this run, space-delimited.
+CONFIGURED_THIS_RUN=" "
+
 run_capability() {
   # run_capability <name> -> install then configure, then mark done.
   local name="$1"
   cap_run "$name" install || return 1
   cap_run "$name" configure || return 1
   state_done mark "cap-$name"
+  CONFIGURED_THIS_RUN="$CONFIGURED_THIS_RUN$name "
 }
 
 run_tier() {
@@ -195,8 +199,14 @@ else
 fi
 
 # --- 7. theme and state -------------------------------------------------------
-if cap_exists theme; then
-  cap_run theme configure || warn "Theme configuration failed; run: teeup theme set $(answers_get TEEUP_THEME)"
+# theme is in core.list, so the core tier has already rendered it this run, and
+# a second configure would render every template and rewrite starship.toml
+# again. This step only covers a run where the core tier did not configure it.
+if cap_exists theme && ! cap_skipped theme; then
+  case "$CONFIGURED_THIS_RUN" in
+    *" theme "*) ;;
+    *) cap_run theme configure || warn "Theme configuration failed; run: teeup theme set $(answers_get TEEUP_THEME)" ;;
+  esac
 fi
 if ! state_done check bootstrap; then
   # A fresh install starts with every shipped migration already applied.

@@ -124,6 +124,18 @@ test_dry_run_walks_core_tier_in_order() {
   cleanup_test_env
 }
 
+test_the_theme_is_rendered_once() {
+  setup
+  # theme is the last core capability; step 7 must not render it a second
+  # time (every template, every theme-apply hook, starship.toml again).
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'Completed: theme configure')" || return 1
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'Would swap')" || return 1
+  assert_contains "$out" "Would record state: done/bootstrap" || return 1
+  cleanup_test_env
+}
+
 test_choosing_macports_runs_the_macports_path() {
   setup
   # MacPorts is never auto-installed, so the choice only reaches its path when
@@ -323,6 +335,7 @@ run_test "refuses non-macOS" test_refuses_non_macos
 run_test "refuses root" test_refuses_root
 run_test "unknown flag exits 2" test_unknown_flag_exits_2
 run_test "dry run walks core tier in order" test_dry_run_walks_core_tier_in_order
+run_test "the theme is rendered once" test_the_theme_is_rendered_once
 run_test "the package manager is asked before it is installed" test_the_package_manager_is_asked_before_it_is_installed
 run_test "choosing macports runs the MacPorts path" test_choosing_macports_runs_the_macports_path
 run_test "git is reconfigured after ssh makes the keys" test_git_is_reconfigured_after_ssh_makes_the_keys
