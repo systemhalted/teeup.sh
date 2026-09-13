@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Two files, both the user's from the moment they land: the thin config that
+# pulls in teeup's layer, and the machine-specific override table.
+WEZTERM_DIR="$(user_config_dir)/wezterm"
+copy_config_once "$TEEUP_CAP_DIR/config/wezterm/wezterm.lua" "$WEZTERM_DIR/wezterm.lua"
+copy_config_once "$TEEUP_CAP_DIR/config/wezterm/local.lua" "$WEZTERM_DIR/local.lua"

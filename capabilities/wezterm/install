@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# WezTerm is a cask on Homebrew. On MacPorts there is no cask machinery, so
+# try the port of the same name and say what to do when it is missing.
+if casks_supported; then
+  cask_install wezterm
+else
+  pkg_install wezterm wezterm || warn "No WezTerm port available; download it from https://wezfurlong.org/wezterm/installation.html"
+fi

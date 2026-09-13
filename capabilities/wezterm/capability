@@ -1,0 +1,8 @@
+summary="WezTerm terminal with the teeup Lua layer"
+group=apps
+tier=core
+requires="package-manager"
+provides=""
+casks="wezterm"
+apps="WezTerm"
+interactive=false
