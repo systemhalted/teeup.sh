@@ -106,6 +106,84 @@ EOF2
   cleanup_test_env
 }
 
+# assert_starship_untouched <label> <starship.toml content>
+# theme-apply must warn and leave a file with malformed markers byte-identical.
+assert_starship_untouched() {
+  local label="$1" content="$2" out
+  mkdir -p "$TEST_HOME/.config"
+  printf '%s\n' "$content" > "$TEST_HOME/.config/starship.toml"
+  cp "$TEST_HOME/.config/starship.toml" "$TEST_HOME/starship.before"
+  out="$(DRY_RUN=false "$TEEUP" configure theme 2>&1)"
+  cmp -s "$TEST_HOME/starship.before" "$TEST_HOME/.config/starship.toml" ||
+    { echo "$label: starship.toml was rewritten:"; cat "$TEST_HOME/.config/starship.toml"; return 1; }
+  assert_contains "$out" "leaving it alone" "$label: theme-apply says why" || return 1
+}
+
+test_theme_apply_refuses_malformed_markers() {
+  setup
+  assert_starship_untouched "end before start" 'palette = "teeup-dark"
+# teeup:theme-palette:end
+# teeup:theme-palette:start
+[character]
+success_symbol = "x"
+
+[directory]
+truncation_length = 3' || return 1
+  assert_starship_untouched "duplicated start" 'palette = "teeup-dark"
+# teeup:theme-palette:start
+[palettes.teeup-dark]
+red = "#e78284"
+# teeup:theme-palette:start
+[palettes.teeup-light]
+red = "#d20f39"
+# teeup:theme-palette:end
+
+[character]
+success_symbol = "x"' || return 1
+  assert_starship_untouched "missing end" 'palette = "teeup-dark"
+# teeup:theme-palette:start
+[palettes.teeup-dark]
+red = "#e78284"
+
+[character]
+success_symbol = "x"' || return 1
+  cleanup_test_env
+}
+
+test_theme_apply_rewrites_only_the_first_palette_line() {
+  setup
+  mkdir -p "$TEST_HOME/.config"
+  cat > "$TEST_HOME/.config/starship.toml" <<'EOF2'
+palette = "teeup-dark"
+# teeup:theme-palette:start
+# teeup:theme-palette:end
+
+[custom.foo]
+command = "echo hi"
+palette = "should-stay"
+EOF2
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null
+  local written
+  written="$(cat "$TEST_HOME/.config/starship.toml")"
+  assert_contains "$written" 'palette = "teeup-light"' || return 1
+  assert_contains "$written" 'palette = "should-stay"' "a later palette key belongs to its table" || return 1
+  cleanup_test_env
+}
+
+test_theme_apply_survives_a_backslash_in_tmpdir() {
+  setup
+  mkdir -p "$TEST_HOME/.config" "$TEST_HOME/tmp\new dir"
+  cp "$TEEUP_PATH/capabilities/starship/config/starship.toml" "$TEST_HOME/.config/starship.toml"
+  # awk -v processes backslash escapes, so a temp path handed over that way
+  # names a different file and the palette block comes out empty.
+  TMPDIR="$TEST_HOME/tmp\new dir" DRY_RUN=false "$TEEUP" configure theme >/dev/null
+  local written
+  written="$(cat "$TEST_HOME/.config/starship.toml")"
+  assert_contains "$written" "[palettes.teeup-dark]" || return 1
+  assert_contains "$written" 'accent = "#89b4fa"' || return 1
+  cleanup_test_env
+}
+
 test_theme_apply_without_starship_is_quiet() {
   setup
   local out
@@ -256,6 +334,9 @@ run_test "configure writes both starship palettes" test_configure_writes_both_st
 run_test "theme-apply patches the starship block" test_theme_apply_patches_the_starship_block
 run_test "theme-apply replaces a populated block" test_theme_apply_replaces_a_populated_block
 run_test "theme-apply refuses a block below a table" test_theme_apply_refuses_a_block_below_a_table
+run_test "theme-apply refuses malformed markers" test_theme_apply_refuses_malformed_markers
+run_test "theme-apply rewrites only the first palette line" test_theme_apply_rewrites_only_the_first_palette_line
+run_test "theme-apply survives a backslash in TMPDIR" test_theme_apply_survives_a_backslash_in_tmpdir
 run_test "theme-apply without starship is quiet" test_theme_apply_without_starship_is_quiet
 run_test "theme-apply warns when nothing rendered" test_theme_apply_warns_when_nothing_rendered
 run_test "configure twice is content identical" test_configure_twice_is_content_identical
