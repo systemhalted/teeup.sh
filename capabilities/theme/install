@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Nothing to install: the theme system is shell, sed and the palettes in the
+# checkout. The file exists so `teeup install theme` is a recorded no-op
+# rather than an error.
+:

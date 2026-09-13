@@ -26,6 +26,7 @@ teeup - your Mac, as a distribution
   teeup install <capability>     install and configure it (and what it requires)
   teeup configure <capability>   re-run only its configuration
   teeup list [--tier core|daily|lazy]
+  teeup theme set|list|current   apply, list or print the cross-tool theme
   teeup has <capability>         exit 0 when installed (for scripts and menus)
   teeup secret get|set|rm <name>  read, store or delete a Keychain secret
   teeup status                   package manager, answers, installed capabilities
@@ -62,6 +63,20 @@ cmd_configure() {
     die "$target is skipped on this machine (TEEUP_SKIP)"
   fi
   cap_run "$target" configure
+}
+
+cmd_theme() {
+  local op="${1:-current}"
+  [[ $# -gt 0 ]] && shift
+  case "$op" in
+    set)
+      [[ -n "${1:-}" ]] || die "Usage: teeup theme set <name>"
+      theme_set "$1"
+      ;;
+    list) theme_list ;;
+    current) theme_current ;;
+    *) die "Usage: teeup theme set|list|current" ;;
+  esac
 }
 
 cmd_list() {
@@ -170,6 +185,7 @@ verb="${1:-help}"
 case "$verb" in
   install) cmd_install "$@" ;;
   configure) cmd_configure "$@" ;;
+  theme) cmd_theme "$@" ;;
   list) cmd_list "$@" ;;
   has) cmd_has "$@" ;;
   secret) cmd_secret "$@" ;;

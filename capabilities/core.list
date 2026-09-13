@@ -1,6 +1,6 @@
 # Core tier: what every terminal session needs. Ordered; each entry's
 # requires= must already be satisfied by the entries above it.
-# Plan 2b appends: wezterm fonts aerospace keyboard macos-defaults theme
+# This plan still inserts, above theme: wezterm fonts aerospace keyboard macos-defaults
 xcode-clt
 package-manager
 teeup-runtime
@@ -13,3 +13,4 @@ git
 ssh
 github
 mise
+theme

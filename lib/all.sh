@@ -6,7 +6,7 @@ TEEUP_PATH="${TEEUP_PATH:-$(dirname "$_teeup_lib_dir")}"
 export TEEUP_PATH
 # shellcheck source=lib/core.sh
 source "$_teeup_lib_dir/core.sh"
-for _teeup_lib in files state answers pkg ui capability macos; do
+for _teeup_lib in files state answers pkg ui capability macos theme; do
   # shellcheck source=/dev/null
   source "$_teeup_lib_dir/$_teeup_lib.sh"
 done
