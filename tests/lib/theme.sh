@@ -96,7 +96,7 @@ test_palette_load_rejects_values_unsafe_for_the_rendered_files() {
   mkdir -p "$TEST_HOME/.config/teeup/themes/tricky"
   local file value rc out
   file="$TEST_HOME/.config/teeup/themes/tricky/dark.toml"
-  for value in '#a&b|c\d e' 'Monokai $(touch PWNED)' 'Monokai `id`' '#89b4fa\q' ''; do
+  for value in '#a&b|c\d e' 'Monokai $(touch PWNED)' 'Monokai `id`' '#89b4fa\q' 'Solarized "dark"' 'Nord; id' ''; do
     printf 'mode = "dark"\nbat_theme = "%s"\naccent = "#89b4fa"\n' "$value" > "$file"
     rc=0
     out="$(theme_palette_load "$file" 2>&1)" || rc=$?
@@ -105,6 +105,18 @@ test_palette_load_rejects_values_unsafe_for_the_rendered_files() {
     assert_contains "$out" "bat_theme" || return 1
     assert_contains "$out" "\"$value\"" || return 1
   done
+  # bat's own built-in theme names, which every template quotes.
+  for value in 'Solarized (dark)' 'Solarized (light)' 'Visual Studio Dark+' 'Monokai Extended Light'; do
+    printf 'mode = "dark"\nbat_theme = "%s"\naccent = "#89b4fa"\n' "$value" > "$file"
+    theme_palette_load "$file" 2>/dev/null || { echo "value [$value] must be accepted"; return 1; }
+    assert_equals "$value" "$TEEUP_COLOR_BAT_THEME" || return 1
+  done
+  # mode is the one value rendered outside quotes ([palettes.teeup-<mode>]).
+  printf 'mode = "dark (x)"\naccent = "#89b4fa"\n' > "$file"
+  rc=0
+  out="$(theme_palette_load "$file" 2>&1)" || rc=$?
+  assert_failure "$rc" "mode must be dark or light" || return 1
+  assert_contains "$out" 'mode = "dark (x)"' || return 1
   cleanup_test_env
 }
 

@@ -24,8 +24,20 @@ fi
 # parse error), so anything but one start followed by one end is refused.
 start_line="$(grep -n -xF "$START" "$STARSHIP" | head -1 | cut -d: -f1)"
 end_line="$(grep -n -xF "$END" "$STARSHIP" | head -1 | cut -d: -f1)"
-if [[ "$start_count" -ne 1 || "$end_count" -ne 1 || "$start_line" -gt "$end_line" ]]; then
-  warn "$STARSHIP needs exactly one '$START' line followed by exactly one '$END' line (found $start_count and $end_count); leaving it alone."
+problem=""
+if [[ "$start_count" -eq 0 ]]; then
+  problem="it has an end marker but no start marker"
+elif [[ "$end_count" -eq 0 ]]; then
+  problem="it has a start marker but no end marker"
+elif [[ "$start_count" -gt 1 ]]; then
+  problem="it has $start_count start markers"
+elif [[ "$end_count" -gt 1 ]]; then
+  problem="it has $end_count end markers"
+elif [[ "$start_line" -gt "$end_line" ]]; then
+  problem="the end marker comes before the start marker"
+fi
+if [[ -n "$problem" ]]; then
+  warn "$STARSHIP: $problem ('$START' ... '$END'); leaving it alone."
   exit 0
 fi
 
@@ -33,12 +45,20 @@ fi
 # belongs to that table. Plan 2a puts the palette line and this block at the top
 # of the file for exactly that reason; if something moved them below a [table],
 # rewriting them in place would produce a palette starship never reads, so stop
-# and say so instead of writing something that silently does nothing. The end
-# marker needs no check of its own: it follows the start (checked above), and
-# the only tables between the two are the palettes the block itself holds.
+# and say so instead of writing something that silently does nothing.
 first_table_line="$(grep -n '^\[' "$STARSHIP" | head -1 | cut -d: -f1)"
 if [[ -n "$first_table_line" && "$start_line" -gt "$first_table_line" ]]; then
   warn "$STARSHIP has the teeup palette block below its first [table]; a root 'palette =' key there would belong to that table. Move the block and the 'palette =' line above line $first_table_line, then run: teeup theme set $(theme_current)"
+  exit 0
+fi
+# The block may hold only [palettes.<name>] tables; everything in it is
+# replaced. A table of the user's between the markers (an end marker moved to
+# the bottom of the file) means the end marker is not above the first
+# non-palette table, and the rewrite would delete that table.
+other_table="$(grep -n '^\[' "$STARSHIP" | grep -v '^[0-9]*:\[palettes\.[^]]*\]' | head -1)"
+other_table_line="${other_table%%:*}"
+if [[ -n "$other_table" && "$other_table_line" -lt "$end_line" ]]; then
+  warn "$STARSHIP: ${other_table#*:} at line $other_table_line sits between the teeup palette markers, and the palette rewrite would delete it; leaving it alone. Move '$END' above it, then run: teeup theme set $(theme_current)"
   exit 0
 fi
 

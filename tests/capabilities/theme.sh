@@ -117,6 +117,7 @@ assert_starship_untouched() {
   cmp -s "$TEST_HOME/starship.before" "$TEST_HOME/.config/starship.toml" ||
     { echo "$label: starship.toml was rewritten:"; cat "$TEST_HOME/.config/starship.toml"; return 1; }
   assert_contains "$out" "leaving it alone" "$label: theme-apply says why" || return 1
+  assert_contains "$out" "$3" "$label: the warning names the problem" || return 1
 }
 
 test_theme_apply_refuses_malformed_markers() {
@@ -128,7 +129,7 @@ test_theme_apply_refuses_malformed_markers() {
 success_symbol = "x"
 
 [directory]
-truncation_length = 3' || return 1
+truncation_length = 3' "the end marker comes before the start marker" || return 1
   assert_starship_untouched "duplicated start" 'palette = "teeup-dark"
 # teeup:theme-palette:start
 [palettes.teeup-dark]
@@ -139,14 +140,26 @@ red = "#d20f39"
 # teeup:theme-palette:end
 
 [character]
-success_symbol = "x"' || return 1
+success_symbol = "x"' "2 start markers" || return 1
   assert_starship_untouched "missing end" 'palette = "teeup-dark"
 # teeup:theme-palette:start
 [palettes.teeup-dark]
 red = "#e78284"
 
 [character]
-success_symbol = "x"' || return 1
+success_symbol = "x"' "no end marker" || return 1
+  # The user's own tables inside the block would be deleted by the rewrite.
+  assert_starship_untouched "user tables inside the block" 'palette = "teeup-dark"
+# teeup:theme-palette:start
+[palettes.teeup-dark]
+red = "#e78284"
+
+[character]
+success_symbol = "x"
+
+[directory]
+truncation_length = 3
+# teeup:theme-palette:end' "[character] at line 6 sits between the teeup palette markers" || return 1
   cleanup_test_env
 }
 
