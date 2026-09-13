@@ -154,11 +154,60 @@ test_theme_verbs() {
   assert_contains "$(DRY_RUN=false "$TEEUP" theme list | tr '\n' ' ')" "catppuccin" || return 1
   DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
   assert_equals "catppuccin" "$(DRY_RUN=false "$TEEUP" theme current)" || return 1
-  local out
-  out="$(DRY_RUN=false "$TEEUP" theme set nope 2>&1)"
+  cleanup_test_env
+}
+
+test_theme_set_refuses_an_unknown_or_invalid_name() {
+  setup
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
+  local rc=0 out
+  # A typo on the command line must not replace a working theme: the
+  # catppuccin fallback is only for configure reading a stale answer.
+  out="$(DRY_RUN=false "$TEEUP" theme set nope 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
   assert_contains "$out" "Unknown theme: nope" || return 1
-  assert_contains "$out" "Falling back to the catppuccin theme" || return 1
+  assert_contains "$out" "Available themes:" || return 1
+  assert_contains "$out" "catppuccin" || return 1
+  assert_not_contains "$out" "Falling back" || return 1
+  rc=0
+  out="$(DRY_RUN=false "$TEEUP" theme set ../themes/catppuccin 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "Invalid theme name" || return 1
   assert_equals "catppuccin" "$(DRY_RUN=false "$TEEUP" theme current)" || return 1
+  cleanup_test_env
+}
+
+make_user_theme_nord() {
+  mkdir -p "$TEST_HOME/.config/teeup/themes/nord"
+  cp "$TEEUP_PATH/themes/catppuccin/dark.toml" "$TEEUP_PATH/themes/catppuccin/light.toml" "$TEST_HOME/.config/teeup/themes/nord/"
+}
+
+test_theme_set_is_remembered_by_configure() {
+  setup
+  make_user_theme_nord
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_NAME="Ada"\nTEEUP_THEME="catppuccin"\n' > "$TEST_HOME/.config/teeup/answers"
+  DRY_RUN=false "$TEEUP" theme set nord >/dev/null
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_THEME="nord"' || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_NAME="Ada"' "other answers survive" || return 1
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null
+  assert_equals "nord" "$(DRY_RUN=false "$TEEUP" theme current)" "configure keeps the theme set last" || return 1
+  cleanup_test_env
+}
+
+test_theme_set_warns_about_a_machine_pin() {
+  setup
+  make_user_theme_nord
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_THEME="catppuccin"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" theme set nord 2>&1)"
+  assert_contains "$out" "Theme set to nord" || return 1
+  assert_contains "$out" "$TEEUP_MACHINES_DIR/testmac.conf pins TEEUP_THEME=catppuccin" || return 1
+  out="$(DRY_RUN=false "$TEEUP" theme set catppuccin 2>&1)"
+  assert_not_contains "$out" "pins TEEUP_THEME" "no warning when the choice matches the pin" || return 1
+  unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
 
@@ -211,5 +260,8 @@ run_test "theme-apply without starship is quiet" test_theme_apply_without_starsh
 run_test "theme-apply warns when nothing rendered" test_theme_apply_warns_when_nothing_rendered
 run_test "configure twice is content identical" test_configure_twice_is_content_identical
 run_test "theme verbs" test_theme_verbs
+run_test "theme set refuses an unknown or invalid name" test_theme_set_refuses_an_unknown_or_invalid_name
+run_test "theme set is remembered by configure" test_theme_set_is_remembered_by_configure
+run_test "theme set warns about a machine pin" test_theme_set_warns_about_a_machine_pin
 run_test "a theme that cannot render fails set and configure" test_a_theme_that_cannot_render_fails_set_and_configure
 print_summary

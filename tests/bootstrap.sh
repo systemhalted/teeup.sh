@@ -262,6 +262,25 @@ test_an_empty_machine_pin_is_still_a_pin() {
   cleanup_test_env
 }
 
+test_wizard_does_not_ask_for_a_pinned_theme() {
+  setup
+  # Whatever the wizard recorded, answers_load would apply the machine file's
+  # TEEUP_THEME last, so the question would be answered and then ignored.
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEST_HOME/machines"
+  printf 'TEEUP_THEME="catppuccin"\n' > "$TEST_HOME/machines/testmac.conf"
+  # The wizard input minus the theme line.
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\ny\n')"
+  assert_contains "$out" "Theme is pinned to catppuccin by $TEST_HOME/machines/testmac.conf; not asking." || return 1
+  assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Theme')" "the theme question was asked" || return 1
+  assert_not_contains "$out" "Would set TEEUP_THEME" || return 1
+  assert_not_contains "$out" "Skipping the daily tier (TEEUP_DAILY=no)" "the daily answer lined up with its question" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 test_skip_daily_and_daily_no_skip_the_tier() {
   setup
   local out
@@ -313,6 +332,7 @@ run_test "wizard runs when only backend recorded" test_wizard_runs_when_only_bac
 run_test "--reconfigure reruns wizard" test_reconfigure_reruns_wizard
 run_test "--reconfigure does not ask for a pinned package manager" test_reconfigure_does_not_ask_for_a_pinned_package_manager
 run_test "an empty machine pin is still a pin" test_an_empty_machine_pin_is_still_a_pin
+run_test "the wizard does not ask for a pinned theme" test_wizard_does_not_ask_for_a_pinned_theme
 run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tier
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
 run_test "core failure aborts" test_core_failure_aborts

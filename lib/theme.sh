@@ -16,8 +16,16 @@ export TEEUP_THEMES_DIR
 # would let the wizard offer a name that theme_set then cannot render.
 _theme_complete() { [[ -f "$1/dark.toml" && -f "$1/light.toml" ]]; }
 
+# A theme name becomes a path component, a wizard option (split on spaces) and
+# the content of current/theme.name, so it is kept to one plain word.
+TEEUP_THEME_NAME_RE='^[a-z0-9][a-z0-9-]*$'
+
 theme_dir() {
   local name="$1" d
+  if ! [[ $name =~ $TEEUP_THEME_NAME_RE ]]; then
+    warn "Invalid theme name: $name (use lower-case letters, digits and dashes)"
+    return 1
+  fi
   for d in "$TEEUP_CONFIG_DIR/themes/$name" "$TEEUP_THEMES_DIR/$name"; do
     if _theme_complete "$d"; then printf '%s\n' "$d"; return 0; fi
   done
@@ -26,9 +34,15 @@ theme_dir() {
 }
 
 theme_list() {
-  local d
+  local d name
   for d in "$TEEUP_THEMES_DIR"/*/ "$TEEUP_CONFIG_DIR"/themes/*/; do
-    if _theme_complete "$d"; then basename "$d"; fi
+    _theme_complete "$d" || continue
+    name="$(basename "$d")"
+    if [[ $name =~ $TEEUP_THEME_NAME_RE ]]; then
+      printf '%s\n' "$name"
+    else
+      warn "Ignoring theme ${d%/}: a theme name uses lower-case letters, digits and dashes"
+    fi
   done | sort -u
 }
 

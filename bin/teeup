@@ -74,12 +74,25 @@ cmd_configure() {
 }
 
 cmd_theme() {
-  local op="${1:-current}"
+  local op="${1:-current}" pinned
   [[ $# -gt 0 ]] && shift
   case "$op" in
     set)
       [[ -n "${1:-}" ]] || die "Usage: teeup theme set <name>"
+      # A name typed here is strict. theme_set's catppuccin fallback exists for
+      # configure reading a stale answer during bootstrap; on the command line a
+      # typo would silently replace the theme that was working.
+      if ! theme_dir "$1" >/dev/null; then
+        echo "Available themes:" >&2
+        theme_list | sed 's/^/  /' >&2
+        exit 1
+      fi
       theme_set "$1"
+      # Remembered, so the next ./bootstrap or teeup configure theme keeps it.
+      answers_set TEEUP_THEME "$1"
+      if pinned="$(machine_get TEEUP_THEME)" && [[ "${pinned:-$TEEUP_THEME_FALLBACK}" != "$1" ]]; then
+        warn "$(machine_file) pins TEEUP_THEME=${pinned:-$TEEUP_THEME_FALLBACK}; the next ./bootstrap or teeup configure theme will switch back to it."
+      fi
       ;;
     list) theme_list ;;
     current) theme_current ;;
