@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# One font at bootstrap. Any other family is `teeup install font <name>`,
+# which installs its cask on demand.
+cask_install font-jetbrains-mono-nerd-font

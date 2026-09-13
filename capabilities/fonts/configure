@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Record the family every tool should ask for. Written once: a later
+# `teeup install font <name>` is the only thing that changes it, so re-running
+# configure never undoes the user's choice.
+if [[ -s "$(font_file)" ]]; then
+  log "Font already recorded: $(font_current)"
+else
+  write_managed_file "$(font_file)" "font family" <<FONT_STATE
+$TEEUP_FONT_DEFAULT
+FONT_STATE
+fi
+
+if ! casks_supported; then
+  warn "MacPorts has no Nerd Font ports. Install $(font_current) by hand from https://www.nerdfonts.com; the family name above is what every teeup config asks for."
+fi
