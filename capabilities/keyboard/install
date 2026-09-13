@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Nothing to install: hidutil ships with macOS at /usr/bin/hidutil. The file
+# exists so the capability has the full contract.
+:

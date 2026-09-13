@@ -1,0 +1,6 @@
+summary="Caps Lock as Control, natively through hidutil"
+group=macos
+tier=core
+requires="teeup-runtime"
+provides=""
+interactive=false
