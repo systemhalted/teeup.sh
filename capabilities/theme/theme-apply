@@ -12,8 +12,20 @@ if [[ ! -f "$STARSHIP" ]]; then
   log "No $STARSHIP yet; its palette will be written the next time you run teeup theme set."
   exit 0
 fi
-if ! grep -qxF "$START" "$STARSHIP" || ! grep -qxF "$END" "$STARSHIP"; then
+start_count="$(grep -cxF "$START" "$STARSHIP" || true)"
+end_count="$(grep -cxF "$END" "$STARSHIP" || true)"
+if [[ "$start_count" -eq 0 && "$end_count" -eq 0 ]]; then
   warn "$STARSHIP has no '$START' block; leaving it alone."
+  exit 0
+fi
+# The rewrite below drops everything from the start marker to the next end
+# marker. An end marker above the start, a second start or a missing end would
+# make that delete the user's own tables or duplicate a palette table (a TOML
+# parse error), so anything but one start followed by one end is refused.
+start_line="$(grep -n -xF "$START" "$STARSHIP" | head -1 | cut -d: -f1)"
+end_line="$(grep -n -xF "$END" "$STARSHIP" | head -1 | cut -d: -f1)"
+if [[ "$start_count" -ne 1 || "$end_count" -ne 1 || "$start_line" -gt "$end_line" ]]; then
+  warn "$STARSHIP needs exactly one '$START' line followed by exactly one '$END' line (found $start_count and $end_count); leaving it alone."
   exit 0
 fi
 
@@ -21,10 +33,11 @@ fi
 # belongs to that table. Plan 2a puts the palette line and this block at the top
 # of the file for exactly that reason; if something moved them below a [table],
 # rewriting them in place would produce a palette starship never reads, so stop
-# and say so instead of writing something that silently does nothing.
-marker_line="$(grep -n -xF "$START" "$STARSHIP" | head -1 | cut -d: -f1)"
+# and say so instead of writing something that silently does nothing. The end
+# marker needs no check of its own: it follows the start (checked above), and
+# the only tables between the two are the palettes the block itself holds.
 first_table_line="$(grep -n '^\[' "$STARSHIP" | head -1 | cut -d: -f1)"
-if [[ -n "$first_table_line" && "$marker_line" -gt "$first_table_line" ]]; then
+if [[ -n "$first_table_line" && "$start_line" -gt "$first_table_line" ]]; then
   warn "$STARSHIP has the teeup palette block below its first [table]; a root 'palette =' key there would belong to that table. Move the block and the 'palette =' line above line $first_table_line, then run: teeup theme set $(theme_current)"
   exit 0
 fi
@@ -49,12 +62,17 @@ rewritten="$(mktemp)"
 # Both the block and the `palette =` line are above the first [table] (checked
 # above), so rewriting them where they sit keeps the palette key at the TOML
 # root. The block itself holds only [palettes.*] table headers, which is valid
-# anywhere, and the user's own tables all follow it.
-awk -v blockfile="$block" -v pal="$active" -v start="$START" -v end="$END" '
+# anywhere, and the user's own tables all follow it. Only the first `palette =`
+# line is the root key; a later one belongs to some table and is the user's.
+# Values reach awk through ENVIRON, not -v: -v processes backslash escapes, so
+# a TMPDIR containing `\n` would name a different block file.
+TEEUP_AWK_BLOCK="$block" TEEUP_AWK_PALETTE="$active" TEEUP_AWK_START="$START" TEEUP_AWK_END="$END" awk '
+  BEGIN { blockfile = ENVIRON["TEEUP_AWK_BLOCK"]; pal = ENVIRON["TEEUP_AWK_PALETTE"]
+          start = ENVIRON["TEEUP_AWK_START"]; end = ENVIRON["TEEUP_AWK_END"] }
   $0 == start { print; skip = 1; while ((getline line < blockfile) > 0) print line; close(blockfile); next }
   $0 == end   { skip = 0; print; next }
   skip        { next }
-  /^palette *=/ { printf "palette = \"%s\"\n", pal; next }
+  !done && /^palette *=/ { printf "palette = \"%s\"\n", pal; done = 1; next }
   { print }
 ' "$STARSHIP" > "$rewritten"
 
