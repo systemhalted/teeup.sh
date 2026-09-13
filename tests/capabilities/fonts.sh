@@ -76,6 +76,20 @@ test_install_font_unknown_fails() {
   cleanup_test_env
 }
 
+test_install_font_refuses_when_fonts_is_skipped() {
+  setup
+  # TEEUP_SKIP="fonts" is how a managed Mac says no casks; `teeup install font`
+  # installs a cask, so it must honour the skip like `teeup install fonts`.
+  local rc=0 out
+  out="$(TEEUP_SKIP="fonts wezterm" DRY_RUN=false "$TEEUP" install font hack 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "fonts is skipped on this machine (TEEUP_SKIP)" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew install" || return 1
+  [[ ! -e "$TEST_HOME/.local/state/teeup/current/font" ]] || { echo "font recorded despite the skip"; return 1; }
+  assert_contains "$(TEEUP_SKIP=fonts DRY_RUN=false "$TEEUP" install font list)" "font-hack-nerd-font" "listing installs nothing, so it stays allowed" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/fonts"
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "configure records the default family" test_configure_records_the_default_family
@@ -85,4 +99,5 @@ run_test "configure warns on macports" test_configure_warns_on_macports
 run_test "install font switches the family" test_install_font_switches_the_family
 run_test "install font list prints the table" test_install_font_list_prints_the_table
 run_test "install font unknown fails" test_install_font_unknown_fails
+run_test "install font refuses when fonts is skipped" test_install_font_refuses_when_fonts_is_skipped
 print_summary
