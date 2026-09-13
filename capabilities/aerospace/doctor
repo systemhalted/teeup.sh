@@ -13,8 +13,16 @@ else
   problems=$((problems + 1))
 fi
 
-if [[ -f "$(user_config_dir)/aerospace/aerospace.toml" ]]; then
-  ok "AeroSpace config present."
+# AeroSpace reads either file, and reports both at once as ambiguous.
+HOME_AERO="$HOME/.aerospace.toml"
+XDG_AERO="$(user_config_dir)/aerospace/aerospace.toml"
+if [[ -f "$HOME_AERO" && -f "$XDG_AERO" ]]; then
+  err "Two AeroSpace configs, $HOME_AERO and $XDG_AERO; AeroSpace reports that as ambiguous. Move one of them aside."
+  problems=$((problems + 1))
+elif [[ -f "$HOME_AERO" ]]; then
+  ok "AeroSpace config present: $HOME_AERO"
+elif [[ -f "$XDG_AERO" ]]; then
+  ok "AeroSpace config present: $XDG_AERO"
 else
   err "No aerospace.toml. Run: teeup configure aerospace"
   problems=$((problems + 1))

@@ -12,6 +12,9 @@ case "$1" in
   *) exit 0 ;;
 esac
 EOF2
+  # configure and doctor probe /Applications outside run_cmd; an empty tree
+  # keeps their output the same on a developer's Mac and on CI.
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
   TEEUP="$TEEUP_PATH/bin/teeup"
   AERO="$TEST_HOME/.config/aerospace/aerospace.toml"
 }
@@ -61,6 +64,47 @@ test_configure_copies_the_config_and_prints_the_manual_step() {
   assert_contains "$(cat "$AERO")" "alt-h = 'focus left'" || return 1
   assert_contains "$(cat "$AERO")" "start-at-login = true" || return 1
   assert_contains "$out" "Privacy & Security > Accessibility" || return 1
+  assert_contains "$out" "AeroSpace will appear in /Applications" "the suite does not read the host's /Applications" || return 1
+  cleanup_test_env
+}
+
+test_configure_keeps_an_existing_home_config() {
+  setup
+  # AeroSpace reads ~/.aerospace.toml and ~/.config/aerospace/aerospace.toml
+  # and reports two configs as ambiguous, so a second one must not appear.
+  printf 'start-at-login = false\n' > "$TEST_HOME/.aerospace.toml"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace)"
+  [[ ! -e "$AERO" ]] || { echo "installed a second config next to ~/.aerospace.toml"; return 1; }
+  assert_equals "start-at-login = false" "$(cat "$TEST_HOME/.aerospace.toml")" || return 1
+  assert_contains "$out" "Keeping your $TEST_HOME/.aerospace.toml" || return 1
+  cleanup_test_env
+}
+
+test_doctor_fails_when_both_configs_exist() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mkdir -p "$TEEUP_APPS_DIR/AeroSpace.app" "$(dirname "$AERO")"
+  mock_command pgrep 0 ""
+  printf 'x = 1\n' > "$TEST_HOME/.aerospace.toml"
+  printf 'x = 1\n' > "$AERO"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run aerospace doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Two AeroSpace configs" || return 1
+  cleanup_test_env
+}
+
+test_doctor_accepts_the_home_config() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mkdir -p "$TEEUP_APPS_DIR/AeroSpace.app"
+  mock_command pgrep 0 ""
+  printf 'x = 1\n' > "$TEST_HOME/.aerospace.toml"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run aerospace doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "AeroSpace config present: $TEST_HOME/.aerospace.toml" || return 1
   cleanup_test_env
 }
 
@@ -83,9 +127,6 @@ test_configure_dry_run_writes_nothing() {
 test_doctor_reports_the_missing_app_and_config() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
-  # Point at an empty tree so the result does not depend on whether the
-  # developer running the suite happens to have AeroSpace installed.
-  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
   mock_command pgrep 1 ""
   local rc=0 out
   out="$(DRY_RUN=false cap_run aerospace doctor 2>&1)" || rc=$?
@@ -102,5 +143,8 @@ run_test "install is skipped on macports" test_install_is_skipped_on_macports
 run_test "configure copies the config and prints the manual step" test_configure_copies_the_config_and_prints_the_manual_step
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure keeps an existing ~/.aerospace.toml" test_configure_keeps_an_existing_home_config
+run_test "doctor fails when both configs exist" test_doctor_fails_when_both_configs_exist
+run_test "doctor accepts ~/.aerospace.toml" test_doctor_accepts_the_home_config
 run_test "doctor reports the missing app and config" test_doctor_reports_the_missing_app_and_config
 print_summary
