@@ -87,6 +87,25 @@ test_configure_bakes_the_absolute_env_path_for_a_custom_xdg_config_home() {
   cleanup_test_env
 }
 
+test_configure_bakes_the_absolute_local_zsh_path_for_a_custom_xdg_config_home() {
+  setup
+  require_zsh || return 1
+  # A one-shot custom XDG_CONFIG_HOME at install time: configure puts local.zsh
+  # under that root, but nothing sets XDG_CONFIG_HOME again before a fresh
+  # login shell reads ~/.zshrc, so the shipped token would expand to
+  # ~/.config/zsh/local.zsh and the file would never be sourced.
+  export XDG_CONFIG_HOME="$TEST_HOME/xdg"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  assert_file_exists "$XDG_CONFIG_HOME/zsh/local.zsh" || return 1
+  printf 'TEEUP_LOCAL_MARKER=from-custom-xdg\n' >> "$XDG_CONFIG_HOME/zsh/local.zsh"
+  assert_not_contains "$(cat "$TEST_HOME/.zshrc")" 'XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh' || return 1
+  local out
+  out="$(env -u XDG_CONFIG_HOME zsh -f -c "source '$TEST_HOME/.zshrc'; print -r -- \$TEEUP_LOCAL_MARKER" 2>/dev/null)"
+  assert_equals "from-custom-xdg" "$out" || return 1
+  cleanup_test_env
+}
+
 test_configure_quotes_a_path_with_shell_metacharacters() {
   setup
   require_zsh || return 1
@@ -319,6 +338,7 @@ run_test "install gets the plugins and switches the login shell" test_install_ge
 run_test "install leaves an existing zsh login shell alone" test_install_leaves_an_existing_zsh_login_shell_alone
 run_test "configure installs the thin home files" test_configure_installs_the_thin_home_files
 run_test "configure bakes the absolute env path for a custom XDG_CONFIG_HOME" test_configure_bakes_the_absolute_env_path_for_a_custom_xdg_config_home
+run_test "configure bakes the absolute local.zsh path for a custom XDG_CONFIG_HOME" test_configure_bakes_the_absolute_local_zsh_path_for_a_custom_xdg_config_home
 run_test "configure quotes a path with shell metacharacters" test_configure_quotes_a_path_with_shell_metacharacters
 run_test "configure installs under ZDOTDIR" test_configure_installs_under_zdotdir
 run_test "configure is idempotent" test_configure_is_idempotent

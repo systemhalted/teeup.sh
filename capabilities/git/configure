@@ -71,7 +71,8 @@ fi
 # Mandatory SSH signing with no key makes every `git commit` fail, including
 # the one that would fix it. ssh runs after git in the core list, so on a first
 # bootstrap the keys do not exist yet: signing turns itself on at the next
-# `teeup configure git` (which `teeup update` runs) once ssh has made them.
+# `teeup configure git`, which the ssh capability runs for itself once it has
+# made the keys.
 # Every identity in identity_list must have BOTH halves of its keypair, not
 # just the .pub: with a work email on file, a signingkey pointing at a work
 # key that ssh has not made yet would make every commit under ~/Work fail once

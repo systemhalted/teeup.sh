@@ -98,7 +98,16 @@ backup_target() {
 # backed up first and its diff printed so the user can carry lines over.
 copy_config_once() {
   local src="$1" dest="$2" recorded current backup
-  if [[ ! -e "$dest" ]]; then
+  # `! -e` on its own is true for a *dangling* symlink, even though the
+  # directory entry is very much there, so teeup used to treat one as absent
+  # and hand it straight to `cp`: GNU cp refuses to write through a dangling
+  # destination symlink (failing the capability) and a link pointing somewhere
+  # unexpected gets written through instead, in both cases without the backup
+  # that preserves what a dotfile manager put there. A symlink is never a file
+  # teeup installed (this function only ever copies a regular file into place),
+  # so it is foreign by definition and takes the backup-then-install path
+  # below.
+  if [[ ! -e "$dest" && ! -L "$dest" ]]; then
     if [[ "$DRY_RUN" == "true" ]]; then
       printf "%b %s\n" "🔍" "[DRY-RUN] Would install $dest from $src"
       return 0
@@ -109,8 +118,15 @@ copy_config_once() {
     ok "Installed $dest"
     return 0
   fi
-  recorded="$(stock_sha "$dest" || true)"
-  current="$(file_sha "$dest")"
+  if [[ -L "$dest" && ! -e "$dest" ]]; then
+    # A dangling symlink has no content to hash, and no stock record can
+    # belong to it; leaving both empty sends it to the foreign-file path.
+    recorded=""
+    current=""
+  else
+    recorded="$(stock_sha "$dest" || true)"
+    current="$(file_sha "$dest")"
+  fi
   if [[ -n "$recorded" ]]; then
     if [[ "$recorded" == "$current" ]]; then
       log "Already installed: $dest"
@@ -127,6 +143,8 @@ copy_config_once() {
   cp "$src" "$dest"
   stock_record "$dest" "$(file_sha "$src")"
   ok "Installed $dest (your previous file is at $backup)"
+  # A backed-up dangling symlink has nothing to diff; diff says so on stderr
+  # and the `|| true` keeps that from failing the capability.
   echo "Lines from your previous file that are not in the teeup version:"
   diff "$backup" "$dest" || true
 }

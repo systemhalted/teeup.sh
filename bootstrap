@@ -88,15 +88,16 @@ run_tier() {
   done
 }
 
+# The package manager is NOT asked here: step 2 below installs it, and this
+# wizard runs after step 3. See ask_package_manager.
 wizard() {
-  local name email work_email pm theme daily
+  local name email work_email theme daily
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
   name="$(ui_input "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")")"
   email="$(ui_input "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)")"
   work_email="$(ui_input "Work email (git identity under ~/Work, empty for none)" "$(answers_get TEEUP_WORK_EMAIL)")"
-  pm="$(ui_choose "Package manager" "$(pkg_backend)" "$(if [[ "$(pkg_backend)" == homebrew ]]; then echo macports; else echo homebrew; fi)")"
   theme="$(ui_choose "Theme (applied once the theme capability lands)" catppuccin tokyo-night gruvbox nord)"
   if ui_confirm "Install the daily set too (Emacs, Neovim, Zed, VS Code, Chrome, Obsidian)?" yes; then
     daily=yes
@@ -106,11 +107,30 @@ wizard() {
   answers_set TEEUP_NAME "$name"
   answers_set TEEUP_EMAIL "$email"
   answers_set TEEUP_WORK_EMAIL "$work_email"
-  answers_set TEEUP_PACKAGE_MANAGER "$pm"
   answers_set TEEUP_THEME "$theme"
   answers_set TEEUP_DAILY "$daily"
-  unset TEEUP_PKG_BACKEND
   answers_load
+}
+
+# The one question that cannot wait for the wizard: step 2 installs the package
+# manager and the package-manager capability records whichever backend it used,
+# so asking afterwards left the answer unable to affect the operation it names.
+# Choosing MacPorts after Homebrew had been installed and recorded made the
+# second package-manager pass in `run_tier core` fail, and on macOS 12 or older
+# a missing MacPorts aborted step 2 before Homebrew could even be offered.
+# ui_choose falls back to a plain numbered read, so this works before gum is
+# installed. Asked only when there is no recorded answer yet (or --reconfigure
+# was passed, which is the only way to change it).
+ask_package_manager() {
+  local detected other choice
+  detected="$(pkg_backend)"
+  if [[ "$detected" == "homebrew" ]]; then other=macports; else other=homebrew; fi
+  echo ""
+  choice="$(ui_choose "Package manager" "$detected" "$other")"
+  # The resolved backend is cached in TEEUP_PKG_BACKEND by the pkg_backend call
+  # above; drop it so the answer just recorded is what every later call reads.
+  unset TEEUP_PKG_BACKEND
+  answers_set TEEUP_PACKAGE_MANAGER "$choice"
 }
 
 # --- 1. Xcode Command Line Tools, Rosetta ------------------------------------
@@ -118,6 +138,9 @@ cap_run xcode-clt install || die "Xcode Command Line Tools are required. Complet
 
 # --- 2. package manager -------------------------------------------------------
 answers_load
+if [[ "$RECONFIGURE" == "true" || -z "$(answers_get TEEUP_PACKAGE_MANAGER)" ]]; then
+  ask_package_manager
+fi
 run_capability package-manager || die "Core capability package-manager failed. Fix the cause and re-run ./bootstrap."
 pkg_backend_path
 

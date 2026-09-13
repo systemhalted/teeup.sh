@@ -10,12 +10,20 @@ if ! have gh; then
   exit 0
 fi
 
-if status_out="$(gh auth status -h github.com 2>&1)"; then
+if status_out="$(gh auth status --active -h github.com 2>&1)"; then
   ok "Already signed in to GitHub."
+  # --active narrows the report to the one account gh will actually use for
+  # this host (gh 2.100.0: "-a, --active  Display the active account only").
+  # Without it, `gh auth status -h github.com` reports every account known on
+  # the host and exits 1 if any of them has a problem, so an unrelated stale
+  # account would trigger a pointless login; worse, the scope check below
+  # would happily find the required scopes on an *inactive* account while the
+  # active one lacks them, and every `gh ssh-key add` would then fail with a
+  # scope error and only warn.
+  #
   # A machine that authenticated `gh` before teeup existed may be missing the
   # scopes the key uploads below need. `gh auth status` prints them on a
-  # "Token scopes:" line; refresh rather than assume they are there, or every
-  # `gh ssh-key add` below fails with a scope error and only warns.
+  # "Token scopes:" line; refresh rather than assume they are there.
   if [[ "$status_out" != *"admin:public_key"* || "$status_out" != *"admin:ssh_signing_key"* ]]; then
     log "Refreshing gh's token scopes for SSH key uploads."
     run_cmd gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key ||
@@ -33,21 +41,23 @@ run_cmd gh config set git_protocol ssh --host github.com || warn "Could not set 
 
 # One upload per identity, twice: an authentication key for pushing and a
 # signing key for the SSH commit signatures the git capability turns on.
-# `gh ssh-key list` prints TITLE, KEY, TYPE(authentication|signing), ADDED as
-# tab-separated columns, so the "already uploaded" check must parse the KEY
-# and TYPE columns specifically: a substring match over the whole line would
-# let a title like "laptop signing key" fool an authentication key into
-# looking like an already-uploaded signing key.
+# `gh ssh-key list` is captured here, so gh takes its non-TTY path and prints
+# tab-separated columns. Verified against the installed gh 2.100.0: that
+# format is TITLE, KEY, ADDED, ID, TYPE -- the type is last and the numeric
+# ID sits where a TITLE/KEY/TYPE/ADDED reading would look for it. Rather than
+# depend on any column order, both columns are found by what they contain:
+# the key body is the field starting with "ssh-", the type is the field that
+# is exactly "authentication" or "signing". Parsing the columns and not the
+# whole line also stops a title like "laptop signing key" from fooling an
+# authentication key into looking like an already-uploaded signing key.
 host="$(hostname -s 2>/dev/null || hostname)"
 listed="$(gh ssh-key list 2>/dev/null || true)"
 _github_key_uploaded() {
   local body="$1" type="$2" line line_key line_type
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
-    # The key body is the column starting with "ssh-", never the title. TYPE
-    # is the second-to-last column (ADDED is last).
     line_key="$(awk -F'\t' '{ for (i = 1; i <= NF; i++) if (index($i, "ssh-") == 1) { print $i; exit } }' <<<"$line")"
-    line_type="$(awk -F'\t' '{print $(NF-1)}' <<<"$line")"
+    line_type="$(awk -F'\t' '{ for (i = 1; i <= NF; i++) if ($i == "authentication" || $i == "signing") { print $i; exit } }' <<<"$line")"
     [[ -n "$line_key" && "$line_key" == *"$body"* && "$line_type" == "$type" ]] && return 0
   done <<<"$listed"
   return 1

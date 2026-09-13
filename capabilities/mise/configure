@@ -10,9 +10,34 @@ if ! have mise; then
 fi
 
 # pre-commit lives here, not in the git capability: it is a mise-managed tool,
-# and git runs before mise in the core list. `teeup update` upgrades it with
-# everything else mise owns.
-if mise which pre-commit >/dev/null 2>&1; then
+# and git runs before mise in the core list.
+#
+# `mise which pre-commit` was the wrong question: it answers "is an installed
+# pre-commit active in the configuration stack *here*", which depends on the
+# directory teeup happens to be invoked from. Inside a project whose own
+# mise.toml asks for pre-commit it succeeds, teeup skips the global install,
+# and pre-commit is then missing everywhere else. `mise ls --global` asks about
+# the global config only ("-g, --global  Only show tool versions currently
+# specified in the global mise.toml" -- verified on the installed mise
+# 2026.9.4). A mise too old to have the flag exits non-zero on it; there, fall
+# back to reading the global config file for a pre-commit entry, which is the
+# same file `mise use -g` writes.
+mise_config_file="${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml"
+mise_has_pre_commit=false
+if mise_global_tools="$(mise ls --global 2>/dev/null)"; then
+  # The tool name is the first column of each row; a header row (if this mise
+  # prints one) never spells "pre-commit".
+  if printf '%s
+' "$mise_global_tools" | awk '{print $1}' | grep -qx 'pre-commit'; then
+    mise_has_pre_commit=true
+  fi
+elif [[ -f "$mise_config_file" ]]; then
+  if grep -qE '^[[:space:]]*("pre-commit"|pre-commit)[[:space:]]*=' "$mise_config_file"; then
+    mise_has_pre_commit=true
+  fi
+fi
+
+if [[ "$mise_has_pre_commit" == "true" ]]; then
   log "Already installed through mise: pre-commit"
 else
   run_cmd mise use -g pre-commit || warn "Could not install pre-commit through mise."

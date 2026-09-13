@@ -9,10 +9,14 @@
   . "$TEEUP_PATH/capabilities/zsh/default/rc"
 
 # Machine-specific and personal lines belong in ~/.config/zsh/local.zsh, which
-# is sourced last so it wins over everything above. The XDG expansion matches
-# what `configure` used to place the file (lib/core.sh's user_config_dir).
-[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh" ] &&
-  . "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh"
+# is sourced last so it wins over everything above. configure renders the two
+# lines below to a %q-quoted absolute path, the same way it renders the env
+# line above, which is why they carry no double quotes of their own; the XDG
+# expansion left here matches what `configure` used to place the file
+# (lib/core.sh's user_config_dir) and still works unrendered for the common
+# case of a $HOME/XDG_CONFIG_HOME with no special characters.
+[ -r ${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh ] &&
+  . ${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh
 
 # A missing local.zsh above must not leave the shell on a failing status;
 # starship's prompt character reads $status, and this is the first prompt.

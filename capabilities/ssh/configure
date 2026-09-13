@@ -45,8 +45,23 @@ for identity in $(identity_list); do
     # command run_cmd executes, not a redirect on run_cmd's own stdout, which
     # would otherwise swallow the "Would execute" line into $key.pub on a
     # dry run.
+    #
+    # The redirect writes to a temp file in $HOME/.ssh, never to $key.pub
+    # directly: the shell creates and truncates a redirect target *before*
+    # ssh-keygen runs, so `> "$1.pub"` left a zero-byte .pub behind whenever
+    # the passphrase was mistyped or cancelled. The next run then saw both
+    # halves present, skipped the repair for good, and handed GitHub an empty
+    # key. Only a ssh-keygen that succeeded and produced a non-empty file is
+    # moved into place; anything else takes the temp file with it.
     log "Rebuilding the missing public half for the $identity identity..."
-    if ! run_cmd bash -c 'ssh-keygen -y -f "$1" > "$1.pub"' _ "$key"; then
+    if ! run_cmd bash -c '
+      tmp="$(mktemp "$1.teeup_rebuild_XXXXXX")" || exit 1
+      if ssh-keygen -y -f "$1" > "$tmp" && [ -s "$tmp" ]; then
+        mv "$tmp" "$1.pub"
+      else
+        rm -f "$tmp"
+        exit 1
+      fi' _ "$key"; then
       warn "Rebuilding $key.pub failed for the $identity identity; skipping the rest of it."
       continue
     fi
@@ -69,3 +84,22 @@ done
 
 copy_config_once "$TEEUP_CAP_DIR/config/ssh/config" "$ssh_dir/config"
 chmod_once 600 "$ssh_dir/config"
+
+# git runs before ssh in the core list, so `git configure` ran with no keys on
+# disk and wrote commit.gpgsign = false. The keys exist now, so re-render git's
+# generated settings here; otherwise a first bootstrap finishes with commit
+# signing off and the only sign of it is a log line the user has to notice.
+# cap_run comes from the library every capability script has loaded, and git
+# configure touches nothing under ~/.ssh, so there is no recursion.
+#
+# Only when git has already been configured: a standalone `teeup configure ssh`
+# on a machine whose git capability has never run has nothing to re-render. In
+# a dry run nothing was installed, so that file does not exist either --
+# preview the re-run anyway rather than hiding a step the real run performs.
+ssh_git_config="$(user_config_dir)/git/config"
+if [[ "$DRY_RUN" == "true" || -f "$ssh_git_config" ]]; then
+  log "Re-running the git configuration now that the keys exist."
+  cap_run git configure || warn "Could not re-run the git configuration. Run: teeup configure git"
+else
+  log "No $ssh_git_config yet; commit signing turns on at: teeup configure git"
+fi

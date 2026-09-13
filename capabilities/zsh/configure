@@ -30,10 +30,20 @@ zsh_home_dir="${ZDOTDIR:-$HOME}"
 # both parsed the same way by zsh 5.9) has to supply all of the quoting.
 env_path_q="$(printf '%q' "$TEEUP_CONFIG_DIR/env")"
 
+# .zshrc's local.zsh include needs exactly the same treatment, and for exactly
+# the same reason: with a one-shot custom XDG_CONFIG_HOME at install time,
+# copy_config_once below puts local.zsh under that custom root while a fresh
+# login shell (which nothing sets XDG_CONFIG_HOME for before ~/.zshenv runs)
+# would expand the shipped token to ~/.config/zsh/local.zsh and find nothing.
+# Rendered from $(user_config_dir), not $TEEUP_CONFIG_DIR: local.zsh is a
+# plain XDG config file, and TEEUP_CONFIG_DIR can be overridden on its own.
+local_zsh_q="$(printf '%q' "$(user_config_dir)/zsh/local.zsh")"
+
 for f in .zshenv .zprofile .zshrc; do
   rendered_home_file="$(mktemp)"
   while IFS= read -r line || [[ -n "$line" ]]; do
-    printf '%s\n' "${line//'${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env'/$env_path_q}"
+    rendered_line="${line//'${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env'/$env_path_q}"
+    printf '%s\n' "${rendered_line//'${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh'/$local_zsh_q}"
   done < "$TEEUP_CAP_DIR/home/$f" > "$rendered_home_file"
   copy_config_once "$rendered_home_file" "$zsh_home_dir/$f"
   rm -f "$rendered_home_file"
