@@ -25,6 +25,7 @@ teeup - your Mac, as a distribution
 
   teeup install <capability>     install and configure it (and what it requires)
   teeup install font <name>      install a Nerd Font and point every tool at it
+  teeup install font list        list the fonts teeup knows by name
   teeup configure <capability>   re-run only its configuration
   teeup list [--tier core|daily|lazy]
   teeup theme set|list|current   apply, list or print the cross-tool theme
@@ -43,6 +44,11 @@ cmd_install() {
   # capability's state, so it is handled before the capability lookup.
   if [[ "$target" == "font" ]]; then
     shift
+    # A skipped fonts capability means no font casks on this machine; listing
+    # the table installs nothing, so it stays available.
+    if [[ "$*" != "list" ]] && cap_skipped fonts; then
+      die "fonts is skipped on this machine (TEEUP_SKIP)"
+    fi
     font_set "$*"
     return $?
   fi

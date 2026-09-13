@@ -110,6 +110,7 @@ test_unknown_verb_exits_2() {
 test_help_lists_verbs() {
   setup
   assert_contains "$("$TEEUP" help)" "teeup install <capability>" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup install font list" || return 1
   cleanup_test_env
 }
 

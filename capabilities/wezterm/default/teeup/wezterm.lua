@@ -51,6 +51,10 @@ function M.get_appearance()
   return "Dark"
 end
 
+-- A substring match on purpose: WezTerm reports "Dark", "DarkHighContrast",
+-- "Light" or "LightHighContrast". The exact `== "Dark"` rule elsewhere is for
+-- `defaults read -g AppleInterfaceStyle`, which prints only "Dark"; do not
+-- make the two match, or high-contrast dark users get the light palette.
 function M.mode()
   if M.get_appearance():find("Dark") then
     return "dark"
