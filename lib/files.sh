@@ -174,3 +174,21 @@ refresh_config() {
   echo "Changes:"
   diff "$dest" "$backup" || true
 }
+
+# replace_literal <text> <token> <replacement>
+# Literal, whole-text replacement of every occurrence of <token>, printed with
+# a trailing newline. Built on ${x%%"$tok"*} and ${x#*"$tok"} rather than
+# ${x//pat/repl}: bash 3.2 mis-parses a quoted pattern containing "/" in the
+# latter (the first "/" inside the quotes ends the pattern), and bash 5.2
+# treats "&" in the replacement as the matched text. Neither applies here, so
+# a replacement may contain /, &, |, \ or $ and lands verbatim.
+replace_literal() {
+  local text="$1" tok="$2" rep="$3" out="" rest
+  rest="$text"
+  [[ -n "$tok" ]] || { printf '%s\n' "$text"; return 0; }
+  while case "$rest" in *"$tok"*) true ;; *) false ;; esac; do
+    out="$out${rest%%"$tok"*}$rep"
+    rest="${rest#*"$tok"}"
+  done
+  printf '%s\n' "$out$rest"
+}

@@ -12,12 +12,10 @@
 # instead, the same way capabilities/git/configure renders ~/.config/git into
 # its include paths, so the installed files carry the real path, already
 # %q-quoted so the token needs no surrounding double quotes of its own.
-# A bash substitution loop, not sed: $TEEUP_CONFIG_DIR can contain |, \ or &
-# (all sed replacement metacharacters).
-# bash 5.2+ treats & in a ${var//pat/repl} replacement as the matched text
-# (patsub_replacement). Bash 3.2 does not have the option; the redirect hides
-# its "invalid shell option name" error there.
-shopt -u patsub_replacement 2>/dev/null || true
+# Rendered with replace_literal (lib/files.sh), not sed or ${var//pat/repl}:
+# $TEEUP_CONFIG_DIR can contain |, \ or & (sed metacharacters), bash 5.2 treats
+# & in a ${var//} replacement as the matched text, and bash 3.2 mis-parses a
+# quoted ${var//} pattern that contains a slash.
 
 # zsh reads ${ZDOTDIR:-$HOME}/.zshenv, not always $HOME/.zshenv; install the
 # home files wherever zsh will actually look for them.
@@ -42,8 +40,8 @@ local_zsh_q="$(printf '%q' "$(user_config_dir)/zsh/local.zsh")"
 for f in .zshenv .zprofile .zshrc; do
   rendered_home_file="$(mktemp)"
   while IFS= read -r line || [[ -n "$line" ]]; do
-    rendered_line="${line//'${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env'/$env_path_q}"
-    printf '%s\n' "${rendered_line//'${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh'/$local_zsh_q}"
+    rendered_line="$(replace_literal "$line" '${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env' "$env_path_q")"
+    replace_literal "$rendered_line" '${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh' "$local_zsh_q"
   done < "$TEEUP_CAP_DIR/home/$f" > "$rendered_home_file"
   copy_config_once "$rendered_home_file" "$zsh_home_dir/$f"
   rm -f "$rendered_home_file"

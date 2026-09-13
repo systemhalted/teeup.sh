@@ -134,6 +134,16 @@ test_refresh_prints_the_backup_path() {
   cleanup_test_env
 }
 
+test_replace_literal_is_literal_and_repeats() {
+  setup
+  # shellcheck disable=SC2088  # the tilde is a literal token here, not a path
+  assert_equals 'x /p&q|r\s/a /p&q|r\s/b' "$(replace_literal 'x ~/.config/git/a ~/.config/git/b' '~/.config/git' '/p&q|r\s')" || return 1
+  assert_equals '[ -r /tmp/we\`ird\ \$d/env ] && . /tmp/we\`ird\ \$d/env' "$(replace_literal '[ -r ${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env ] && . ${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env' '${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env' '/tmp/we\`ird\ \$d/env')" || return 1
+  assert_equals 'untouched' "$(replace_literal 'untouched' 'missing' 'x')" || return 1
+  assert_equals 'abc' "$(replace_literal 'abc' '' 'x')" "empty token leaves text alone" || return 1
+  cleanup_test_env
+}
+
 echo "lib/files.sh"
 run_test "append_once is idempotent" test_append_once_is_idempotent
 run_test "write_managed_file noops when identical" test_write_managed_file_noops_when_identical
@@ -146,4 +156,5 @@ run_test "copy_config_once dry run touches nothing" test_copy_config_once_dry_ru
 run_test "refresh_config backs up and diffs" test_refresh_config_backs_up_and_diffs
 run_test "refresh_config removes backup when unchanged" test_refresh_config_removes_backup_when_unchanged
 run_test "refresh prints the backup path" test_refresh_prints_the_backup_path
+run_test "replace_literal is literal and repeats" test_replace_literal_is_literal_and_repeats
 print_summary
