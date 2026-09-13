@@ -12,26 +12,24 @@ export TEEUP_THEMES_DIR
 # A user theme overrides a shipped one of the same name, the same way a user
 # config overrides a shipped config. `die` is not used: this runs inside $( ),
 # where die would only kill the substitution subshell.
+# A theme is complete only with both modes: listing or resolving a half theme
+# would let the wizard offer a name that theme_set then cannot render.
+_theme_complete() { [[ -f "$1/dark.toml" && -f "$1/light.toml" ]]; }
+
 theme_dir() {
   local name="$1" d
-  d="$TEEUP_CONFIG_DIR/themes/$name"
-  if [[ -f "$d/dark.toml" ]]; then printf '%s\n' "$d"; return 0; fi
-  d="$TEEUP_THEMES_DIR/$name"
-  if [[ -f "$d/dark.toml" ]]; then printf '%s\n' "$d"; return 0; fi
+  for d in "$TEEUP_CONFIG_DIR/themes/$name" "$TEEUP_THEMES_DIR/$name"; do
+    if _theme_complete "$d"; then printf '%s\n' "$d"; return 0; fi
+  done
   err "Unknown theme: $name (try: teeup theme list)"
   return 1
 }
 
 theme_list() {
   local d
-  {
-    for d in "$TEEUP_THEMES_DIR"/*/; do
-      if [[ -f "$d/dark.toml" ]]; then basename "$d"; fi
-    done
-    for d in "$TEEUP_CONFIG_DIR"/themes/*/; do
-      if [[ -f "$d/dark.toml" ]]; then basename "$d"; fi
-    done
-  } 2>/dev/null | sort -u
+  for d in "$TEEUP_THEMES_DIR"/*/ "$TEEUP_CONFIG_DIR"/themes/*/; do
+    if _theme_complete "$d"; then basename "$d"; fi
+  done | sort -u
 }
 
 theme_current() {
@@ -79,6 +77,14 @@ _theme_sed_entry() {
 # table is a sed script built once here rather than once per template.
 # The `sed` expression takes the value out of the double quotes, which is why
 # a value may contain spaces (bat_theme) but never a double quote.
+#
+# Values land inside a shell `export`, Lua strings and TOML strings, and a
+# user theme is untrusted input, so every value must be a colour or a plain
+# name ("#89b4fa", "Monokai Extended Light"). Anything else (`$(...)`, a
+# backtick, a backslash, a quote) makes the whole palette invalid rather than
+# being escaped three different ways.
+TEEUP_PALETTE_VALUE_RE='^[#A-Za-z0-9][A-Za-z0-9 ._-]*$'
+
 theme_palette_load() {
   local file="$1" key value upper old
   if [[ ! -f "$file" ]]; then
@@ -95,6 +101,10 @@ theme_palette_load() {
   export TEEUP_COLOR_SED
   while read -r key value; do
     if [[ -z "$key" ]]; then continue; fi
+    if ! [[ $value =~ $TEEUP_PALETTE_VALUE_RE ]]; then
+      warn "Invalid palette value in $file: $key = \"$value\" (use a colour like #89b4fa or a name of letters, digits, spaces, dots, underscores and dashes)"
+      return 1
+    fi
     upper="$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
     export "TEEUP_COLOR_$upper=$value"
     TEEUP_COLOR_KEYS="$TEEUP_COLOR_KEYS$key "
@@ -115,7 +125,12 @@ theme_render() {
     return 0
   fi
   mkdir -p "$(dirname "$out")"
-  sed -f "$TEEUP_COLOR_SED" "$tpl" > "$out"
+  # The redirection creates $out before sed runs, so a failed render would
+  # otherwise leave an empty or partial file under the final name.
+  if ! sed -f "$TEEUP_COLOR_SED" "$tpl" > "$out"; then
+    rm -f "$out"
+    return 1
+  fi
 }
 
 # theme_templates -> every template, user copies first.
@@ -136,10 +151,26 @@ theme_templates() {
   return 0
 }
 
+# _theme_set_abort <next> <name>
+# Every failure after staging starts ends here: the half-rendered staging dir
+# and the sed table go, and the theme in current/ is never touched.
+_theme_set_abort() {
+  local next="$1" name="$2"
+  if [[ "$DRY_RUN" != "true" ]]; then rm -rf "$next"; fi
+  if [[ -n "${TEEUP_COLOR_SED:-}" ]]; then
+    rm -f "$TEEUP_COLOR_SED"
+    TEEUP_COLOR_SED=""
+  fi
+  err "Theme $name was not applied; the current theme is unchanged."
+}
+
 # theme_set <name>
 # Render both modes into a staging directory, swap it into place, record the
 # name, then let every capability pick the new files up. Rendering into a
-# staging dir means a failure half way through leaves the old theme intact.
+# staging dir means a failure half way through leaves the old theme intact:
+# a template that fails to render, or a rendered file that still holds a
+# `{{ key }}` token the palette did not define, fails the whole switch before
+# the swap.
 #
 # An unknown name warns and falls back to catppuccin rather than failing: the
 # theme capability is core, so a non-zero exit here aborts the whole bootstrap.
@@ -147,7 +178,7 @@ TEEUP_THEME_FALLBACK="catppuccin"
 export TEEUP_THEME_FALLBACK
 
 theme_set() {
-  local name="$1" dir mode tpl out current next cap
+  local name="$1" dir mode tpl out current next cap failed=0 missing
   if ! dir="$(theme_dir "$name")"; then
     if [[ "$name" == "$TEEUP_THEME_FALLBACK" ]]; then
       if [[ -n "${TEEUP_COLOR_SED:-}" ]]; then rm -f "$TEEUP_COLOR_SED"; fi
@@ -166,23 +197,36 @@ theme_set() {
   for mode in dark light; do
     if [[ ! -f "$dir/$mode.toml" ]]; then
       err "Theme $name has no $mode.toml"
-      if [[ -n "${TEEUP_COLOR_SED:-}" ]]; then rm -f "$TEEUP_COLOR_SED"; fi
+      _theme_set_abort "$next" "$name"
       return 1
     fi
     if ! theme_palette_load "$dir/$mode.toml"; then
-      if [[ -n "${TEEUP_COLOR_SED:-}" ]]; then rm -f "$TEEUP_COLOR_SED"; fi
+      _theme_set_abort "$next" "$name"
       return 1
     fi
     run_cmd mkdir -p "$next/$mode"
     while IFS= read -r tpl; do
       out="$next/$mode/$(basename "$tpl" .tpl)"
       if [[ -e "$out" ]]; then continue; fi
-      theme_render "$tpl" "$out" || warn "Could not render $tpl"
+      if ! theme_render "$tpl" "$out"; then
+        warn "Could not render $tpl"
+        failed=1
+        continue
+      fi
+      if [[ "$DRY_RUN" != "true" ]] && grep -qF '{{ ' "$out"; then
+        missing="$(grep -oE '[{][{] [A-Za-z0-9_]+ [}][}]' "$out" | sed -e 's/^[{][{] //' -e 's/ [}][}]$//' | sort -u | paste -s -d ' ' -)"
+        warn "$tpl: the $name $mode palette has no value for: ${missing:-a malformed token}"
+        failed=1
+      fi
     done < <(theme_templates)
     if [[ "$DRY_RUN" != "true" ]]; then
       cp "$dir/$mode.toml" "$next/$mode/colors.toml"
     fi
   done
+  if [[ $failed -ne 0 ]]; then
+    _theme_set_abort "$next" "$name"
+    return 1
+  fi
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would swap $next into $current and record theme $name"
   else
