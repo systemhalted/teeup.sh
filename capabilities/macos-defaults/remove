@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Replay what defaults_write recorded: a key that was absent is deleted, a key
+# that had a value is written back with its original type.
+defaults_restore NSGlobalDomain AppleShowAllExtensions
+defaults_restore com.apple.finder AppleShowAllFiles
+defaults_restore com.apple.finder ShowPathbar
+defaults_restore com.apple.finder FXPreferredViewStyle
+defaults_restore com.apple.finder FXEnableExtensionChangeWarning
+defaults_restore NSGlobalDomain NSNavPanelExpandedStateForSaveMode
+defaults_restore NSGlobalDomain PMPrintingExpandedStateForPrint
+defaults_restore NSGlobalDomain KeyRepeat
+defaults_restore NSGlobalDomain InitialKeyRepeat
+defaults_restore NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled
+defaults_restore NSGlobalDomain NSAutomaticDashSubstitutionEnabled
+defaults_restore NSGlobalDomain NSAutomaticCapitalizationEnabled
+defaults_restore NSGlobalDomain NSAutomaticSpellingCorrectionEnabled
+defaults_restore com.apple.dock autohide
+defaults_restore com.apple.AppleMultitouchTrackpad Clicking
+defaults_restore com.apple.screencapture location
+
+run_cmd killall Finder || true
+run_cmd killall Dock || true
+ok "macOS preferences restored. ~/Screenshots was left alone; delete it yourself if you want it gone."

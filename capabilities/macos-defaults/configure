@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# One preference per line, each with its reason. Every write records the prior
+# value under state/defaults/, so `teeup remove macos-defaults` restores the
+# machine to exactly what it was before teeup touched it.
+
+# Files: see what you are actually working with.
+defaults_write NSGlobalDomain AppleShowAllExtensions -bool true              # never hide an extension
+defaults_write com.apple.finder AppleShowAllFiles -bool true                 # dotfiles are files
+defaults_write com.apple.finder ShowPathbar -bool true                       # know where you are
+defaults_write com.apple.finder FXPreferredViewStyle -string Nlsv            # list view everywhere
+defaults_write com.apple.finder FXEnableExtensionChangeWarning -bool false   # renaming .txt to .md is not an event
+
+# Dialogs: expanded, always.
+defaults_write NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true  # full Save panel
+defaults_write NSGlobalDomain PMPrintingExpandedStateForPrint -bool true     # full Print panel
+
+# Typing: fast repeat, and no "helpful" rewriting of code.
+defaults_write NSGlobalDomain KeyRepeat -int 2                               # fastest repeat (needs a logout)
+defaults_write NSGlobalDomain InitialKeyRepeat -int 15                       # shortest delay before repeat
+defaults_write NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled -bool false      # "smart" quotes break code
+defaults_write NSGlobalDomain NSAutomaticDashSubstitutionEnabled -bool false       # -- must stay --
+defaults_write NSGlobalDomain NSAutomaticCapitalizationEnabled -bool false         # git is not Git
+defaults_write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false     # no autocorrect in a commit message
+
+# Dock and trackpad.
+defaults_write com.apple.dock autohide -bool true                            # screen space for windows
+defaults_write com.apple.AppleMultitouchTrackpad Clicking -bool true         # tap to click (Bluetooth Magic Trackpad uses a different domain)
+
+# Screenshots out of the way of the Desktop.
+SHOTS="$HOME/Screenshots"
+if [[ -d "$SHOTS" ]]; then
+  log "Already present: $SHOTS"
+else
+  run_cmd mkdir -p "$SHOTS"
+fi
+defaults_write com.apple.screencapture location -string "$SHOTS"
+
+# Finder and Dock read most of these only at start. killall fails when a
+# process is not running, which must not abort the script.
+run_cmd killall Finder || true
+run_cmd killall Dock || true
+ok "macOS preferences applied. KeyRepeat and InitialKeyRepeat take effect after the next login."
