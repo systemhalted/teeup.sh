@@ -472,6 +472,7 @@ Happy contributing! 🚀
     warns without aborting the switch, so keep them to "tell the app to
     reload" rather than real work.
 13. Native macOS settings go through `lib/macos.sh`: `defaults_write` (which
-    records the prior value so `remove` can call `defaults_restore`) and
-    `launchagent_install <label>` with the plist on stdin. Never call
-    `defaults write` or `launchctl` directly.
+    records the prior value so `remove` can call `defaults_restore`),
+    `launchagent_install <label>` with the plist on stdin, and
+    `launchagent_remove <label>` in `remove`. Never call `defaults write` or
+    `launchctl` directly.

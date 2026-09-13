@@ -11,6 +11,51 @@ setup() {
   RECORDS="$TEST_HOME/.local/state/teeup/defaults"
 }
 
+# A stateful defaults database. Each "<domain>.<key>" file holds the type
+# defaults(1) reports on its first line and the value after it. `read` prints
+# what the real command prints for a scalar (a boolean as 1 or 0), `read-type`
+# prints "Type is <type>", and `write` accepts only what defaults(1) documents
+# (-bool TRUE/FALSE/YES/NO in any case, a whole number for -int), failing like
+# the real command otherwise. DEFAULTS_FAIL_WRITE names one key whose write
+# fails, to simulate a restore that cannot complete.
+mock_defaults_db() {
+  export DDB="$TEST_HOME/defaults-db"
+  mkdir -p "$DDB"
+  mock_command_script defaults <<'EOF2'
+op="$1"; shift
+f="$DDB/$1.$2"
+case "$op" in
+  read)
+    [ -f "$f" ] || exit 1
+    t="$(head -1 "$f")"; v="$(tail -n +2 "$f")"
+    if [ "$t" = boolean ]; then
+      case "$v" in [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1) echo 1 ;; *) echo 0 ;; esac
+    else
+      printf '%s\n' "$v"
+    fi
+    ;;
+  read-type) [ -f "$f" ] || exit 1; echo "Type is $(head -1 "$f")" ;;
+  write)
+    [ "$2" = "${DEFAULTS_FAIL_WRITE:-}" ] && exit 1
+    case "$3" in
+      -bool) t=boolean
+        case "$4" in [Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee]|[Yy][Ee][Ss]|[Nn][Oo]) ;; *) echo "Rep argument is not a boolean" >&2; exit 1 ;; esac ;;
+      -int) t=integer
+        case "$4" in ''|*[!0-9-]*) echo "Rep argument is not an integer" >&2; exit 1 ;; esac ;;
+      -float) t=float ;;
+      -string) t=string ;;
+      *) exit 1 ;;
+    esac
+    printf '%s\n%s\n' "$t" "$4" > "$f"
+    ;;
+  delete) [ -f "$f" ] || exit 1; rm -f "$f" ;;
+esac
+EOF2
+}
+
+# seed_default <domain> <key> <type> <value>
+seed_default() { printf '%s\n%s\n' "$3" "$4" > "$DDB/$1.$2"; }
+
 mock_defaults_absent() {
   mock_command_script defaults <<'EOF2'
 case "$1" in
@@ -49,15 +94,56 @@ test_configure_records_every_key_and_creates_the_screenshots_dir() {
 
 test_configure_records_a_prior_value() {
   setup
-  mock_command_script defaults <<'EOF2'
-case "$1" in
-  read) echo 1; exit 0 ;;
-  *) exit 0 ;;
-esac
-EOF2
+  mock_defaults_db
+  seed_default com.apple.dock autohide boolean 1
+  seed_default NSGlobalDomain KeyRepeat integer 6
   DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
-  assert_equals "-bool:1" "$(cat "$RECORDS/com.apple.dock.autohide")" || return 1
-  assert_equals "-int:1" "$(cat "$RECORDS/NSGlobalDomain.KeyRepeat")" || return 1
+  assert_equals "-bool:true" "$(cat "$RECORDS/com.apple.dock.autohide")" || return 1
+  assert_equals "-int:6" "$(cat "$RECORDS/NSGlobalDomain.KeyRepeat")" || return 1
+  cleanup_test_env
+}
+
+db_snapshot() {
+  local f
+  for f in "$DDB"/*; do
+    [[ -f "$f" ]] || continue
+    printf '%s=%s|' "${f##*/}" "$(tr '\n' ' ' < "$f")"
+  done
+}
+
+test_remove_puts_every_prior_value_back_with_its_type() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_defaults_db
+  seed_default NSGlobalDomain AppleShowAllExtensions boolean false
+  seed_default NSGlobalDomain KeyRepeat integer 6
+  seed_default NSGlobalDomain InitialKeyRepeat float 25.5
+  seed_default com.apple.screencapture location string "/Users/ada/My Shots: 2026"
+  seed_default com.apple.finder FXPreferredViewStyle string icnv
+  seed_default com.apple.finder AppleShowAllFiles string YES
+  local before rc=0
+  before="$(db_snapshot)"
+  DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
+  DRY_RUN=false cap_run macos-defaults remove >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" || return 1
+  assert_equals "$before" "$(db_snapshot)" "the defaults database is back to what it was" || return 1
+  assert_equals "0" "$(find "$RECORDS" -type f | wc -l | tr -d ' ')" "every record is consumed" || return 1
+  cleanup_test_env
+}
+
+test_remove_continues_past_a_failed_restore() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_defaults_db
+  seed_default NSGlobalDomain AppleShowAllExtensions boolean false
+  seed_default com.apple.dock autohide boolean false
+  DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
+  local rc=0 out
+  out="$(DEFAULTS_FAIL_WRITE=AppleShowAllExtensions DRY_RUN=false cap_run macos-defaults remove 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Could not restore NSGlobalDomain AppleShowAllExtensions" || return 1
+  assert_equals $'boolean\nfalse' "$(cat "$DDB/com.apple.dock.autohide")" "later keys are still restored" || return 1
+  assert_equals "1" "$(find "$RECORDS" -type f | wc -l | tr -d ' ')" "only the failed record remains" || return 1
   cleanup_test_env
 }
 
@@ -100,9 +186,9 @@ test_remove_rewrites_a_recorded_value() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   mkdir -p "$RECORDS"
-  printf -- '-bool:1\n' > "$RECORDS/com.apple.dock.autohide"
+  printf -- '-bool:true\n' > "$RECORDS/com.apple.dock.autohide"
   DRY_RUN=false cap_run macos-defaults remove >/dev/null
-  assert_contains "$(cat "$MOCK_LOG")" "defaults write com.apple.dock autohide -bool 1" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "defaults write com.apple.dock autohide -bool true" || return 1
   cleanup_test_env
 }
 
@@ -114,4 +200,6 @@ run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "remove restores every key" test_remove_restores_every_key
 run_test "remove rewrites a recorded value" test_remove_rewrites_a_recorded_value
+run_test "remove puts every prior value back with its type" test_remove_puts_every_prior_value_back_with_its_type
+run_test "remove continues past a failed restore" test_remove_continues_past_a_failed_restore
 print_summary

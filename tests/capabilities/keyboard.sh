@@ -61,6 +61,18 @@ test_remove_unloads_and_clears_the_mapping() {
   cleanup_test_env
 }
 
+test_remove_goes_through_lib_macos() {
+  setup
+  # CONTRIBUTING item 13: LaunchAgents are managed through lib/macos.sh, and
+  # this script is the one the next LaunchAgent capability will copy.
+  if grep -n 'launchctl' "$TEEUP_PATH/capabilities/keyboard/remove"; then
+    echo "keyboard/remove calls launchctl directly; use launchagent_remove"
+    return 1
+  fi
+  assert_contains "$(cat "$TEEUP_PATH/capabilities/keyboard/remove")" "launchagent_remove sh.teeup.keyboard" || return 1
+  cleanup_test_env
+}
+
 test_remove_without_a_plist_is_quiet() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -75,5 +87,6 @@ run_test "configure writes the agent and applies the mapping" test_configure_wri
 run_test "configure is idempotent on the plist" test_configure_is_idempotent_on_the_plist
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "remove unloads and clears the mapping" test_remove_unloads_and_clears_the_mapping
+run_test "remove goes through lib/macos.sh" test_remove_goes_through_lib_macos
 run_test "remove without a plist is quiet" test_remove_without_a_plist_is_quiet
 print_summary

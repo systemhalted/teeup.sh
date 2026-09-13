@@ -18,19 +18,54 @@ _defaults_record() {
   printf '%s\n' "$content" > "$record"
 }
 
+# _defaults_flag <read-type name> -> the `defaults write` flag that writes it
+# back; returns 1 for a type teeup cannot replay from one recorded line
+# (array, dictionary, data, date).
+_defaults_flag() {
+  case "$1" in
+    boolean) printf -- '-bool\n' ;;
+    integer) printf -- '-int\n' ;;
+    float) printf -- '-float\n' ;;
+    string) printf -- '-string\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+# `defaults read` prints a boolean as 1 or 0, but defaults(1) documents only
+# TRUE, FALSE, YES and NO for `write -bool`, so booleans are kept as true/false.
+_defaults_bool() {
+  case "$1" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]) printf 'true\n' ;;
+    *) printf 'false\n' ;;
+  esac
+}
+
 # defaults_write <domain> <key> <type> <value>
 # Records what was there before the first time teeup touches a key, so
 # `teeup remove macos-defaults` can put the machine back. The record is never
 # refreshed: the value teeup itself wrote is not a prior value.
-# Only the first line of a prior value is kept; every key teeup writes is a
-# scalar (bool, int or string), never a dict or an array.
+#
+# The record is `<flag>:<value>` using the prior value's own type, which can
+# differ from the one teeup writes (a hand-set `-string YES` where teeup writes
+# `-bool true`). A type with no flag is recorded as `<type>:<first line>` so
+# defaults_restore can say what it is leaving alone. Only the first line of a
+# prior value is kept.
+# real-Mac check: `defaults read-type <domain> <key>` prints "Type is boolean"
+# (integer, float, string, array, dictionary, data, date), and `write -bool`
+# accepts true/false.
 defaults_write() {
-  local domain="$1" key="$2" type="$3" value="$4" record prior
+  local domain="$1" key="$2" type="$3" value="$4" record prior ptype flag
   record="$(_defaults_record_path "$domain" "$key")"
   if [[ ! -f "$record" ]]; then
     if defaults read "$domain" "$key" >/dev/null 2>&1; then
       prior="$(defaults read "$domain" "$key" 2>/dev/null | head -1)"
-      _defaults_record "$record" "$type:$prior"
+      ptype="$(defaults read-type "$domain" "$key" 2>/dev/null | sed -n 's/^Type is //p' | head -1)"
+      if flag="$(_defaults_flag "$ptype")"; then
+        if [[ "$flag" == "-bool" ]]; then prior="$(_defaults_bool "$prior")"; fi
+        _defaults_record "$record" "$flag:$prior"
+      else
+        _defaults_record "$record" "${ptype:-unknown}:$prior"
+      fi
     else
       _defaults_record "$record" "absent"
     fi
@@ -39,6 +74,9 @@ defaults_write() {
 }
 
 # defaults_restore <domain> <key>
+# Always returns 0: `remove` restores sixteen keys in a row under `bash -e`, so
+# one key that cannot be written back warns, keeps its record for another try,
+# and lets the rest continue.
 defaults_restore() {
   local domain="$1" key="$2" record recorded type value
   record="$(_defaults_record_path "$domain" "$key")"
@@ -52,7 +90,18 @@ defaults_restore() {
   else
     type="${recorded%%:*}"
     value="${recorded#*:}"
-    run_cmd defaults write "$domain" "$key" "$type" "$value"
+    case "$type" in
+      -bool) value="$(_defaults_bool "$value")" ;;
+      -int|-float|-string) ;;
+      *)
+        warn "$domain $key held a $type before teeup, which teeup cannot write back; leaving it as it is (record: $record)."
+        return 0
+        ;;
+    esac
+    if ! run_cmd defaults write "$domain" "$key" "$type" "$value"; then
+      warn "Could not restore $domain $key to $type $value; the record stays at $record."
+      return 0
+    fi
   fi
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would clear ${record#"$TEEUP_STATE_DIR"/}"
@@ -65,10 +114,12 @@ defaults_restore() {
 # Always reloads, even when the plist did not change: bootout is the cheap way
 # to make the agent match the file, and it is how a manually unloaded agent
 # repairs itself on the next `teeup configure`.
+_launchagent_plist() { printf '%s/Library/LaunchAgents/%s.plist\n' "$HOME" "$1"; }
+
 launchagent_install() {
   local label="$1" dir plist uid
-  dir="$HOME/Library/LaunchAgents"
-  plist="$dir/$label.plist"
+  plist="$(_launchagent_plist "$label")"
+  dir="$(dirname "$plist")"
   [[ -d "$dir" ]] || run_cmd mkdir -p "$dir"
   write_managed_file "$plist" "LaunchAgent $label"
   uid="$(id -u)"
@@ -82,6 +133,21 @@ launchagent_install() {
   run_cmd launchctl bootstrap "gui/$uid" "$plist" ||
     { sleep 1; run_cmd launchctl bootstrap "gui/$uid" "$plist"; } ||
     warn "Could not load $label; run: launchctl bootstrap gui/$uid $plist"
+}
+
+# launchagent_remove <label>
+# The inverse of launchagent_install: unload the agent and delete its plist.
+# bootout exits non-zero when the agent is not loaded, which is already the
+# goal, so that failure is ignored. No plist means nothing to do.
+launchagent_remove() {
+  local label="$1" plist
+  plist="$(_launchagent_plist "$label")"
+  if [[ ! -f "$plist" ]]; then
+    log "No $plist; nothing to unload."
+    return 0
+  fi
+  run_cmd launchctl bootout "gui/$(id -u)" "$plist" || true
+  run_cmd rm -f "$plist"
 }
 
 # appearance -> dark | light

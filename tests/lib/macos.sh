@@ -19,6 +19,51 @@ esac
 EOF2
 }
 
+# A stateful defaults database. Each "<domain>.<key>" file holds the type
+# defaults(1) reports on its first line and the value after it. `read` prints
+# what the real command prints for a scalar (a boolean as 1 or 0), `read-type`
+# prints "Type is <type>", and `write` accepts only what defaults(1) documents
+# (-bool TRUE/FALSE/YES/NO in any case, a whole number for -int), failing like
+# the real command otherwise. DEFAULTS_FAIL_WRITE names one key whose write
+# fails, to simulate a restore that cannot complete.
+mock_defaults_db() {
+  export DDB="$TEST_HOME/defaults-db"
+  mkdir -p "$DDB"
+  mock_command_script defaults <<'EOF2'
+op="$1"; shift
+f="$DDB/$1.$2"
+case "$op" in
+  read)
+    [ -f "$f" ] || exit 1
+    t="$(head -1 "$f")"; v="$(tail -n +2 "$f")"
+    if [ "$t" = boolean ]; then
+      case "$v" in [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1) echo 1 ;; *) echo 0 ;; esac
+    else
+      printf '%s\n' "$v"
+    fi
+    ;;
+  read-type) [ -f "$f" ] || exit 1; echo "Type is $(head -1 "$f")" ;;
+  write)
+    [ "$2" = "${DEFAULTS_FAIL_WRITE:-}" ] && exit 1
+    case "$3" in
+      -bool) t=boolean
+        case "$4" in [Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee]|[Yy][Ee][Ss]|[Nn][Oo]) ;; *) echo "Rep argument is not a boolean" >&2; exit 1 ;; esac ;;
+      -int) t=integer
+        case "$4" in ''|*[!0-9-]*) echo "Rep argument is not an integer" >&2; exit 1 ;; esac ;;
+      -float) t=float ;;
+      -string) t=string ;;
+      *) exit 1 ;;
+    esac
+    printf '%s\n%s\n' "$t" "$4" > "$f"
+    ;;
+  delete) [ -f "$f" ] || exit 1; rm -f "$f" ;;
+esac
+EOF2
+}
+
+# seed_default <domain> <key> <type> <value>
+seed_default() { printf '%s\n%s\n' "$3" "$4" > "$DDB/$1.$2"; }
+
 test_defaults_write_records_absent_and_writes() {
   setup
   mock_defaults_absent
@@ -31,16 +76,26 @@ test_defaults_write_records_absent_and_writes() {
   cleanup_test_env
 }
 
-test_defaults_write_records_the_prior_value() {
+test_defaults_write_records_the_prior_value_and_its_own_type() {
   setup
-  mock_command_script defaults <<'EOF2'
-case "$1" in
-  read) echo 0; exit 0 ;;
-  *) exit 0 ;;
-esac
-EOF2
+  mock_defaults_db
+  local r="$TEST_HOME/.local/state/teeup/defaults"
+  # The type recorded is the prior value's, not the one teeup is about to write.
+  seed_default com.apple.dock autohide boolean 0
+  seed_default NSGlobalDomain KeyRepeat integer 6
+  seed_default NSGlobalDomain InitialKeyRepeat float 25.5
+  seed_default com.apple.finder AppleShowAllFiles string YES
+  seed_default com.apple.finder FXPreferredViewStyle array '('
   defaults_write com.apple.dock autohide -bool true >/dev/null
-  assert_equals "-bool:0" "$(cat "$TEST_HOME/.local/state/teeup/defaults/com.apple.dock.autohide")" || return 1
+  defaults_write NSGlobalDomain KeyRepeat -int 2 >/dev/null
+  defaults_write NSGlobalDomain InitialKeyRepeat -int 15 >/dev/null
+  defaults_write com.apple.finder AppleShowAllFiles -bool true >/dev/null
+  defaults_write com.apple.finder FXPreferredViewStyle -string Nlsv >/dev/null
+  assert_equals "-bool:false" "$(cat "$r/com.apple.dock.autohide")" || return 1
+  assert_equals "-int:6" "$(cat "$r/NSGlobalDomain.KeyRepeat")" || return 1
+  assert_equals "-float:25.5" "$(cat "$r/NSGlobalDomain.InitialKeyRepeat")" || return 1
+  assert_equals "-string:YES" "$(cat "$r/com.apple.finder.AppleShowAllFiles")" || return 1
+  assert_equals "array:(" "$(cat "$r/com.apple.finder.FXPreferredViewStyle")" || return 1
   cleanup_test_env
 }
 
@@ -82,13 +137,56 @@ test_defaults_restore_deletes_when_absent() {
   cleanup_test_env
 }
 
-test_defaults_restore_rewrites_the_prior_value() {
+test_defaults_restore_replays_the_recorded_type() {
   setup
-  mock_defaults_absent
-  mkdir -p "$TEST_HOME/.local/state/teeup/defaults"
-  printf -- '-bool:0\n' > "$TEST_HOME/.local/state/teeup/defaults/com.apple.dock.autohide"
+  mock_defaults_db
+  local r="$TEST_HOME/.local/state/teeup/defaults"
+  mkdir -p "$r"
+  printf -- '-bool:false\n' > "$r/com.apple.dock.autohide"
+  # A record written before booleans were stored as true/false.
+  printf -- '-bool:1\n' > "$r/NSGlobalDomain.AppleShowAllExtensions"
+  printf -- '-float:25.5\n' > "$r/NSGlobalDomain.InitialKeyRepeat"
+  printf -- '-string:/Users/ada/My Shots: 2026\n' > "$r/com.apple.screencapture.location"
   defaults_restore com.apple.dock autohide >/dev/null
-  assert_contains "$(cat "$MOCK_LOG")" "defaults write com.apple.dock autohide -bool 0" || return 1
+  defaults_restore NSGlobalDomain AppleShowAllExtensions >/dev/null
+  defaults_restore NSGlobalDomain InitialKeyRepeat >/dev/null
+  defaults_restore com.apple.screencapture location >/dev/null
+  local log_body
+  log_body="$(cat "$MOCK_LOG")"
+  assert_contains "$log_body" "defaults write com.apple.dock autohide -bool false" || return 1
+  assert_contains "$log_body" "defaults write NSGlobalDomain AppleShowAllExtensions -bool true" || return 1
+  assert_contains "$log_body" "defaults write NSGlobalDomain InitialKeyRepeat -float 25.5" || return 1
+  assert_equals $'string\n/Users/ada/My Shots: 2026' "$(cat "$DDB/com.apple.screencapture.location")" || return 1
+  assert_equals "0" "$(find "$r" -type f | wc -l | tr -d ' ')" "every replayed record is consumed" || return 1
+  cleanup_test_env
+}
+
+test_defaults_restore_leaves_an_unreplayable_type_alone() {
+  setup
+  mock_defaults_db
+  local r="$TEST_HOME/.local/state/teeup/defaults" rc=0 out
+  mkdir -p "$r"
+  printf 'dictionary:{\n' > "$r/com.apple.finder.FXPreferredViewStyle"
+  out="$(defaults_restore com.apple.finder FXPreferredViewStyle 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "com.apple.finder FXPreferredViewStyle held a dictionary" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "defaults write" || return 1
+  assert_equals "dictionary:{" "$(cat "$r/com.apple.finder.FXPreferredViewStyle")" "the record is kept" || return 1
+  cleanup_test_env
+}
+
+test_defaults_restore_warns_and_keeps_the_record_when_a_write_fails() {
+  setup
+  mock_defaults_db
+  local r="$TEST_HOME/.local/state/teeup/defaults" rc=0 out
+  mkdir -p "$r"
+  printf -- '-int:6\n' > "$r/NSGlobalDomain.KeyRepeat"
+  export DEFAULTS_FAIL_WRITE=KeyRepeat
+  out="$(defaults_restore NSGlobalDomain KeyRepeat 2>&1)" || rc=$?
+  unset DEFAULTS_FAIL_WRITE
+  assert_success "$rc" "one failed restore must not abort remove" || return 1
+  assert_contains "$out" "Could not restore NSGlobalDomain KeyRepeat" || return 1
+  assert_file_exists "$r/NSGlobalDomain.KeyRepeat" "the record stays for another try" || return 1
   cleanup_test_env
 }
 
@@ -99,6 +197,46 @@ test_defaults_restore_without_a_record_is_a_noop() {
   out="$(defaults_restore com.apple.dock autohide)"
   assert_contains "$out" "No recorded value for com.apple.dock autohide" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "defaults delete" || return 1
+  cleanup_test_env
+}
+
+test_launchagent_remove_unloads_and_deletes_the_plist() {
+  setup
+  # bootout exits non-zero when the agent is not loaded; that must not matter.
+  mock_command launchctl 3 ""
+  local plist rc=0
+  plist="$TEST_HOME/Library/LaunchAgents/sh.teeup.test.plist"
+  mkdir -p "$(dirname "$plist")"
+  printf '<plist/>\n' > "$plist"
+  launchagent_remove sh.teeup.test >/dev/null || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "launchctl bootout gui/501 $plist" || return 1
+  [[ ! -e "$plist" ]] || { echo "plist survived"; return 1; }
+  cleanup_test_env
+}
+
+test_launchagent_remove_without_a_plist_is_a_noop() {
+  setup
+  mock_command launchctl 0 ""
+  local out
+  out="$(launchagent_remove sh.teeup.test)"
+  assert_contains "$out" "nothing to unload" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "launchctl" || return 1
+  cleanup_test_env
+}
+
+test_launchagent_remove_dry_run_changes_nothing() {
+  setup
+  mock_command launchctl 0 ""
+  local plist out
+  plist="$TEST_HOME/Library/LaunchAgents/sh.teeup.test.plist"
+  mkdir -p "$(dirname "$plist")"
+  printf '<plist/>\n' > "$plist"
+  out="$(DRY_RUN=true launchagent_remove sh.teeup.test)"
+  assert_contains "$out" "[DRY-RUN] Would execute: launchctl bootout gui/501 $plist" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: rm -f $plist" || return 1
+  assert_file_exists "$plist" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "launchctl" || return 1
   cleanup_test_env
 }
 
@@ -159,12 +297,17 @@ EOF2
 
 echo "lib/macos.sh"
 run_test "defaults_write records absent and writes" test_defaults_write_records_absent_and_writes
-run_test "defaults_write records the prior value" test_defaults_write_records_the_prior_value
+run_test "defaults_write records the prior value and its own type" test_defaults_write_records_the_prior_value_and_its_own_type
 run_test "defaults_write never overwrites a record" test_defaults_write_never_overwrites_an_existing_record
 run_test "defaults_write dry run records nothing" test_defaults_write_dry_run_records_nothing
 run_test "defaults_restore deletes when absent" test_defaults_restore_deletes_when_absent
-run_test "defaults_restore rewrites the prior value" test_defaults_restore_rewrites_the_prior_value
+run_test "defaults_restore replays the recorded type" test_defaults_restore_replays_the_recorded_type
+run_test "defaults_restore leaves an unreplayable type alone" test_defaults_restore_leaves_an_unreplayable_type_alone
+run_test "defaults_restore warns and keeps the record when a write fails" test_defaults_restore_warns_and_keeps_the_record_when_a_write_fails
 run_test "defaults_restore without a record is a no-op" test_defaults_restore_without_a_record_is_a_noop
+run_test "launchagent_remove unloads and deletes the plist" test_launchagent_remove_unloads_and_deletes_the_plist
+run_test "launchagent_remove without a plist is a no-op" test_launchagent_remove_without_a_plist_is_a_noop
+run_test "launchagent_remove dry run changes nothing" test_launchagent_remove_dry_run_changes_nothing
 run_test "launchagent_install writes and reloads" test_launchagent_install_writes_and_reloads
 run_test "launchagent_install is idempotent" test_launchagent_install_is_idempotent_on_the_file
 run_test "launchagent_install dry run writes nothing" test_launchagent_install_dry_run_writes_nothing
