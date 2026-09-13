@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# hidutil remaps at the HID layer, below every application, with no driver and
+# no kernel extension. The mapping does not survive a logout, so a LaunchAgent
+# re-applies it at login; this script also applies it to the running session so
+# the change is immediate.
+# 0x700000039 is Caps Lock and 0x7000000E0 is Left Control on HID usage page 7.
+#
+# hidutil is called by name, not as /usr/bin/hidutil: /usr/bin is always on
+# PATH on macOS, and an absolute path would walk straight past the test
+# harness's mock bin directory and remap the CI runner's own keyboard. The
+# absolute path inside the plist below is different — launchd runs with no
+# PATH of its own, so ProgramArguments must name the binary in full.
+KEYBOARD_MAPPING='{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x700000039,"HIDKeyboardModifierMappingDst":0x7000000E0}]}'
+
+launchagent_install sh.teeup.keyboard <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>sh.teeup.keyboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/hidutil</string>
+    <string>property</string>
+    <string>--set</string>
+    <string>$KEYBOARD_MAPPING</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>
+PLIST
+
+run_cmd hidutil property --set "$KEYBOARD_MAPPING"
+ok "Caps Lock sends Control, now and at every login."
