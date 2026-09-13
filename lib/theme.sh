@@ -39,18 +39,36 @@ theme_current() {
   if [[ -f "$f" ]]; then cat "$f"; else printf 'none\n'; fi
 }
 
+# _theme_sed_escape <value>
+# A palette value is user-supplied (a user theme under
+# ~/.config/teeup/themes/<name>/ overrides a shipped one), so it must be
+# escaped before it lands in a sed replacement: a literal backslash is
+# doubled first (or it would escape whatever the next step inserts), then `&`
+# (sed's "whole match" token) and `|` (this script's delimiter, which must be
+# backslash-escaped to appear literally) get their own backslash. Built on
+# replace_literal (lib/files.sh) rather than ${value//pat/repl}: bash 3.2
+# mis-parses a quoted pattern containing certain characters in that form, and
+# replace_literal is already the codebase's answer to that.
+_theme_sed_escape() {
+  local value="$1"
+  value="$(replace_literal "$value" '\' '\\')"
+  value="$(replace_literal "$value" '&' '\&')"
+  value="$(replace_literal "$value" '|' '\|')"
+  printf '%s\n' "$value"
+}
+
 # One sed substitution triple per key, appended to the shared script.
 _theme_sed_entry() {
   local key="$1" value="$2" hex rgb
-  printf 's|{{ %s }}|%s|g\n' "$key" "$value" >> "$TEEUP_COLOR_SED"
-  printf 's|{{ %s_strip }}|%s|g\n' "$key" "${value#\#}" >> "$TEEUP_COLOR_SED"
+  printf 's|{{ %s }}|%s|g\n' "$key" "$(_theme_sed_escape "$value")" >> "$TEEUP_COLOR_SED"
+  printf 's|{{ %s_strip }}|%s|g\n' "$key" "$(_theme_sed_escape "${value#\#}")" >> "$TEEUP_COLOR_SED"
   # Only a real six-digit hex colour gets an _rgb variant: `printf '%d' 0xzz`
   # fails, and under `set -e` that would abort the whole theme switch.
   case "$value" in
     \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f])
       hex="${value#\#}"
       rgb="$(printf '%d,%d,%d' "0x${hex:0:2}" "0x${hex:2:2}" "0x${hex:4:2}")"
-      printf 's|{{ %s_rgb }}|%s|g\n' "$key" "$rgb" >> "$TEEUP_COLOR_SED"
+      printf 's|{{ %s_rgb }}|%s|g\n' "$key" "$(_theme_sed_escape "$rgb")" >> "$TEEUP_COLOR_SED"
       ;;
   esac
 }

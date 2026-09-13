@@ -87,6 +87,25 @@ test_render_replaces_plain_strip_and_rgb_tokens() {
   cleanup_test_env
 }
 
+test_render_escapes_sed_special_characters_in_user_values() {
+  setup
+  # A user theme under ~/.config/teeup/themes/<name>/ is a documented,
+  # supported override point, so its values must survive `&`, `|`, `\` and a
+  # space intact rather than corrupting or breaking the sed script.
+  mkdir -p "$TEST_HOME/.config/teeup/themes/tricky"
+  cat > "$TEST_HOME/.config/teeup/themes/tricky/dark.toml" <<'EOF2'
+mode = "dark"
+bat_theme = "OneHalfDark"
+accent = "#89b4fa"
+tricky = "#a&b|c\d e"
+EOF2
+  theme_palette_load "$TEST_HOME/.config/teeup/themes/tricky/dark.toml"
+  printf 'plain=%s strip=%s\n' '{{ tricky }}' '{{ tricky_strip }}' > "$TEST_HOME/in.tpl"
+  theme_render "$TEST_HOME/in.tpl" "$TEST_HOME/out/rendered.conf"
+  assert_equals 'plain=#a&b|c\d e strip=a&b|c\d e' "$(cat "$TEST_HOME/out/rendered.conf")" || return 1
+  cleanup_test_env
+}
+
 test_set_renders_both_modes_and_runs_hooks() {
   setup
   make_fixture_theme
@@ -178,6 +197,7 @@ echo "lib/theme.sh"
 run_test "palette load exports every key" test_palette_load_exports_every_key
 run_test "palette load forgets the previous mode" test_palette_load_forgets_the_previous_mode
 run_test "render replaces plain, strip and rgb tokens" test_render_replaces_plain_strip_and_rgb_tokens
+run_test "render escapes sed special characters in user values" test_render_escapes_sed_special_characters_in_user_values
 run_test "set renders both modes and runs hooks" test_set_renders_both_modes_and_runs_hooks
 run_test "set is content idempotent" test_set_is_content_idempotent
 run_test "user template wins over the capability one" test_user_template_wins_over_the_capability_one
