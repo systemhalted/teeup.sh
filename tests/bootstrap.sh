@@ -27,6 +27,9 @@ EOF2
   mock_command dscl 0 "UserShell: /bin/zsh"
   mock_command chsh 0 ""
   mock_command defaults 1 ""
+  # aerospace/configure probes /Applications outside run_cmd; point it at an
+  # empty tree so the walk is the same on a developer's Mac and on CI.
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
   # ssh capability: never let a real keygen or agent call escape a test run.
   mock_command ssh-keygen 0 ""
   mock_command ssh-add 0 ""

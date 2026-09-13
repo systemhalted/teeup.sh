@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# AeroSpace has no include mechanism, so the whole file is copied once and
+# belongs to the user from then on.
+copy_config_once "$TEEUP_CAP_DIR/config/aerospace/aerospace.toml" "$(user_config_dir)/aerospace/aerospace.toml"
+
+if [[ -d "${TEEUP_APPS_DIR:-/Applications}/AeroSpace.app" ]]; then
+  log "AeroSpace is installed."
+else
+  log "AeroSpace will appear in /Applications once its cask finishes installing."
+fi
+
+# No script can grant Accessibility: macOS requires a human in System Settings,
+# and doctor re-checks the part of this that is checkable.
+cat <<'STEP'
+One manual step, once per machine:
+  System Settings > Privacy & Security > Accessibility > turn AeroSpace on
+Until you do, AeroSpace cannot move a single window. Then start it with:
+  open -a AeroSpace
+STEP
