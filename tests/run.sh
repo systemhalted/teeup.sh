@@ -31,10 +31,14 @@ detect_jobs() {
 }
 
 jobs_wanted="$(detect_jobs)"
-suites=""
+# An indexed array, not a joined string: a checkout path containing a space
+# (/Users/ada/My Code/teeup) would otherwise split into bogus entries when the
+# loops below expand it. bash 3.2 has indexed arrays; only associative ones
+# arrived in bash 4.
+suites=()
 for suite in "$TESTS_DIR"/lib/*.sh "$TESTS_DIR"/capabilities/*.sh "$TESTS_DIR"/cli.sh "$TESTS_DIR"/bootstrap.sh; do
   [[ -f "$suite" ]] || continue
-  suites="$suites $suite"
+  suites[${#suites[@]}]="$suite"
 done
 
 failed=0
@@ -66,7 +70,7 @@ report() {
 }
 
 if [[ "$jobs_wanted" -le 1 ]]; then
-  for suite in $suites; do
+  for suite in ${suites+"${suites[@]}"}; do
     ran=$((ran + 1))
     echo ""
     echo "== ${suite#"$TESTS_DIR"/} =="
@@ -82,14 +86,16 @@ else
   # Start the slow suites first: bootstrap and cli are the longest by far, so
   # launching them last leaves the pool draining on one job at the end. The
   # report loop below still prints in the list's order, so output is stable.
-  start_order=""
-  for suite in $suites; do
+  start_order=()
+  for suite in ${suites+"${suites[@]}"}; do
     case "$suite" in
-      */bootstrap.sh|*/cli.sh) start_order="$suite $start_order" ;;
-      *) start_order="$start_order $suite" ;;
+      */bootstrap.sh|*/cli.sh)
+        start_order=("$suite" ${start_order+"${start_order[@]}"}) ;;
+      *)
+        start_order[${#start_order[@]}]="$suite" ;;
     esac
   done
-  for suite in $start_order; do
+  for suite in ${start_order+"${start_order[@]}"}; do
     while [[ "$(jobs -pr | wc -l | tr -d ' ')" -ge "$jobs_wanted" ]]; do
       sleep 0.2
     done
@@ -98,7 +104,7 @@ else
     ( bash "$suite" > "$out_dir/$key.log" 2>&1; printf '%s\n' "$?" > "$out_dir/$key.rc" ) &
   done
   wait
-  for suite in $suites; do
+  for suite in ${suites+"${suites[@]}"}; do
     key="$(suite_key "$suite")"
     report "$suite" "$out_dir/$key.log" "$out_dir/$key.rc"
   done

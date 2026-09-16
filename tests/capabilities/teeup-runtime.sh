@@ -31,16 +31,18 @@ test_configure_creates_state_env_and_link() {
   done
   local env_body
   env_body="$(cat "$TEST_HOME/.config/teeup/env")"
-  # Values are %q-escaped, not double-quoted; a plain path with no shell
-  # metacharacters comes out of %q unquoted, so the export lines carry the
-  # raw path directly (see test_configure_quotes_a_path_with_shell_metacharacters
-  # below for the case where that matters).
-  assert_contains "$env_body" "export TEEUP_PATH=$TEEUP_PATH" || return 1
+  # Values are %q-escaped, not double-quoted. A path with no shell
+  # metacharacters comes out of %q unchanged, but the checkout itself can sit
+  # anywhere: from "/Users/ada/My Code/teeup" the env file holds
+  # "My\ Code", so the expectation is escaped the same way the capability
+  # escapes it. (test_configure_quotes_a_path_with_shell_metacharacters below
+  # covers the harsher characters in the paths teeup generates.)
+  assert_contains "$env_body" "export TEEUP_PATH=$(printf '%q' "$TEEUP_PATH")" || return 1
   # The shell layer's home files bake these two paths in as absolute strings
   # at configure time (see capabilities/zsh/configure), so the env file has
   # to carry them too, not just TEEUP_PATH.
-  assert_contains "$env_body" "export TEEUP_CONFIG_DIR=$TEST_HOME/.config/teeup" || return 1
-  assert_contains "$env_body" "export TEEUP_STATE_DIR=$TEST_HOME/.local/state/teeup" || return 1
+  assert_contains "$env_body" "export TEEUP_CONFIG_DIR=$(printf '%q' "$TEST_HOME/.config/teeup")" || return 1
+  assert_contains "$env_body" "export TEEUP_STATE_DIR=$(printf '%q' "$TEST_HOME/.local/state/teeup")" || return 1
   assert_equals "$TEEUP_PATH/bin/teeup" "$(readlink "$TEST_HOME/.local/bin/teeup")" || return 1
   cleanup_test_env
 }
