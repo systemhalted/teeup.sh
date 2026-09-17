@@ -63,6 +63,17 @@ test_remove_unloads_and_clears_the_mapping() {
   cleanup_test_env
 }
 
+test_remove_dry_run_does_not_claim_the_mapping_was_cleared() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure keyboard >/dev/null
+  local out
+  out="$(DRY_RUN=true cap_run keyboard remove 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: hidutil property --set" || return 1
+  assert_not_contains "$out" "Caps Lock is Caps Lock again" || return 1
+  cleanup_test_env
+}
+
 test_remove_goes_through_lib_macos() {
   setup
   # CONTRIBUTING item 13: LaunchAgents are managed through lib/macos.sh, and
@@ -89,6 +100,7 @@ run_test "configure writes the agent and applies the mapping" test_configure_wri
 run_test "configure is idempotent on the plist" test_configure_is_idempotent_on_the_plist
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "remove unloads and clears the mapping" test_remove_unloads_and_clears_the_mapping
+run_test "remove dry run does not claim the mapping was cleared" test_remove_dry_run_does_not_claim_the_mapping_was_cleared
 run_test "remove goes through lib/macos.sh" test_remove_goes_through_lib_macos
 run_test "remove without a plist is quiet" test_remove_without_a_plist_is_quiet
 print_summary

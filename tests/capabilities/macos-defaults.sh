@@ -194,6 +194,17 @@ test_remove_rewrites_a_recorded_value() {
   cleanup_test_env
 }
 
+test_remove_dry_run_does_not_claim_the_preferences_were_restored() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
+  local out
+  out="$(DRY_RUN=true cap_run macos-defaults remove 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: killall Finder" || return 1
+  assert_not_contains "$out" "macOS preferences restored" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/macos-defaults"
 run_test "configure writes every preference" test_configure_writes_every_preference
 run_test "configure records every key and creates ~/Screenshots" test_configure_records_every_key_and_creates_the_screenshots_dir
@@ -202,6 +213,7 @@ run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "remove restores every key" test_remove_restores_every_key
 run_test "remove rewrites a recorded value" test_remove_rewrites_a_recorded_value
+run_test "remove dry run does not claim the preferences were restored" test_remove_dry_run_does_not_claim_the_preferences_were_restored
 run_test "remove puts every prior value back with its type" test_remove_puts_every_prior_value_back_with_its_type
 run_test "remove continues past a failed restore" test_remove_continues_past_a_failed_restore
 print_summary

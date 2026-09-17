@@ -119,6 +119,18 @@ test_set_dry_run_writes_nothing() {
   assert_contains "$out" "[DRY-RUN] Would execute: brew install --cask font-fira-code-nerd-font" || return 1
   assert_contains "$out" "[DRY-RUN] Would write $TEST_HOME/.local/state/teeup/current/font" || return 1
   [[ ! -e "$TEST_HOME/.local/state/teeup/current/font" ]] || { echo "state written in dry run"; return 1; }
+  # F1 review fix: the trailing "Font set to ..." followed the cask install
+  # and the state write, both of which only preview under DRY_RUN, so it must
+  # not claim the font was actually set.
+  assert_not_contains "$out" "Font set to" || return 1
+  cleanup_test_env
+}
+
+test_set_real_run_wording_is_unchanged() {
+  setup
+  local out
+  out="$(font_set 'Fira Code')"
+  assert_contains "$out" "✅ Font set to FiraCode Nerd Font" || return 1
   cleanup_test_env
 }
 
@@ -141,5 +153,6 @@ run_test "set installs the cask and records the family" test_set_installs_the_ca
 run_test "set runs font-apply hooks" test_set_runs_font_apply_hooks
 run_test "set runs every hook after an interactive one" test_set_runs_every_hook_after_an_interactive_one
 run_test "set dry run writes nothing" test_set_dry_run_writes_nothing
+run_test "set real-run wording is unchanged" test_set_real_run_wording_is_unchanged
 run_test "table lists every family" test_table_lists_every_family
 print_summary
