@@ -92,12 +92,17 @@ backup_target() {
   printf '%s\n' "$backup"
 }
 
-# copy_config_once <src> <dest>
+# copy_config_once <src> <dest> [display_src]
 # Installs a shipped file into the user's home exactly once. Never overwrites
 # a file the user has edited. A foreign file (one teeup did not install) is
 # backed up first and its diff printed so the user can carry lines over.
+# <display_src> names the file in the DRY-RUN messages below when it differs
+# from <src> -- a capability that renders before copying (zsh, git) passes a
+# temp file as <src>, which the messages would otherwise name: useless to the
+# user, who cannot tell what is actually being installed. Defaults to <src>,
+# so every other caller's wording is unchanged.
 copy_config_once() {
-  local src="$1" dest="$2" recorded current backup
+  local src="$1" dest="$2" display_src="${3:-$1}" recorded current backup
   # `! -e` on its own is true for a *dangling* symlink, even though the
   # directory entry is very much there, so teeup used to treat one as absent
   # and hand it straight to `cp`: GNU cp refuses to write through a dangling
@@ -109,7 +114,7 @@ copy_config_once() {
   # below.
   if [[ ! -e "$dest" && ! -L "$dest" ]]; then
     if [[ "$DRY_RUN" == "true" ]]; then
-      printf "%b %s\n" "🔍" "[DRY-RUN] Would install $dest from $src"
+      printf "%b %s\n" "🔍" "[DRY-RUN] Would install $dest from $display_src"
       return 0
     fi
     mkdir -p "$(dirname "$dest")"
@@ -136,7 +141,7 @@ copy_config_once() {
     return 0
   fi
   if [[ "$DRY_RUN" == "true" ]]; then
-    printf "%b %s\n" "🔍" "[DRY-RUN] Would back up foreign $dest and install $src"
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would back up foreign $dest and install $display_src"
     return 0
   fi
   backup="$(backup_target "$dest")"

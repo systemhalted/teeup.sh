@@ -103,6 +103,43 @@ test_copy_config_once_dry_run_touches_nothing() {
   cleanup_test_env
 }
 
+# F4: a capability that renders before copying (zsh, git) passes a temp file
+# as <src>; the dry-run message must name the shipped source it stands in
+# for, not the temp path the user cannot make sense of.
+test_copy_config_once_dry_run_names_the_display_src_when_installing_fresh() {
+  setup
+  # shellcheck disable=SC2034
+  DRY_RUN=true
+  local out
+  out="$(copy_config_once "$SRC" "$DEST" "$TEEUP_PATH/capabilities/zsh/home/.zshenv")"
+  assert_contains "$out" "Would install $DEST from $TEEUP_PATH/capabilities/zsh/home/.zshenv" || return 1
+  assert_not_contains "$out" "$SRC" "the temp source path must not appear" || return 1
+  cleanup_test_env
+}
+
+test_copy_config_once_dry_run_names_the_display_src_for_a_foreign_file() {
+  setup
+  mkdir -p "$(dirname "$DEST")"
+  printf 'foreign=1\n' > "$DEST"
+  # shellcheck disable=SC2034
+  DRY_RUN=true
+  local out
+  out="$(copy_config_once "$SRC" "$DEST" "$TEEUP_PATH/capabilities/zsh/home/.zshenv")"
+  assert_contains "$out" "Would back up foreign $DEST and install $TEEUP_PATH/capabilities/zsh/home/.zshenv" || return 1
+  assert_not_contains "$out" "$SRC" "the temp source path must not appear" || return 1
+  cleanup_test_env
+}
+
+test_copy_config_once_display_src_defaults_to_src() {
+  setup
+  # shellcheck disable=SC2034
+  DRY_RUN=true
+  local out
+  out="$(copy_config_once "$SRC" "$DEST")"
+  assert_contains "$out" "Would install $DEST from $SRC" "omitting display_src keeps today's wording" || return 1
+  cleanup_test_env
+}
+
 test_refresh_config_backs_up_and_diffs() {
   setup
   copy_config_once "$SRC" "$DEST"
@@ -153,6 +190,9 @@ run_test "copy_config_once skips user-edited file" test_copy_config_once_skips_u
 run_test "copy_config_once backs up foreign file" test_copy_config_once_backs_up_foreign_file
 run_test "copy_config_once backs up a dangling symlink" test_copy_config_once_backs_up_a_dangling_symlink
 run_test "copy_config_once dry run touches nothing" test_copy_config_once_dry_run_touches_nothing
+run_test "copy_config_once dry run names display_src when installing fresh" test_copy_config_once_dry_run_names_the_display_src_when_installing_fresh
+run_test "copy_config_once dry run names display_src for a foreign file" test_copy_config_once_dry_run_names_the_display_src_for_a_foreign_file
+run_test "copy_config_once display_src defaults to src" test_copy_config_once_display_src_defaults_to_src
 run_test "refresh_config backs up and diffs" test_refresh_config_backs_up_and_diffs
 run_test "refresh_config removes backup when unchanged" test_refresh_config_removes_backup_when_unchanged
 run_test "refresh prints the backup path" test_refresh_prints_the_backup_path
