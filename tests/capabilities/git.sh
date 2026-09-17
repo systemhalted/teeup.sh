@@ -408,6 +408,29 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+# F4: configure renders the shipped config to a temp file before copying it
+# into place, so the dry-run message used to name that temp file instead of
+# the shipped source the user could actually make sense of.
+test_configure_dry_run_names_the_shipped_source_not_a_temp_file() {
+  setup
+  seed_answers ""
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure git 2>&1)"
+  assert_contains "$out" "Would install $TEST_HOME/.config/git/config from $TEEUP_PATH/capabilities/git/config/git/config" || return 1
+  cleanup_test_env
+}
+
+test_configure_dry_run_names_the_shipped_source_for_a_foreign_config() {
+  setup
+  seed_answers ""
+  mkdir -p "$TEST_HOME/.config/git"
+  printf '[user]\n\tname = Foreign\n' > "$TEST_HOME/.config/git/config"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure git 2>&1)"
+  assert_contains "$out" "Would back up foreign $TEST_HOME/.config/git/config and install $TEEUP_PATH/capabilities/git/config/git/config" || return 1
+  cleanup_test_env
+}
+
 test_configure_quotes_special_characters_in_the_name() {
   setup
   local name='Jane "J" Smith #3 \ x' escaped
@@ -454,5 +477,7 @@ run_test "configure ships the lfs filter and warns about gitconfig" test_configu
 run_test "configure warns when GIT_CONFIG_GLOBAL is set" test_configure_warns_when_git_config_global_is_set
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure dry run names the shipped source, not a temp file" test_configure_dry_run_names_the_shipped_source_not_a_temp_file
+run_test "configure dry run names the shipped source for a foreign config" test_configure_dry_run_names_the_shipped_source_for_a_foreign_config
 run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name
 print_summary
