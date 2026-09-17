@@ -16,9 +16,25 @@ TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEEUP_PATH="$(dirname "$TESTS_DIR")"
 export TEEUP_PATH
 
+# physical_path <dir> -> the symlink-resolved (physical) form of <dir>, the
+# same cd -P + pwd -P idiom bootstrap's _wizard_resolve_physical uses.
+physical_path() {
+  ( cd -P -- "$1" && pwd -P )
+}
+
 setup_test_env() {
   TEST_HOME="$(mktemp -d)"
   export TEST_HOME
+  # The physical (symlink-resolved) form of TEST_HOME. On macOS, TMPDIR (and
+  # so mktemp -d's result) sits under /var, itself a symlink to /private/var,
+  # so this differs from $TEST_HOME there; on Linux it is normally identical.
+  # Anything the product resolves through cd -P/pwd -P (a wizard-answered
+  # directory that exists, or one whose nearest existing ancestor is
+  # $TEST_HOME itself) lands on this value, not the raw $TEST_HOME -- an
+  # expected path built from a wizard answer must use this, or the assertion
+  # only holds where $TEST_HOME happens to already be physical.
+  TEST_HOME_PHYSICAL="$(physical_path "$TEST_HOME")"
+  export TEST_HOME_PHYSICAL
   export HOME="$TEST_HOME"
   export XDG_CONFIG_HOME="$TEST_HOME/.config"
   export XDG_STATE_HOME="$TEST_HOME/.local/state"

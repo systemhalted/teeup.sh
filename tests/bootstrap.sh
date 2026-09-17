@@ -402,10 +402,15 @@ test_custom_project_roots_reach_dev_dirs() {
   # and identity message" -- git configure's identity summary is correctly
   # silent here under DRY_RUN, per the F1 sweep fix, so it cannot prove
   # anything in this dry-run test.)
+  # The wizard resolves each bare-name answer against $HOME via cd -P/pwd -P
+  # (both "MyPersonal" and "Workspaces/Work" have $TEST_HOME itself, which
+  # exists, as their nearest existing ancestor), so the preview names the
+  # physical form of $TEST_HOME, not the raw one -- see TEST_HOME_PHYSICAL
+  # in tests/helper.sh.
   local out
   out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\nMyPersonal\nWorkspaces/Work\n1\ny\n')"
-  assert_contains "$out" "Would execute: mkdir -p $TEST_HOME/MyPersonal" || return 1
-  assert_contains "$out" "Would execute: mkdir -p $TEST_HOME/Workspaces/Work" || return 1
+  assert_contains "$out" "Would execute: mkdir -p $TEST_HOME_PHYSICAL/MyPersonal" || return 1
+  assert_contains "$out" "Would execute: mkdir -p $TEST_HOME_PHYSICAL/Workspaces/Work" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
 }
@@ -444,7 +449,11 @@ test_wizard_resolves_a_symlinked_root_to_its_physical_path() {
   ln -s "$TEST_HOME/RealWork" "$TEST_HOME/LinkedWork"
   local resolved
   resolved="$(_wizard_valid_dir "$TEST_HOME/LinkedWork")"
-  assert_equals "$TEST_HOME/RealWork" "$resolved" || return 1
+  # $TEST_HOME_PHYSICAL, not $TEST_HOME: cd -P/pwd -P resolves the whole
+  # path, including $TEST_HOME's own symlink component if it has one (macOS
+  # TMPDIR sits under /var -> /private/var), not just the LinkedWork one
+  # this test is actually about.
+  assert_equals "$TEST_HOME_PHYSICAL/RealWork" "$resolved" || return 1
   cleanup_test_env
 }
 
@@ -455,7 +464,7 @@ test_wizard_resolves_a_not_yet_created_root_through_a_symlinked_ancestor() {
   ln -s "$TEST_HOME/RealWork" "$TEST_HOME/LinkedWork"
   local resolved
   resolved="$(_wizard_valid_dir "$TEST_HOME/LinkedWork/Nested")"
-  assert_equals "$TEST_HOME/RealWork/Nested" "$resolved" || return 1
+  assert_equals "$TEST_HOME_PHYSICAL/RealWork/Nested" "$resolved" || return 1
   cleanup_test_env
 }
 
@@ -505,9 +514,10 @@ test_wizard_resolve_physical_drops_a_trailing_slash() {
   source_wizard_validators
   # RealWork does not exist, but its parent ($TEST_HOME) does, so this
   # isolates trailing-slash handling from the root-doubling case above.
+  # $TEST_HOME_PHYSICAL: $TEST_HOME itself is what gets resolved here.
   local resolved
   resolved="$(_wizard_resolve_physical "$TEST_HOME/RealWork/")"
-  assert_equals "$TEST_HOME/RealWork" "$resolved" || return 1
+  assert_equals "$TEST_HOME_PHYSICAL/RealWork" "$resolved" || return 1
   cleanup_test_env
 }
 
@@ -517,10 +527,11 @@ test_wizard_resolve_physical_collapses_a_doubled_slash_in_a_not_yet_created_midd
   # Neither NotReal nor sub exist, so the walk climbs past the doubled
   # slash entirely inside the not-yet-created tail -- the same guarded-
   # append code path the root-doubling bug lived in, just anchored at an
-  # existing ancestor other than "/".
+  # existing ancestor other than "/". $TEST_HOME_PHYSICAL: $TEST_HOME itself
+  # is what gets resolved here.
   local resolved
   resolved="$(_wizard_resolve_physical "$TEST_HOME/NotReal//sub")"
-  assert_equals "$TEST_HOME/NotReal/sub" "$resolved" || return 1
+  assert_equals "$TEST_HOME_PHYSICAL/NotReal/sub" "$resolved" || return 1
   cleanup_test_env
 }
 
