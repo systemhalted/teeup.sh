@@ -938,12 +938,12 @@ Expected: the suite count printed before this task, plus 1 (`tests/lib/hooks.sh`
 Spec section 9: "Migrations follow Omarchy's stock-checksum rule: refresh a user file only if its SHA matches the shipped version at the time it was copied (recorded in state at copy time), otherwise patch minimally and back up." `stock_record` and `stock_sha` already exist; this task adds the three functions that use them, and fixes the defect that makes the rule useless for the one file teeup rewrites in place: `capabilities/theme/theme-apply` replaces the palette block in `~/.config/starship.toml`, after which its content no longer matches its stock record, so `copy_config_once` says `Keeping your edited ...` on a file the user never touched (pr11's deferred list). The same change refuses to write through a symlinked `starship.toml`, which is the other starship item on that list.
 
 **Files:**
-- Modify: `lib/files.sh` (after `stock_sha`), `capabilities/theme/theme-apply` (its last write)
+- Modify: `lib/files.sh` (after `stock_sha`, and `backup_target`'s body), `capabilities/theme/theme-apply` (its last write)
 - Test: `tests/lib/files.sh`, `tests/capabilities/theme.sh`
 
 **Interfaces:**
 - Consumes: `file_sha`, `stock_record`, `stock_sha`, `write_managed_file`, `copy_config_once`, `backup_target` (`lib/files.sh`).
-- Produces: `config_is_pristine <dest>`, `write_config_region <dest> <label>` (content on stdin), `refresh_if_pristine <src> <dest>`, `backup_copy <path>`. Task 4's `migration_refresh` calls `refresh_if_pristine`; plan 5a's legacy migration calls `backup_copy`.
+- Produces: `config_is_pristine <dest>`, `write_config_region <dest> <label>` (content on stdin), `refresh_if_pristine <src> <dest>`, `_backup_name <path>` (a backup name nothing holds yet, `-1`/`-2`/... on a collision), `backup_copy <path>`. `backup_target` is rewritten to call `_backup_name` too, so the two never collide on the same name inside one run. Task 4's `migration_refresh` calls `refresh_if_pristine`; plan 5a's legacy migration calls `backup_copy`.
 
 **Real-Mac risk:** `shasum` is what `file_sha` prefers and macOS ships it; the Linux runs use `sha256sum`. Both are already exercised by `copy_config_once`. Whether a dotfile manager on the user's Mac really leaves `~/.config/starship.toml` as a symlink (chezmoi does not; GNU stow does) decides whether the symlink branch ever fires.
 
@@ -1060,6 +1060,19 @@ test_backup_copy_keeps_the_original_in_place() {
   cleanup_test_env
 }
 
+test_two_backups_of_the_same_file_within_one_second_both_survive() {
+  setup
+  printf 'first\n' > "$TEST_HOME/file"
+  local first second
+  first="$(backup_copy "$TEST_HOME/file" 2>/dev/null)"
+  printf 'second\n' > "$TEST_HOME/file"
+  second="$(backup_copy "$TEST_HOME/file" 2>/dev/null)"
+  [[ "$first" != "$second" ]] || { echo "the second call reused the first's name: $first"; return 1; }
+  assert_equals "first" "$(cat "$first")" "the first backup must not be overwritten by the second" || return 1
+  assert_equals "second" "$(cat "$second")" || return 1
+  cleanup_test_env
+}
+
 echo "lib/files.sh"
 run_test "append_once is idempotent" test_append_once_is_idempotent
 ```
@@ -1077,6 +1090,7 @@ run_test "write_config_region refuses a symlink, and dry run" test_write_config_
 run_test "refresh_if_pristine replaces only an unedited file" test_refresh_if_pristine_replaces_only_an_unedited_file
 run_test "refresh_if_pristine dry run changes nothing" test_refresh_if_pristine_dry_run_changes_nothing
 run_test "backup_copy keeps the original in place" test_backup_copy_keeps_the_original_in_place
+run_test "two backups of the same file within one second both survive" test_two_backups_of_the_same_file_within_one_second_both_survive
 run_test "replace_literal is literal and repeats" test_replace_literal_is_literal_and_repeats
 print_summary
 ```
@@ -1084,7 +1098,7 @@ print_summary
 - [ ] **Step 2: Run it to see it fail**
 
 Run: `bash tests/lib/files.sh`
-Expected: the seven new tests fail with `config_is_pristine: command not found`, `write_config_region: command not found`, `refresh_if_pristine: command not found` and `backup_copy: command not found`; the suite ends with `Summary: 12/19 passed`.
+Expected: the eight new tests fail with `config_is_pristine: command not found`, `write_config_region: command not found`, `refresh_if_pristine: command not found` and `backup_copy: command not found`; the suite ends with `Summary: 12/20 passed`.
 
 - [ ] **Step 3: Add the four functions to `lib/files.sh`**
 
@@ -1177,12 +1191,34 @@ refresh_if_pristine() {
   ok "Refreshed $dest (you had not edited it)"
 }
 
+# _backup_name <path>  -> prints a backup path nothing holds yet
+# Both backup_copy and backup_target name a backup <path>.teeup_backup_<ts>,
+# to the second. A single `teeup migrate legacy` run can back the same file
+# up several times inside one second (legacy wiring, then prompt wiring, then
+# chezmoi), and a second call landing on the name the first just used would
+# silently overwrite it. When that name is already taken, this appends -1,
+# -2, ... until it finds one nothing holds, so every backup from the same run
+# survives. Bash-3.2-safe: a counter and plain concatenation, no ${var//}.
+_backup_name() {
+  local target="$1" base n
+  base="${target}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+  if [[ ! -e "$base" ]]; then
+    printf '%s\n' "$base"
+    return 0
+  fi
+  n=1
+  while [[ -e "${base}-${n}" ]]; do
+    n=$((n + 1))
+  done
+  printf '%s\n' "${base}-${n}"
+}
+
 # backup_copy <path>  -> prints the backup path on stdout
 # Like backup_target, but copies: the file stays in place for a migration to
 # patch, and the copy keeps what it held before.
 backup_copy() {
   local target="$1" backup
-  backup="${target}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+  backup="$(_backup_name "$target")"
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would copy $target to $backup" >&2
   else
@@ -1193,10 +1229,28 @@ backup_copy() {
 }
 ```
 
+`backup_target` (already in `lib/files.sh`, unchanged by phase 1-3) collides on the exact same name; it gets the same fix, through the same helper:
+
+```bash edit-old=lib/files.sh
+backup_target() {
+  local target="$1" backup
+  backup="${target}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would back up $target to $backup" >&2
+```
+
+```bash edit-new=lib/files.sh
+backup_target() {
+  local target="$1" backup
+  backup="$(_backup_name "$target")"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would back up $target to $backup" >&2
+```
+
 - [ ] **Step 4: Run the files suite**
 
 Run: `bash tests/lib/files.sh`
-Expected: `Summary: 19/19 passed`.
+Expected: `Summary: 20/20 passed`.
 
 - [ ] **Step 5: Write the failing tests for `starship.toml`**
 
@@ -3028,7 +3082,7 @@ The spec's CLI surface lists `teeup remove <cap>`, and the sentence below the ta
 
 **Interfaces:**
 - Consumes: `_pkg_backend_resolve`, `package_candidates`, `pkg_installed`, `casks_supported`, `cask_installed`, `run_privileged`, `pkg_backend_label`; `cap_exists`, `cap_dir`, `cap_list`, `cap_meta_get`, `cap_run`; `state_done check`, `state_done clear`.
-- Produces: `pkg_uninstall <pkg>`, `cask_uninstall <cask>`, `teeup remove <capability>`. Plan 5a's `teeup migrate legacy` points at this verb in its messages.
+- Produces: `pkg_uninstall <pkg>`, `cask_uninstall <cask>`, `teeup remove <capability>`. `teeup remove` clears the capability's done marker only once every cask and package it named actually uninstalled; a failed uninstall leaves the marker set and exits non-zero, so a retry still sees the capability as installed and the leftover software is not orphaned. Plan 5a's `teeup migrate legacy` points at this verb in its messages.
 
 **Real-Mac risk:** `brew uninstall --cask` runs the cask's own `uninstall` stanza, which for some apps asks for an administrator password or quits a running application; `port uninstall` refuses a port other ports depend on. Neither is visible under mocks.
 
@@ -3255,6 +3309,27 @@ test_remove_keeps_config_files_and_previews_a_dry_run() {
   cleanup_test_env
 }
 
+test_remove_keeps_the_marker_when_an_uninstall_fails() {
+  setup
+  make_removable_cap
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "uninstall --cask") exit 1 ;;
+  "list --formula"|"list --cask") exit 0 ;;
+esac
+exit 0
+EOF2
+  local rc=0 out
+  out="$("$TEEUP" remove tool 2>&1)" || rc=$?
+  assert_failure "$rc" "a failed uninstall must reach the exit status" || return 1
+  assert_contains "$out" "Could not uninstall the wezterm cask." || return 1
+  assert_contains "$out" "Leaving tool marked installed" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" "the package uninstall still runs" || return 1
+  "$TEEUP" has tool || { echo "the marker must survive a failed uninstall, so a retry can find the leftover cask"; return 1; }
+  cleanup_test_env
+}
+
 # Everything `teeup update` reaches out to, mocked: the checkout is clean, the
 ```
 
@@ -3267,13 +3342,14 @@ run_test "remove runs the script then uninstalls from metadata" test_remove_runs
 run_test "remove without a script uses metadata alone" test_remove_without_a_script_uses_metadata_alone
 run_test "remove refuses what something else requires" test_remove_refuses_what_something_else_requires
 run_test "remove keeps config files and previews a dry run" test_remove_keeps_config_files_and_previews_a_dry_run
+run_test "remove keeps the marker when an uninstall fails" test_remove_keeps_the_marker_when_an_uninstall_fails
 run_test "update walks every step in order" test_update_walks_every_step_in_order
 ```
 
 - [ ] **Step 6: Run it to see it fail**
 
 Run: `bash tests/cli.sh`
-Expected: the four new tests fail with `Unknown verb: remove`; the suite ends with `Summary: 41/45 passed`.
+Expected: the five new tests fail with `Unknown verb: remove`; the suite ends with `Summary: 41/46 passed`.
 
 - [ ] **Step 7: Add the verb**
 
@@ -3314,7 +3390,16 @@ cmd_remove() {
   for pkg in $(cap_meta_get "$target" packages); do
     pkg_uninstall "$pkg" || failed=1
   done
-  state_done clear "cap-$target"
+  # Only clear the done marker once every cask and package is actually gone.
+  # Clearing it after a failed uninstall would make a retry see the
+  # capability as not installed, and the leftover software could then never
+  # be removed: cmd_install would skip it ("Already installed") and
+  # cmd_remove itself would refuse with "not installed here".
+  if [[ $failed -eq 0 ]]; then
+    state_done clear "cap-$target"
+  else
+    warn "Leaving $target marked installed since something above failed; fix it and run teeup remove $target again."
+  fi
   if [[ -d "$(cap_dir "$target")/config" || -d "$(cap_dir "$target")/home" ]]; then
     log "Your configuration files for $target were left in place."
   fi
@@ -3344,7 +3429,7 @@ cmd_remove() {
 - [ ] **Step 8: Run the CLI suite**
 
 Run: `bash tests/cli.sh`
-Expected: `Summary: 45/45 passed`.
+Expected: `Summary: 46/46 passed`.
 
 - [ ] **Step 9: Full checks and commit**
 

@@ -297,7 +297,7 @@ print_summary
 - [ ] **Step 2: Run it to see it fail**
 
 Run: `bash tests/lib/files.sh`
-Expected: the eight new tests fail with `disable_matching_lines: command not found`; the suite ends with `Summary: 19/27 passed`.
+Expected: the eight new tests fail with `disable_matching_lines: command not found`; the suite ends with `Summary: 20/28 passed`.
 
 - [ ] **Step 3: Append the function to `lib/files.sh`**
 
@@ -391,7 +391,7 @@ disable_matching_lines() {
 - [ ] **Step 4: Run the suite for this file**
 
 Run: `bash tests/lib/files.sh`
-Expected: `Summary: 27/27 passed`.
+Expected: `Summary: 28/28 passed`.
 
 - [ ] **Step 5: Run the whole suite and the checks**
 
@@ -1580,13 +1580,15 @@ test_migrate_legacy_cleans_a_legacy_home() {
   if [[ -e "$TEST_HOME/.teeup.common" ]]; then echo ".teeup.common survived"; return 1; fi
   if [[ -d "$TEST_HOME/.config/mac-setup" ]]; then echo "mac-setup survived"; return 1; fi
   if [[ -d "$TEST_HOME/.config/chezmoi" ]]; then echo "the chezmoi config survived a yes"; return 1; fi
-  # Moved aside, not deleted. The count is not asserted: every backup in this
-  # run is named <file>.teeup_backup_<ts> to the second, so two writes inside
-  # one second land on the same name.
   if [[ -e "$TEST_HOME/.zshrc" ]]; then echo ".zshrc was not moved aside"; return 1; fi
+  # .zshrc is backed up three times in this run - by the legacy-pattern
+  # disable, the rbenv disable, and the final chezmoi move - and every backup
+  # in this run is named <file>.teeup_backup_<ts> to the second. _backup_name
+  # (plan 4a, lib/files.sh) is what keeps the three distinct instead of the
+  # later writes silently overwriting the first.
   local backups
   backups="$(find "$TEST_HOME" -maxdepth 1 -name '.zshrc.teeup_backup_*' | wc -l | tr -d ' ')"
-  [[ "$backups" -ge 1 ]] || { echo "no backup of .zshrc was kept"; return 1; }
+  assert_equals "3" "$backups" "every backup of .zshrc this run made must survive" || return 1
   assert_contains "$out" "Migration finished" || return 1
   cleanup_test_env
 }
@@ -2614,7 +2616,7 @@ Searched the plan for `TBD`, `TODO`, `implement later`, `fill in`, `appropriate 
 1. Phase 4b's three `lib/all.sh` edits anchored on the library list *without* 4a's `hooks migrations`, so each anchor was widened by those two names before applying. 4b's six blocks now carry `hooks migrations`.
 2. Phase 4a and 4b each defined `cmd_dev` in `bin/teeup`; applied mechanically that left two definitions, the later one winning and `teeup dev new-capability` breaking. 4b's Task 8 Step 4 now edits 4a's function instead of redefining it, and Task 9 Step 4 anchors on the result.
 
-**This plan.** Every task was applied in order to a clone of that base with a harness that, after each one, runs `./tests/run.sh`, `./bin/teeup commands --check`, `shellcheck --severity=warning` on every file the task touched and `git diff --check`, then commits. All nine tasks are green: **All 61 suites passed** after each (60 plus `tests/lib/migrate.sh`), `commands --check` silent and 0, shellcheck silent, `git diff --check` silent. The red states were observed too: `tests/lib/files.sh` went `19/27` then `27/27` at Task 1, and `tests/lib/migrate.sh` went `0/12`, `12/16`, `16/20`, `20/26` and finally `26/26` across Tasks 2 to 5.
+**This plan.** Every task was applied in order to a clone of that base with a harness that, after each one, runs `./tests/run.sh`, `./bin/teeup commands --check`, `shellcheck --severity=warning` on every file the task touched and `git diff --check`, then commits. All nine tasks are green: **All 61 suites passed** after each (60 plus `tests/lib/migrate.sh`), `commands --check` silent and 0, shellcheck silent, `git diff --check` silent. The red states were observed too: `tests/lib/files.sh` went `20/28` then `28/28` at Task 1, and `tests/lib/migrate.sh` went `0/12`, `12/16`, `16/20`, `20/26` and finally `26/26` across Tasks 2 to 5.
 
 Two defects in this plan's own text were found by that run and fixed:
 
