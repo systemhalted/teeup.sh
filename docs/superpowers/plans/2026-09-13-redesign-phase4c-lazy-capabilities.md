@@ -653,7 +653,7 @@ git commit -m "Add the lazydocker lazy capability"
 
 **Interfaces:**
 - Consumes: `have`, `log`, `ok`, `warn`, `err`, `run_cmd` (`lib/core.sh`); `answers_get <KEY> [default]` (`lib/answers.sh`); `ui_choose <prompt> <option...>` (`lib/ui.sh`); `capabilities/colima` as its `requires=` (plan 3b Task 5).
-- Produces: the capability `docker-dbs` with `tier=lazy`, `interactive=true`, no `provides=` (so no shim) and no `packages=`/`casks=` (so `teeup remove docker-dbs` clears the marker and leaves the containers alone, which is right: a database holds data). The answers key `TEEUP_DBS` is documented in Task 9's README section.
+- Produces: the capability `docker-dbs` with `tier=lazy`, `interactive=true`, no `provides=` (so no shim) and no `packages=`/`casks=` (so `teeup remove docker-dbs` clears the marker and leaves the containers alone, which is right: a database holds data). `db_conflict_check <requested>` warns about a port two of the requested databases both publish (MySQL and MariaDB both bind 3306) before either one starts, since only one of them will actually get the port. The answers key `TEEUP_DBS` is documented in Task 9's README section.
 
 **Real-Mac risk:** that Colima forwards a container port published on the guest's `127.0.0.1` to the host's `127.0.0.1` (its README lists "Automatic Port Forwarding" as a feature, and the tests mock `docker` entirely); that the five images pull and start under Colima's default 2 CPU / 2 GiB VM, where MySQL and MongoDB are the heavy two; that `--restart unless-stopped` brings a container back after `colima stop` and `colima start`.
 
@@ -676,20 +676,34 @@ setup() {
   mock_command_script brew <<'EOF2'
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
+  # A published host port is bound for as long as some container in
+  # $up claims it (tracked in $ports as "hostport:name" lines): a second
+  # `docker run` publishing an already-bound port fails to bind, exactly like
+  # a real docker daemon, and the loser is never added to $all or $up.
   mock_command_script docker <<'EOF2'
 all="$HOME/containers-all"
 up="$HOME/containers-running"
+ports="$HOME/containers-ports"
 case "$1 ${2:-}" in
   "ps -a") cat "$all" 2>/dev/null ;;
   "ps --format") cat "$up" 2>/dev/null ;;
   "run "*)
-    name=""
+    name="" hostport=""
     while [ $# -gt 0 ]; do
       if [ "$1" = "--name" ]; then name="$2"; fi
+      if [ "$1" = "-p" ]; then hostport="${2#*:}"; hostport="${hostport%%:*}"; fi
       shift
     done
+    if [ -n "$hostport" ] && grep -q "^$hostport:" "$ports" 2>/dev/null; then
+      bound="$(grep "^$hostport:" "$ports" 2>/dev/null | tail -1 | cut -d: -f2)"
+      if grep -qx "$bound" "$up" 2>/dev/null; then
+        echo "docker: Error response from daemon: Bind for 127.0.0.1:$hostport failed: port is already allocated." >&2
+        exit 1
+      fi
+    fi
     printf '%s\n' "$name" >> "$all"
     printf '%s\n' "$name" >> "$up"
+    printf '%s:%s\n' "$hostport" "$name" >> "$ports"
     ;;
   "start "*) printf '%s\n' "$2" >> "$up" ;;
 esac
@@ -735,7 +749,12 @@ test_every_image_and_port_matches_the_table() {
   assert_contains "$log" "-p 127.0.0.1:6379:6379 --name redis redis:7" || return 1
   assert_contains "$log" "-p 127.0.0.1:27017:27017 --name mongodb -e MONGO_INITDB_ROOT_USERNAME=admin -e MONGO_INITDB_ROOT_PASSWORD=admin123 mongo:noble" || return 1
   # Both MySQL and MariaDB publish 3306, so the second one cannot have it.
+  # The warning is checked before either one starts: the mock models the real
+  # docker daemon's refusal, so mariadb11's docker run is attempted (logged
+  # above) but fails to bind, and only mysql8 ends up running.
   assert_contains "$out" "mysql and mariadb both publish 3306" || return 1
+  assert_contains "$(cat "$TEST_HOME/containers-running")" "mysql8" || return 1
+  assert_not_contains "$(cat "$TEST_HOME/containers-running")" "mariadb11" "the port loser must not be reported as started" || return 1
   assert_not_contains "$log" "0.0.0.0:" || return 1
   unset TEEUP_DBS
   cleanup_test_env
@@ -976,6 +995,37 @@ db_start() {
   return 0
 }
 
+# db_conflict_check <requested>
+# Warns about a port two requested databases both publish (MySQL and MariaDB
+# both bind 3306) before anything starts. A check keyed off which containers
+# actually came up cannot catch this: docker refuses the second bind, so the
+# loser never starts and a warning keyed off db_started can never fire for
+# the exact case it exists to cover. No `local`, like the rest of this
+# script: capability scripts run once, top to bottom. Bash-3.2-safe: no
+# associative arrays, just a space-separated "port:name:container" list and
+# a plain loop.
+db_conflict_check() {
+  requested="$1"; seen=""
+  for name in $requested; do
+    if [[ "$name" == "none" ]]; then continue; fi
+    db_spec "$name" || continue
+    port="$db_port"; container="$db_container"
+    prior_name=""; prior_container=""
+    for entry in $seen; do
+      case "$entry" in
+        "$port:"*)
+          prior_name="${entry#*:}"; prior_name="${prior_name%%:*}"
+          prior_container="${entry##*:}"
+          ;;
+      esac
+    done
+    if [[ -n "$prior_name" ]]; then
+      warn "$prior_name and $name both publish $port; only one of them can bind it. $prior_name will start; start $name once you free the port with: docker stop $prior_container"
+    fi
+    seen="$seen $port:$name:$container"
+  done
+}
+
 if ! have docker; then
   err "docker is not on PATH; install Colima first with: teeup install colima"
   exit 1
@@ -985,6 +1035,8 @@ db_selection="$(answers_get TEEUP_DBS)"
 if [[ -z "$db_selection" ]]; then
   db_selection="$(ui_choose "Which database should run on localhost?" postgres mysql mariadb redis mongo none)"
 fi
+
+db_conflict_check "$db_selection"
 
 db_started=""
 for db_name in $db_selection; do
@@ -996,14 +1048,6 @@ for db_name in $db_selection; do
     db_started="$db_started $db_name"
   fi
 done
-
-case "$db_started" in
-  *" mysql"*)
-    case "$db_started" in
-      *" mariadb"*) warn "mysql and mariadb both publish 3306, so only the first one to start has the port; stop one with: docker stop mysql8" ;;
-    esac
-    ;;
-esac
 
 if [[ -n "$db_started" ]]; then
   log "These containers accept local connections without a password, which is what makes them useful for development; they listen on 127.0.0.1 only."
