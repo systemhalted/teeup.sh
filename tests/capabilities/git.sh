@@ -207,6 +207,35 @@ test_configure_a_physical_root_matches_both_through_the_symlink_and_the_real_pat
   cleanup_test_env
 }
 
+test_git_matches_a_single_slash_includeif_but_not_a_doubled_one() {
+  setup
+  # Re-review round 2: _wizard_resolve_physical could produce a doubled
+  # leading slash (bootstrap.sh's tests prove the fix at the wizard level).
+  # This proves *why* that mattered, with the real git binary, the way the
+  # review found it: git's includeIf matcher treats a doubled slash as a
+  # literal mismatch against a repository's single-slash gitdir. A writable
+  # location under $TEST_HOME stands in for the filesystem root the actual
+  # bug hit (creating a real entry at "/" would need root and would pollute
+  # the host); the matching semantics proved here do not depend on where
+  # the directory sits, only on the slash itself.
+  mkdir -p "$TEST_HOME/SlashCheck/repo"
+  (cd "$TEST_HOME/SlashCheck/repo" && command -p git init -q)
+  printf '[user]\n\temail = single@example.com\n' > "$TEST_HOME/identity-single"
+  printf '[user]\n\temail = double@example.com\n' > "$TEST_HOME/identity-double"
+  local single_cfg="$TEST_HOME/single.cfg" double_cfg="$TEST_HOME/double.cfg"
+  printf '[includeIf "gitdir:%s/"]\n\tpath = %s\n' \
+    "$TEST_HOME/SlashCheck" "$TEST_HOME/identity-single" > "$single_cfg"
+  printf '[includeIf "gitdir:%s//SlashCheck/"]\n\tpath = %s\n' \
+    "$TEST_HOME" "$TEST_HOME/identity-double" > "$double_cfg"
+  local single_resolved double_resolved double_rc=0
+  single_resolved="$(cd "$TEST_HOME/SlashCheck/repo" && GIT_CONFIG_GLOBAL="$single_cfg" command -p git config --get user.email)"
+  assert_equals "single@example.com" "$single_resolved" "a single-slash pattern matches" || return 1
+  double_resolved="$(cd "$TEST_HOME/SlashCheck/repo" && GIT_CONFIG_GLOBAL="$double_cfg" command -p git config --get user.email 2>&1)" || double_rc=$?
+  assert_failure "$double_rc" "a doubled slash in the pattern must not match" || return 1
+  assert_equals "" "$double_resolved" "nothing should resolve for the unmatched pattern" || return 1
+  cleanup_test_env
+}
+
 test_signing_and_delta_are_enabled_once_they_exist() {
   setup
   export TEEUP_TEST_MISSING="lazygit emacsclient"
@@ -520,6 +549,7 @@ run_test "configure custom work dir lands in includeIf and identity message" tes
 run_test "configure a root with a space survives" test_configure_a_root_with_a_space_survives
 run_test "work identity resolves through the generated includeIf" test_work_identity_resolves_through_the_generated_includeif
 run_test "a physical root matches both through the symlink and the real path" test_configure_a_physical_root_matches_both_through_the_symlink_and_the_real_path
+run_test "git matches a single-slash includeIf but not a doubled one" test_git_matches_a_single_slash_includeif_but_not_a_doubled_one
 run_test "signing and delta are enabled once they exist" test_signing_and_delta_are_enabled_once_they_exist
 run_test "signing stays off with a work email and no work key" test_signing_stays_off_with_a_work_email_and_no_work_key
 run_test "signing stays off when a private key is missing" test_signing_stays_off_when_a_private_key_is_missing

@@ -184,20 +184,41 @@ _wizard_valid_optional_email() {
 # deepest existing ancestor is resolved and the still-missing tail is
 # appended back on unchanged (it has no symlink of its own to resolve, since
 # nothing has created it yet).
+#
+# Two things the walk and the final join both have to get right, or the
+# result carries a doubled slash that git's includeIf matcher treats as a
+# literal mismatch against a repository's real (single-slash) gitdir:
+# a component is only ever appended to $rest when it is non-empty (a
+# trailing or doubled slash in the input makes `${existing##*/}` come back
+# empty for one step; blindly joining that with the usual "/" separator is
+# what used to leave a stray slash behind, including deep inside a
+# not-yet-created tail), and the final join special-cases $resolved being
+# exactly "/" (the deepest existing ancestor is the filesystem root itself,
+# i.e. a not-yet-created top-level directory), since "/" + "/" + rest would
+# otherwise double up right there.
 _wizard_resolve_physical() {
-  local existing="$1" rest="" resolved
+  local existing="$1" rest="" resolved base
   while [[ ! -d "$existing" ]]; do
     case "$existing" in
-      */*) rest="${existing##*/}${rest:+/$rest}"; existing="${existing%/*}" ;;
-      *) rest="$existing${rest:+/$rest}"; existing="" ;;
+      */*)
+        base="${existing##*/}"
+        existing="${existing%/*}"
+        [[ -n "$base" ]] && rest="$base${rest:+/$rest}"
+        ;;
+      *)
+        [[ -n "$existing" ]] && rest="$existing${rest:+/$rest}"
+        existing=""
+        ;;
     esac
     [[ -n "$existing" ]] || existing="/"
   done
   resolved="$(cd -P -- "$existing" 2>/dev/null && pwd -P)" || resolved="$existing"
-  if [[ -n "$rest" ]]; then
-    printf '%s/%s\n' "$resolved" "$rest"
-  else
+  if [[ -z "$rest" ]]; then
     printf '%s\n' "$resolved"
+  elif [[ "$resolved" == "/" ]]; then
+    printf '/%s\n' "$rest"
+  else
+    printf '%s/%s\n' "$resolved" "$rest"
   fi
 }
 

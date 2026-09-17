@@ -459,6 +459,71 @@ test_wizard_resolves_a_not_yet_created_root_through_a_symlinked_ancestor() {
   cleanup_test_env
 }
 
+# Re-review round 2: _wizard_resolve_physical produced a doubled leading
+# slash ("//rest" instead of "/rest") when the answered path's nearest
+# existing ancestor is the filesystem root itself -- a not-yet-created
+# top-level directory (outside $HOME, which the validator warns about but
+# allows). git's includeIf matcher treats a doubled slash as a literal
+# mismatch against a repository's single-slash gitdir (proved with the real
+# git binary in tests/capabilities/git.sh), so this reproduced the exact
+# "identity silently unreachable" failure mode the symlink fix exists to
+# close.
+#
+# The chosen path's first component is a random, PID-qualified name so it
+# is vanishingly unlikely to exist on the machine running this suite; the
+# function tolerates a target that does not exist (that is its whole
+# not-yet-created-path purpose), so nothing is created on the real
+# filesystem to prove this. Unlike this file's other fixtures, actually
+# creating an entry at "/" would need root and would pollute the host, so
+# it is deliberately avoided; the real-git proof that a doubled slash
+# specifically breaks the match lives in tests/capabilities/git.sh, at a
+# writable location.
+test_wizard_resolves_a_not_yet_created_top_level_root_without_doubling_the_slash() {
+  setup
+  source_wizard_validators
+  local top="/teeup-rereview-noexist-$$" resolved
+  [[ ! -e "$top" ]] || { echo "fixture collision: $top exists on this machine"; return 1; }
+  resolved="$(_wizard_valid_dir "$top/sub")"
+  assert_equals "$top/sub" "$resolved" || return 1
+  assert_not_contains "$resolved" "//" "must not double the leading slash" || return 1
+  cleanup_test_env
+}
+
+# Same class of edge, checked directly against _wizard_resolve_physical:
+# the path "/" itself, a trailing slash, and a doubled slash typed in the
+# middle of a not-yet-created path.
+test_wizard_resolve_physical_of_exactly_root_is_unchanged() {
+  setup
+  source_wizard_validators
+  assert_equals "/" "$(_wizard_resolve_physical "/")" || return 1
+  assert_equals "/" "$(_wizard_valid_dir "/")" || return 1
+  cleanup_test_env
+}
+
+test_wizard_resolve_physical_drops_a_trailing_slash() {
+  setup
+  source_wizard_validators
+  # RealWork does not exist, but its parent ($TEST_HOME) does, so this
+  # isolates trailing-slash handling from the root-doubling case above.
+  local resolved
+  resolved="$(_wizard_resolve_physical "$TEST_HOME/RealWork/")"
+  assert_equals "$TEST_HOME/RealWork" "$resolved" || return 1
+  cleanup_test_env
+}
+
+test_wizard_resolve_physical_collapses_a_doubled_slash_in_a_not_yet_created_middle_component() {
+  setup
+  source_wizard_validators
+  # Neither NotReal nor sub exist, so the walk climbs past the doubled
+  # slash entirely inside the not-yet-created tail -- the same guarded-
+  # append code path the root-doubling bug lived in, just anchored at an
+  # existing ancestor other than "/".
+  local resolved
+  resolved="$(_wizard_resolve_physical "$TEST_HOME/NotReal//sub")"
+  assert_equals "$TEST_HOME/NotReal/sub" "$resolved" || return 1
+  cleanup_test_env
+}
+
 # Minor review fix: the final "tld" group in the email regex also matches an
 # internal dot, so "ada@example.com." (a trailing dot) satisfied
 # <domain>.<tld> with the dot absorbed into that group.
@@ -547,6 +612,10 @@ run_test "custom project roots reach dev-dirs" test_custom_project_roots_reach_d
 run_test "wizard rejects equal project roots" test_wizard_rejects_equal_project_roots
 run_test "wizard resolves a symlinked root to its physical path" test_wizard_resolves_a_symlinked_root_to_its_physical_path
 run_test "wizard resolves a not-yet-created root through a symlinked ancestor" test_wizard_resolves_a_not_yet_created_root_through_a_symlinked_ancestor
+run_test "wizard resolves a not-yet-created top-level root without doubling the slash" test_wizard_resolves_a_not_yet_created_top_level_root_without_doubling_the_slash
+run_test "wizard resolve_physical of exactly root is unchanged" test_wizard_resolve_physical_of_exactly_root_is_unchanged
+run_test "wizard resolve_physical drops a trailing slash" test_wizard_resolve_physical_drops_a_trailing_slash
+run_test "wizard resolve_physical collapses a doubled slash in a not-yet-created middle component" test_wizard_resolve_physical_collapses_a_doubled_slash_in_a_not_yet_created_middle_component
 run_test "wizard email validator rejects a trailing dot" test_wizard_email_validator_rejects_a_trailing_dot
 run_test "wizard email validator still accepts a normal address" test_wizard_email_validator_still_accepts_a_normal_address
 run_test "wizard name validator stores the trimmed value" test_wizard_name_validator_stores_the_trimmed_value
