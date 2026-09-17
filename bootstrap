@@ -92,6 +92,74 @@ run_tier() {
   done
 }
 
+# WIZARD_MAX_TRIES: a small number of tries, not infinite -- a wizard stuck
+# re-prompting forever on a non-interactive stdin (a CI runner, a piped
+# answers file) would otherwise hang bootstrap instead of failing loudly.
+WIZARD_MAX_TRIES=3
+
+# wizard_ask <prompt> <default> <validator> -> prints the validated answer.
+# Re-prompts on an invalid answer instead of silently accepting it (the F2
+# bug: an empty personal email, or a path typed into the work-email field,
+# both used to sail through). <validator> is called with the candidate on
+# $1; it warns and returns 1 for a bad answer, returns 0 for a good one. The
+# rejected candidate becomes the next prompt's default, so a retry starts
+# from what the user actually typed rather than snapping back to the
+# original default.
+wizard_ask() {
+  local prompt="$1" default="$2" validator="$3" answer try
+  for ((try = 1; try <= WIZARD_MAX_TRIES; try++)); do
+    answer="$(ui_input "$prompt" "$default")"
+    if "$validator" "$answer"; then
+      printf '%s\n' "$answer"
+      return 0
+    fi
+    default="$answer"
+  done
+  die "Too many invalid answers for: $prompt. Run ./bootstrap --reconfigure once you have a valid value."
+}
+
+# _wizard_valid_name <candidate> -> 0 once trimmed of leading/trailing blanks
+# it is non-empty, else 1 (warns). bash 3.2-safe: parameter-expansion glob
+# trimming, no extglob.
+_wizard_valid_name() {
+  local v="$1" trimmed
+  trimmed="${v#"${v%%[![:space:]]*}"}"
+  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  if [[ -z "$trimmed" ]]; then
+    warn "A name cannot be empty."
+    return 1
+  fi
+  return 0
+}
+
+# _wizard_valid_email <candidate> -> 0 for something@something.tld, no spaces.
+# Deliberately simple, not RFC 5322: it exists to catch the two shapes the
+# dry run actually hit (an empty answer, and a filesystem path typed into the
+# field), not to validate every edge case.
+_wizard_valid_email() {
+  local v="$1"
+  if [[ -z "$v" ]]; then
+    warn "An email address is required."
+    return 1
+  fi
+  case "$v" in
+    *[[:space:]]*) warn "'$v' contains a space; expected something@something.tld"; return 1 ;;
+  esac
+  if ! [[ "$v" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
+    warn "'$v' does not look like an email address; expected something@something.tld"
+    return 1
+  fi
+  return 0
+}
+
+# _wizard_valid_optional_email <candidate> -> empty keeps today's "one
+# identity for both roots" behaviour; anything else must pass the same check
+# as the personal email.
+_wizard_valid_optional_email() {
+  [[ -z "$1" ]] && return 0
+  _wizard_valid_email "$1"
+}
+
 # The package manager is NOT asked here: step 2 below installs it, and this
 # wizard runs after step 3. See ask_package_manager.
 wizard() {
@@ -99,9 +167,9 @@ wizard() {
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
-  name="$(ui_input "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")")"
-  email="$(ui_input "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)")"
-  work_email="$(ui_input "Work email (git identity under ~/Work, empty for none)" "$(answers_get TEEUP_WORK_EMAIL)")"
+  name="$(wizard_ask "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")" _wizard_valid_name)"
+  email="$(wizard_ask "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)" _wizard_valid_email)"
+  work_email="$(wizard_ask "Work email (git identity under ~/Work, empty for none)" "$(answers_get TEEUP_WORK_EMAIL)" _wizard_valid_optional_email)"
   # A theme pinned by machines/<hostname>.conf wins in answers_load, so asking
   # would record an answer nothing reads (same rule as ask_package_manager).
   if pinned_theme="$(machine_get TEEUP_THEME)"; then

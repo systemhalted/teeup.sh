@@ -321,6 +321,58 @@ test_core_failure_aborts() {
   cleanup_test_env
 }
 
+test_empty_personal_email_reprompts_and_second_answer_is_recorded() {
+  setup
+  # F2: the wizard used to accept an empty personal email outright. Now it
+  # must re-prompt, and the second (valid) answer is what git configure
+  # actually uses -- the "git identity: ..." line is not gated by DRY_RUN
+  # (files.sh swallows the rendered content, but this message is not one of
+  # them), so it is the observable proof the retried answer was recorded.
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\n\nada@example.com\n\n1\ny\n')"
+  assert_contains "$out" "email address is required" || return 1
+  assert_contains "$out" "git identity: ada@example.com for both ~/Personal and ~/Work" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
+test_a_path_shaped_work_email_reprompts() {
+  setup
+  # The dry run's actual failure: a path typed into the work-email field was
+  # accepted outright and would have become both the git identity address and
+  # the -C comment of the work SSH key.
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n~/Workspaces/Work\nada@corp.example\n1\ny\n')"
+  assert_contains "$out" "does not look like an email address" || return 1
+  assert_contains "$out" "git identities: personal (ada@example.com), work (ada@corp.example)" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
+test_valid_wizard_answers_pass_validation_on_the_first_try() {
+  setup
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_not_contains "$out" "email address is required" || return 1
+  assert_not_contains "$out" "does not look like an email address" || return 1
+  # Each prompt must fire exactly once: a spurious re-prompt would consume the
+  # next line of input meant for a later question and desync the whole wizard.
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'Personal email (git identity')" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
+test_the_retry_limit_dies_with_a_clear_message() {
+  setup
+  local rc=0 out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\n\nnotanemail\nstill@bad\n')" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "Too many invalid answers" || return 1
+  assert_contains "$out" "Personal email" "the message names the question that failed" || return 1
+  assert_not_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
 test_dry_run_summary_is_a_preview_not_a_status_suggestion() {
   setup
   # F1: the closing summary used to tell the user to run `teeup status`, which
@@ -361,6 +413,10 @@ run_test "the wizard does not ask for a pinned theme" test_wizard_does_not_ask_f
 run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tier
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
 run_test "core failure aborts" test_core_failure_aborts
+run_test "empty personal email re-prompts and the second answer is recorded" test_empty_personal_email_reprompts_and_second_answer_is_recorded
+run_test "a path-shaped work email re-prompts" test_a_path_shaped_work_email_reprompts
+run_test "valid wizard answers pass validation on the first try" test_valid_wizard_answers_pass_validation_on_the_first_try
+run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect
 print_summary
