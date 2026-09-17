@@ -378,6 +378,21 @@ test_the_retry_limit_dies_with_a_clear_message() {
   cleanup_test_env
 }
 
+test_wizard_email_validator_rejects_a_trailing_dot() {
+  setup
+  source_wizard_validators
+  local rc=0 out
+  out="$(_wizard_valid_email "ada@example.com." 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "ends with a dot" || return 1
+  cleanup_test_env
+}
+test_wizard_email_validator_still_accepts_a_normal_address() {
+  setup
+  source_wizard_validators
+  assert_equals "ada@example.com" "$(_wizard_valid_email "ada@example.com")" || return 1
+  cleanup_test_env
+}
 test_dry_run_summary_is_a_preview_not_a_status_suggestion() {
   setup
   # F1: the closing summary used to tell the user to run `teeup status`, which
@@ -422,6 +437,8 @@ run_test "empty personal email re-prompts and the second answer is recorded" tes
 run_test "a path-shaped work email re-prompts" test_a_path_shaped_work_email_reprompts
 run_test "valid wizard answers pass validation on the first try" test_valid_wizard_answers_pass_validation_on_the_first_try
 run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
+run_test "wizard email validator rejects a trailing dot" test_wizard_email_validator_rejects_a_trailing_dot
+run_test "wizard email validator still accepts a normal address" test_wizard_email_validator_still_accepts_a_normal_address
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect
 print_summary
