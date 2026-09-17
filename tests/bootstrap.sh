@@ -378,6 +378,16 @@ test_the_retry_limit_dies_with_a_clear_message() {
   cleanup_test_env
 }
 
+# Sourcing all of bootstrap would run its top-level flow (argument parsing,
+# the xcode-clt/package-manager/wizard steps), so only the wizard validator
+# functions are extracted and eval'd -- the same functions wizard_ask
+# actually calls, not a reimplementation of them. lib/core.sh supplies warn,
+# which every validator's failure path calls.
+source_wizard_validators() {
+  source "$TEEUP_PATH/lib/core.sh"
+  eval "$(sed -n '/^_wizard_valid_name() {/,/^wizard() {/p' "$BOOT" | sed '$d')"
+}
+
 test_wizard_email_validator_rejects_a_trailing_dot() {
   setup
   source_wizard_validators
