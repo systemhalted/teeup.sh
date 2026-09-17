@@ -424,6 +424,41 @@ test_wizard_rejects_equal_project_roots() {
   cleanup_test_env
 }
 
+# F3 review fix: git resolves symlinks in a repository's gitdir before
+# matching it against includeIf "gitdir:...", so the wizard has to record a
+# symlinked root's physical path, or the pattern it writes never matches.
+# Sourcing all of bootstrap would run its top-level flow (argument parsing,
+# the xcode-clt/package-manager/wizard steps), so only the wizard validator
+# functions are extracted and eval'd -- the same functions wizard_ask
+# actually calls, not a reimplementation of the fix. lib/core.sh supplies
+# warn, which every validator's failure path calls.
+source_wizard_validators() {
+  source "$TEEUP_PATH/lib/core.sh"
+  eval "$(sed -n '/^_wizard_valid_name() {/,/^wizard() {/p' "$BOOT" | sed '$d')"
+}
+
+test_wizard_resolves_a_symlinked_root_to_its_physical_path() {
+  setup
+  source_wizard_validators
+  mkdir -p "$TEST_HOME/RealWork"
+  ln -s "$TEST_HOME/RealWork" "$TEST_HOME/LinkedWork"
+  local resolved
+  resolved="$(_wizard_valid_dir "$TEST_HOME/LinkedWork")"
+  assert_equals "$TEST_HOME/RealWork" "$resolved" || return 1
+  cleanup_test_env
+}
+
+test_wizard_resolves_a_not_yet_created_root_through_a_symlinked_ancestor() {
+  setup
+  source_wizard_validators
+  mkdir -p "$TEST_HOME/RealWork"
+  ln -s "$TEST_HOME/RealWork" "$TEST_HOME/LinkedWork"
+  local resolved
+  resolved="$(_wizard_valid_dir "$TEST_HOME/LinkedWork/Nested")"
+  assert_equals "$TEST_HOME/RealWork/Nested" "$resolved" || return 1
+  cleanup_test_env
+}
+
 test_wizard_warns_but_accepts_a_root_outside_home() {
   setup
   local out
@@ -481,6 +516,8 @@ run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_w
 run_test "personal email prompt names the answered personal root" test_personal_email_prompt_names_the_answered_personal_root
 run_test "custom project roots reach dev-dirs" test_custom_project_roots_reach_dev_dirs
 run_test "wizard rejects equal project roots" test_wizard_rejects_equal_project_roots
+run_test "wizard resolves a symlinked root to its physical path" test_wizard_resolves_a_symlinked_root_to_its_physical_path
+run_test "wizard resolves a not-yet-created root through a symlinked ancestor" test_wizard_resolves_a_not_yet_created_root_through_a_symlinked_ancestor
 run_test "wizard warns but accepts a root outside HOME" test_wizard_warns_but_accepts_a_root_outside_home
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect

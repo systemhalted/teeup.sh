@@ -170,15 +170,43 @@ _wizard_valid_optional_email() {
   _wizard_valid_email "$1"
 }
 
-# _wizard_valid_dir <candidate> [other_dir] -> prints the resolved absolute
-# path. Accepts ~/…, an absolute path, or a bare name (relative to $HOME, so
-# "Work" and "Workspaces/Work" both resolve under it); rejects a newline and
-# rejects resolving to the same directory as <other_dir> (the two project
-# roots must be different); warns, but does not reject, a root outside
-# $HOME -- teeup does not require the roots to live there, it just always has
-# before now. No `local` avoided here (unlike git_quote elsewhere): this
-# function runs inside bootstrap's own process, which is a normal function
-# call context.
+# _wizard_resolve_physical <abs_path> -> the physical (symlink-resolved) form
+# of <abs_path>. git resolves symlinks in a repository's gitdir before
+# matching it against `includeIf "gitdir:…"`, so a root answered as a symlink
+# (or reached through one) would otherwise never match the pattern teeup
+# writes for it. `cd -P` plus `pwd -P` is the bash-3.2-safe idiom (no
+# `readlink -f` on macOS), but it only works on a path that already exists;
+# the root does not, on a fresh machine (dev-dirs has not run yet), so the
+# deepest existing ancestor is resolved and the still-missing tail is
+# appended back on unchanged (it has no symlink of its own to resolve, since
+# nothing has created it yet).
+_wizard_resolve_physical() {
+  local existing="$1" rest="" resolved
+  while [[ ! -d "$existing" ]]; do
+    case "$existing" in
+      */*) rest="${existing##*/}${rest:+/$rest}"; existing="${existing%/*}" ;;
+      *) rest="$existing${rest:+/$rest}"; existing="" ;;
+    esac
+    [[ -n "$existing" ]] || existing="/"
+  done
+  resolved="$(cd -P -- "$existing" 2>/dev/null && pwd -P)" || resolved="$existing"
+  if [[ -n "$rest" ]]; then
+    printf '%s/%s\n' "$resolved" "$rest"
+  else
+    printf '%s\n' "$resolved"
+  fi
+}
+
+# _wizard_valid_dir <candidate> [other_dir] -> prints the resolved absolute,
+# symlink-resolved (physical) path. Accepts ~/…, an absolute path, or a bare
+# name (relative to $HOME, so "Work" and "Workspaces/Work" both resolve under
+# it); rejects a newline and rejects resolving to the same directory as
+# <other_dir> (the two project roots must be different, compared as physical
+# paths so a symlink alias of one cannot slip past the check); warns, but
+# does not reject, a root outside $HOME -- teeup does not require the roots
+# to live there, it just always has before now. No `local` avoided here
+# (unlike git_quote elsewhere): this function runs inside bootstrap's own
+# process, which is a normal function call context.
 _wizard_valid_dir() {
   local v="$1" other="${2:-}" abs
   case "$v" in
@@ -197,6 +225,7 @@ _wizard_valid_dir() {
     warn "A directory is required."
     return 1
   fi
+  abs="$(_wizard_resolve_physical "$abs")"
   if [[ -n "$other" && "$abs" == "$other" ]]; then
     warn "'$abs' is already the other project root; the two must be different directories."
     return 1

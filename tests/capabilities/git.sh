@@ -174,6 +174,39 @@ test_work_identity_resolves_through_the_generated_includeif() {
   cleanup_test_env
 }
 
+test_configure_a_physical_root_matches_both_through_the_symlink_and_the_real_path() {
+  setup
+  # F3 review fix: git resolves symlinks in a repository's gitdir before
+  # matching includeIf "gitdir:...". The wizard is what resolves an answered
+  # symlink to its physical path before it ever reaches here (proved
+  # directly in tests/bootstrap.sh); this proves the other half with the
+  # real git binary, the way the review did "isolated, outside teeup": once
+  # the physical path is what's on file, the generated pattern matches a
+  # repo reached either through the symlink or through the real path.
+  mkdir -p "$TEST_HOME/RealWork"
+  ln -s "$TEST_HOME/RealWork" "$TEST_HOME/LinkedWork"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  {
+    printf 'TEEUP_NAME="Ada Lovelace"\n'
+    printf 'TEEUP_EMAIL="ada@example.com"\n'
+    printf 'TEEUP_WORK_EMAIL="ada@corp.example"\n'
+    printf 'TEEUP_WORK_DIR="%s"\n' "$TEST_HOME/RealWork"
+  } > "$TEST_HOME/.config/teeup/answers"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local generated
+  generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
+  assert_contains "$generated" 'includeIf "gitdir:~/RealWork/"' || return 1
+  local cfg="$TEST_HOME/.config/git/config"
+  mkdir -p "$TEST_HOME/RealWork/repo"
+  (cd "$TEST_HOME/RealWork/repo" && command -p git init -q)
+  local via_symlink via_real
+  via_symlink="$(cd "$TEST_HOME/LinkedWork/repo" && GIT_CONFIG_GLOBAL="$cfg" command -p git config --get user.email)"
+  via_real="$(cd "$TEST_HOME/RealWork/repo" && GIT_CONFIG_GLOBAL="$cfg" command -p git config --get user.email)"
+  assert_equals "ada@corp.example" "$via_symlink" "resolved through the symlink" || return 1
+  assert_equals "ada@corp.example" "$via_real" "resolved through the real path" || return 1
+  cleanup_test_env
+}
+
 test_signing_and_delta_are_enabled_once_they_exist() {
   setup
   export TEEUP_TEST_MISSING="lazygit emacsclient"
@@ -486,6 +519,7 @@ run_test "configure ships the config and the editor" test_configure_ships_the_co
 run_test "configure custom work dir lands in includeIf and identity message" test_configure_custom_work_dir_lands_in_includeif_and_identity_message
 run_test "configure a root with a space survives" test_configure_a_root_with_a_space_survives
 run_test "work identity resolves through the generated includeIf" test_work_identity_resolves_through_the_generated_includeif
+run_test "a physical root matches both through the symlink and the real path" test_configure_a_physical_root_matches_both_through_the_symlink_and_the_real_path
 run_test "signing and delta are enabled once they exist" test_signing_and_delta_are_enabled_once_they_exist
 run_test "signing stays off with a work email and no work key" test_signing_stays_off_with_a_work_email_and_no_work_key
 run_test "signing stays off when a private key is missing" test_signing_stays_off_when_a_private_key_is_missing
