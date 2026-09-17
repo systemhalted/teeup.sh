@@ -77,9 +77,12 @@ test_configure_is_idempotent() {
 
 test_configure_dry_run_writes_nothing() {
   setup
-  DRY_RUN=true "$TEEUP" configure teeup-runtime >/dev/null
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure teeup-runtime)"
   [[ ! -e "$TEST_HOME/.config/teeup/env" ]] || { echo "env written in dry run"; return 1; }
   [[ ! -e "$TEST_HOME/.local/bin/teeup" ]] || { echo "link made in dry run"; return 1; }
+  # F1: a dry run must never claim the link was made.
+  assert_not_contains "$out" "Linked $TEST_HOME/.local/bin/teeup" || return 1
   cleanup_test_env
 }
 

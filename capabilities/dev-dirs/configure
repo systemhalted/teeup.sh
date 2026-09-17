@@ -6,6 +6,6 @@ for d in "$HOME/Work" "$HOME/Personal"; do
     log "Already present: $d"
   else
     run_cmd mkdir -p "$d"
-    ok "Created $d"
+    ok_unless_dry "Created $d"
   fi
 done

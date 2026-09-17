@@ -130,6 +130,17 @@ test_configure_reports_the_keychain_is_usable() {
   cleanup_test_env
 }
 
+test_configure_dry_run_does_not_claim_the_keychain_is_ready() {
+  setup
+  mock_security_store
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure secrets)"
+  # F1: the Keychain check is a read, not a mutation, but the "ready" message
+  # implies a verification that a dry run has no business claiming.
+  assert_not_contains "$out" "Keychain service 'teeup' is ready" || return 1
+  cleanup_test_env
+}
+
 test_configure_twice_is_a_no_op() {
   setup
   mock_security_store
@@ -232,6 +243,7 @@ run_test "set never prints the value in dry run" test_set_never_prints_the_value
 run_test "set refuses an empty value" test_set_refuses_an_empty_value
 run_test "usage without a name" test_usage_without_a_name
 run_test "configure reports the keychain is usable" test_configure_reports_the_keychain_is_usable
+run_test "configure dry run does not claim the keychain is ready" test_configure_dry_run_does_not_claim_the_keychain_is_ready
 run_test "configure twice is a no-op" test_configure_twice_is_a_no_op
 run_test "rejects invalid secret names" test_rejects_invalid_secret_names
 run_test "set never leaks via trace" test_set_never_leaks_via_trace

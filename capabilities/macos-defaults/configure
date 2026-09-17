@@ -39,4 +39,4 @@ defaults_write com.apple.screencapture location -string "$SHOTS"
 # process is not running, which must not abort the script.
 run_cmd killall Finder || true
 run_cmd killall Dock || true
-ok "macOS preferences applied. KeyRepeat and InitialKeyRepeat take effect after the next login."
+ok_unless_dry "macOS preferences applied. KeyRepeat and InitialKeyRepeat take effect after the next login."

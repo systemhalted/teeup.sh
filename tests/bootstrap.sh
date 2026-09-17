@@ -321,6 +321,18 @@ test_core_failure_aborts() {
   cleanup_test_env
 }
 
+test_dry_run_summary_is_a_preview_not_a_status_suggestion() {
+  setup
+  # F1: the closing summary used to tell the user to run `teeup status`, which
+  # does not exist after a dry run (nothing was installed or linked).
+  local out
+  out="$("$BOOT" --dry-run <<<"$WIZARD_INPUT")"
+  assert_contains "$out" "Bootstrap finished" || return 1
+  assert_contains "$out" "This was a dry run: nothing was installed or written." || return 1
+  assert_not_contains "$out" "teeup status" || return 1
+  cleanup_test_env
+}
+
 test_dry_run_answers_take_effect() {
   setup
   local out wizard_no_daily
@@ -349,5 +361,6 @@ run_test "the wizard does not ask for a pinned theme" test_wizard_does_not_ask_f
 run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tier
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
 run_test "core failure aborts" test_core_failure_aborts
+run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect
 print_summary

@@ -100,6 +100,21 @@ test_user_config_dir_follows_xdg() {
   cleanup_test_env
 }
 
+# F1: a dry run must never claim a mutation happened. ok_unless_dry is the one
+# mechanism every affected capability uses; this is the ground-truth test for
+# it, both halves: silent under DRY_RUN=true, and identical to plain `ok` on a
+# real run (the wording a real run prints today must not change).
+test_ok_unless_dry_is_silent_when_dry_and_unchanged_otherwise() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local out
+  out="$(DRY_RUN=true ok_unless_dry "Installed ripgrep (Homebrew)")"
+  assert_equals "" "$out" "a dry run must print nothing, not a false claim" || return 1
+  out="$(DRY_RUN=false ok_unless_dry "Installed ripgrep (Homebrew)")"
+  assert_equals "$(ok "Installed ripgrep (Homebrew)")" "$out" "real-run wording must match plain ok exactly" || return 1
+  cleanup_test_env
+}
+
 echo "lib/core.sh"
 run_test "paths default to XDG under HOME" test_paths_default_to_xdg
 run_test "run_cmd dry run prints and skips" test_run_cmd_dry_run_prints_and_skips
@@ -111,4 +126,5 @@ run_test "macos_major and arch" test_macos_major_and_arch_use_mocks
 run_test "format_duration" test_format_duration
 run_test "have honours TEEUP_TEST_MISSING hook" test_have_honours_test_missing_hook
 run_test "user_config_dir follows XDG" test_user_config_dir_follows_xdg
+run_test "ok_unless_dry is silent when dry and unchanged otherwise" test_ok_unless_dry_is_silent_when_dry_and_unchanged_otherwise
 print_summary
