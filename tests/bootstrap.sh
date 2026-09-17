@@ -393,6 +393,15 @@ test_wizard_email_validator_still_accepts_a_normal_address() {
   assert_equals "ada@example.com" "$(_wizard_valid_email "ada@example.com")" || return 1
   cleanup_test_env
 }
+
+# Minor review fix: _wizard_valid_name checked a trimmed value for
+# emptiness but printed (and so stored) the original, untrimmed candidate.
+test_wizard_name_validator_stores_the_trimmed_value() {
+  setup
+  source_wizard_validators
+  assert_equals "Ada Lovelace" "$(_wizard_valid_name "  Ada Lovelace  ")" || return 1
+  cleanup_test_env
+}
 test_dry_run_summary_is_a_preview_not_a_status_suggestion() {
   setup
   # F1: the closing summary used to tell the user to run `teeup status`, which
@@ -439,6 +448,7 @@ run_test "valid wizard answers pass validation on the first try" test_valid_wiza
 run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
 run_test "wizard email validator rejects a trailing dot" test_wizard_email_validator_rejects_a_trailing_dot
 run_test "wizard email validator still accepts a normal address" test_wizard_email_validator_still_accepts_a_normal_address
+run_test "wizard name validator stores the trimmed value" test_wizard_name_validator_stores_the_trimmed_value
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect
 print_summary
