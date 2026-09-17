@@ -106,11 +106,15 @@ WIZARD_MAX_TRIES=3
 # from what the user actually typed rather than snapping back to the
 # original default.
 wizard_ask() {
-  local prompt="$1" default="$2" validator="$3" answer try
+  local prompt="$1" default="$2" validator="$3" answer validated try
   for ((try = 1; try <= WIZARD_MAX_TRIES; try++)); do
     answer="$(ui_input "$prompt" "$default")"
-    if "$validator" "$answer"; then
-      printf '%s\n' "$answer"
+    # Validators print the value they accepted (trimmed, normalised), so the
+    # caller records what was validated rather than what was typed. Capturing
+    # it here also keeps a validator's own output from leaking into this
+    # function's stdout, which would hand the caller two lines.
+    if validated="$("$validator" "$answer")"; then
+      printf '%s\n' "$validated"
       return 0
     fi
     default="$answer"
@@ -133,9 +137,10 @@ _wizard_valid_name() {
   return 0
 }
 
-# _wizard_valid_email <candidate> -> 0 for something@something.tld, no spaces.
-# Deliberately simple, not RFC 5322: it exists to catch the two shapes the
-# dry run actually hit (an empty answer, and a filesystem path typed into the
+# _wizard_valid_email <candidate> -> prints <candidate> for
+# something@something.tld, no spaces, else warns and fails. Deliberately
+# simple, not RFC 5322: it exists to catch the two shapes the dry run
+# actually hit (an empty answer, and a filesystem path typed into the
 # field), not to validate every edge case.
 _wizard_valid_email() {
   local v="$1"
@@ -154,12 +159,13 @@ _wizard_valid_email() {
     warn "'$v' does not look like an email address; expected something@something.tld"
     return 1
   fi
+  printf '%s\n' "$v"
   return 0
 }
 
-# _wizard_valid_optional_email <candidate> -> empty keeps today's "one
-# identity for both roots" behaviour; anything else must pass the same check
-# as the personal email.
+# _wizard_valid_optional_email <candidate> -> prints nothing for an empty
+# candidate (keeps today's "one identity for both roots" behaviour); anything
+# else must pass, and print, the same as the personal email.
 _wizard_valid_optional_email() {
   [[ -z "$1" ]] && return 0
   _wizard_valid_email "$1"
