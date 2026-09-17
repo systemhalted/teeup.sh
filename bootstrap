@@ -150,6 +150,10 @@ _wizard_valid_email() {
   fi
   case "$v" in
     *[[:space:]]*) warn "'$v' contains a space; expected something@something.tld"; return 1 ;;
+    # The regex below's final group matches an internal dot too, so
+    # "ada@example.com." would otherwise pass with the trailing dot folded
+    # into the "tld" group.
+    *.) warn "'$v' ends with a dot; expected something@something.tld"; return 1 ;;
   esac
   if ! [[ "$v" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
     warn "'$v' does not look like an email address; expected something@something.tld"

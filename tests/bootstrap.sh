@@ -459,6 +459,26 @@ test_wizard_resolves_a_not_yet_created_root_through_a_symlinked_ancestor() {
   cleanup_test_env
 }
 
+# Minor review fix: the final "tld" group in the email regex also matches an
+# internal dot, so "ada@example.com." (a trailing dot) satisfied
+# <domain>.<tld> with the dot absorbed into that group.
+test_wizard_email_validator_rejects_a_trailing_dot() {
+  setup
+  source_wizard_validators
+  local rc=0 out
+  out="$(_wizard_valid_email "ada@example.com." 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "ends with a dot" || return 1
+  cleanup_test_env
+}
+
+test_wizard_email_validator_still_accepts_a_normal_address() {
+  setup
+  source_wizard_validators
+  assert_equals "ada@example.com" "$(_wizard_valid_email "ada@example.com")" || return 1
+  cleanup_test_env
+}
+
 test_wizard_warns_but_accepts_a_root_outside_home() {
   setup
   local out
@@ -518,6 +538,8 @@ run_test "custom project roots reach dev-dirs" test_custom_project_roots_reach_d
 run_test "wizard rejects equal project roots" test_wizard_rejects_equal_project_roots
 run_test "wizard resolves a symlinked root to its physical path" test_wizard_resolves_a_symlinked_root_to_its_physical_path
 run_test "wizard resolves a not-yet-created root through a symlinked ancestor" test_wizard_resolves_a_not_yet_created_root_through_a_symlinked_ancestor
+run_test "wizard email validator rejects a trailing dot" test_wizard_email_validator_rejects_a_trailing_dot
+run_test "wizard email validator still accepts a normal address" test_wizard_email_validator_still_accepts_a_normal_address
 run_test "wizard warns but accepts a root outside HOME" test_wizard_warns_but_accepts_a_root_outside_home
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect
