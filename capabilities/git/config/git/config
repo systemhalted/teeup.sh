@@ -113,12 +113,11 @@
 	changed = yellow bold
 	untracked = red bold
 
-# Identity by directory (spec section 8). Both identities live on every
-# machine; where the repository sits decides which one applies.
-[includeIf "gitdir:~/Personal/"]
-	path = ~/.config/git/identity-personal
-[includeIf "gitdir:~/Work/"]
-	path = ~/.config/git/identity-work
+# Identity by directory (spec section 8) lives in teeup-generated, included
+# above, not here: the two roots are wizard answers (identity_dir,
+# lib/answers.sh), and this file is copy-once and yours to edit, so a
+# generated file is what a changed root can actually update on a later
+# `teeup configure git`.
 
 # Untracked machine-local overrides, included last so they win over everything
 # above. Create it yourself; teeup never writes it.

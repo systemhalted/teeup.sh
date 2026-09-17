@@ -87,22 +87,90 @@ test_configure_without_answers_warns_and_writes_no_identity() {
 test_configure_ships_the_config_and_the_editor() {
   setup
   seed_answers ""
-  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
   local body
   body="$(cat "$TEST_HOME/.config/git/config")"
-  assert_contains "$body" 'includeIf "gitdir:~/Work/"' || return 1
-  assert_contains "$body" 'includeIf "gitdir:~/Personal/"' || return 1
   assert_contains "$body" "pager = delta" || return 1
   assert_contains "$body" "format = ssh" || return 1
   assert_contains "$body" "defaultBranch = main" || return 1
   local generated
   generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
+  # F3: the includeIf blocks follow the answered project roots, so they are
+  # generated rather than shipped -- they live in teeup-generated now, not in
+  # the copy-once config. With no TEEUP_PERSONAL_DIR/TEEUP_WORK_DIR answered,
+  # they (and the "for both" summary line) must reproduce today's paths byte
+  # for byte.
+  assert_contains "$generated" 'includeIf "gitdir:~/Work/"' || return 1
+  assert_contains "$generated" 'includeIf "gitdir:~/Personal/"' || return 1
+  assert_contains "$out" "git identity: ada@example.com for both ~/Personal and ~/Work (no work email set)" || return 1
   assert_contains "$generated" "editor = vim" || return 1
   # delta is hidden by TEEUP_TEST_MISSING and no key exists yet, so the
   # generated include has to switch both dangerous defaults back off.
   assert_contains "$generated" "pager = less" || return 1
   assert_contains "$generated" "diffFilter = cat" || return 1
   assert_contains "$generated" "gpgsign = false" || return 1
+  cleanup_test_env
+}
+
+test_configure_custom_work_dir_lands_in_includeif_and_identity_message() {
+  setup
+  mkdir -p "$TEST_HOME/.config/teeup"
+  {
+    printf 'TEEUP_NAME="Ada Lovelace"\n'
+    printf 'TEEUP_EMAIL="ada@example.com"\n'
+    printf 'TEEUP_WORK_EMAIL=""\n'
+    printf 'TEEUP_WORK_DIR="%s"\n' "$TEST_HOME/Workspaces/Work"
+  } > "$TEST_HOME/.config/teeup/answers"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  local generated
+  generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
+  assert_contains "$generated" 'includeIf "gitdir:~/Workspaces/Work/"' || return 1
+  assert_contains "$generated" "path = \"$TEST_HOME/.config/git/identity-work\"" || return 1
+  # The default personal root is unaffected and still renders in tilde form.
+  assert_contains "$generated" 'includeIf "gitdir:~/Personal/"' || return 1
+  assert_contains "$out" "git identity: ada@example.com for both ~/Personal and ~/Workspaces/Work (no work email set)" || return 1
+  cleanup_test_env
+}
+
+test_configure_a_root_with_a_space_survives() {
+  setup
+  mkdir -p "$TEST_HOME/.config/teeup"
+  {
+    printf 'TEEUP_NAME="Ada Lovelace"\n'
+    printf 'TEEUP_EMAIL="ada@example.com"\n'
+    printf 'TEEUP_WORK_EMAIL="ada@corp.example"\n'
+    printf 'TEEUP_WORK_DIR="%s"\n' "$TEST_HOME/My Work"
+  } > "$TEST_HOME/.config/teeup/answers"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local cfg="$TEST_HOME/.config/git/config"
+  # A distinct work email, not the default identity's personal email: the
+  # only way this resolves correctly is if the space-quoted includeIf
+  # actually matched, since the default (top-of-file) include is personal.
+  mkdir -p "$TEST_HOME/My Work/repo"
+  (cd "$TEST_HOME/My Work/repo" && command -p git init -q)
+  local loaded_email
+  loaded_email="$(cd "$TEST_HOME/My Work/repo" && GIT_CONFIG_GLOBAL="$cfg" command -p git config --get user.email)"
+  assert_equals "ada@corp.example" "$loaded_email" || return 1
+  cleanup_test_env
+}
+
+test_work_identity_resolves_through_the_generated_includeif() {
+  setup
+  seed_answers "ada@corp.example"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local cfg="$TEST_HOME/.config/git/config"
+  # F3 moved the includeIf blocks into teeup-generated, which is included
+  # earlier in $cfg than the old shipped position (right after the [core]
+  # pager default rather than near the very end). The default identity
+  # include at the top of $cfg must still lose to this one for a repo under
+  # ~/Work, exactly as it did before the move.
+  mkdir -p "$TEST_HOME/Work/repo"
+  (cd "$TEST_HOME/Work/repo" && command -p git init -q)
+  local loaded_email
+  loaded_email="$(cd "$TEST_HOME/Work/repo" && GIT_CONFIG_GLOBAL="$cfg" command -p git config --get user.email)"
+  assert_equals "ada@corp.example" "$loaded_email" || return 1
   cleanup_test_env
 }
 
@@ -237,9 +305,14 @@ test_configure_renders_include_paths_for_a_custom_xdg_config_home() {
   assert_contains "$body" "path = \"$TEST_HOME/xdg/git/teeup-generated\"" || return 1
   assert_contains "$body" "path = \"$TEST_HOME/xdg/git/local\"" || return 1
   # command -p bypasses the mocked `git` on PATH and finds the real binary,
-  # which is what actually has to parse the rendered includeIf path.
+  # which is what actually has to parse the rendered includeIf path. F3 moved
+  # the includeIf block into teeup-generated, a nested include from $cfg's own
+  # point of view, so --includes is required for --file to follow it (off by
+  # default for --file, per git-config(1)) -- a real `git config` inside a
+  # repo (no --file) follows includes by default, so this is a test-harness
+  # detail, not a functional gap.
   local resolved
-  resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Work/.path')"
+  resolved="$(command -p git config --file "$cfg" --includes --get-all 'includeIf.gitdir:~/Work/.path')"
   assert_equals "$TEST_HOME/xdg/git/identity-work" "$resolved" || return 1
   cleanup_test_env
 }
@@ -259,8 +332,10 @@ test_configure_renders_include_paths_with_xdg_config_home_metacharacters() {
   assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/identity-personal\"" || return 1
   assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/teeup-generated\"" || return 1
   assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/local\"" || return 1
+  # --includes: the includeIf block is now inside teeup-generated, a nested
+  # include from $cfg's point of view (see the comment in the previous test).
   local resolved
-  resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Work/.path')"
+  resolved="$(command -p git config --file "$cfg" --includes --get-all 'includeIf.gitdir:~/Work/.path')"
   assert_equals "$XDG_CONFIG_HOME/git/identity-work" "$resolved" || return 1
   cleanup_test_env
 }
@@ -296,9 +371,11 @@ test_configure_quotes_include_paths_with_hash_and_semicolon_in_xdg_config_home()
   assert_contains "$includes" "$XDG_CONFIG_HOME/git/identity-personal" || return 1
   assert_contains "$includes" "$XDG_CONFIG_HOME/git/teeup-generated" || return 1
   assert_contains "$includes" "$XDG_CONFIG_HOME/git/local" || return 1
+  # --includes: the includeIf blocks are now inside teeup-generated, a nested
+  # include from $cfg's point of view (see the comment further up this file).
   local work_resolved personal_resolved
-  work_resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Work/.path')"
-  personal_resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Personal/.path')"
+  work_resolved="$(command -p git config --file "$cfg" --includes --get-all 'includeIf.gitdir:~/Work/.path')"
+  personal_resolved="$(command -p git config --file "$cfg" --includes --get-all 'includeIf.gitdir:~/Personal/.path')"
   assert_equals "$XDG_CONFIG_HOME/git/identity-work" "$work_resolved" || return 1
   assert_equals "$XDG_CONFIG_HOME/git/identity-personal" "$personal_resolved" || return 1
   # Prove the identity actually loads, not just that the path string is
@@ -361,6 +438,9 @@ run_test "work identity falls back to the personal email" test_work_identity_fal
 run_test "work identity falls back to the personal signingkey" test_work_identity_falls_back_to_the_personal_signingkey
 run_test "configure without answers warns and writes no identity" test_configure_without_answers_warns_and_writes_no_identity
 run_test "configure ships the config and the editor" test_configure_ships_the_config_and_the_editor
+run_test "configure custom work dir lands in includeIf and identity message" test_configure_custom_work_dir_lands_in_includeif_and_identity_message
+run_test "configure a root with a space survives" test_configure_a_root_with_a_space_survives
+run_test "work identity resolves through the generated includeIf" test_work_identity_resolves_through_the_generated_includeif
 run_test "signing and delta are enabled once they exist" test_signing_and_delta_are_enabled_once_they_exist
 run_test "signing stays off with a work email and no work key" test_signing_stays_off_with_a_work_email_and_no_work_key
 run_test "signing stays off when a private key is missing" test_signing_stays_off_when_a_private_key_is_missing

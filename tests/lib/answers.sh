@@ -181,6 +181,44 @@ work" "$(identity_list)" || return 1
   cleanup_test_env
 }
 
+# F3: the identity roots become answers. identity_dir mirrors identity_email
+# and identity_key -- a machine that never answered keeps today's hardcoded
+# default.
+test_identity_dir_defaults_to_home_work_and_personal() {
+  setup
+  answers_load
+  assert_equals "$HOME/Personal" "$(identity_dir personal)" || return 1
+  assert_equals "$HOME/Work" "$(identity_dir work)" || return 1
+  cleanup_test_env
+}
+
+test_identity_dir_honours_the_answers_file() {
+  setup
+  answers_set TEEUP_PERSONAL_DIR "$HOME/MyPersonal"
+  answers_set TEEUP_WORK_DIR "$HOME/Workspaces/Work"
+  answers_load
+  assert_equals "$HOME/MyPersonal" "$(identity_dir personal)" || return 1
+  assert_equals "$HOME/Workspaces/Work" "$(identity_dir work)" || return 1
+  cleanup_test_env
+}
+
+test_identity_dir_honours_machine_file_precedence() {
+  setup
+  answers_set TEEUP_WORK_DIR "$HOME/Work"
+  printf 'TEEUP_WORK_DIR="%s"\n' "$HOME/Workspaces/Work" > "$TEEUP_MACHINES_DIR/testmac.conf"
+  answers_load
+  assert_equals "$HOME/Workspaces/Work" "$(identity_dir work)" "the machine file must win over the answers file" || return 1
+  cleanup_test_env
+}
+
+test_identity_dir_rejects_an_unknown_identity() {
+  setup
+  local rc=0
+  ( identity_dir nope ) >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" || return 1
+  cleanup_test_env
+}
+
 echo "lib/answers.sh"
 run_test "set then get" test_set_then_get
 run_test "set replaces existing key" test_set_replaces_existing_key
@@ -197,4 +235,8 @@ run_test "set replaces only the exact key" test_set_replaces_only_the_exact_key
 run_test "set preserves a final line with no trailing newline" test_set_preserves_a_final_line_with_no_trailing_newline
 run_test "identity helpers without work email" test_identity_helpers_without_work_email
 run_test "identity helpers with work email" test_identity_helpers_with_work_email
+run_test "identity_dir defaults to HOME/Work and HOME/Personal" test_identity_dir_defaults_to_home_work_and_personal
+run_test "identity_dir honours the answers file" test_identity_dir_honours_the_answers_file
+run_test "identity_dir honours machine file precedence" test_identity_dir_honours_machine_file_precedence
+run_test "identity_dir rejects an unknown identity" test_identity_dir_rejects_an_unknown_identity
 print_summary

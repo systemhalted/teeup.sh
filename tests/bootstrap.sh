@@ -7,11 +7,13 @@ BOOT="$TEEUP_PATH/bootstrap"
 # Answers piped to the plain-read prompts, one per prompt. The package manager
 # is asked first and on its own, before step 2 installs one; the rest is the
 # wizard in step 4:
-# package manager choice, name, email, work email, theme choice, daily confirm.
+# package manager choice, name, email, work email, personal dir, work dir,
+# theme choice, daily confirm.
 # "1" is the detected backend (Homebrew on the mocked modern Mac), "2" the
 # other one; for the theme choice, "1" is the first theme themes/ ships, i.e.
-# catppuccin.
-WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n\n1\ny\n'
+# catppuccin. The two empty lines after the work email accept the default
+# personal and work project roots (F3).
+WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n\n\n\n1\ny\n'
 
 setup() {
   setup_test_env
@@ -144,7 +146,7 @@ test_choosing_macports_runs_the_macports_path() {
   # after Homebrew had already been installed and recorded.
   mock_command port 0 ""
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'2\nAda Lovelace\nada@example.com\n\n1\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'2\nAda Lovelace\nada@example.com\n\n\n\n1\ny\n')"
   assert_contains "$out" "Would execute: sudo port selfupdate" || return 1
   assert_not_contains "$out" "Homebrew/install/HEAD/install.sh" || return 1
   assert_contains "$out" "Would set TEEUP_PACKAGE_MANAGER" || return 1
@@ -244,7 +246,7 @@ test_reconfigure_does_not_ask_for_a_pinned_package_manager() {
   printf 'TEEUP_NAME="Ada"\n' > "$TEST_HOME/.config/teeup/answers"
   # The wizard input minus the package-manager line: it must not be asked.
   local out
-  out="$("$BOOT" --dry-run --reconfigure 2>&1 <<<$'Ada Lovelace\nada@example.com\n\n1\ny\n')"
+  out="$("$BOOT" --dry-run --reconfigure 2>&1 <<<$'Ada Lovelace\nada@example.com\n\n\n\n1\ny\n')"
   assert_contains "$out" "Package manager is pinned to homebrew by $TEST_HOME/machines/testmac.conf" || return 1
   assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Package manager')" || return 1
   assert_not_contains "$out" "Would set TEEUP_PACKAGE_MANAGER" || return 1
@@ -264,7 +266,7 @@ test_an_empty_machine_pin_is_still_a_pin() {
   mkdir -p "$TEST_HOME/machines"
   printf 'TEEUP_PACKAGE_MANAGER=""\n' > "$TEST_HOME/machines/testmac.conf"
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'Ada Lovelace\nada@example.com\n\n1\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'Ada Lovelace\nada@example.com\n\n\n\n1\ny\n')"
   assert_contains "$out" "Package manager is pinned to auto-detection by $TEST_HOME/machines/testmac.conf" || return 1
   assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Package manager')" || return 1
   # The package-manager capability still records the backend it detected (an
@@ -283,7 +285,7 @@ test_wizard_does_not_ask_for_a_pinned_theme() {
   printf 'TEEUP_THEME="catppuccin"\n' > "$TEST_HOME/machines/testmac.conf"
   # The wizard input minus the theme line.
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\n\n\ny\n')"
   assert_contains "$out" "Theme is pinned to catppuccin by $TEST_HOME/machines/testmac.conf; not asking." || return 1
   assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Theme')" "the theme question was asked" || return 1
   assert_not_contains "$out" "Would set TEEUP_THEME" || return 1
@@ -329,7 +331,7 @@ test_empty_personal_email_reprompts_and_second_answer_is_recorded() {
   # (files.sh swallows the rendered content, but this message is not one of
   # them), so it is the observable proof the retried answer was recorded.
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\n\nada@example.com\n\n1\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\n\nada@example.com\n\n\n\n1\ny\n')"
   assert_contains "$out" "email address is required" || return 1
   assert_contains "$out" "git identity: ada@example.com for both ~/Personal and ~/Work" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
@@ -342,7 +344,7 @@ test_a_path_shaped_work_email_reprompts() {
   # accepted outright and would have become both the git identity address and
   # the -C comment of the work SSH key.
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n~/Workspaces/Work\nada@corp.example\n1\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n~/Workspaces/Work\nada@corp.example\n\n\n1\ny\n')"
   assert_contains "$out" "does not look like an email address" || return 1
   assert_contains "$out" "git identities: personal (ada@example.com), work (ada@corp.example)" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
@@ -373,6 +375,56 @@ test_the_retry_limit_dies_with_a_clear_message() {
   cleanup_test_env
 }
 
+test_personal_email_prompt_names_the_answered_personal_root() {
+  setup
+  # F3: the email prompts must name the answered root instead of the literal
+  # "~/Personal" / "~/Work". On a first run there is no prior answer, so the
+  # prompt falls back to identity_dir's own default -- the absolute path,
+  # which under this test's mocked $HOME is $TEST_HOME/Personal.
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_contains "$out" "Personal email (git identity under $TEST_HOME/Personal)" || return 1
+  assert_contains "$out" "Work email (git identity under $TEST_HOME/Work" || return 1
+  cleanup_test_env
+}
+
+test_custom_project_roots_reach_dev_dirs_and_git() {
+  setup
+  # The wizard's own two new questions (F3): a custom personal and work root
+  # must be created by dev-dirs and named in the git identity message.
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\nMyPersonal\nWorkspaces/Work\n1\ny\n')"
+  assert_contains "$out" "Would execute: mkdir -p $TEST_HOME/MyPersonal" || return 1
+  assert_contains "$out" "Would execute: mkdir -p $TEST_HOME/Workspaces/Work" || return 1
+  assert_contains "$out" "git identity: ada@example.com for both ~/MyPersonal and ~/Workspaces/Work" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
+test_wizard_rejects_equal_project_roots() {
+  setup
+  # A path shaped answer that resolves to the same directory as the personal
+  # root must re-prompt rather than leave both identities pointed at the same
+  # place. "Personal" (bare) and "~/Personal" both resolve to the same
+  # absolute path, so this also proves the equality check compares resolved,
+  # not raw, values.
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\nPersonal\n~/Personal\nWork\n1\ny\n')"
+  assert_contains "$out" "already the other project root" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
+test_wizard_warns_but_accepts_a_root_outside_home() {
+  setup
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\n/opt/personal\nWork\n1\ny\n')"
+  assert_contains "$out" "outside \$HOME" || return 1
+  assert_contains "$out" "Would execute: mkdir -p /opt/personal" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
 test_dry_run_summary_is_a_preview_not_a_status_suggestion() {
   setup
   # F1: the closing summary used to tell the user to run `teeup status`, which
@@ -388,7 +440,7 @@ test_dry_run_summary_is_a_preview_not_a_status_suggestion() {
 test_dry_run_answers_take_effect() {
   setup
   local out wizard_no_daily
-  wizard_no_daily=$'1\nAda Lovelace\nada@example.com\n\n1\nn\n'
+  wizard_no_daily=$'1\nAda Lovelace\nada@example.com\n\n\n\n1\nn\n'
   out="$("$BOOT" --dry-run <<<"$wizard_no_daily")"
   assert_contains "$out" "Skipping the daily tier (TEEUP_DAILY=no)" || return 1
   cleanup_test_env
@@ -417,6 +469,10 @@ run_test "empty personal email re-prompts and the second answer is recorded" tes
 run_test "a path-shaped work email re-prompts" test_a_path_shaped_work_email_reprompts
 run_test "valid wizard answers pass validation on the first try" test_valid_wizard_answers_pass_validation_on_the_first_try
 run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
+run_test "personal email prompt names the answered personal root" test_personal_email_prompt_names_the_answered_personal_root
+run_test "custom project roots reach dev-dirs and git" test_custom_project_roots_reach_dev_dirs_and_git
+run_test "wizard rejects equal project roots" test_wizard_rejects_equal_project_roots
+run_test "wizard warns but accepts a root outside HOME" test_wizard_warns_but_accepts_a_root_outside_home
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect
 print_summary

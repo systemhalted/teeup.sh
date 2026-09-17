@@ -131,3 +131,15 @@ identity_key() {
     *) die "identity_key: unknown identity '$1' (expected personal or work)" ;;
   esac
 }
+
+# identity_dir <personal|work> -> the absolute path of that identity's
+# project root. Honours TEEUP_PERSONAL_DIR / TEEUP_WORK_DIR (a wizard answer
+# or a machine-file override, same precedence as every other answer); a
+# machine that never answered keeps today's hardcoded default.
+identity_dir() {
+  case "$1" in
+    personal) answers_get TEEUP_PERSONAL_DIR "$HOME/Personal" ;;
+    work) answers_get TEEUP_WORK_DIR "$HOME/Work" ;;
+    *) die "identity_dir: unknown identity '$1' (expected personal or work)" ;;
+  esac
+}

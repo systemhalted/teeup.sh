@@ -97,20 +97,24 @@ run_tier() {
 # answers file) would otherwise hang bootstrap instead of failing loudly.
 WIZARD_MAX_TRIES=3
 
-# wizard_ask <prompt> <default> <validator> -> prints the validated answer.
-# Re-prompts on an invalid answer instead of silently accepting it (the F2
-# bug: an empty personal email, or a path typed into the work-email field,
-# both used to sail through). <validator> is called with the candidate on
-# $1; it warns and returns 1 for a bad answer, returns 0 for a good one. The
-# rejected candidate becomes the next prompt's default, so a retry starts
-# from what the user actually typed rather than snapping back to the
-# original default.
+# wizard_ask <prompt> <default> <validator> [validator-args...] -> prints the
+# validated (and possibly normalized) answer. Re-prompts on an invalid answer
+# instead of silently accepting it (the F2 bug: an empty personal email, or a
+# path typed into the work-email field, both used to sail through).
+# <validator> is called as `validator <candidate> [validator-args...]`; on
+# success it prints the value to record (a plain validator just echoes the
+# candidate back, a normalizing one like _wizard_valid_dir prints the
+# resolved form) and returns 0; on failure it warns and returns 1, printing
+# nothing. The rejected candidate becomes the next prompt's default, so a
+# retry starts from what the user actually typed rather than snapping back to
+# the original default.
 wizard_ask() {
-  local prompt="$1" default="$2" validator="$3" answer try
+  local prompt="$1" default="$2" validator="$3" answer normalized try
+  shift 3
   for ((try = 1; try <= WIZARD_MAX_TRIES; try++)); do
     answer="$(ui_input "$prompt" "$default")"
-    if "$validator" "$answer"; then
-      printf '%s\n' "$answer"
+    if normalized="$("$validator" "$answer" "$@")"; then
+      printf '%s\n' "$normalized"
       return 0
     fi
     default="$answer"
@@ -118,9 +122,9 @@ wizard_ask() {
   die "Too many invalid answers for: $prompt. Run ./bootstrap --reconfigure once you have a valid value."
 }
 
-# _wizard_valid_name <candidate> -> 0 once trimmed of leading/trailing blanks
-# it is non-empty, else 1 (warns). bash 3.2-safe: parameter-expansion glob
-# trimming, no extglob.
+# _wizard_valid_name <candidate> -> prints <candidate> once trimmed of
+# leading/trailing blanks it is non-empty, else warns and fails. bash
+# 3.2-safe: parameter-expansion glob trimming, no extglob.
 _wizard_valid_name() {
   local v="$1" trimmed
   trimmed="${v#"${v%%[![:space:]]*}"}"
@@ -129,13 +133,15 @@ _wizard_valid_name() {
     warn "A name cannot be empty."
     return 1
   fi
+  printf '%s\n' "$v"
   return 0
 }
 
-# _wizard_valid_email <candidate> -> 0 for something@something.tld, no spaces.
-# Deliberately simple, not RFC 5322: it exists to catch the two shapes the
-# dry run actually hit (an empty answer, and a filesystem path typed into the
-# field), not to validate every edge case.
+# _wizard_valid_email <candidate> -> prints <candidate> for
+# something@something.tld, no spaces. Deliberately simple, not RFC 5322: it
+# exists to catch the two shapes the dry run actually hit (an empty answer,
+# and a filesystem path typed into the field), not to validate every edge
+# case.
 _wizard_valid_email() {
   local v="$1"
   if [[ -z "$v" ]]; then
@@ -149,6 +155,7 @@ _wizard_valid_email() {
     warn "'$v' does not look like an email address; expected something@something.tld"
     return 1
   fi
+  printf '%s\n' "$v"
   return 0
 }
 
@@ -156,20 +163,72 @@ _wizard_valid_email() {
 # identity for both roots" behaviour; anything else must pass the same check
 # as the personal email.
 _wizard_valid_optional_email() {
-  [[ -z "$1" ]] && return 0
+  if [[ -z "$1" ]]; then
+    printf '%s\n' "$1"
+    return 0
+  fi
   _wizard_valid_email "$1"
+}
+
+# _wizard_valid_dir <candidate> [other_dir] -> prints the resolved absolute
+# path. Accepts ~/…, an absolute path, or a bare name (relative to $HOME, so
+# "Work" and "Workspaces/Work" both resolve under it); rejects a newline and
+# rejects resolving to the same directory as <other_dir> (the two project
+# roots must be different); warns, but does not reject, a root outside
+# $HOME -- teeup does not require the roots to live there, it just always has
+# before now. No `local` avoided here (unlike git_quote elsewhere): this
+# function runs inside bootstrap's own process, which is a normal function
+# call context.
+_wizard_valid_dir() {
+  local v="$1" other="${2:-}" abs
+  case "$v" in
+    *$'\n'*) warn "A directory cannot contain a newline."; return 1 ;;
+  esac
+  # shellcheck disable=SC2088  # both quoted tildes below are literal match
+  # text for the case patterns, not paths the shell is meant to expand;
+  # ${v:2} (not ${v#~/}) drops the two matched characters for the same reason.
+  case "$v" in
+    "~") abs="$HOME" ;;
+    "~/"*) abs="$HOME/${v:2}" ;;
+    /*) abs="$v" ;;
+    *) abs="$HOME/$v" ;;
+  esac
+  if [[ -z "$abs" ]]; then
+    warn "A directory is required."
+    return 1
+  fi
+  if [[ -n "$other" && "$abs" == "$other" ]]; then
+    warn "'$abs' is already the other project root; the two must be different directories."
+    return 1
+  fi
+  case "$abs" in
+    "$HOME"/*|"$HOME") ;;
+    *) warn "'$abs' is outside \$HOME ($HOME)." ;;
+  esac
+  printf '%s\n' "$abs"
+  return 0
 }
 
 # The package manager is NOT asked here: step 2 below installs it, and this
 # wizard runs after step 3. See ask_package_manager.
 wizard() {
-  local name email work_email theme daily themes pinned_theme ask_theme=true
+  local name email work_email personal_dir work_dir theme daily themes pinned_theme ask_theme=true
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
   name="$(wizard_ask "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")" _wizard_valid_name)"
-  email="$(wizard_ask "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)" _wizard_valid_email)"
-  work_email="$(wizard_ask "Work email (git identity under ~/Work, empty for none)" "$(answers_get TEEUP_WORK_EMAIL)" _wizard_valid_optional_email)"
+  # The parenthetical names whatever root is currently on file (a prior
+  # answer, or identity_dir's own default), not a literal "~/Personal" /
+  # "~/Work": the two directory questions below are asked after the emails,
+  # so this run's answer cannot be known yet, but a --reconfigure run's
+  # previous answer can.
+  email="$(wizard_ask "Personal email (git identity under $(identity_dir personal))" "$(answers_get TEEUP_EMAIL)" _wizard_valid_email)"
+  work_email="$(wizard_ask "Work email (git identity under $(identity_dir work), empty for none)" "$(answers_get TEEUP_WORK_EMAIL)" _wizard_valid_optional_email)"
+  # The identity roots themselves (F3). Asked after the emails so a fresh
+  # machine's email prompts can only ever name today's defaults; a
+  # --reconfigure run shows whatever was answered last time.
+  personal_dir="$(wizard_ask "Personal project root" "$(identity_dir personal)" _wizard_valid_dir)"
+  work_dir="$(wizard_ask "Work project root" "$(identity_dir work)" _wizard_valid_dir "$personal_dir")"
   # A theme pinned by machines/<hostname>.conf wins in answers_load, so asking
   # would record an answer nothing reads (same rule as ask_package_manager).
   if pinned_theme="$(machine_get TEEUP_THEME)"; then
@@ -193,6 +252,8 @@ wizard() {
   answers_set TEEUP_NAME "$name"
   answers_set TEEUP_EMAIL "$email"
   answers_set TEEUP_WORK_EMAIL "$work_email"
+  answers_set TEEUP_PERSONAL_DIR "$personal_dir"
+  answers_set TEEUP_WORK_DIR "$work_dir"
   if [[ "$ask_theme" == "true" ]]; then answers_set TEEUP_THEME "$theme"; fi
   answers_set TEEUP_DAILY "$daily"
   answers_load

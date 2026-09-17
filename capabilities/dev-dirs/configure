@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Two roots. The git capability keys identity off them (includeIf), so they
-# must exist before git is configured.
-for d in "$HOME/Work" "$HOME/Personal"; do
+# Two roots, answered by the wizard (identity_dir, lib/answers.sh) with
+# today's $HOME/Work and $HOME/Personal as the fallback for a machine that
+# never answered. The git capability keys identity off them (includeIf), so
+# they must exist before git is configured.
+for d in "$(identity_dir personal)" "$(identity_dir work)"; do
   if [[ -d "$d" ]]; then
     log "Already present: $d"
   else

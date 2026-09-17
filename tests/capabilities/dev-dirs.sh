@@ -26,6 +26,21 @@ test_existing_dirs_are_reported_not_recreated() {
   cleanup_test_env
 }
 
+test_creates_custom_roots_from_answers() {
+  setup
+  mkdir -p "$TEST_HOME/.config/teeup"
+  {
+    printf 'TEEUP_PERSONAL_DIR="%s"\n' "$TEST_HOME/MyPersonal"
+    printf 'TEEUP_WORK_DIR="%s"\n' "$TEST_HOME/Workspaces/Work"
+  } > "$TEST_HOME/.config/teeup/answers"
+  DRY_RUN=false "$TEEUP" install dev-dirs >/dev/null
+  assert_dir_exists "$TEST_HOME/MyPersonal" || return 1
+  assert_dir_exists "$TEST_HOME/Workspaces/Work" || return 1
+  [[ ! -e "$TEST_HOME/Work" ]] || { echo "the default ~/Work was created although a custom root was answered"; return 1; }
+  [[ ! -e "$TEST_HOME/Personal" ]] || { echo "the default ~/Personal was created although a custom root was answered"; return 1; }
+  cleanup_test_env
+}
+
 test_dry_run_does_not_claim_the_dirs_were_created() {
   setup
   local out
@@ -41,5 +56,6 @@ test_dry_run_does_not_claim_the_dirs_were_created() {
 echo "capabilities/dev-dirs"
 run_test "creates Work and Personal" test_creates_work_and_personal
 run_test "existing dirs reported not recreated" test_existing_dirs_are_reported_not_recreated
+run_test "creates custom roots from answers" test_creates_custom_roots_from_answers
 run_test "dry run does not claim the dirs were created" test_dry_run_does_not_claim_the_dirs_were_created
 print_summary
