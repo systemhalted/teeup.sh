@@ -324,14 +324,16 @@ test_core_failure_aborts() {
 test_empty_personal_email_reprompts_and_second_answer_is_recorded() {
   setup
   # F2: the wizard used to accept an empty personal email outright. Now it
-  # must re-prompt, and the second (valid) answer is what git configure
-  # actually uses -- the "git identity: ..." line is not gated by DRY_RUN
-  # (files.sh swallows the rendered content, but this message is not one of
-  # them), so it is the observable proof the retried answer was recorded.
+  # must re-prompt, and the second (valid) answer is what flows downstream --
+  # proved through ssh configure's own dry-run preview of the ssh-keygen
+  # command it would run. That is run_cmd's built-in "Would execute" line
+  # (a preview, not a claim of completion), so unlike git configure's
+  # identity summary it is correctly still visible under DRY_RUN after the
+  # F1 sweep fix.
   local out
   out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\n\nada@example.com\n\n1\ny\n')"
   assert_contains "$out" "email address is required" || return 1
-  assert_contains "$out" "git identity: ada@example.com for both ~/Personal and ~/Work" || return 1
+  assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
 }
@@ -340,11 +342,14 @@ test_a_path_shaped_work_email_reprompts() {
   setup
   # The dry run's actual failure: a path typed into the work-email field was
   # accepted outright and would have become both the git identity address and
-  # the -C comment of the work SSH key.
+  # the -C comment of the work SSH key -- so the -C comment in ssh configure's
+  # own dry-run preview (see the comment in the previous test) is exactly
+  # what has to prove the retried answer won, for both identities.
   local out
   out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n~/Workspaces/Work\nada@corp.example\n1\ny\n')"
   assert_contains "$out" "does not look like an email address" || return 1
-  assert_contains "$out" "git identities: personal (ada@example.com), work (ada@corp.example)" || return 1
+  assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@corp.example -f $TEST_HOME/.ssh/id_ed25519_work" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
 }

@@ -4,4 +4,4 @@
 launchagent_remove sh.teeup.keyboard
 
 run_cmd hidutil property --set '{"UserKeyMapping":[]}'
-ok "Caps Lock is Caps Lock again."
+ok_unless_dry "Caps Lock is Caps Lock again."

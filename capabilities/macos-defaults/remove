@@ -20,4 +20,4 @@ defaults_restore com.apple.screencapture location
 
 run_cmd killall Finder || true
 run_cmd killall Dock || true
-ok "macOS preferences restored. ~/Screenshots was left alone; delete it yourself if you want it gone."
+ok_unless_dry "macOS preferences restored. ~/Screenshots was left alone; delete it yourself if you want it gone."
