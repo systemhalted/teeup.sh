@@ -165,6 +165,8 @@ test_configure_dry_run_writes_nothing() {
   assert_contains "$out" "[DRY-RUN] Would record defaults/com.apple.dock.autohide as absent" || return 1
   [[ ! -d "$RECORDS" ]] || { echo "records written in dry run"; return 1; }
   [[ ! -d "$TEST_HOME/Screenshots" ]] || { echo "Screenshots created in dry run"; return 1; }
+  # F1: a dry run must never claim the preferences were applied.
+  assert_not_contains "$out" "macOS preferences applied" || return 1
   cleanup_test_env
 }
 

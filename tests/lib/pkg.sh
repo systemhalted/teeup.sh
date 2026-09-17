@@ -77,6 +77,23 @@ EOF2
   local out
   out="$(pkg_install ripgrep)"
   assert_contains "$out" "[DRY-RUN] Would execute: brew install ripgrep" || return 1
+  # F1: a dry run must never claim the package was installed.
+  assert_not_contains "$out" "Installed ripgrep" "dry run must not claim an install that did not happen" || return 1
+  cleanup_test_env
+}
+
+test_pkg_install_real_run_wording_is_unchanged() {
+  setup
+  mock_command_script brew <<'EOF2'
+case "$1" in
+  list) exit 1 ;;
+  install) exit 0 ;;
+esac
+EOF2
+  DRY_RUN=false
+  local out
+  out="$(pkg_install ripgrep)"
+  assert_contains "$out" "✅ Installed ripgrep (Homebrew)" "the real-run wording must stay exactly what it is today" || return 1
   cleanup_test_env
 }
 
@@ -115,6 +132,8 @@ EOF2
   local out
   out="$(cask_install wezterm)"
   assert_contains "$out" "[DRY-RUN] Would execute: brew install --cask wezterm" || return 1
+  # F1: a dry run must never claim the cask was installed.
+  assert_not_contains "$out" "Installed wezterm" "dry run must not claim an install that did not happen" || return 1
   cleanup_test_env
 }
 
@@ -165,6 +184,7 @@ run_test "invalid backend answer dies" test_invalid_backend_answer_dies
 run_test "intel homebrew prefix" test_intel_homebrew_prefix
 run_test "pkg_install skips when command on PATH" test_pkg_install_skips_when_command_on_path
 run_test "pkg_install calls brew when missing" test_pkg_install_calls_brew_when_missing
+run_test "pkg_install real-run wording is unchanged" test_pkg_install_real_run_wording_is_unchanged
 run_test "pkg_install uses sudo port on macports" test_pkg_install_uses_sudo_port_on_macports
 run_test "candidates map bash-completion" test_candidates_map_bash_completion_on_homebrew
 run_test "cask_install skipped on macports" test_cask_install_skipped_on_macports
