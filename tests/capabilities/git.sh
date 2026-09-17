@@ -408,6 +408,28 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+# F1 review fix: the identity summary follows write_managed_file calls that
+# only preview under DRY_RUN, so it must not claim the identities were
+# written either. Checked with a work email on file too (the
+# "git identities: ..." wording), since both branches had the bug.
+test_configure_dry_run_does_not_claim_the_identity_was_written() {
+  setup
+  seed_answers ""
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure git 2>&1)"
+  assert_not_contains "$out" "git identity:" || return 1
+  cleanup_test_env
+}
+
+test_configure_dry_run_does_not_claim_both_identities_were_written() {
+  setup
+  seed_answers "ada@corp.example"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure git 2>&1)"
+  assert_not_contains "$out" "git identities:" || return 1
+  cleanup_test_env
+}
+
 # F4: configure renders the shipped config to a temp file before copying it
 # into place, so the dry-run message used to name that temp file instead of
 # the shipped source the user could actually make sense of.
@@ -477,6 +499,8 @@ run_test "configure ships the lfs filter and warns about gitconfig" test_configu
 run_test "configure warns when GIT_CONFIG_GLOBAL is set" test_configure_warns_when_git_config_global_is_set
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure dry run does not claim the identity was written" test_configure_dry_run_does_not_claim_the_identity_was_written
+run_test "configure dry run does not claim both identities were written" test_configure_dry_run_does_not_claim_both_identities_were_written
 run_test "configure dry run names the shipped source, not a temp file" test_configure_dry_run_names_the_shipped_source_not_a_temp_file
 run_test "configure dry run names the shipped source for a foreign config" test_configure_dry_run_names_the_shipped_source_for_a_foreign_config
 run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name

@@ -326,14 +326,16 @@ test_core_failure_aborts() {
 test_empty_personal_email_reprompts_and_second_answer_is_recorded() {
   setup
   # F2: the wizard used to accept an empty personal email outright. Now it
-  # must re-prompt, and the second (valid) answer is what git configure
-  # actually uses -- the "git identity: ..." line is not gated by DRY_RUN
-  # (files.sh swallows the rendered content, but this message is not one of
-  # them), so it is the observable proof the retried answer was recorded.
+  # must re-prompt, and the second (valid) answer is what flows downstream --
+  # proved through ssh configure's own dry-run preview of the ssh-keygen
+  # command it would run. That is run_cmd's built-in "Would execute" line
+  # (a preview, not a claim of completion), so unlike git configure's
+  # identity summary it is correctly still visible under DRY_RUN after the
+  # F1 sweep fix.
   local out
   out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\n\nada@example.com\n\n\n\n1\ny\n')"
   assert_contains "$out" "email address is required" || return 1
-  assert_contains "$out" "git identity: ada@example.com for both ~/Personal and ~/Work" || return 1
+  assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
 }
@@ -342,11 +344,14 @@ test_a_path_shaped_work_email_reprompts() {
   setup
   # The dry run's actual failure: a path typed into the work-email field was
   # accepted outright and would have become both the git identity address and
-  # the -C comment of the work SSH key.
+  # the -C comment of the work SSH key -- so the -C comment in ssh configure's
+  # own dry-run preview (see the comment in the previous test) is exactly
+  # what has to prove the retried answer won, for both identities.
   local out
   out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n~/Workspaces/Work\nada@corp.example\n\n\n1\ny\n')"
   assert_contains "$out" "does not look like an email address" || return 1
-  assert_contains "$out" "git identities: personal (ada@example.com), work (ada@corp.example)" || return 1
+  assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@corp.example -f $TEST_HOME/.ssh/id_ed25519_work" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
 }
@@ -388,15 +393,19 @@ test_personal_email_prompt_names_the_answered_personal_root() {
   cleanup_test_env
 }
 
-test_custom_project_roots_reach_dev_dirs_and_git() {
+test_custom_project_roots_reach_dev_dirs() {
   setup
   # The wizard's own two new questions (F3): a custom personal and work root
-  # must be created by dev-dirs and named in the git identity message.
+  # must be created by dev-dirs. (The includeIf/identity-message side of this
+  # is proved at the capability level, with a real run, by
+  # tests/capabilities/git.sh's "configure custom work dir lands in includeIf
+  # and identity message" -- git configure's identity summary is correctly
+  # silent here under DRY_RUN, per the F1 sweep fix, so it cannot prove
+  # anything in this dry-run test.)
   local out
   out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\nMyPersonal\nWorkspaces/Work\n1\ny\n')"
   assert_contains "$out" "Would execute: mkdir -p $TEST_HOME/MyPersonal" || return 1
   assert_contains "$out" "Would execute: mkdir -p $TEST_HOME/Workspaces/Work" || return 1
-  assert_contains "$out" "git identity: ada@example.com for both ~/MyPersonal and ~/Workspaces/Work" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
 }
@@ -470,7 +479,7 @@ run_test "a path-shaped work email re-prompts" test_a_path_shaped_work_email_rep
 run_test "valid wizard answers pass validation on the first try" test_valid_wizard_answers_pass_validation_on_the_first_try
 run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
 run_test "personal email prompt names the answered personal root" test_personal_email_prompt_names_the_answered_personal_root
-run_test "custom project roots reach dev-dirs and git" test_custom_project_roots_reach_dev_dirs_and_git
+run_test "custom project roots reach dev-dirs" test_custom_project_roots_reach_dev_dirs
 run_test "wizard rejects equal project roots" test_wizard_rejects_equal_project_roots
 run_test "wizard warns but accepts a root outside HOME" test_wizard_warns_but_accepts_a_root_outside_home
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion

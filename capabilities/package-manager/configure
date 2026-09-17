@@ -3,7 +3,7 @@
 # after a macOS upgrade moves the machine past the MacPorts cut-off.
 if [[ -z "$(answers_get TEEUP_PACKAGE_MANAGER)" ]]; then
   answers_set TEEUP_PACKAGE_MANAGER "$(pkg_backend)"
-  ok "Recorded package manager: $(pkg_backend)"
+  ok_unless_dry "Recorded package manager: $(pkg_backend)"
 else
   log "Package manager already recorded: $(answers_get TEEUP_PACKAGE_MANAGER)"
 fi

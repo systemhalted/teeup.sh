@@ -57,9 +57,9 @@ else
 GIT_IDENTITY
   done
   if answers_has_work; then
-    ok "git identities: personal ($email), work ($(identity_email work))"
+    ok_unless_dry "git identities: personal ($email), work ($(identity_email work))"
   else
-    ok "git identity: $email for both $(git_display_dir "$personal_dir") and $(git_display_dir "$work_dir") (no work email set)"
+    ok_unless_dry "git identity: $email for both $(git_display_dir "$personal_dir") and $(git_display_dir "$work_dir") (no work email set)"
   fi
 fi
 

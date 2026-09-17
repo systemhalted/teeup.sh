@@ -87,5 +87,5 @@ FONT_STATE
   for cap in $(cap_list); do
     cap_run_optional "$cap" font-apply
   done
-  ok "Font set to $family"
+  ok_unless_dry "Font set to $family"
 }

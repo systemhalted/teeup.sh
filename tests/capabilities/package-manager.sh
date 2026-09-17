@@ -45,9 +45,33 @@ test_configure_keeps_existing_answer() {
   cleanup_test_env
 }
 
+# F1 review sweep: "Recorded package manager: ..." followed answers_set
+# unconditionally, so a dry run (which answers_set only previews) claimed the
+# backend had been written to the answers file when it had not been.
+test_configure_dry_run_does_not_claim_the_backend_was_recorded() {
+  setup
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure package-manager)"
+  assert_contains "$out" "Would set TEEUP_PACKAGE_MANAGER" || return 1
+  assert_not_contains "$out" "Recorded package manager" || return 1
+  [[ ! -e "$TEST_HOME/.config/teeup/answers" ]] || { echo "answers file written in dry run"; return 1; }
+  cleanup_test_env
+}
+
+test_configure_real_run_wording_is_unchanged() {
+  setup
+  mock_command brew 0 ""
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure package-manager)"
+  assert_contains "$out" "✅ Recorded package manager: homebrew" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/package-manager"
 run_test "install bootstraps Homebrew in dry run" test_install_bootstraps_homebrew_in_dry_run
 run_test "install refuses missing MacPorts" test_install_refuses_missing_macports
 run_test "configure records backend in answers" test_configure_records_backend_in_answers
 run_test "configure keeps existing answer" test_configure_keeps_existing_answer
+run_test "configure dry run does not claim the backend was recorded" test_configure_dry_run_does_not_claim_the_backend_was_recorded
+run_test "configure real-run wording is unchanged" test_configure_real_run_wording_is_unchanged
 print_summary
