@@ -43,7 +43,7 @@ for f in .zshenv .zprofile .zshrc; do
     rendered_line="$(replace_literal "$line" '${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env' "$env_path_q")"
     replace_literal "$rendered_line" '${XDG_CONFIG_HOME:-$HOME/.config}/zsh/local.zsh' "$local_zsh_q"
   done < "$TEEUP_CAP_DIR/home/$f" > "$rendered_home_file"
-  copy_config_once "$rendered_home_file" "$zsh_home_dir/$f"
+  copy_config_once "$rendered_home_file" "$zsh_home_dir/$f" "$TEEUP_CAP_DIR/home/$f"
   rm -f "$rendered_home_file"
 done
 

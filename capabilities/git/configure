@@ -141,7 +141,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
       ;;
   esac
 done < "$TEEUP_CAP_DIR/config/git/config" > "$rendered_git_config"
-copy_config_once "$rendered_git_config" "$git_dir/config"
+copy_config_once "$rendered_git_config" "$git_dir/config" "$TEEUP_CAP_DIR/config/git/config"
 rm -f "$rendered_git_config"
 
 # git reads ~/.gitconfig after ~/.config/git/config, so a leftover file wins

@@ -166,6 +166,26 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+# F4: configure renders each home file to a temp file before copying it into
+# place, so the dry-run message used to name that temp file -- useless to the
+# user, who cannot tell what is actually being installed.
+test_configure_dry_run_names_the_shipped_source_not_a_temp_file() {
+  setup
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure zsh)"
+  assert_contains "$out" "Would install $TEST_HOME/.zshenv from $TEEUP_PATH/capabilities/zsh/home/.zshenv" || return 1
+  cleanup_test_env
+}
+
+test_configure_dry_run_names_the_shipped_source_for_a_foreign_zshenv() {
+  setup
+  printf 'export PATH=/mine:$PATH\n' > "$TEST_HOME/.zshenv"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure zsh)"
+  assert_contains "$out" "Would back up foreign $TEST_HOME/.zshenv and install $TEEUP_PATH/capabilities/zsh/home/.zshenv" || return 1
+  cleanup_test_env
+}
+
 test_zshenv_sources_teeup_env_from_xdg_config_home() {
   setup
   require_zsh || return 1
@@ -344,6 +364,8 @@ run_test "configure installs under ZDOTDIR" test_configure_installs_under_zdotdi
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure backs up a foreign zshrc" test_configure_backs_up_a_foreign_zshrc
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure dry run names the shipped source, not a temp file" test_configure_dry_run_names_the_shipped_source_not_a_temp_file
+run_test "configure dry run names the shipped source for a foreign .zshenv" test_configure_dry_run_names_the_shipped_source_for_a_foreign_zshenv
 run_test "zshenv sources teeup env from XDG_CONFIG_HOME" test_zshenv_sources_teeup_env_from_xdg_config_home
 run_test "zprofile sources teeup env from XDG_CONFIG_HOME" test_zprofile_sources_teeup_env_from_xdg_config_home
 run_test "default env appends the shims last" test_default_env_appends_the_shims_last
