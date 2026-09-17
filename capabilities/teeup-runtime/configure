@@ -40,5 +40,5 @@ else
     backup_target "$link" >/dev/null
   fi
   run_cmd ln -sfn "$TEEUP_PATH/bin/teeup" "$link"
-  ok "Linked $link"
+  ok_unless_dry "Linked $link"
 fi

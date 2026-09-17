@@ -164,7 +164,7 @@ pkg_install() {
       return 0
     fi
     if _pkg_install_candidate "$candidate"; then
-      ok "Installed $candidate ($(pkg_backend_label))"
+      ok_unless_dry "Installed $candidate ($(pkg_backend_label))"
       return 0
     fi
     warn "Failed to install '$candidate' with $(pkg_backend_label); trying the next candidate."
@@ -191,5 +191,5 @@ cask_install() {
     log "Already installed: $cask (cask)"
     return 0
   fi
-  run_cmd brew install --cask "$cask" && ok "Installed $cask (cask)"
+  run_cmd brew install --cask "$cask" && ok_unless_dry "Installed $cask (cask)"
 }

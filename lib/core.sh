@@ -15,6 +15,16 @@ ok()   { printf "%b %s\n" "✅" "$*"; }
 warn() { printf "%b %s\n" "⚠️" "$*" >&2; }
 err()  { printf "%b %s\n" "❌" "$*" >&2; }
 die()  { err "$@"; exit 1; }
+
+# ok_unless_dry <message>
+# The one mechanism every capability uses to report a mutation: silent under
+# DRY_RUN=true (run_cmd's own "[DRY-RUN] Would execute: ..." line already told
+# the user what would happen; claiming it happened too would be a lie) and
+# identical to plain `ok` on a real run, so today's wording never changes.
+ok_unless_dry() {
+  [[ "$DRY_RUN" == "true" ]] && return 0
+  ok "$@"
+}
 # have <command>
 # TEEUP_TEST_MISSING is a test-only hook: a space-separated list of commands
 # the harness pretends are absent, so a test can simulate a fresh Mac on a

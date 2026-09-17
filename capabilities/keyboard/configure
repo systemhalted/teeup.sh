@@ -35,4 +35,4 @@ launchagent_install sh.teeup.keyboard <<PLIST
 PLIST
 
 run_cmd hidutil property --set "$KEYBOARD_MAPPING"
-ok "Caps Lock sends Control, now and at every login."
+ok_unless_dry "Caps Lock sends Control, now and at every login."

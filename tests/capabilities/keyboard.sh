@@ -45,6 +45,8 @@ test_configure_dry_run_writes_nothing() {
   assert_contains "$out" "[DRY-RUN] Would execute: hidutil property --set $MAPPING" || return 1
   [[ ! -e "$PLIST" ]] || { echo "plist written in dry run"; return 1; }
   assert_not_contains "$(cat "$MOCK_LOG")" "hidutil" "nothing ran in dry run" || return 1
+  # F1: a dry run must never claim the remap was applied.
+  assert_not_contains "$out" "Caps Lock sends Control" || return 1
   cleanup_test_env
 }
 
