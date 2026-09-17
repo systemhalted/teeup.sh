@@ -122,9 +122,9 @@ wizard_ask() {
   die "Too many invalid answers for: $prompt. Run ./bootstrap --reconfigure once you have a valid value."
 }
 
-# _wizard_valid_name <candidate> -> prints <candidate> once trimmed of
-# leading/trailing blanks it is non-empty, else warns and fails. bash
-# 3.2-safe: parameter-expansion glob trimming, no extglob.
+# _wizard_valid_name <candidate> -> prints <candidate> trimmed of
+# leading/trailing blanks once that trimmed value is non-empty, else warns
+# and fails. bash 3.2-safe: parameter-expansion glob trimming, no extglob.
 _wizard_valid_name() {
   local v="$1" trimmed
   trimmed="${v#"${v%%[![:space:]]*}"}"
@@ -133,7 +133,7 @@ _wizard_valid_name() {
     warn "A name cannot be empty."
     return 1
   fi
-  printf '%s\n' "$v"
+  printf '%s\n' "$trimmed"
   return 0
 }
 
