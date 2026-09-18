@@ -44,9 +44,9 @@ Phase 5a's plan (`docs/superpowers/plans/2026-09-13-redesign-phase5a-legacy-migr
 3. **5a adds four doctor checks** — a `[user]` block in `~/.gitconfig.local` (`capabilities/git/doctor`), Powerlevel10k remnants, `~/.oh-my-zsh`, and a chezmoi source directory still configured (`capabilities/zsh/doctor`) — **and no new doctor script** (5a Contracts, "The doctor leftovers"). This plan adds no doctor check to `zsh` or `git`, so there is no collision; the one doctor edit here is in `capabilities/teeup-runtime/doctor`, which 5a does not touch.
 4. **5a adds one menu row, `setup.migrate`** (5a File structure). Task 3 of this plan adds rows under `install.*` and `launch.*` only, and the test it writes asserts the rows it adds rather than the whole file, so the two edits compose whichever lands first.
 5. **5a Task 9 edits `README.md` and `CONTRIBUTING.md`.** Tasks 5 and 6 here replace both files whole rather than patching them, so nothing anchors on 5a's wording. The content 5a would have added is written out here from the contract above. **If 5a as merged documents anything this plan's README or CONTRIBUTING does not, fold it in during Task 5 or 6 rather than dropping it** — the `tests/docs.sh` check in Task 1 will catch a missing verb by itself, but not a missing paragraph.
-6. **5a does not delete anything under `legacy/`** and ports `disable_matching_lines` out of `legacy/teeup.sh:479` into `lib/files.sh` before this plan's Task 7 deletes the file (5a "What 5a owns, and what it does not"). Task 7 Step 1 checks for the port and for a real `teeup migrate legacy` before it deletes anything, precisely so this assumption cannot go unverified on the tree Task 7 actually runs against.
+6. **5a does not delete anything under `legacy/`** and ports `disable_matching_lines` out of `legacy/teeup.sh:479` into `lib/files.sh` before this plan's Task 7 deletes the file (5a "What 5a owns, and what it does not"). Task 7 Step 1 checks for the port and, separately, for every one of 5a's other five tasks (the safety gates in Task 2, the three migration operations in Tasks 3 to 5, and the verb wired to call them in Task 6) before it deletes anything, precisely so this assumption cannot go unverified — in whole or in part — on the tree Task 7 actually runs against.
 
-If 5a is *not* merged when this plan runs, Tasks 1 to 6 still work, but Task 5's README table and Task 4's parity row for `--reconcile-existing-config` must drop `teeup migrate legacy`, and `tests/docs.sh` will tell you so: it compares the table against `teeup help`, in both directions. **Task 7 must not run.** Deleting `legacy/` is what the phase 5 gate exists to guard, and 5a is what ports `disable_matching_lines` out of `legacy/teeup.sh` and gives `teeup migrate legacy` a real implementation (`lib/migrate.sh`'s `migrate_rm`, `migrate_target` and `migrate_path_is_safe`); running Task 7 before that port lands would delete the only copy of a function the redesign still needs. Dropping the README and parity references does not change that — a document that stops mentioning `teeup migrate legacy` is not the same thing as the verb having a working implementation. Task 7 Step 1 checks for the port itself, so a transcription cannot run ahead of 5a by mistake.
+If 5a is *not* merged when this plan runs, Tasks 1 to 6 still work, but Task 5's README table and Task 4's parity row for `--reconcile-existing-config` must drop `teeup migrate legacy`, and `tests/docs.sh` will tell you so: it compares the table against `teeup help`, in both directions. **Task 7 must not run.** Deleting `legacy/` is what the phase 5 gate exists to guard, and 5a is what ports `disable_matching_lines` out of `legacy/teeup.sh` (5a Task 1) and gives `teeup migrate legacy` a real, wired-up implementation: `lib/migrate.sh`'s closed key list and safety gates (`migrate_rm`, `migrate_target`, `migrate_path_is_safe` — 5a Task 2) are necessary but not sufficient on their own, because they land before the three operations they guard (`migrate_legacy_paths`, `migrate_disable_runtime_inits`, `migrate_chezmoi` — 5a Tasks 3 to 5) and before `cmd_migrate` calls them from a working `migrate)` dispatch arm (5a Task 6). Running Task 7 before all six of those land would delete the only copy of code the redesign still needs. Dropping the README and parity references does not change that — a document that stops mentioning `teeup migrate legacy` is not the same thing as the verb having a working implementation. Task 7 Step 1 checks for every one of the six pieces, not only the earliest, so a transcription cannot run ahead of 5a by mistake — including the mistake of stopping partway through 5a itself.
 
 ---
 
@@ -2493,7 +2493,7 @@ git commit -m "Rewrite CONTRIBUTING for the capability runtime"
 - Modify: `tests/docs.sh` (the last check)
 
 **Interfaces:**
-- Consumes: `docs/legacy-parity.md` (Task 4), which is the only remaining record of what is being deleted. Also, as a precondition rather than a file this task edits: phase 5a's `disable_matching_lines` (`lib/files.sh`) and its `lib/migrate.sh` (`migrate_rm`, `migrate_target`, `migrate_path_is_safe`), both of which must exist before this task may run — see Step 1.
+- Consumes: `docs/legacy-parity.md` (Task 4), which is the only remaining record of what is being deleted. Also, as a precondition rather than a file this task edits: the whole of phase 5a, not only its safety machinery — `disable_matching_lines` (`lib/files.sh`, 5a Task 1); `lib/migrate.sh`'s `migrate_rm`, `migrate_target` and `migrate_path_is_safe` (5a Task 2); `lib/migrate.sh`'s `migrate_legacy_paths`, `migrate_disable_runtime_inits` and `migrate_chezmoi` (5a Tasks 3 to 5); and `bin/teeup`'s `cmd_migrate`, dispatched from a working `migrate)` arm and calling all three of the above (5a Task 6). All of it must exist before this task may run — see Step 1.
 - Produces: a repository with one runtime in it. Nothing consumes this task.
 
 **This is the last task on purpose.** A reviewer who is not convinced by the
@@ -2533,24 +2533,61 @@ commit would delete the only copy of what the checklist describes.
 Run: `ls docs/legacy-parity.md`
 Expected: the path, with no error.
 
-A parity document is not proof that 5a shipped the code it describes. Check
-that directly, before touching `legacy/`:
+A parity document is not proof that 5a shipped the code it describes, and
+neither is 5a's safety machinery by itself: `lib/migrate.sh`'s closed key
+list and its read-only chezmoi wrapper (5a Task 2) land before the three
+things they guard (5a Tasks 3 to 5) and before the verb that calls them (5a
+Task 6), so a tree that stops partway through 5a can pass a check that only
+looks for the early pieces. Check the whole of it, one 5a task at a time,
+before touching `legacy/`:
 
-Run: `grep -c '^disable_matching_lines()' lib/files.sh`
-Expected: `1`. If it is `0`, stop: 5a has not ported `disable_matching_lines`
-out of `legacy/teeup.sh` yet, and this commit would delete the only copy of a
-function `teeup migrate legacy` needs. Dropping the README and parity
-references to `teeup migrate legacy` (the fallback in "What was assumed about
-phase 5a") does not change this — it only means the *documents* stopped
-claiming the verb exists, not that deleting `legacy/` is safe.
+Run: `n=$(grep -c '^disable_matching_lines()' lib/files.sh 2>/dev/null || true); printf '%s\n' "${n:-0}"`
+Expected: `1`. This is 5a Task 1. If it is `0`, stop: 5a has not ported
+`disable_matching_lines` out of `legacy/teeup.sh` yet, and this commit would
+delete the only copy of a function `teeup migrate legacy` needs. Dropping the
+README and parity references to `teeup migrate legacy` (the fallback in "What
+was assumed about phase 5a") does not change this — it only means the
+*documents* stopped claiming the verb exists, not that deleting `legacy/` is
+safe.
 
-Run: `grep -c '^migrate_rm()\|^migrate_target()\|^migrate_path_is_safe()' lib/migrate.sh 2>/dev/null || echo 0`
-Expected: `3`. If `lib/migrate.sh` does not exist, or defines fewer than
-three of those, stop: `teeup migrate legacy` is not a real verb on this tree,
-only the usage line and empty `migrate)` dispatch arm this plan's own
-verification harness used as a stand-in while 5a's plan was still in draft
-(see Self-review, "Mechanical transcription", "The 5a stand-in"). A
-transcription must not run Task 7 against that stand-in.
+Run: `n=$(grep -c '^migrate_rm()\|^migrate_target()\|^migrate_path_is_safe()' lib/migrate.sh 2>/dev/null || true); printf '%s\n' "${n:-0}"`
+Expected: `3`. This is 5a Task 2 — the closed key list, the safety gates and
+the read-only chezmoi wrapper. It is necessary but not sufficient: these three
+functions exist before 5a has written a single line that actually migrates
+anything, so a `3` here proves only that `legacy/` cannot yet be deleted for
+the wrong reason (no safety gate at all), not that it can be deleted for the
+right one. If `lib/migrate.sh` does not exist, or defines fewer than three of
+these, stop.
+
+Run: `n=$(grep -c '^migrate_legacy_paths()\|^migrate_disable_runtime_inits()\|^migrate_chezmoi()' lib/migrate.sh 2>/dev/null || true); printf '%s\n' "${n:-0}"`
+Expected: `3`. This is 5a Tasks 3, 4 and 5 — the three operations
+`cmd_migrate` calls, one per task: `migrate_legacy_paths` (Task 3, the legacy
+files, directories, symlinks and rc lines), `migrate_disable_runtime_inits`
+(Task 4, SDKMAN, rbenv and pyenv) and `migrate_chezmoi` (Task 5, the only one
+that touches the sibling checkout's config, and only by asking). If this is
+less than `3`, stop: 5a's safety gates have landed (the check above passed)
+but the migration itself has not, in full or in part — a partially applied
+5a exactly like this one is what let `legacy/` get deleted while
+`teeup migrate legacy` was still unable to do its one job.
+
+Run: `n=$(grep -c '^cmd_migrate()' bin/teeup 2>/dev/null || true); printf '%s\n' "${n:-0}"`
+Expected: `1`.
+
+Run: `n=$(grep -c '^  migrate) cmd_migrate' bin/teeup 2>/dev/null || true); printf '%s\n' "${n:-0}"`
+Expected: `1`.
+
+Run: `n=$(awk '/^cmd_migrate\(\)/,/^}/' bin/teeup | grep -c 'migrate_legacy_paths\|migrate_disable_runtime_inits\|migrate_chezmoi' || true); printf '%s\n' "${n:-0}"`
+Expected: `3`. These three are 5a Task 6 — the verb, wired into the
+dispatcher, actually calling the three operations above rather than only
+existing beside them. If any of the three is short of its expected count,
+stop: `bin/teeup` either has no `cmd_migrate` at all, or dispatches `migrate`
+to nothing (`teeup migrate legacy` falls through to `Unknown verb: migrate`,
+the same failure as on a tree where 5a never started), or has a `cmd_migrate`
+that does not call every migration operation — any of which is indistinguishable
+from this plan's own verification stand-in (see Self-review, "Mechanical
+transcription", "The 5a stand-in"), which never calls them either. A
+transcription must not run Task 7 against any tree that fails one of the six
+checks above.
 
 - [ ] **Step 2: Write the failing check**
 
