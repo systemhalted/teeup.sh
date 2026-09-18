@@ -207,9 +207,19 @@ function M.config(overrides, state_dir)
   state_dir = state_dir or STATE
   local config = wezterm.config_builder()
 
-  -- Fonts. Ligatures on; Devanagari falls back to a system face.
+  -- Fonts. Ligatures on; Devanagari falls back to a system face. No weight
+  -- is requested: WezTerm warns "Unable to load a font ... An alternative
+  -- variant of the font was requested" whenever the family lacks the exact
+  -- weight it was told to prefer, which fired on every window when the
+  -- family had no Medium file, and always fired on a machine where the Nerd
+  -- Font itself could not even be installed (MacPorts has no cask for it,
+  -- so M.font_family falls through to a family name nothing on disk
+  -- provides). WezTerm's own matching already silently picks the closest
+  -- weight it has when none is named, so a plain family name is quieter
+  -- without losing anything -- the same style the fallback entry right
+  -- below already uses.
   config.font = wezterm.font_with_fallback({
-    { family = M.font_family(state_dir), weight = "Medium" },
+    M.font_family(state_dir),
     "Kohinoor Devanagari",
   })
   config.font_size = overrides.font_size or 16.0

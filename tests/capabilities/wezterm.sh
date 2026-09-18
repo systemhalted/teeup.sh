@@ -99,6 +99,23 @@ test_theme_renders_a_wezterm_scheme() {
   cleanup_test_env
 }
 
+# The font entry used to force weight="Medium" on the family table, which
+# makes WezTerm warn "Unable to load a font ... An alternative variant of the
+# font was requested" on every window whenever the family lacks that exact
+# weight file -- true both when the Nerd Font family is entirely missing
+# (MacPorts has no cask for it) and when it is present but ships only
+# Regular/Bold. WezTerm has no way to prefer a weight without warning when
+# that weight is absent, so the fix drops the weight and asks for the plain
+# family name, the same style the very next entry in this fallback list
+# ("Kohinoor Devanagari") already uses.
+test_font_entry_does_not_force_a_weight() {
+  local src out
+  src="$TEEUP_PATH/capabilities/wezterm/default/teeup/wezterm.lua"
+  out="$(cat "$src")"
+  assert_not_contains "$out" "weight =" "no font entry should request a specific weight that can be absent" || return 1
+  assert_contains "$out" "M.font_family(state_dir)," "the plain family name should still be the first fallback entry" || return 1
+}
+
 test_lua_files_parse() {
   setup
   # This is the only gate on three shipped Lua files and the rendered scheme,
@@ -338,6 +355,7 @@ run_test "install falls back to a port on macports" test_install_falls_back_to_a
 run_test "configure installs both user files" test_configure_installs_both_user_files
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "font entry does not force a weight" test_font_entry_does_not_force_a_weight
 run_test "theme-apply reloads the config" test_theme_apply_reloads_the_config
 run_test "font-apply reloads the config" test_font_apply_reloads_the_config
 run_test "theme renders a wezterm scheme" test_theme_renders_a_wezterm_scheme
