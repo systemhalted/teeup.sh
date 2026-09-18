@@ -26,7 +26,11 @@ host=""
 prev=""
 active=0
 for a in "$@"; do
-  [ "$prev" = "-h" ] && host="$a"
+  # auth status/refresh spell it -h; auth login spells the same thing
+  # --hostname. Both must be captured so a login targeting a second host
+  # (a GitHub Enterprise instance, or a second github.com account under a
+  # different alias) records its session under that host, not github.com's.
+  case "$prev" in -h|--hostname) host="$a" ;; esac
   case "$a" in -a|--active) active=1 ;; esac
   prev="$a"
 done
@@ -65,14 +69,24 @@ case "$1 ${2:-}" in
     fi
     ;;
   "auth login")
-    printf "'admin:public_key', 'admin:ssh_signing_key'" > "$HOME/gh-session"
+    session_file="$HOME/gh-session"
+    [ -z "$host" ] || [ "$host" = "github.com" ] || session_file="$HOME/gh-session-$host"
+    printf "'admin:public_key', 'admin:ssh_signing_key'" > "$session_file"
     ;;
   "auth refresh")
     session_file="$HOME/gh-session"
     [ -z "$host" ] || [ "$host" = "github.com" ] || session_file="$HOME/gh-session-$host"
     printf "'admin:public_key', 'admin:ssh_signing_key'" > "$session_file"
     ;;
-  "ssh-key list") cat "$HOME/gh-keys" 2>/dev/null || true ;;
+  # SSH keys are account-scoped, so a second host (a second github.com
+  # account, or a GitHub Enterprise instance) has its own key list, exactly
+  # like the session/scopes files above; GH_HOST (not a -h flag, which
+  # neither ssh-key subcommand takes) is what selects it.
+  "ssh-key list")
+    keys_file="$HOME/gh-keys"
+    [ "$GH_HOST" = "github.com" ] || keys_file="$HOME/gh-keys-$GH_HOST"
+    cat "$keys_file" 2>/dev/null || true
+    ;;
   # An upload lands in the same list a later run reads back, so running
   # configure twice can be tested the way GitHub would actually behave. The
   # mock records the --type it was given, letting the per-type dedupe be
@@ -91,14 +105,16 @@ case "$1 ${2:-}" in
     done
     [ -n "$ssh_key_title" ] || ssh_key_title="title"
     ssh_key_body="$(awk '{print $2}' < "$pubfile")"
+    keys_file="$HOME/gh-keys"
+    [ "$GH_HOST" = "github.com" ] || keys_file="$HOME/gh-keys-$GH_HOST"
     # Tab-separated, matching the non-TTY output of the real `gh ssh-key list`
     # (gh 2.100.0): TITLE, KEY, ADDED, ID, TYPE. The type is the LAST column
     # and a numeric ID sits second to last. The title is free text (it may
     # itself contain the word "signing"), so it must never be what the dedupe
     # check parses either.
-    ssh_key_id="$(( $(wc -l < "$HOME/gh-keys" 2>/dev/null || echo 0) + 58095771 ))"
+    ssh_key_id="$(( $(wc -l < "$keys_file" 2>/dev/null || echo 0) + 58095771 ))"
     printf '%s\tssh-ed25519 %s\t2026-09-11T09:12:33Z\t%s\t%s\n' \
-      "$ssh_key_title" "$ssh_key_body" "$ssh_key_id" "$ssh_key_type" >> "$HOME/gh-keys"
+      "$ssh_key_title" "$ssh_key_body" "$ssh_key_id" "$ssh_key_type" >> "$keys_file"
     ;;
   *) : ;;
 esac
@@ -111,6 +127,25 @@ seed_keys() {
   mkdir -p "$TEST_HOME/.ssh"
   printf 'ssh-ed25519 AAAAPERSONALKEY ada@example.com\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
   printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+}
+
+seed_work_key() {
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'ssh-ed25519 AAAAWORKKEY ada@corp.example\n' > "$TEST_HOME/.ssh/id_ed25519_work.pub"
+  printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_work"
+}
+
+# A work identity is per-machine, not a wizard answer (2026-09-17 decision):
+# machines/<hostname>.conf is the only source of TEEUP_WORK_EMAIL and
+# TEEUP_WORK_GH_HOST. hostname is mocked to "testmac" by mock_macos_base.
+seed_machine_work() {
+  local email="$1" gh_host="${2:-}"
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  {
+    printf 'TEEUP_WORK_EMAIL="%s"\n' "$email"
+    [[ -n "$gh_host" ]] && printf 'TEEUP_WORK_GH_HOST="%s"\n' "$gh_host"
+  } > "$TEEUP_MACHINES_DIR/testmac.conf"
 }
 
 test_install_gets_gh() {
@@ -184,7 +219,7 @@ test_configure_lets_the_active_account_decide_the_scopes() {
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-inactive-scopes"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "Already signed in to GitHub." || return 1
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_contains "$(cat "$MOCK_LOG")" "auth status --active -h github.com" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key" || return 1
   cleanup_test_env
@@ -199,7 +234,7 @@ test_configure_ignores_an_inactive_accounts_missing_scopes() {
   printf "'admin:public_key'" > "$TEST_HOME/gh-inactive-scopes"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "Already signed in to GitHub." || return 1
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "auth refresh" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "auth login" || return 1
   cleanup_test_env
@@ -211,7 +246,7 @@ test_configure_refreshes_scopes_when_the_signing_scope_is_missing() {
   printf "'admin:public_key'" > "$TEST_HOME/gh-session"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "Already signed in to GitHub." || return 1
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_contains "$(cat "$MOCK_LOG")" "auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key" || return 1
   cleanup_test_env
 }
@@ -228,7 +263,7 @@ test_configure_lets_github_com_scopes_decide_over_another_host() {
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session-github.enterprise.example.com"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "Already signed in to GitHub." || return 1
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_contains "$(cat "$MOCK_LOG")" "auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key" || return 1
   cleanup_test_env
 }
@@ -253,7 +288,7 @@ test_configure_skips_the_login_when_already_signed_in() {
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "Already signed in to GitHub." || return 1
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "auth login" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "auth refresh" || return 1
   cleanup_test_env
@@ -384,7 +419,7 @@ test_configure_twice_uploads_nothing_new() {
   : > "$MOCK_LOG"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "Already signed in to GitHub." || return 1
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_contains "$out" "Already uploaded" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "ssh-key add" || return 1
   # gh config set is the only write the second run makes, and it goes to gh's
@@ -393,6 +428,129 @@ test_configure_twice_uploads_nothing_new() {
   changed="$(find "$TEST_HOME" -newer "$marker" -type f \
     ! -name 'mock.log' ! -name '.idempotency-marker' 2>/dev/null)"
   assert_equals "" "$changed" "second configure must write nothing" || return 1
+  cleanup_test_env
+}
+
+test_configure_uploads_the_work_key_to_a_second_github_com_account() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication --title testmac personal" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type authentication --title testmac work" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type signing --title testmac work (signing)" || return 1
+  # Both identities land on the same host and file, since TEEUP_WORK_GH_HOST
+  # was not set: a second github.com account, not a separate service.
+  [[ ! -e "$TEST_HOME/gh-keys-github.com" ]] || { echo "a separate github.com key file was created"; return 1; }
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_uploads_the_work_key_to_a_github_enterprise_host() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  # Personal is already signed in on github.com; the Enterprise host is not,
+  # so only it goes through `auth login`.
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$calls" "auth login --hostname github.enterprise.example.com --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key" || return 1
+  assert_contains "$calls" "config set git_protocol ssh --host github.enterprise.example.com" || return 1
+  # The personal key still goes to github.com...
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication --title testmac personal" || return 1
+  # ...and the work key to the Enterprise host, tracked separately.
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type authentication --title testmac work" || return 1
+  assert_file_exists "$TEST_HOME/gh-keys-github.enterprise.example.com" || return 1
+  # The personal upload belongs in the plain (github.com) key list, not the
+  # Enterprise one.
+  assert_not_contains "$(cat "$TEST_HOME/gh-keys-github.enterprise.example.com")" "AAAAPERSONALKEY" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_signs_in_to_each_host_independently() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  # Personal is already signed in on github.com with both scopes; the
+  # Enterprise host has never been logged into. Only the Enterprise host may
+  # go through `auth login`.
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
+  assert_not_contains "$calls" "auth login --hostname github.com" || return 1
+  assert_contains "$calls" "auth login --hostname github.enterprise.example.com" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_skips_a_key_already_uploaded_to_the_enterprise_host() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  mkdir -p "$TEST_HOME"
+  printf 'testmac work\tssh-ed25519 AAAAWORKKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys-github.enterprise.example.com"
+  printf 'testmac work (signing)\tssh-ed25519 AAAAWORKKEY\t2026-09-11T09:12:34Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys-github.enterprise.example.com"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Already uploaded (authentication)" || return 1
+  assert_contains "$out" "Already uploaded (signing)" || return 1
+  assert_not_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub" || return 1
+  # The personal upload against github.com must still happen: an upload
+  # already present on the Enterprise host must not suppress it.
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_dry_run_uploads_nothing_for_either_identity() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "Would execute: gh auth login --hostname github.enterprise.example.com" || return 1
+  assert_contains "$out" "Would execute: gh ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  assert_contains "$out" "Would execute: gh ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "ssh-key add" || return 1
+  [[ ! -e "$TEST_HOME/gh-keys" && ! -e "$TEST_HOME/gh-keys-github.enterprise.example.com" ]] ||
+    { echo "a key list was written in dry run"; return 1; }
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_twice_with_a_work_identity_uploads_nothing_new() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  : > "$MOCK_LOG"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
+  assert_contains "$out" "Already signed in to GitHub (github.enterprise.example.com)." || return 1
+  assert_not_contains "$calls" "ssh-key add" || return 1
+  unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
 
@@ -417,4 +575,10 @@ run_test "configure compares the key body exactly" test_configure_compares_the_k
 run_test "configure never matches the key body against the title" test_configure_never_matches_the_key_body_against_the_title
 run_test "configure dry run uploads nothing" test_configure_dry_run_uploads_nothing
 run_test "configure twice uploads nothing new" test_configure_twice_uploads_nothing_new
+run_test "configure uploads the work key to a second github.com account" test_configure_uploads_the_work_key_to_a_second_github_com_account
+run_test "configure uploads the work key to a GitHub Enterprise host" test_configure_uploads_the_work_key_to_a_github_enterprise_host
+run_test "configure signs in to each host independently" test_configure_signs_in_to_each_host_independently
+run_test "configure skips a key already uploaded to the Enterprise host" test_configure_skips_a_key_already_uploaded_to_the_enterprise_host
+run_test "configure dry run uploads nothing for either identity" test_configure_dry_run_uploads_nothing_for_either_identity
+run_test "configure twice with a work identity uploads nothing new" test_configure_twice_with_a_work_identity_uploads_nothing_new
 print_summary
