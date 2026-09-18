@@ -8,10 +8,41 @@ export TEEUP_MACHINES_DIR
 
 answers_file() { printf '%s/answers\n' "$TEEUP_CONFIG_DIR"; }
 
+# machine_file -> the machine file in effect for this host: the user's own,
+# under $TEEUP_CONFIG_DIR/machines/, wins over $TEEUP_MACHINES_DIR (today's
+# path, the checkout's machines/ by default) -- the same overlay shape
+# theme_dir (lib/theme.sh) already gives themes, user config dir first,
+# shipped second. First match wins outright; the two are never merged,
+# because a half-applied machine file is worse than one file that is clearly
+# in charge. A read-only lookup: it stays silent (many callers build a
+# message out of it, and warning on every call would spam every one of them),
+# and it prints the winning path whether or not it exists, same as before,
+# since nothing here ever writes the file. capabilities/zsh/default/env
+# reimplements this same two-step in its own idiom for the shell layer, which
+# has no access to this library.
 machine_file() {
-  local host
+  local host d
   host="$(hostname -s 2>/dev/null || hostname)"
+  for d in "$TEEUP_CONFIG_DIR/machines" "$TEEUP_MACHINES_DIR"; do
+    if [[ -f "$d/$host.conf" ]]; then printf '%s\n' "$d/$host.conf"; return 0; fi
+  done
   printf '%s/%s.conf\n' "$TEEUP_MACHINES_DIR" "$host"
+}
+
+# _machine_file_announce -> when both the user's own machine file and the
+# checkout's exist, say which one wins, so a shadowed file is never a silent
+# mystery. Called once, from answers_load, rather than from machine_file
+# itself: machine_file is the read-only lookup every other function (and
+# several warn messages) builds on, so it has to stay quiet.
+_machine_file_announce() {
+  local host user repo
+  host="$(hostname -s 2>/dev/null || hostname)"
+  user="$TEEUP_CONFIG_DIR/machines/$host.conf"
+  repo="$TEEUP_MACHINES_DIR/$host.conf"
+  [[ "$user" == "$repo" ]] && return 0
+  if [[ -f "$user" && -f "$repo" ]]; then
+    log "Using $user ($repo also exists and is ignored)"
+  fi
 }
 
 # The wizard is the only writer of TEEUP_NAME, so its presence means the
@@ -34,6 +65,7 @@ answers_load() {
   # shellcheck source=/dev/null
   [[ -f "$f" ]] && source "$f"
   f="$(machine_file)"
+  _machine_file_announce
   if [[ -f "$f" ]]; then
     bash -n "$f" 2>/dev/null ||
       die "$f is not valid shell (an unbalanced quote?). Fix it, or move it aside, and run teeup again."
