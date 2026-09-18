@@ -1,8 +1,15 @@
-# machines/<hostname>.conf.sample - copy to machines/$(hostname -s).conf,
-# edit, and commit it. teeup sources this file after the answers file
-# (lib/answers.sh: answers_load), so anything set here wins over an answer,
-# and it is the ONLY place a work identity is configured: the wizard never
-# asks about work (see .superpowers/identity/brief.md, 2026-09-17).
+# machines/<hostname>.conf.sample - the machine file teeup sources after the
+# answers file (lib/answers.sh: answers_load), so anything set here wins over
+# an answer, and it is the ONLY place a work identity is configured: the
+# wizard never asks about work (see .superpowers/identity/brief.md,
+# 2026-09-17).
+#
+# The normal place for it is your own config directory, never this checkout:
+# copy this sample to $TEEUP_CONFIG_DIR/machines/$(hostname -s).conf (usually
+# ~/.config/teeup/machines/), edit it, and it survives every `git pull`
+# because it was never in the repo to begin with. machines/<hostname>.conf
+# here in the checkout still works -- teeup checks it second, when your own
+# file is absent -- and is what a fork of teeup uses instead.
 #
 # Every key below is optional; a machine with no work identity needs no file
 # at all.
