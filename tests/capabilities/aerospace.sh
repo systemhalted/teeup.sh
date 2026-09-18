@@ -68,6 +68,32 @@ test_configure_copies_the_config_and_prints_the_manual_step() {
   cleanup_test_env
 }
 
+# On MacPorts, install just warned that casks (and so AeroSpace) do not
+# exist and told the user to download it by hand; configure must not then
+# contradict that by promising the cask will finish installing.
+test_configure_tells_the_truth_on_macports() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)"
+  assert_not_contains "$out" "AeroSpace will appear in /Applications once its cask finishes installing" "MacPorts has no cask to finish installing" || return 1
+  assert_contains "$out" "MacPorts has no AeroSpace cask" || return 1
+  assert_contains "$out" "https://github.com/nikitabobko/AeroSpace/releases" || return 1
+  cleanup_test_env
+}
+
+test_configure_tells_the_truth_on_macports_in_dry_run_too() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure aerospace 2>&1)"
+  assert_not_contains "$out" "AeroSpace will appear in /Applications once its cask finishes installing" "MacPorts has no cask to finish installing" || return 1
+  assert_contains "$out" "MacPorts has no AeroSpace cask" || return 1
+  cleanup_test_env
+}
+
 test_configure_keeps_an_existing_home_config() {
   setup
   # AeroSpace reads ~/.aerospace.toml and ~/.config/aerospace/aerospace.toml
@@ -124,6 +150,14 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+test_configure_dry_run_still_prints_the_cask_message() {
+  setup
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure aerospace)"
+  assert_contains "$out" "AeroSpace will appear in /Applications once its cask finishes installing" || return 1
+  cleanup_test_env
+}
+
 test_doctor_reports_the_missing_app_and_config() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -143,6 +177,9 @@ run_test "install is skipped on macports" test_install_is_skipped_on_macports
 run_test "configure copies the config and prints the manual step" test_configure_copies_the_config_and_prints_the_manual_step
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure dry run still prints the cask message" test_configure_dry_run_still_prints_the_cask_message
+run_test "configure tells the truth on macports" test_configure_tells_the_truth_on_macports
+run_test "configure tells the truth on macports in dry run too" test_configure_tells_the_truth_on_macports_in_dry_run_too
 run_test "configure keeps an existing ~/.aerospace.toml" test_configure_keeps_an_existing_home_config
 run_test "doctor fails when both configs exist" test_doctor_fails_when_both_configs_exist
 run_test "doctor accepts ~/.aerospace.toml" test_doctor_accepts_the_home_config
