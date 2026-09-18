@@ -1682,8 +1682,11 @@ Expected: `Summary: 26/26 passed`. On a machine without Emacs the last two tests
 
 ```bash edit-old=bootstrap
 # wizard runs after step 3. See ask_package_manager.
+# Work is never asked here: it is per-machine, not a question. A work
+# identity exists only when machines/<hostname>.conf sets TEEUP_WORK_EMAIL
+# (see machines/example.conf.sample); this wizard has nothing to do with it.
 wizard() {
-  local name email work_email theme daily themes pinned_theme ask_theme=true
+  local name email theme daily themes pinned_theme ask_theme=true
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
@@ -1691,8 +1694,11 @@ wizard() {
 
 ```bash edit-new=bootstrap
 # wizard runs after step 3. See ask_package_manager.
+# Work is never asked here: it is per-machine, not a question. A work
+# identity exists only when machines/<hostname>.conf sets TEEUP_WORK_EMAIL
+# (see machines/example.conf.sample); this wizard has nothing to do with it.
 wizard() {
-  local name email work_email theme daily themes pinned_theme ask_theme=true
+  local name email theme daily themes pinned_theme ask_theme=true
   local flavor="" current_flavor other_flavor flavors pinned_flavor
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
@@ -1710,7 +1716,6 @@ wizard() {
   fi
   answers_set TEEUP_NAME "$name"
   answers_set TEEUP_EMAIL "$email"
-  answers_set TEEUP_WORK_EMAIL "$work_email"
   if [[ "$ask_theme" == "true" ]]; then answers_set TEEUP_THEME "$theme"; fi
   answers_set TEEUP_DAILY "$daily"
   answers_load
@@ -1750,7 +1755,6 @@ wizard() {
   fi
   answers_set TEEUP_NAME "$name"
   answers_set TEEUP_EMAIL "$email"
-  answers_set TEEUP_WORK_EMAIL "$work_email"
   if [[ "$ask_theme" == "true" ]]; then answers_set TEEUP_THEME "$theme"; fi
   answers_set TEEUP_DAILY "$daily"
   if [[ -n "$flavor" ]]; then answers_set TEEUP_EMACS_FLAVOR "$flavor"; fi
@@ -1767,11 +1771,12 @@ The existing `WIZARD_INPUT` stops after the daily confirm; the plain-read `ui_ch
 # Answers piped to the plain-read prompts, one per prompt. The package manager
 # is asked first and on its own, before step 2 installs one; the rest is the
 # wizard in step 4:
-# package manager choice, name, email, work email, theme choice, daily confirm.
+# package manager choice, name, email, theme choice, daily confirm. Work is
+# never asked (it is per-machine, not a question; see machines/*.conf).
 # "1" is the detected backend (Homebrew on the mocked modern Mac), "2" the
 # other one; for the theme choice, "1" is the first theme themes/ ships, i.e.
 # catppuccin.
-WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n\n1\ny\n'
+WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n1\ny\n'
 
 setup() {
 ```
@@ -1780,14 +1785,15 @@ setup() {
 # Answers piped to the plain-read prompts, one per prompt. The package manager
 # is asked first and on its own, before step 2 installs one; the rest is the
 # wizard in step 4:
-# package manager choice, name, email, work email, theme choice, daily confirm,
-# Emacs flavor. "1" is the detected backend (Homebrew on the mocked modern
-# Mac), "2" the other one; for the theme choice, "1" is the first theme
-# themes/ ships, i.e. catppuccin. The flavor question is asked only after a
-# "y" to the daily set, and the plain-read fallback takes an empty answer
-# (end of input here) as the first option, starter, so inputs that stop after
-# the daily confirm still work.
-WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n\n1\ny\n'
+# package manager choice, name, email, theme choice, daily confirm, Emacs
+# flavor. Work is never asked (it is per-machine, not a question; see
+# machines/*.conf). "1" is the detected backend (Homebrew on the mocked
+# modern Mac), "2" the other one; for the theme choice, "1" is the first
+# theme themes/ ships, i.e. catppuccin. The flavor question is asked only
+# after a "y" to the daily set, and the plain-read fallback takes an empty
+# answer (end of input here) as the first option, starter, so inputs that
+# stop after the daily confirm still work.
+WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n1\ny\n'
 
 setup() {
 ```
@@ -4356,9 +4362,9 @@ Amended: 2026-09-13, the daily tier (user decision; see the Editors, Browsers, P
 | Shell | Plain zsh, Omarchy-style layered default (`default/zsh/*` sourced by thin `~/.zshrc`); Starship; autosuggestions/syntax-highlighting/completions sourced directly; mise, zoxide, fzf, eza, bat wired in. No Oh My Zsh. |
 | Prompt | Starship (TOML). |
 | Editors | Emacs (flavor=starter default; doom/spacemacs/none switchable), Neovim (LazyVim), Zed, VS Code. |
-| Git | Ask name/email once + optional work email; `includeIf` for `~/Work` (work identity) and `~/Personal`; both identities used on work laptop. Aliases + modern defaults like Omarchy. |
+| Git | Ask name/email once; git carries that one identity, full stop -- no `includeIf`, no per-root switching. A repository that needs a different address gets `git config user.email ...` by hand. Aliases + modern defaults like Omarchy. *Decision of 2026-09-17; this row first asked for an optional work email and an `includeIf` per root.* |
 | Git extras | gh CLI + `gh auth login` + credential helper; lazygit; delta; git-lfs; pre-commit. |
-| SSH/signing | ed25519 keys, macOS Keychain via ssh-agent, upload via gh, SSH commit signing (`gpg.format=ssh`). Separate key per identity (work/personal); SSH config host aliases pick the key. |
+| SSH/signing | ed25519 keys, macOS Keychain via ssh-agent, upload via gh, SSH commit signing (`gpg.format=ssh`). Two keys are two separate identities: personal exists everywhere, work only on a machine whose `machines/<hostname>.conf` configures one. An existing `~/.ssh/config` is authority -- a `Host` block already naming a key wins over generating a new one. SSH config host aliases pick the key. |
 ```
 
 ```markdown edit-new=docs/superpowers/specs/2026-09-11-omarchy-inspired-redesign-design.md
@@ -4366,9 +4372,9 @@ Amended: 2026-09-13, the daily tier (user decision; see the Editors, Browsers, P
 | Shell | Plain zsh, Omarchy-style layered default (`default/zsh/*` sourced by thin `~/.zshrc`); Starship; autosuggestions/syntax-highlighting/completions sourced directly; mise, zoxide, fzf, eza, bat wired in. No Oh My Zsh. |
 | Prompt | Starship (TOML). |
 | Editors | Emacs (flavor=starter default; doom/spacemacs/none switchable) and Zed are the daily editors. Neovim (LazyVim) and VS Code are lazy: fully configured capabilities reached through their `nvim` and `code` shims, `teeup install` and `teeup launch`. *Decision of 2026-09-13; this row first listed all four as daily.* |
-| Git | Ask name/email once + optional work email; `includeIf` for `~/Work` (work identity) and `~/Personal`; both identities used on work laptop. Aliases + modern defaults like Omarchy. |
+| Git | Ask name/email once; git carries that one identity, full stop -- no `includeIf`, no per-root switching. A repository that needs a different address gets `git config user.email ...` by hand. Aliases + modern defaults like Omarchy. *Decision of 2026-09-17; this row first asked for an optional work email and an `includeIf` per root.* |
 | Git extras | gh CLI + `gh auth login` + credential helper; lazygit; delta; git-lfs; pre-commit. |
-| SSH/signing | ed25519 keys, macOS Keychain via ssh-agent, upload via gh, SSH commit signing (`gpg.format=ssh`). Separate key per identity (work/personal); SSH config host aliases pick the key. |
+| SSH/signing | ed25519 keys, macOS Keychain via ssh-agent, upload via gh, SSH commit signing (`gpg.format=ssh`). Two keys are two separate identities: personal exists everywhere, work only on a machine whose `machines/<hostname>.conf` configures one. An existing `~/.ssh/config` is authority -- a `Host` block already naming a key wins over generating a new one. SSH config host aliases pick the key. |
 ```
 
 ```markdown edit-old=docs/superpowers/specs/2026-09-11-omarchy-inspired-redesign-design.md
@@ -4381,8 +4387,8 @@ Amended: 2026-09-13, the daily tier (user decision; see the Editors, Browsers, P
 | macOS prefs | Opinionated dev set on by default, one unit each, revertable. |
 | Keyboard | Native `hidutil` Caps Lock→Control at bootstrap (LaunchAgent); Karabiner optional lazy with hyper-key config. |
 | Secrets | macOS Keychain + `gh auth`; shell helper reads Keychain via `security`. Nothing in repo. |
-| Dev dirs | Bootstrap creates `~/Work` and `~/Personal`; identity + SSH key per root. |
-| Work vs personal | Only git identity + SSH key differ. |
+| Dev dirs | Bootstrap creates `~/Work`. Fixed, not a question; `~/Personal` is no longer created. *Decision of 2026-09-17; this row first created two roots, one per identity.* |
+| Work vs personal | Nothing about directories any more: git has one identity regardless of where a repository sits, and a work identity is a per-machine SSH key and GitHub upload, configured in `machines/<hostname>.conf`, never a question the wizard asks. *Decision of 2026-09-17; this row first said only git identity + SSH key differ by root.* |
 | Essential set | Core (Xcode CLT, PM, shell, git/gh/ssh, WezTerm, font, CLI set, mise, AeroSpace, macOS defaults, hidutil) **plus daily set** (Emacs, Neovim, Zed, VS Code, Chrome, Obsidian) at bootstrap. Everything else lazy. |
 | Profiles | No named profiles. Answers file + per-hostname overrides. |
 | Themes | Yes: cross-tool theme system, a few themes, light/dark following macOS appearance. |
@@ -4399,8 +4405,8 @@ Amended: 2026-09-13, the daily tier (user decision; see the Editors, Browsers, P
 | macOS prefs | Opinionated dev set on by default, one unit each, revertable. |
 | Keyboard | Native `hidutil` Caps Lock→Control at bootstrap (LaunchAgent); Karabiner optional lazy with hyper-key config. |
 | Secrets | macOS Keychain + `gh auth`; shell helper reads Keychain via `security`. Nothing in repo. |
-| Dev dirs | Bootstrap creates `~/Work` and `~/Personal`; identity + SSH key per root. |
-| Work vs personal | Only git identity + SSH key differ. |
+| Dev dirs | Bootstrap creates `~/Work`. Fixed, not a question; `~/Personal` is no longer created. *Decision of 2026-09-17; this row first created two roots, one per identity.* |
+| Work vs personal | Nothing about directories any more: git has one identity regardless of where a repository sits, and a work identity is a per-machine SSH key and GitHub upload, configured in `machines/<hostname>.conf`, never a question the wizard asks. *Decision of 2026-09-17; this row first said only git identity + SSH key differ by root.* |
 | Essential set | Core (Xcode CLT, PM, shell, git/gh/ssh, WezTerm, font, CLI set, mise, AeroSpace, macOS defaults, hidutil) **plus daily set** (Emacs, Zed, Firefox Developer Edition, Obsidian) at bootstrap. Everything else lazy. *Decision of 2026-09-13: the daily set was Emacs, Neovim, Zed, VS Code, Chrome, Obsidian; Neovim, VS Code and Chrome are now lazy.* |
 | Profiles | No named profiles. Answers file + per-hostname overrides. |
 | Themes | Yes: cross-tool theme system, a few themes, light/dark following macOS appearance. |
@@ -4431,7 +4437,7 @@ packages="neovim"              # pkg_install candidates; used by default update/
   3  minimal self-install, only what the CLI needs to exist: write ~/.config/teeup/env,
      link ~/.local/bin/teeup, install gum (state dirs and shims belong to teeup-runtime)
   4  wizard (skipped when answers exist unless --reconfigure): name, personal email,
-     work email (optional), package manager confirm, theme, include daily set (default yes)
+     package manager confirm, theme, include daily set (default yes)
      -> writes ~/.config/teeup/answers
   5  for cap in capabilities/core.list:  run_logged install; run_logged configure
   6  for cap in capabilities/daily.list: same (unless --skip-daily or answers say no)
@@ -4441,7 +4447,7 @@ packages="neovim"              # pkg_install candidates; used by default update/
   3  minimal self-install, only what the CLI needs to exist: write ~/.config/teeup/env,
      link ~/.local/bin/teeup, install gum (state dirs and shims belong to teeup-runtime)
   4  wizard (skipped when answers exist unless --reconfigure): name, personal email,
-     work email (optional), package manager confirm, theme, include daily set (default yes),
+     package manager confirm, theme, include daily set (default yes),
      Emacs flavor (starter|doom|spacemacs|none, default starter; asked only with the daily set)
      -> writes ~/.config/teeup/answers
   5  for cap in capabilities/core.list:  run_logged install; run_logged configure
