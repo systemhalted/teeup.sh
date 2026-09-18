@@ -128,7 +128,7 @@ git_repair_old_identity_model() {
   local config="$git_dir/config" was_pristine=false recorded current
   local old_a_comment old_path_personal old_path_work new_path
   local personal_file="$git_dir/identity-personal" work_file="$git_dir/identity-work"
-  local i=0 n tmp leftover="" line
+  local i=0 n tmp leftover=false line link_target
   local -a lines out
 
   old_a_comment=$'\t''# Default identity; the includeIf blocks at the bottom override it per root.'
@@ -213,23 +213,49 @@ git_repair_old_identity_model() {
       i=$((i + 1))
     done
 
-    # Anything still naming the old model was not a block teeup shipped, so it
-    # is the user's line to change: name it and edit nothing at all.
+    # Anything still naming the old model was not a block teeup shipped, so the
+    # whole file is the user's to change and teeup edits none of it.
     for line in ${out+"${out[@]}"}; do
       case "$line" in
         *identity-personal*|*identity-work*|*'gitdir:~/Personal/'*|*'gitdir:~/Work/'*)
-          leftover="$leftover$line"$'\n' ;;
+          leftover=true
+          break
+          ;;
       esac
     done
-    if [[ -n "$leftover" ]]; then
-      warn "$config has lines from the old two-identity model that teeup did not ship:"
-      printf '%s' "$leftover" >&2
-      warn "Remove them by hand (git has one identity now); teeup changed nothing."
+    if [[ "$leftover" == "true" ]]; then
+      warn "$config still carries the old two-identity model in a shape teeup did not ship, so it was left alone."
+      warn "These are its lines, as the file has them:"
+      # Listed from the file itself, not from the transformed copy: that copy
+      # has already rewritten the top-level include, which the user would then
+      # never be told to fix, and nothing is being written anyway. An includeIf
+      # header is listed alongside the path under it -- on its own,
+      # "path = .../identity-work" says nothing about which root sends a
+      # repository there, and a root the user renamed would otherwise never
+      # appear at all.
+      i=0
+      while [[ $i -lt $n ]]; do
+        case "${lines[$i]}" in
+          *identity-personal*|*identity-work*|*'gitdir:~/Personal/'*|*'gitdir:~/Work/'*)
+            printf '  %d: %s\n' "$((i + 1))" "${lines[$i]}" >&2
+            ;;
+          '[includeIf "gitdir:'*)
+            case "${lines[$((i + 1))]:-}" in
+              *identity-personal*|*identity-work*)
+                printf '  %d: %s\n' "$((i + 1))" "${lines[$i]}" >&2
+                ;;
+            esac
+            ;;
+        esac
+        i=$((i + 1))
+      done
+      warn "git has one identity now: one include of $git_dir/identity, no includeIf blocks. teeup changed nothing."
       return 0
     fi
   fi
 
   if [[ "$DRY_RUN" == "true" ]]; then
+    [[ -L "$config" ]] && printf "%b %s\n" "🔍" "[DRY-RUN] Would back up the symlink at $config and write a real file in its place"
     [[ -f "$config" ]] && printf "%b %s\n" "🔍" "[DRY-RUN] Would drop the old identity blocks from $config"
     [[ -f "$personal_file" ]] && printf "%b %s\n" "🔍" "[DRY-RUN] Would back up $personal_file"
     [[ -f "$work_file" ]] && printf "%b %s\n" "🔍" "[DRY-RUN] Would back up $work_file"
@@ -237,6 +263,18 @@ git_repair_old_identity_model() {
   fi
 
   if [[ -f "$config" ]]; then
+    # A symlink is never a file teeup installed, so it is foreign the same way
+    # one at a key path or at any other shipped config is: the link is backed
+    # up and a real file takes its place, rather than the repair being written
+    # through it into whatever repo the link points at. Say so, and name that
+    # file: it still has the old blocks, and nothing else will tell the user.
+    if [[ -L "$config" ]]; then
+      link_target="$(readlink "$config")"
+      case "$link_target" in /*) ;; *) link_target="$(dirname "$config")/$link_target" ;; esac
+      warn "$config is a symlink to $link_target."
+      warn "teeup backs the link up and writes a real file here, as it does for every file it did not install."
+      warn "$link_target keeps the old blocks; update or delete them there too."
+    fi
     backup_target "$config" >/dev/null
     tmp="$(mktemp)"
     for line in ${out+"${out[@]}"}; do printf '%s\n' "$line"; done > "$tmp"
