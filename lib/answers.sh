@@ -24,14 +24,72 @@ answers_exist() {
 
 # Load answers, then the machine file. The machine file is sourced last on
 # purpose: it encodes hard constraints (package manager, skipped capabilities).
+# It is also hand-written, and the one file the whole work identity now lives
+# in, so it is checked before it is trusted: a stray quote used to leave it
+# half-sourced with the error swallowed, and what it says about work used to
+# be taken on faith.
 answers_load() {
   local f
   f="$(answers_file)"
   # shellcheck source=/dev/null
   [[ -f "$f" ]] && source "$f"
   f="$(machine_file)"
-  # shellcheck source=/dev/null
-  [[ -f "$f" ]] && source "$f"
+  if [[ -f "$f" ]]; then
+    bash -n "$f" 2>/dev/null ||
+      die "$f is not valid shell (an unbalanced quote?). Fix it, or move it aside, and run teeup again."
+    # shellcheck source=/dev/null
+    source "$f"
+  fi
+  _machine_work_check
+  return 0
+}
+
+# What machines/<hostname>.conf says about work, checked. A malformed address
+# is fatal: taken on faith it becomes an ssh key's comment, a GitHub key's
+# title and an upload, none of which can be quietly undone. A host or an
+# account with no email configures nothing at all, which is the likeliest way
+# to misconfigure this file, so it says so.
+_machine_work_check() {
+  local f key email
+  f="$(machine_file)"
+  [[ -f "$f" ]] || return 0
+  email="$(work_get TEEUP_WORK_EMAIL)"
+  if [[ -n "$email" ]]; then
+    email_valid "$email" >/dev/null 2>&1 ||
+      die "TEEUP_WORK_EMAIL in $f is not an email address: '$email'"
+    return 0
+  fi
+  for key in TEEUP_WORK_GH_HOST TEEUP_WORK_GH_ACCOUNT; do
+    [[ -n "$(work_get "$key")" ]] || continue
+    warn "$f sets $key but no TEEUP_WORK_EMAIL, so this machine has no work identity and $key does nothing."
+  done
+  return 0
+}
+
+# email_valid <candidate> -> prints <candidate> when it looks like
+# something@something.tld, no spaces; else warns and fails. Deliberately
+# simple, not RFC 5322: it exists to catch the shapes that actually turn up
+# (an empty answer, a filesystem path typed into the field, a name with no
+# domain), not to validate every edge case. The bootstrap wizard and the
+# machine-file check share it so the two cannot drift apart.
+email_valid() {
+  local v="$1"
+  if [[ -z "$v" ]]; then
+    warn "An email address is required."
+    return 1
+  fi
+  case "$v" in
+    *[[:space:]]*) warn "'$v' contains a space; expected something@something.tld"; return 1 ;;
+    # The regex below's final group matches an internal dot too, so
+    # "ada@example.com." would otherwise pass with the trailing dot folded
+    # into the "tld" group.
+    *.) warn "'$v' ends with a dot; expected something@something.tld"; return 1 ;;
+  esac
+  if ! [[ "$v" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
+    warn "'$v' does not look like an email address; expected something@something.tld"
+    return 1
+  fi
+  printf '%s\n' "$v"
   return 0
 }
 
