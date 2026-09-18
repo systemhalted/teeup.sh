@@ -135,8 +135,14 @@ pkg_installed() {
   local pkg="$1"
   _pkg_backend_resolve
   case "$TEEUP_PKG_BACKEND" in
-    homebrew) have brew && brew list --formula "$pkg" >/dev/null 2>&1 ;;
-    macports) have port && port installed "$pkg" 2>/dev/null | grep -q '(active)' ;;
+    homebrew)
+      have brew && log "Asking Homebrew whether $pkg is installed..." && \
+        brew list --formula "$pkg" >/dev/null 2>&1
+      ;;
+    macports)
+      have port && log "Asking MacPorts whether $pkg is installed..." && \
+        port installed "$pkg" 2>/dev/null | grep -q '(active)'
+      ;;
   esac
 }
 
@@ -175,7 +181,10 @@ pkg_install() {
 
 casks_supported() { _pkg_backend_resolve; [[ "$TEEUP_PKG_BACKEND" == "homebrew" ]]; }
 
-cask_installed() { have brew && brew list --cask "$1" >/dev/null 2>&1; }
+cask_installed() {
+  have brew && log "Asking Homebrew whether $1 is installed (cask)..." && \
+    brew list --cask "$1" >/dev/null 2>&1
+}
 
 # cask_install <cask>
 # On MacPorts machines GUI apps are skipped with a note rather than failing,

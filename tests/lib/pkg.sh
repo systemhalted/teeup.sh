@@ -114,6 +114,58 @@ test_candidates_map_bash_completion_on_homebrew() {
   cleanup_test_env
 }
 
+test_pkg_installed_announces_the_backend_it_asks() {
+  setup
+  mock_command brew 0 ""
+  local out
+  out="$(pkg_installed ripgrep)"
+  assert_contains "$out" "Asking Homebrew whether ripgrep is installed" || return 1
+  cleanup_test_env
+}
+
+test_pkg_installed_announces_macports_too() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  local out
+  out="$(pkg_installed ripgrep)"
+  assert_contains "$out" "Asking MacPorts whether ripgrep is installed" || return 1
+  cleanup_test_env
+}
+
+test_pkg_install_have_short_circuit_does_not_announce() {
+  setup
+  mock_command jq 0 ""
+  mock_command brew 0 ""
+  local out
+  out="$(pkg_install jq jq)"
+  assert_contains "$out" "Already available on PATH: jq" || return 1
+  assert_not_contains "$out" "Asking" "nothing blocks on the have short-circuit, so there is nothing to announce" || return 1
+  cleanup_test_env
+}
+
+test_backend_announcement_reads_the_same_under_dry_run() {
+  setup
+  mock_command brew 0 ""
+  local dry_out real_out
+  DRY_RUN=true
+  dry_out="$(pkg_installed ripgrep)"
+  DRY_RUN=false
+  real_out="$(pkg_installed ripgrep)"
+  assert_contains "$dry_out" "Asking Homebrew whether ripgrep is installed" || return 1
+  assert_equals "$real_out" "$dry_out" "the announcement is a plain log line, not routed through ok_unless_dry" || return 1
+  cleanup_test_env
+}
+
+test_cask_installed_announces_the_backend_it_asks() {
+  setup
+  mock_command brew 0 ""
+  local out
+  out="$(cask_installed wezterm)"
+  assert_contains "$out" "Asking Homebrew whether wezterm is installed (cask)" || return 1
+  cleanup_test_env
+}
+
 test_cask_install_skipped_on_macports() {
   setup
   export TEEUP_PACKAGE_MANAGER=macports
@@ -187,6 +239,11 @@ run_test "pkg_install calls brew when missing" test_pkg_install_calls_brew_when_
 run_test "pkg_install real-run wording is unchanged" test_pkg_install_real_run_wording_is_unchanged
 run_test "pkg_install uses sudo port on macports" test_pkg_install_uses_sudo_port_on_macports
 run_test "candidates map bash-completion" test_candidates_map_bash_completion_on_homebrew
+run_test "pkg_installed announces the backend it asks" test_pkg_installed_announces_the_backend_it_asks
+run_test "pkg_installed announces macports too" test_pkg_installed_announces_macports_too
+run_test "pkg_install have short-circuit does not announce" test_pkg_install_have_short_circuit_does_not_announce
+run_test "backend announcement reads the same under dry run" test_backend_announcement_reads_the_same_under_dry_run
+run_test "cask_installed announces the backend it asks" test_cask_installed_announces_the_backend_it_asks
 run_test "cask_install skipped on macports" test_cask_install_skipped_on_macports
 run_test "cask_install dry run" test_cask_install_dry_run
 run_test "backend prepare installs homebrew" test_backend_prepare_installs_homebrew_when_missing
