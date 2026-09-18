@@ -1083,7 +1083,7 @@ git commit -m "Give every lazy capability a menu row"
 
 **Interfaces:**
 - Consumes: `legacy/teeup.sh --list-modules` and `legacy/teeup.sh --help`, both read once here and transcribed; `capabilities/` for the names the checklist maps to.
-- Produces: `docs/legacy-parity.md`, with a machine-readable region between `<!-- parity-map -->` and `<!-- /parity-map -->` whose second column holds only backticked capability names or the plain word `dropped`. The README's "Coming from an older setup" section and CONTRIBUTING's layout table already point at this file; the skill gains its pointer here. **The deletion task must not run before this one:** the checklist is the spec's gate for phase 5, and it is written from a tree that still has `legacy/` in it.
+- Produces: `docs/legacy-parity.md`, with a machine-readable region between `<!-- parity-map -->` and `<!-- /parity-map -->` whose second column holds only backticked capability names or the plain word `dropped` — nothing else, and `tests/docs.sh`'s check enforces the "nothing else": it is not satisfied by finding a backticked name somewhere in the cell, an unquoted word left over (a typo that lost its backticks) fails it too. The README's "Coming from an older setup" section and CONTRIBUTING's layout table already point at this file; the skill gains its pointer here. **The deletion task must not run before this one:** the checklist is the spec's gate for phase 5, and it is written from a tree that still has `legacy/` in it.
 
 **Get the list from the program, not from memory.** Before writing the document, run the command the spec's gate names and keep the output:
 
@@ -1265,24 +1265,36 @@ test_the_parity_checklist_has_a_row_for_every_legacy_module() {
 }
 
 test_the_parity_checklist_names_only_capabilities_that_exist() {
-  local bad="" row cell name
+  local bad="" row cell trimmed leftover name
   while IFS= read -r row; do
     # The second cell: everything between the first and second "|" after the
-    # module name. It holds backticked capability names, or the word dropped.
+    # module name. It has to be exactly the word dropped, or one or more
+    # backticked capability names and nothing else -- an unquoted word left
+    # over once every `name` span is stripped out is a typo that lost its
+    # backticks, and grep -oE alone would silently skip right over it.
     cell="$(printf '%s' "$row" | awk -F'|' '{print $3}')"
-    if [[ -z "$(printf '%s' "$cell" | tr -d ' ')" ]]; then
+    trimmed="$(printf '%s' "$cell" | tr -d ' ')"
+    if [[ -z "$trimmed" ]]; then
       bad="$bad empty-cell"
       continue
     fi
-    for name in $(printf '%s' "$cell" | grep -oE '`[a-z0-9][a-z0-9.-]*`' | tr -d '`'); do
+    if [[ "$trimmed" == "dropped" ]]; then
+      continue
+    fi
+    leftover="$trimmed"
+    for name in $(printf '%s' "$trimmed" | grep -oE '`[a-z0-9][a-z0-9.-]*`' | tr -d '`'); do
       if [[ ! -d "$REPO/capabilities/$name" ]]; then
         bad="$bad $name"
       fi
+      leftover="${leftover//\`$name\`/}"
     done
+    if [[ -n "$leftover" ]]; then
+      bad="$bad unquoted:$leftover"
+    fi
   done <<PARITY_ROWS
 $(parity_rows)
 PARITY_ROWS
-  assert_equals "" "$bad" "every capability the checklist names exists" || return 1
+  assert_equals "" "$bad" "every replacement cell is dropped, or backticked capability names that all exist" || return 1
 }
 
 echo "docs.sh"
