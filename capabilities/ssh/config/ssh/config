@@ -8,13 +8,12 @@ Host github.com
   IdentityFile ~/.ssh/id_ed25519_personal
   IdentitiesOnly yes
 
-# Clone work repositories as git@github.com-work:org/repo.git. That picks the
-# work key here, and cloning into ~/Work picks the work git identity.
-Host github.com-work
-  HostName github.com
-  User git
-  IdentityFile ~/.ssh/id_ed25519_work
-  IdentitiesOnly yes
+#TEEUP_WORK_ALIAS teeup renders the work alias here, and only on a machine
+#TEEUP_WORK_ALIAS whose machines/<hostname>.conf configures a work identity.
+#TEEUP_WORK_ALIAS An alias pointing at a key that does not exist, with
+#TEEUP_WORK_ALIAS IdentitiesOnly yes, fails with no usable identity the first
+#TEEUP_WORK_ALIAS time anyone uses it by accident. These marker lines are
+#TEEUP_WORK_ALIAS dropped either way; they never reach ~/.ssh/config.
 
 Host *
   # Add a key to the agent on first use and keep its passphrase in the login
