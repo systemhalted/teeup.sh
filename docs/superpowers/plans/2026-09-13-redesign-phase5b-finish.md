@@ -1474,8 +1474,7 @@ needed, then Homebrew — or MacPorts on macOS 12 and older, or when
 | Question | Answer key |
 |---|---|
 | Your full name | `TEEUP_NAME` |
-| Personal email, for the git identity under `~/Personal` | `TEEUP_EMAIL` |
-| Work email, for the git identity under `~/Work` (empty for none) | `TEEUP_WORK_EMAIL` |
+| Email, your one git identity | `TEEUP_EMAIL` |
 | Theme | `TEEUP_THEME` |
 | Install the daily set too? | `TEEUP_DAILY` |
 | Emacs flavor, when the daily set is on | `TEEUP_EMACS_FLAVOR` |
@@ -1483,7 +1482,9 @@ needed, then Homebrew — or MacPorts on macOS 12 and older, or when
 The answers land in `~/.config/teeup/answers` and are yours to change with
 `teeup config set` or `./bootstrap --reconfigure`. A question whose answer is
 pinned by `machines/<hostname>.conf` is not asked, because the answer would
-never be read.
+never be read. Work is never asked here at all: a work identity is a
+per-machine setting, not a question, and it belongs in
+`machines/<hostname>.conf` (see "Per-machine overrides" below).
 
 After a new login shell, `teeup` is on your `PATH` through `~/.local/bin`.
 Until then it is `~/.local/bin/teeup`.
@@ -1527,7 +1528,7 @@ nothing.
 ## What bootstrap installs
 
 **Core**, in this order: `xcode-clt`, `package-manager`, `teeup-runtime`,
-`dev-dirs` (`~/Work` and `~/Personal`), `zsh`, `starship`, `cli-tools`,
+`dev-dirs` (`~/Work`), `zsh`, `starship`, `cli-tools`,
 `secrets`, `git`, `ssh`, `github`, `mise`, `wezterm`, `fonts`, `aerospace`,
 `keyboard`, `macos-defaults`, `theme`.
 
@@ -1855,9 +1856,11 @@ ln -sfn ~/.local/share/teeup/share/agents/skills/teeup ~/.someagent/skills/teeup
 `machines/<hostname>.conf` is a committed file, sourced after your answers and
 winning over them: it is where `TEEUP_PACKAGE_MANAGER=macports`,
 `TEEUP_SKIP="aerospace"` or a pinned `TEEUP_THEME` belongs. It is the only
-override layer — there are no named profiles, because the only things that
-differ between work and personal are the git identity and the SSH key, and
-both live on the same laptop as a directory rule (`~/Work` and `~/Personal`).
+override layer — there are no named profiles. It is also the only place a
+work identity exists: git itself has one identity everywhere, whatever
+repository it sits in; a *second* SSH key and GitHub upload, for a machine
+that needs one, exist only when this file sets `TEEUP_WORK_EMAIL` (see
+`machines/example.conf.sample`).
 
 ### Where everything lives
 
@@ -1889,7 +1892,7 @@ your home
   ~/.config/<tool>/        copied from a capability's config/, yours
   ~/.zshrc ~/.zprofile ~/.zshenv    thin, sourcing teeup's zsh layer
   ~/.local/bin/            teeup, and the mise-backed wrappers
-  ~/Work ~/Personal        created by dev-dirs
+  ~/Work                   created by dev-dirs
 
 generated, never edit by hand
   ~/.local/state/teeup/done/ toggles/ migrations/ shims/ stock/ logs/
