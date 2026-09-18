@@ -426,7 +426,7 @@ test_configure_repairs_an_old_two_identity_config() {
   assert_contains "$cfg" "signing, the identity) live in separate" || return 1
   [[ ! -e "$TEST_HOME/.config/git/identity-personal" ]] || { echo "identity-personal left in place"; return 1; }
   [[ ! -e "$TEST_HOME/.config/git/identity-work" ]] || { echo "identity-work left in place"; return 1; }
-  assert_equals "ada@example.com" "$(resolved_email "$TEST_HOME/Work/repo")" "~/Work must resolve to the one identity" || return 1
+  assert_equals "ada@example.com" "$(resolved_email "$TEST_HOME/Work/repo")" "a repository under the Work root must resolve to the one identity" || return 1
   cleanup_test_env
 }
 
