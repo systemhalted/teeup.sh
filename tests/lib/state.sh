@@ -26,6 +26,17 @@ test_done_ensure_succeeds_only_first_time() {
   cleanup_test_env
 }
 
+test_na_check_mark_clear() {
+  setup
+  state_na check "cap-aerospace" && { echo "should not be na yet"; return 1; }
+  state_na mark "cap-aerospace"
+  state_na check "cap-aerospace" || { echo "should be na"; return 1; }
+  assert_file_exists "$TEEUP_STATE_DIR/na/cap-aerospace" || return 1
+  state_na clear "cap-aerospace"
+  state_na check "cap-aerospace" && { echo "should be cleared"; return 1; }
+  cleanup_test_env
+}
+
 test_toggle_round_trip() {
   setup
   state_toggle_enabled nightlight && { echo "off by default"; return 1; }
@@ -56,6 +67,7 @@ test_dry_run_records_nothing() {
 echo "lib/state.sh"
 run_test "done check/mark/clear" test_done_check_mark_clear
 run_test "done ensure succeeds only once" test_done_ensure_succeeds_only_first_time
+run_test "na check/mark/clear" test_na_check_mark_clear
 run_test "toggle round trip" test_toggle_round_trip
 run_test "migration markers" test_migration_markers
 run_test "dry run records nothing" test_dry_run_records_nothing

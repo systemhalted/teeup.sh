@@ -63,12 +63,13 @@ log "macOS $(sw_vers -productVersion 2>/dev/null || echo '?') on $(arch), teeup 
 CONFIGURED_THIS_RUN=" "
 
 run_capability() {
-  # run_capability <name> -> install then configure, then mark done.
+  # run_capability <name> -> install then configure, recording done or
+  # not-applicable (cap_install_verbs, lib/capability.sh). A not-applicable
+  # capability did not really configure anything, so it is left out of
+  # CONFIGURED_THIS_RUN.
   local name="$1"
-  cap_run "$name" install || return 1
-  cap_run "$name" configure || return 1
-  state_done mark "cap-$name"
-  CONFIGURED_THIS_RUN="$CONFIGURED_THIS_RUN$name "
+  cap_install_verbs "$name" || return 1
+  [[ "$TEEUP_CAP_NA" == "true" ]] || CONFIGURED_THIS_RUN="$CONFIGURED_THIS_RUN$name "
 }
 
 run_tier() {

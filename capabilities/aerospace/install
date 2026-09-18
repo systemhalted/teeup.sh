@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# AeroSpace's own README states its floor: "AeroSpace binary runs on: macOS
+# 13+". Below that the binary cannot launch at all, so no instruction this
+# script could give would ever work; say so and stop before any of them.
+aerospace_macos_major="$(macos_major)"
+if [[ "${aerospace_macos_major:-99}" -lt 13 ]] 2>/dev/null; then
+  not_applicable "AeroSpace requires macOS 13 or newer; this Mac is on macOS $aerospace_macos_major, so there is nothing to install."
+fi
+unset aerospace_macos_major
+
 # AeroSpace ships from its author's tap, so the tap has to exist first. Doing
 # it explicitly (rather than relying on the implicit tap in the cask name)
 # keeps the error legible when GitHub is unreachable.

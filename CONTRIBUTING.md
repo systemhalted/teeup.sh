@@ -484,3 +484,21 @@ Happy contributing! 🚀
     `launchagent_install <label>` with the plist on stdin, and
     `launchagent_remove <label>` in `remove`. Never call `defaults write` or
     `launchctl` directly.
+14. A machine that cannot have the capability at all — not "this step
+    failed", but "this tool does not run here" — is a third outcome install
+    and configure must be able to report, distinct from both success and
+    failure. Call `not_applicable "<message>"` (`lib/capability.sh`) instead
+    of a plain `warn` + `exit 0`: it prints `<message>` in place of
+    instructions that could never have worked, and tells `cap_run` to treat
+    the run as neither done nor failed. Concretely: `teeup install`/bootstrap
+    mark nothing done, `teeup has <name>` still reports not-installed, and
+    `teeup status` lists the capability as "not applicable on this machine"
+    rather than "installed" or leaving it out entirely. A capability whose
+    job is only partly blocked (it did something real, just not everything —
+    `fonts` on MacPorts records the font family every tool follows even
+    though the actual font file needs installing by hand) is not this case;
+    keep that a normal, honest success with a `warn` about the gap. Reserve
+    `not_applicable` for when nothing about the capability could apply.
+    Never call it to swallow a real error — a genuine failure must still
+    `warn`/`die` or exit non-zero, or bootstrap's core-tier gate would wave
+    it through unnoticed.

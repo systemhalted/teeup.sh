@@ -12,6 +12,28 @@ make_cap() {
   chmod +x "$dir/install" "$dir/configure"
 }
 
+# A fixture whose install says not_applicable instead of actually installing.
+make_na_cap() {
+  local name="$1" tier="$2" requires="${3:-}"
+  local dir="$TEEUP_CAPS_DIR/$name"
+  mkdir -p "$dir"
+  printf 'summary="Fixture %s"\ngroup=system\ntier=%s\nrequires="%s"\nprovides=""\ninteractive=false\n' "$name" "$tier" "$requires" > "$dir/capability"
+  printf '#!/usr/bin/env bash\nnot_applicable "install: %s cannot run on this machine"\n' "$name" > "$dir/install"
+  printf '#!/usr/bin/env bash\necho "configure:%s"\n' "$name" > "$dir/configure"
+  chmod +x "$dir/install" "$dir/configure"
+}
+
+# A fixture whose install genuinely fails.
+make_failing_cap() {
+  local name="$1" tier="$2" requires="${3:-}"
+  local dir="$TEEUP_CAPS_DIR/$name"
+  mkdir -p "$dir"
+  printf 'summary="Fixture %s"\ngroup=system\ntier=%s\nrequires="%s"\nprovides=""\ninteractive=false\n' "$name" "$tier" "$requires" > "$dir/capability"
+  printf '#!/usr/bin/env bash\necho "install:%s about to fail"\nfalse\n' "$name" > "$dir/install"
+  printf '#!/usr/bin/env bash\necho "configure:%s"\n' "$name" > "$dir/configure"
+  chmod +x "$dir/install" "$dir/configure"
+}
+
 setup() {
   setup_test_env
   mock_macos_base
@@ -88,6 +110,51 @@ test_status_reports_backend_and_installed() {
   assert_contains "$out" "Package manager: homebrew" || return 1
   assert_contains "$out" "Installed: 1 of 3" || return 1
   assert_contains "$out" "Answers: missing" || return 1
+  cleanup_test_env
+}
+
+# A machine this capability cannot run on at all: bootstrap/`teeup install`
+# still succeeds, nothing is marked done, `teeup has` still reports
+# not-installed, and `status` says so as its own state.
+test_install_records_not_applicable_and_has_reports_not_installed() {
+  setup
+  make_na_cap gamma core
+  printf 'alpha\nbeta\ngamma\n' > "$TEEUP_CAPS_DIR/core.list"
+  local out rc=0
+  out="$("$TEEUP" install gamma 2>&1)" || rc=$?
+  assert_success "$rc" "not-applicable must not fail teeup install" || return 1
+  assert_contains "$out" "gamma cannot run on this machine" || return 1
+  local has_rc=0
+  "$TEEUP" has gamma >/dev/null 2>&1 || has_rc=$?
+  assert_failure "$has_rc" "gamma must not report installed" || return 1
+  cleanup_test_env
+}
+
+test_status_shows_not_applicable_as_its_own_state() {
+  setup
+  make_na_cap gamma core
+  printf 'alpha\nbeta\ngamma\n' > "$TEEUP_CAPS_DIR/core.list"
+  "$TEEUP" install gamma >/dev/null 2>&1
+  local out
+  out="$("$TEEUP" status)"
+  assert_contains "$out" "not applicable on this machine" || return 1
+  assert_not_contains "$out" "gamma              installed" || return 1
+  assert_contains "$out" "Not applicable on this machine: 1" || return 1
+  cleanup_test_env
+}
+
+# A capability that genuinely fails must still abort teeup install -- the
+# not-applicable path must never be a way to mask a real failure.
+test_install_still_aborts_on_a_real_failure() {
+  setup
+  make_failing_cap gamma core
+  printf 'alpha\nbeta\ngamma\n' > "$TEEUP_CAPS_DIR/core.list"
+  local rc=0
+  "$TEEUP" install gamma >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" "a genuinely failing capability must still abort" || return 1
+  local has_rc=0
+  "$TEEUP" has gamma >/dev/null 2>&1 || has_rc=$?
+  assert_failure "$has_rc" "gamma must not report installed on failure" || return 1
   cleanup_test_env
 }
 
@@ -219,6 +286,9 @@ run_test "install unknown capability" test_install_unknown_capability
 run_test "configure only" test_configure_only
 run_test "list shows tier and summary" test_list_shows_tier_and_summary
 run_test "status reports backend and installed" test_status_reports_backend_and_installed
+run_test "install records not-applicable and has reports not-installed" test_install_records_not_applicable_and_has_reports_not_installed
+run_test "status shows not-applicable as its own state" test_status_shows_not_applicable_as_its_own_state
+run_test "install still aborts on a real failure" test_install_still_aborts_on_a_real_failure
 run_test "commands --check delegates" test_commands_check_delegates_to_cap_check
 run_test "unknown verb exits 2" test_unknown_verb_exits_2
 run_test "help lists verbs" test_help_lists_verbs
