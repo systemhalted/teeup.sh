@@ -133,7 +133,7 @@ Every task's requirements implicitly include this section.
 
 **Interfaces:**
 - Consumes: `./bin/teeup help` (every phase's verbs), `capabilities/*/capability` and `capabilities/{core,daily}.list` (main), `tests/helper.sh`'s `run_test`, `print_summary`, `assert_equals`, `assert_contains`, `assert_file_exists` (main).
-- Produces: `share/agents/skills/teeup/SKILL.md`, the file Task 2 links and Tasks 4, 5 and 6 point at. `tests/docs.sh`, the suite Tasks 4, 5 and 7 extend; it is a plain `bash tests/docs.sh` file with the same shape as every other suite, and it runs **without** `setup_test_env` because it reads the checkout rather than a temp `$HOME`. The README region markers `<!-- teeup-commands -->` and `<!-- /teeup-commands -->`, which Task 5 must put in `README.md`.
+- Produces: `share/agents/skills/teeup/SKILL.md`, the file Task 2 links and Tasks 4, 5 and 6 point at. `tests/docs.sh`, the suite Tasks 4, 5 and 7 extend; it is a plain `bash tests/docs.sh` file with the same shape as every other suite. It reads the checkout — `README.md`, the skill, `capabilities/*` — rather than a temp `$HOME` for the files it asserts on, but it still calls `setup_test_env` once, for the whole file, because `help_verbs()` runs `./bin/teeup help`, and `bin/teeup` sources the real answers file and machine config before dispatching on any verb: see Step 2. The README region markers `<!-- teeup-commands -->` and `<!-- /teeup-commands -->`, which Task 5 must put in `README.md`.
 
 **Why the suite comes first.** Tasks 4, 5 and 6 rewrite three documents by hand. Without a check that reads the runtime, the only thing standing between "the README lists every verb" and "the README lists the verbs somebody remembered" is care, and the rest of this plan is four thousand words of prose written in one sitting. The suite is written here, with the four checks that can pass today (the skill's own claims), and grows more in Tasks 4, 5 and 7.
 
@@ -336,10 +336,23 @@ teeup dev new-capability|add-migration|check          teeup commands --check
 
 - [ ] **Step 2: Write the failing suite**
 
-`tests/docs.sh` is the only suite that reads the checkout instead of a temp
-`$HOME`, so it does not call `setup_test_env`. It still exports `TEEUP_NO_GUM=1`
-so that a later test added here inherits the guard, and it calls
-`./bin/teeup help` with `HOME` left alone, because `help` reads nothing from it.
+`tests/docs.sh` reads the checkout rather than a temp `$HOME` for the files it
+asserts on — `README.md`, the skill, `docs/legacy-parity.md`, `capabilities/*`
+— so `REPO` below stays `$TEEUP_PATH`, the real checkout, throughout. But
+`help_verbs()` shells out to `./bin/teeup help`, and `bin/teeup` sources
+`answers_load` before dispatching on any verb, `help` included: left alone,
+that call would source this developer's real `~/.config/teeup/answers` and a
+real `machines/<hostname>.conf`, which is exactly what the Global Constraint
+"Tests never touch the real machine" rules out. So the suite still calls
+`setup_test_env`, once for the whole file rather than once per test — nothing
+here writes anything a later test could see, so one shared throwaway `$HOME`
+is enough — and additionally points `TEEUP_MACHINES_DIR` at an empty
+directory beside it, the way `tests/lib/answers.sh` and `tests/bootstrap.sh`
+already do, because `TEEUP_MACHINES_DIR` defaults to `$TEEUP_PATH/machines`
+rather than anywhere under `$HOME` and `setup_test_env` alone does not move
+it. `setup_test_env` never touches `TEEUP_PATH`, so `REPO` still reads the
+real tree. It still exports `TEEUP_NO_GUM=1` so that a later test added here
+inherits the guard.
 
 ```bash file=tests/docs.sh
 #!/usr/bin/env bash
@@ -354,8 +367,22 @@ set -euo pipefail
 # tests/capabilities.
 source "$(dirname "$0")/helper.sh"
 
-# No setup_test_env: nothing here writes anything. TEEUP_NO_GUM is exported
-# anyway so a later test in this file that drives a prompt inherits the guard.
+# help_verbs() below runs ./bin/teeup help, and bin/teeup sources
+# answers_load before dispatching on any verb -- so, left alone, this suite
+# would source the real ~/.config/teeup/answers and a real
+# machines/<hostname>.conf. setup_test_env moves HOME, TEEUP_CONFIG_DIR and
+# TEEUP_STATE_DIR under a throwaway directory; TEEUP_MACHINES_DIR is pointed
+# at an empty one beside it, the way tests/lib/answers.sh and
+# tests/bootstrap.sh do, since it defaults from $TEEUP_PATH rather than
+# $HOME and setup_test_env does not move it. Called once for the whole file,
+# not once per test: nothing here writes anything a later test could see.
+# TEEUP_PATH itself is untouched by setup_test_env, so REPO below still reads
+# the real checkout.
+setup_test_env
+export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+mkdir -p "$TEEUP_MACHINES_DIR"
+trap cleanup_test_env EXIT
+
 export TEEUP_NO_GUM=1
 REPO="$TEEUP_PATH"
 SKILL="$REPO/share/agents/skills/teeup/SKILL.md"
