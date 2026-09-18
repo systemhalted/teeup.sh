@@ -70,6 +70,86 @@ test_machine_get_reads_only_the_machine_file() {
   cleanup_test_env
 }
 
+test_machine_file_prefers_the_users_own_config_dir() {
+  setup
+  mkdir -p "$TEEUP_CONFIG_DIR/machines"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_CONFIG_DIR/machines/testmac.conf"
+  assert_equals "$TEEUP_CONFIG_DIR/machines/testmac.conf" "$(machine_file)" || return 1
+  assert_equals "macports" "$(machine_get TEEUP_PACKAGE_MANAGER)" || return 1
+  cleanup_test_env
+}
+
+test_machine_file_falls_back_to_the_repo_dir_alone() {
+  setup
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  assert_equals "$TEEUP_MACHINES_DIR/testmac.conf" "$(machine_file)" || return 1
+  assert_equals "macports" "$(machine_get TEEUP_PACKAGE_MANAGER)" || return 1
+  cleanup_test_env
+}
+
+test_machine_file_with_neither_file_still_names_the_repo_path() {
+  setup
+  assert_equals "$TEEUP_MACHINES_DIR/testmac.conf" "$(machine_file)" || return 1
+  ! machine_get TEEUP_PACKAGE_MANAGER >/dev/null || { echo "reported a pin with no machine file at all"; return 1; }
+  cleanup_test_env
+}
+
+test_machine_file_ignores_a_user_file_for_a_different_hostname() {
+  setup
+  mkdir -p "$TEEUP_CONFIG_DIR/machines"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_CONFIG_DIR/machines/otherhost.conf"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  assert_equals "$TEEUP_MACHINES_DIR/testmac.conf" "$(machine_file)" || return 1
+  assert_equals "homebrew" "$(machine_get TEEUP_PACKAGE_MANAGER)" || return 1
+  cleanup_test_env
+}
+
+test_machine_file_user_wins_when_both_exist() {
+  setup
+  mkdir -p "$TEEUP_CONFIG_DIR/machines"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_CONFIG_DIR/machines/testmac.conf"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  assert_equals "$TEEUP_CONFIG_DIR/machines/testmac.conf" "$(machine_file)" || return 1
+  assert_equals "macports" "$(machine_get TEEUP_PACKAGE_MANAGER)" || return 1
+  cleanup_test_env
+}
+
+# A shadowed repo file is never a silent mystery: answers_load says which
+# file it used, once, when both exist.
+test_shadowed_machine_file_is_announced() {
+  setup
+  mkdir -p "$TEEUP_CONFIG_DIR/machines"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_CONFIG_DIR/machines/testmac.conf"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  local out
+  out="$(answers_load 2>&1)"
+  assert_contains "$out" "$TEEUP_CONFIG_DIR/machines/testmac.conf" || return 1
+  assert_contains "$out" "$TEEUP_MACHINES_DIR/testmac.conf" || return 1
+  cleanup_test_env
+}
+
+# The user file alone (no shadowing) says nothing, same as the plain
+# machine-file case already covered by test_a_valid_work_machine_file_says_nothing.
+test_a_lone_user_machine_file_says_nothing() {
+  setup
+  mkdir -p "$TEEUP_CONFIG_DIR/machines"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_CONFIG_DIR/machines/testmac.conf"
+  local out
+  out="$(answers_load 2>&1)"
+  assert_equals "" "$out" || return 1
+  cleanup_test_env
+}
+
+test_machine_file_honours_a_config_dir_with_spaces_and_metacharacters() {
+  setup
+  TEEUP_CONFIG_DIR="$TEST_HOME/we\`ird \$dir \"q\" \\b/teeup"
+  mkdir -p "$TEEUP_CONFIG_DIR/machines"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_CONFIG_DIR/machines/testmac.conf"
+  assert_equals "$TEEUP_CONFIG_DIR/machines/testmac.conf" "$(machine_file)" || return 1
+  assert_equals "macports" "$(machine_get TEEUP_PACKAGE_MANAGER)" || return 1
+  cleanup_test_env
+}
+
 test_values_with_spaces_and_quotes_survive() {
   setup
   answers_set TEEUP_NAME 'O'"'"'Brien "The" Dev'
@@ -621,6 +701,14 @@ run_test "set replaces existing key" test_set_replaces_existing_key
 run_test "get default when unset" test_get_default_when_unset
 run_test "machine file wins" test_machine_file_wins
 run_test "machine_get reads only the machine file" test_machine_get_reads_only_the_machine_file
+run_test "machine_file prefers the user's own config dir" test_machine_file_prefers_the_users_own_config_dir
+run_test "machine_file falls back to the repo dir alone" test_machine_file_falls_back_to_the_repo_dir_alone
+run_test "machine_file with neither file still names the repo path" test_machine_file_with_neither_file_still_names_the_repo_path
+run_test "machine_file ignores a user file for a different hostname" test_machine_file_ignores_a_user_file_for_a_different_hostname
+run_test "machine_file: user wins when both exist" test_machine_file_user_wins_when_both_exist
+run_test "a shadowed machine file is announced" test_shadowed_machine_file_is_announced
+run_test "a lone user machine file says nothing" test_a_lone_user_machine_file_says_nothing
+run_test "machine_file honours a config dir with spaces and metacharacters" test_machine_file_honours_a_config_dir_with_spaces_and_metacharacters
 run_test "values with spaces and quotes survive" test_values_with_spaces_and_quotes_survive
 run_test "answers_exist" test_answers_exist
 run_test "answers_exist needs wizard key" test_answers_exist_needs_wizard_key
