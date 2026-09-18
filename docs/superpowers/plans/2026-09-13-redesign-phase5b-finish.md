@@ -2733,7 +2733,10 @@ test_nothing_tracked_points_at_the_deleted_legacy_tree() {
     return 1
   fi
   local hits=""
-  if command -v git >/dev/null 2>&1 && [[ -d "$REPO/.git" ]]; then
+  # -e, not -d: in a linked git worktree ".git" is a file pointing at the main
+  # repository, so -d would skip the check there and the suite would pass
+  # without ever looking (the same trap phase 4a's update checks hit).
+  if command -v git >/dev/null 2>&1 && [[ -e "$REPO/.git" ]]; then
     # Tracked files only: an untracked scratch note in somebody's working tree
     # is theirs, and failing their suite over it would be wrong.
     hits="$(cd "$REPO" && git ls-files -z | xargs -0 grep -lF 'legacy/' 2>/dev/null |
