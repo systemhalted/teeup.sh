@@ -9,22 +9,77 @@
 # that is why this capability is interactive. --apple-use-keychain then
 # stores it in the login Keychain, so it is typed once and never again.
 ssh_dir="$HOME/.ssh"
-[[ -d "$ssh_dir" ]] || run_cmd mkdir -p "$ssh_dir"
+# Whether teeup made this directory decides whether teeup sets its mode: the
+# files under an existing ~/.ssh are the user's, and so is the directory.
+ssh_dir_is_ours=false
+if [[ ! -d "$ssh_dir" ]]; then
+  run_cmd mkdir -p "$ssh_dir"
+  ssh_dir_is_ours=true
+fi
 
-# chmod_once <mode> <path>: only chmod when the mode is actually wrong, so a
-# second configure is the reported no-op the contract asks for and a dry run
-# does not print four "Would execute: chmod" lines for nothing. GNU stat is
-# probed first on purpose: GNU's -f means "filesystem status" and would print
-# something before failing, while BSD stat rejects -c cleanly on stderr.
-chmod_once() {
+# file_mode <path> -> the octal mode, or nothing. GNU stat is probed first on
+# purpose: GNU's -f means "filesystem status" and would print something before
+# failing, while BSD stat rejects -c cleanly on stderr.
+file_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || true
+}
+
+# chmod_ours <mode> <path>: set the mode of a file teeup itself created. Only
+# when the mode is actually wrong, so a second configure is the reported no-op
+# the contract asks for and a dry run does not print four "Would execute:
+# chmod" lines for nothing. Never through a symlink: the mode would land on
+# whatever the link points at, which by definition is not a file teeup made.
+chmod_ours() {
   local mode="$1" path="$2" current
-  [[ -e "$path" ]] || return 0
-  current="$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null || true)"
+  [[ -e "$path" && ! -L "$path" ]] || return 0
+  current="$(file_mode "$path")"
   [[ "$current" == "$mode" ]] && return 0
   run_cmd chmod "$mode" "$path"
 }
 
-chmod_once 700 "$ssh_dir"
+# The mode of a file teeup did not create is the user's business -- chmodding
+# it lands as a diff in whatever manages it, and teeup's whole premise here is
+# that an existing ~/.ssh is the user's. It only says something when the mode
+# is loose enough to matter, and says what to run.
+#
+# warn_if_group_or_other <path> <what>: a private key readable by anyone but
+# its owner. ssh refuses to use one.
+warn_if_group_or_other() {
+  local path="$1" what="$2" current
+  [[ -e "$path" ]] || return 0
+  current="$(file_mode "$path")"
+  case "$current" in
+    ???) ;;
+    *) return 0 ;;
+  esac
+  [[ "${current#?}" == "00" ]] && return 0
+  warn "$what $path is mode $current and teeup did not create it, so its mode is left alone."
+  warn "ssh refuses a private key others can read. Tighten it with: chmod 600 $path"
+}
+
+# warn_if_writable_by_others <path> <what>: anyone but the owner able to write
+# a config or the directory holding the keys.
+warn_if_writable_by_others() {
+  local path="$1" what="$2" current group other
+  [[ -e "$path" ]] || return 0
+  current="$(file_mode "$path")"
+  case "$current" in
+    ???) ;;
+    *) return 0 ;;
+  esac
+  group="${current#?}"
+  group="${group%?}"
+  other="${current#??}"
+  (( (group & 2) == 0 && (other & 2) == 0 )) && return 0
+  warn "$what $path is mode $current and teeup did not create it, so its mode is left alone."
+  warn "Anyone in its group can rewrite it. Tighten it with: chmod go-w $path"
+}
+
+if [[ "$ssh_dir_is_ours" == "true" ]]; then
+  chmod_ours 700 "$ssh_dir"
+else
+  warn_if_writable_by_others "$ssh_dir" "The ssh directory"
+fi
 
 # --apple-use-keychain was introduced in macOS 12 (OpenSSH 8.6); macOS 11 and
 # older only accept the older -K spelling. Falling back to -K unconditionally
@@ -85,14 +140,24 @@ for identity in $(identity_list); do
       continue
     fi
   else
-    if [[ -e "$key" ]]; then
+    # -L as well as -e, for both halves: a dangling symlink is invisible to
+    # every -e, -f and -s test (they all follow the link), so the backup guard
+    # never fired and ssh-keygen wrote the new PRIVATE key through the link,
+    # to wherever it pointed -- possibly outside ~/.ssh entirely, into a synced
+    # folder or a dotfiles repo. A symlink at a key path is never a file teeup
+    # created, so it is foreign by definition: back it up and put a real file
+    # in its place, never write through it.
+    if [[ -L "$key" ]]; then
+      log "$key is a symlink; backing it up so the new key is a real file."
+      backup_target "$key" >/dev/null
+    elif [[ -e "$key" ]]; then
       # Zero bytes (the -s tests above failed). Moved aside rather than left
       # for ssh-keygen, whose "Overwrite (y/n)?" prompt on an existing file
       # would stall a run that has no answer for it.
       log "Empty private key at $key; backing it up before generating a fresh pair."
       backup_target "$key" >/dev/null
     fi
-    if [[ -e "$key.pub" ]]; then
+    if [[ -e "$key.pub" || -L "$key.pub" ]]; then
       # A public key with no usable private key is not a pair; back it up so
       # a fresh keygen below does not silently discard it.
       backup_target "$key.pub" >/dev/null
@@ -103,8 +168,15 @@ for identity in $(identity_list); do
       continue
     fi
   fi
-  chmod_once 600 "$key"
-  chmod_once 644 "$key.pub"
+  # teeup's own convention is the one path teeup creates keys at; a key
+  # adopted from the user's ssh config is theirs, mode included (the .pub of
+  # such a pair used to be *loosened* from 600 to 644 here).
+  if [[ "$key" == "$HOME/.ssh/id_ed25519_$identity" ]]; then
+    chmod_ours 600 "$key"
+    chmod_ours 644 "$key.pub"
+  else
+    warn_if_group_or_other "$key" "The key"
+  fi
   run_cmd ssh-add "$ssh_keychain_flag" "$key" || warn "ssh-add failed for $key."
 done
 
@@ -160,7 +232,11 @@ else
   copy_config_once "$ssh_rendered_config" "$ssh_dir/config" "$TEEUP_CAP_DIR/config/ssh/config"
   rm -f "$ssh_rendered_config"
 fi
-chmod_once 600 "$ssh_dir/config"
+if [[ "$ssh_config_is_foreign" == "true" ]]; then
+  warn_if_writable_by_others "$ssh_dir/config" "The ssh config"
+else
+  chmod_ours 600 "$ssh_dir/config"
+fi
 
 # A config teeup did not write is never rewritten -- but then nothing has told
 # the user that the key this run just generated is not reachable through any

@@ -529,6 +529,74 @@ test_a_stale_work_email_answer_generates_no_second_key() {
   cleanup_test_env
 }
 
+# I4: -s and -e both follow a symlink, so a dangling one was neither "there"
+# nor "missing": the backup guard never fired and ssh-keygen wrote the new
+# PRIVATE key through the link, to wherever it pointed -- possibly outside
+# ~/.ssh entirely, into a synced folder or a dotfiles repo.
+test_configure_replaces_a_dangling_symlink_at_the_key_path() {
+  setup
+  seed_answers
+  mkdir -p "$TEST_HOME/.ssh" "$TEST_HOME/elsewhere"
+  ln -s "$TEST_HOME/elsewhere/gone" "$TEST_HOME/.ssh/id_ed25519_personal"
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  [[ ! -e "$TEST_HOME/elsewhere/gone" ]] || { echo "the private key was written through the symlink"; return 1; }
+  [[ ! -L "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "the key path is still a symlink"; return 1; }
+  assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  local backups
+  backups="$(find "$TEST_HOME/.ssh" -name 'id_ed25519_personal.teeup_backup_*' | wc -l | tr -d ' ')"
+  assert_equals "1" "$backups" "the symlink is backed up, not discarded" || return 1
+  cleanup_test_env
+}
+
+test_configure_replaces_a_symlink_at_the_public_key_path() {
+  setup
+  seed_answers
+  mkdir -p "$TEST_HOME/.ssh" "$TEST_HOME/elsewhere"
+  ln -s "$TEST_HOME/elsewhere/gone.pub" "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  [[ ! -e "$TEST_HOME/elsewhere/gone.pub" ]] || { echo "the public key was written through the symlink"; return 1; }
+  [[ ! -L "$TEST_HOME/.ssh/id_ed25519_personal.pub" ]] || { echo "the .pub path is still a symlink"; return 1; }
+  cleanup_test_env
+}
+
+# I5: chmod_once used -e and stat, both of which follow a symlink, so teeup
+# silently tightened a ~/.ssh/config symlinked into a dotfiles repo (a diff
+# there, from a file teeup says it does not own) and loosened a reused .pub
+# from 600 to 644. Only files teeup created get their mode set.
+test_configure_does_not_chmod_a_config_it_does_not_own() {
+  setup
+  seed_answers
+  mkdir -p "$TEST_HOME/.ssh" "$TEST_HOME/dotfiles/ssh"
+  printf 'MINE\n' > "$TEST_HOME/.ssh/dotkey"
+  printf 'ssh-ed25519 DOTKEY comment\n' > "$TEST_HOME/.ssh/dotkey.pub"
+  chmod 644 "$TEST_HOME/.ssh/dotkey"
+  chmod 600 "$TEST_HOME/.ssh/dotkey.pub"
+  cat > "$TEST_HOME/dotfiles/ssh/config" <<CFG
+Host github.com
+  IdentityFile $TEST_HOME/.ssh/dotkey
+CFG
+  chmod 644 "$TEST_HOME/dotfiles/ssh/config"
+  ln -s "$TEST_HOME/dotfiles/ssh/config" "$TEST_HOME/.ssh/config"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_equals "644" "$(file_mode "$TEST_HOME/dotfiles/ssh/config")" "a config teeup did not install keeps its mode" || return 1
+  assert_equals "644" "$(file_mode "$TEST_HOME/.ssh/dotkey")" "a reused key keeps its mode" || return 1
+  assert_equals "600" "$(file_mode "$TEST_HOME/.ssh/dotkey.pub")" "a reused .pub is never loosened" || return 1
+  assert_contains "$out" "$TEST_HOME/.ssh/dotkey" "the loose private key is named" || return 1
+  assert_contains "$out" "chmod 600" "and the command to fix it is given" || return 1
+  cleanup_test_env
+}
+
+test_configure_still_tightens_the_files_it_created() {
+  setup
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  assert_equals "600" "$(file_mode "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
+  assert_equals "644" "$(file_mode "$TEST_HOME/.ssh/id_ed25519_personal.pub")" || return 1
+  assert_equals "600" "$(file_mode "$TEST_HOME/.ssh/config")" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/ssh"
 run_test "configure generates one key on a machine with no work identity" test_configure_generates_one_key_on_a_machine_with_no_work_identity
 run_test "configure generates both keys when the machine file configures work" test_configure_generates_both_keys_when_the_machine_file_configures_work
@@ -544,6 +612,10 @@ run_test "configure prints the block a foreign config is missing" test_configure
 run_test "configure says nothing when the foreign config already names the key" test_configure_says_nothing_when_the_foreign_config_already_names_the_key
 run_test "configure says nothing about a config teeup installed" test_configure_says_nothing_about_a_config_teeup_installed
 run_test "permissions are tightened" test_permissions_are_tightened
+run_test "configure replaces a dangling symlink at the key path" test_configure_replaces_a_dangling_symlink_at_the_key_path
+run_test "configure replaces a symlink at the public key path" test_configure_replaces_a_symlink_at_the_public_key_path
+run_test "configure does not chmod a config it does not own" test_configure_does_not_chmod_a_config_it_does_not_own
+run_test "configure still tightens the files it created" test_configure_still_tightens_the_files_it_created
 run_test "existing key is not regenerated" test_existing_key_is_not_regenerated
 run_test "configure reuses the key an existing ssh config already names" test_configure_reuses_the_key_an_existing_ssh_config_already_names
 run_test "configure never replaces an existing ssh config" test_configure_never_replaces_an_existing_ssh_config
