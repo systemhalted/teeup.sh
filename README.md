@@ -40,7 +40,7 @@ The core tier is complete: `xcode-clt`, `package-manager`, `teeup-runtime`,
 `theme`. The daily tier and everything lazy arrive in phase 3; `teeup list` is
 always the source of truth.
 
-Per-machine overrides live in `machines/<hostname>.conf`, a committed file that is sourced after your answers and wins over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs. It is also the only place a work identity is configured -- teeup's own git/ssh/GitHub identity is a single one, `TEEUP_NAME`/`TEEUP_EMAIL` from the wizard, full stop; a machine that also needs a work identity sets `TEEUP_WORK_EMAIL` (and, for a GitHub Enterprise host, `TEEUP_WORK_GH_HOST`) here, which gives that machine a second SSH key uploaded to that identity's own GitHub host. See `machines/example.conf.sample`.
+Per-machine overrides live in `machines/<hostname>.conf`, a committed file that is sourced after your answers and wins over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs. It is also the only place a work identity is configured -- teeup's own git/ssh/GitHub identity is a single one, `TEEUP_NAME`/`TEEUP_EMAIL` from the wizard, full stop; a machine that also needs a work identity sets `TEEUP_WORK_EMAIL` here (plus `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host, or `TEEUP_WORK_GH_ACCOUNT` when work is a second account on github.com), which gives that machine a second SSH key uploaded to that identity's own GitHub host and account. See `machines/example.conf.sample`.
 
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 

@@ -15,10 +15,20 @@
 #TEEUP_WORK_EMAIL="ada@corp.example"
 
 # The GitHub host the work key uploads to. Defaults to github.com when
-# TEEUP_WORK_EMAIL is set and this is not -- that is how a second github.com
-# account is configured. Name a GitHub Enterprise host here instead when work
-# lives on one.
+# TEEUP_WORK_EMAIL is set and this is not. Name a GitHub Enterprise host here
+# when work lives on one.
 #TEEUP_WORK_GH_HOST="github.enterprise.example.com"
+
+# The GitHub login the work key belongs to, when work is a second account on
+# the same host as personal (usually github.com). `gh` targets a host, and a
+# host has exactly one active account, so this is the only thing that tells
+# two github.com accounts apart: teeup runs
+# `gh auth switch --hostname <host> --user <account>` before the work upload
+# and switches back afterwards. Both accounts must already be signed in
+# (`gh auth login`). Without this, and with work on the same host as personal,
+# teeup refuses the work upload rather than putting the work key on the
+# personal account. A work identity on its own host does not need it.
+#TEEUP_WORK_GH_ACCOUNT="ada-at-work"
 
 # Hard constraints unrelated to identity, shown here because they are the
 # other common reason a machine file exists at all.

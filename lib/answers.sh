@@ -189,6 +189,23 @@ identity_gh_host() {
   esac
 }
 
+# identity_gh_account <identity> -> the GitHub login `gh` must be switched to
+# before this identity's key is uploaded, or nothing when there is nothing to
+# switch. GH_HOST selects a host, and a host has exactly one active account,
+# so two identities on github.com (a work account beside a personal one) can
+# only be told apart by the account itself: machines/<hostname>.conf names it
+# in TEEUP_WORK_GH_ACCOUNT and the github capability switches with
+# `gh auth switch --hostname <host> --user <account>`. Personal is whatever
+# account the user signed in with; teeup never switches away from it except to
+# do the work upload, and switches back afterwards.
+identity_gh_account() {
+  case "$1" in
+    personal) printf '\n' ;;
+    work) work_get TEEUP_WORK_GH_ACCOUNT ;;
+    *) die "identity_gh_account: unknown identity '$1' (expected personal or work)" ;;
+  esac
+}
+
 # ssh_host_alias <identity> -> the Host name teeup's own shipped ssh config
 # (capabilities/ssh/config/ssh/config) uses for this identity. Fixed, unlike
 # identity_gh_host: it names a *local* alias, not the real GitHub host, so a
