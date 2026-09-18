@@ -126,7 +126,7 @@ package_candidates() {
   case "$TEEUP_PKG_BACKEND:$pkg" in
     homebrew:bash-completion) echo "bash-completion@2 bash-completion" ;;
     macports:gnupg) echo "gnupg2 gnupg" ;;
-    macports:gh) echo "gh github-cli" ;;
+    macports:gh) echo "gh" ;;
     # `tldr` itself is not a MacPorts port; both ports below are tldr
     # clients. tealdeer first: its binary is named `tldr`, matching the
     # `tldr:tldr` package:command pair cli-tools installs it under, so the

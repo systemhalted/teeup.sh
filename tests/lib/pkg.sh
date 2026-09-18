@@ -124,6 +124,15 @@ test_candidates_map_tldr_to_tealdeer_then_tlrc_on_macports() {
   cleanup_test_env
 }
 
+# `github-cli` is not a real MacPorts port (only `gh` is); the mapping must
+# not offer it as a fallback.
+test_candidates_map_gh_to_just_gh_on_macports() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  assert_equals "gh" "$(package_candidates gh)" || return 1
+  cleanup_test_env
+}
+
 # The fallback chain from finding 1 actually falls through: tealdeer fails,
 # tlrc is tried next and succeeds.
 test_pkg_install_falls_back_from_tealdeer_to_tlrc_on_macports() {
@@ -271,6 +280,7 @@ run_test "pkg_install real-run wording is unchanged" test_pkg_install_real_run_w
 run_test "pkg_install uses sudo port on macports" test_pkg_install_uses_sudo_port_on_macports
 run_test "candidates map bash-completion" test_candidates_map_bash_completion_on_homebrew
 run_test "candidates map tldr to tealdeer then tlrc on macports" test_candidates_map_tldr_to_tealdeer_then_tlrc_on_macports
+run_test "candidates map gh to just gh on macports" test_candidates_map_gh_to_just_gh_on_macports
 run_test "pkg_install falls back from tealdeer to tlrc on macports" test_pkg_install_falls_back_from_tealdeer_to_tlrc_on_macports
 run_test "pkg_installed announces the backend it asks" test_pkg_installed_announces_the_backend_it_asks
 run_test "pkg_installed announces macports too" test_pkg_installed_announces_macports_too
