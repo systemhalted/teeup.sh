@@ -13,8 +13,10 @@ fi
 
 if [[ -d "${TEEUP_APPS_DIR:-/Applications}/AeroSpace.app" ]]; then
   log "AeroSpace is installed."
-else
+elif casks_supported; then
   log "AeroSpace will appear in /Applications once its cask finishes installing."
+else
+  warn "MacPorts has no AeroSpace cask; download it from https://github.com/nikitabobko/AeroSpace/releases and move it to /Applications."
 fi
 
 # No script can grant Accessibility: macOS requires a human in System Settings,
