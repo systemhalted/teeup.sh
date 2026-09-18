@@ -7,11 +7,12 @@ BOOT="$TEEUP_PATH/bootstrap"
 # Answers piped to the plain-read prompts, one per prompt. The package manager
 # is asked first and on its own, before step 2 installs one; the rest is the
 # wizard in step 4:
-# package manager choice, name, email, work email, theme choice, daily confirm.
+# package manager choice, name, email, theme choice, daily confirm. Work is
+# never asked (it is per-machine, not a question; see machines/*.conf).
 # "1" is the detected backend (Homebrew on the mocked modern Mac), "2" the
 # other one; for the theme choice, "1" is the first theme themes/ ships, i.e.
 # catppuccin.
-WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n\n1\ny\n'
+WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n1\ny\n'
 
 setup() {
   setup_test_env
@@ -144,7 +145,7 @@ test_choosing_macports_runs_the_macports_path() {
   # after Homebrew had already been installed and recorded.
   mock_command port 0 ""
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'2\nAda Lovelace\nada@example.com\n\n1\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'2\nAda Lovelace\nada@example.com\n1\ny\n')"
   assert_contains "$out" "Would execute: sudo port selfupdate" || return 1
   assert_not_contains "$out" "Homebrew/install/HEAD/install.sh" || return 1
   assert_contains "$out" "Would set TEEUP_PACKAGE_MANAGER" || return 1
@@ -244,7 +245,7 @@ test_reconfigure_does_not_ask_for_a_pinned_package_manager() {
   printf 'TEEUP_NAME="Ada"\n' > "$TEST_HOME/.config/teeup/answers"
   # The wizard input minus the package-manager line: it must not be asked.
   local out
-  out="$("$BOOT" --dry-run --reconfigure 2>&1 <<<$'Ada Lovelace\nada@example.com\n\n1\ny\n')"
+  out="$("$BOOT" --dry-run --reconfigure 2>&1 <<<$'Ada Lovelace\nada@example.com\n1\ny\n')"
   assert_contains "$out" "Package manager is pinned to homebrew by $TEST_HOME/machines/testmac.conf" || return 1
   assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Package manager')" || return 1
   assert_not_contains "$out" "Would set TEEUP_PACKAGE_MANAGER" || return 1
@@ -264,7 +265,7 @@ test_an_empty_machine_pin_is_still_a_pin() {
   mkdir -p "$TEST_HOME/machines"
   printf 'TEEUP_PACKAGE_MANAGER=""\n' > "$TEST_HOME/machines/testmac.conf"
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'Ada Lovelace\nada@example.com\n\n1\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'Ada Lovelace\nada@example.com\n1\ny\n')"
   assert_contains "$out" "Package manager is pinned to auto-detection by $TEST_HOME/machines/testmac.conf" || return 1
   assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Package manager')" || return 1
   # The package-manager capability still records the backend it detected (an
@@ -283,7 +284,7 @@ test_wizard_does_not_ask_for_a_pinned_theme() {
   printf 'TEEUP_THEME="catppuccin"\n' > "$TEST_HOME/machines/testmac.conf"
   # The wizard input minus the theme line.
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\ny\n')"
   assert_contains "$out" "Theme is pinned to catppuccin by $TEST_HOME/machines/testmac.conf; not asking." || return 1
   assert_equals "0" "$(printf '%s\n' "$out" | grep -cx 'Theme')" "the theme question was asked" || return 1
   assert_not_contains "$out" "Would set TEEUP_THEME" || return 1
@@ -331,25 +332,9 @@ test_empty_personal_email_reprompts_and_second_answer_is_recorded() {
   # identity summary it is correctly still visible under DRY_RUN after the
   # F1 sweep fix.
   local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\n\nada@example.com\n\n1\ny\n')"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\n\nada@example.com\n1\ny\n')"
   assert_contains "$out" "email address is required" || return 1
   assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
-  assert_contains "$out" "Bootstrap finished" || return 1
-  cleanup_test_env
-}
-
-test_a_path_shaped_work_email_reprompts() {
-  setup
-  # The dry run's actual failure: a path typed into the work-email field was
-  # accepted outright and would have become both the git identity address and
-  # the -C comment of the work SSH key -- so the -C comment in ssh configure's
-  # own dry-run preview (see the comment in the previous test) is exactly
-  # what has to prove the retried answer won, for both identities.
-  local out
-  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n~/Workspaces/Work\nada@corp.example\n1\ny\n')"
-  assert_contains "$out" "does not look like an email address" || return 1
-  assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
-  assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@corp.example -f $TEST_HOME/.ssh/id_ed25519_work" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
 }
@@ -362,7 +347,7 @@ test_valid_wizard_answers_pass_validation_on_the_first_try() {
   assert_not_contains "$out" "does not look like an email address" || return 1
   # Each prompt must fire exactly once: a spurious re-prompt would consume the
   # next line of input meant for a later question and desync the whole wizard.
-  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'Personal email (git identity')" || return 1
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'Personal email (your git identity')" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   cleanup_test_env
 }
@@ -427,7 +412,7 @@ test_dry_run_summary_is_a_preview_not_a_status_suggestion() {
 test_dry_run_answers_take_effect() {
   setup
   local out wizard_no_daily
-  wizard_no_daily=$'1\nAda Lovelace\nada@example.com\n\n1\nn\n'
+  wizard_no_daily=$'1\nAda Lovelace\nada@example.com\n1\nn\n'
   out="$("$BOOT" --dry-run <<<"$wizard_no_daily")"
   assert_contains "$out" "Skipping the daily tier (TEEUP_DAILY=no)" || return 1
   cleanup_test_env
@@ -453,7 +438,6 @@ run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tie
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
 run_test "core failure aborts" test_core_failure_aborts
 run_test "empty personal email re-prompts and the second answer is recorded" test_empty_personal_email_reprompts_and_second_answer_is_recorded
-run_test "a path-shaped work email re-prompts" test_a_path_shaped_work_email_reprompts
 run_test "valid wizard answers pass validation on the first try" test_valid_wizard_answers_pass_validation_on_the_first_try
 run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
 run_test "wizard email validator rejects a trailing dot" test_wizard_email_validator_rejects_a_trailing_dot

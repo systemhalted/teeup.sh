@@ -163,24 +163,18 @@ _wizard_valid_email() {
   return 0
 }
 
-# _wizard_valid_optional_email <candidate> -> prints nothing for an empty
-# candidate (keeps today's "one identity for both roots" behaviour); anything
-# else must pass, and print, the same as the personal email.
-_wizard_valid_optional_email() {
-  [[ -z "$1" ]] && return 0
-  _wizard_valid_email "$1"
-}
-
 # The package manager is NOT asked here: step 2 below installs it, and this
 # wizard runs after step 3. See ask_package_manager.
+# Work is never asked here: it is per-machine, not a question. A work
+# identity exists only when machines/<hostname>.conf sets TEEUP_WORK_EMAIL
+# (see machines/example.conf.sample); this wizard has nothing to do with it.
 wizard() {
-  local name email work_email theme daily themes pinned_theme ask_theme=true
+  local name email theme daily themes pinned_theme ask_theme=true
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
   name="$(wizard_ask "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")" _wizard_valid_name)"
-  email="$(wizard_ask "Personal email (git identity under ~/Personal)" "$(answers_get TEEUP_EMAIL)" _wizard_valid_email)"
-  work_email="$(wizard_ask "Work email (git identity under ~/Work, empty for none)" "$(answers_get TEEUP_WORK_EMAIL)" _wizard_valid_optional_email)"
+  email="$(wizard_ask "Personal email (your git identity)" "$(answers_get TEEUP_EMAIL)" _wizard_valid_email)"
   # A theme pinned by machines/<hostname>.conf wins in answers_load, so asking
   # would record an answer nothing reads (same rule as ask_package_manager).
   if pinned_theme="$(machine_get TEEUP_THEME)"; then
@@ -203,7 +197,6 @@ wizard() {
   fi
   answers_set TEEUP_NAME "$name"
   answers_set TEEUP_EMAIL "$email"
-  answers_set TEEUP_WORK_EMAIL "$work_email"
   if [[ "$ask_theme" == "true" ]]; then answers_set TEEUP_THEME "$theme"; fi
   answers_set TEEUP_DAILY "$daily"
   answers_load
