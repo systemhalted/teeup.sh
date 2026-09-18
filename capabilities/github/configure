@@ -119,9 +119,16 @@ for identity in $(identity_list); do
   gh_account="$(identity_gh_account "$identity")"
   export GH_HOST="$gh_host"
   restore_account=""
+  verify_after_login=false
   if [[ -n "$gh_account" ]]; then
     active_account="$(_gh_active_account "$gh_host")"
-    if [[ -n "$active_account" && "$active_account" != "$gh_account" ]]; then
+    if [[ -z "$active_account" ]]; then
+      # Nothing is signed in on this host, so there is no account to switch
+      # from: the `gh auth login` below decides who teeup ends up as, and it
+      # is whoever answers in the browser, not necessarily the account named
+      # here. Check afterwards rather than assume.
+      verify_after_login=true
+    elif [[ "$active_account" != "$gh_account" ]]; then
       if run_cmd gh auth switch --hostname "$gh_host" --user "$gh_account"; then
         restore_account="$active_account"
       else
@@ -140,6 +147,17 @@ for identity in $(identity_list); do
   fi
 
   github_configure_identity "$identity" "$gh_host"
+
+  # Skipped under DRY_RUN: no login ran, so the account on the host is still
+  # whatever it was and would only produce a warning about a mismatch this run
+  # never created.
+  if [[ "$verify_after_login" == "true" && "$DRY_RUN" != "true" ]]; then
+    active_account="$(_gh_active_account "$gh_host")"
+    if [[ -n "$active_account" && "$active_account" != "$gh_account" ]]; then
+      warn "gh is signed in to $gh_host as $active_account, not the $gh_account named in $(machine_file)."
+      warn "The $identity key went to $active_account. Sign in as $gh_account (gh auth login --hostname $gh_host) and re-run: teeup configure github"
+    fi
+  fi
 
   if [[ -n "$restore_account" ]]; then
     run_cmd gh auth switch --hostname "$gh_host" --user "$restore_account" ||

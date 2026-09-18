@@ -631,6 +631,54 @@ test_configure_reads_only_the_first_line_of_a_public_key() {
   cleanup_test_env
 }
 
+# I3 residual: on a host where nothing is signed in yet there is no account to
+# switch from, so `gh auth login` decides who teeup ends up as -- and whoever
+# that is never got checked against the account the machine file names. The key
+# would land on the wrong account with teeup reporting the work identity done.
+test_configure_warns_when_the_login_lands_on_another_account() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "ada-corp"
+  # github.com is signed in; the Enterprise host is not, so it goes through
+  # auth login, which the mock completes as "testuser".
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "ada-corp" || return 1
+  assert_contains "$out" "testuser" || return 1
+  assert_contains "$out" "$TEST_HOME/machines/testmac.conf" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_says_nothing_when_the_login_lands_on_the_named_account() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "testuser"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_not_contains "$out" "not the testuser" || return 1
+  assert_not_contains "$out" "named in" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type authentication" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "ada-corp"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure github 2>&1)"
+  assert_not_contains "$out" "is signed in to" "a dry run ran no login, so there is no account to check" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/github"
 run_test "install gets gh" test_install_gets_gh
 run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
@@ -657,6 +705,9 @@ run_test "a stale work email answer uploads nothing extra" test_a_stale_work_ema
 run_test "configure refuses the work upload with no account named" test_configure_refuses_the_work_upload_with_no_account_named
 run_test "configure switches accounts for a second github.com account" test_configure_switches_accounts_for_a_second_github_com_account
 run_test "configure needs no account on a separate host" test_configure_needs_no_account_on_a_separate_host
+run_test "configure warns when the login lands on another account" test_configure_warns_when_the_login_lands_on_another_account
+run_test "configure says nothing when the login lands on the named account" test_configure_says_nothing_when_the_login_lands_on_the_named_account
+run_test "configure dry run checks no account after a login it did not run" test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run
 run_test "configure uploads the work key to a GitHub Enterprise host" test_configure_uploads_the_work_key_to_a_github_enterprise_host
 run_test "configure signs in to each host independently" test_configure_signs_in_to_each_host_independently
 run_test "configure skips a key already uploaded to the Enterprise host" test_configure_skips_a_key_already_uploaded_to_the_enterprise_host
