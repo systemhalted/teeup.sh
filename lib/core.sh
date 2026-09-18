@@ -56,16 +56,68 @@ _teeup_log_line() {
 }
 
 # run_logged <name> <interactive:true|false> <command...>
-# Brackets a unit with Starting/Completed/Failed lines. stdin is redirected
-# from /dev/null unless interactive=true, so a unit can never block on a
-# prompt nobody will answer. Returns the command's exit code.
+# Brackets a unit with Starting/Completed/Failed lines and, when a log file is
+# configured, tees the command's own stdout and stderr into it too -- a
+# capability's warnings, its "[DRY-RUN] Would execute" preview lines and its
+# instructions used to reach the terminal only, so a log sent after a
+# successful run was pure timestamps and a log sent after a failure could not
+# explain it. stdin is redirected from /dev/null unless interactive=true, so
+# a unit can never block on a prompt nobody will answer.
+#
+# interactive=true is never teed: that would put a pipe between the command
+# and the terminal, and ssh-keygen's passphrase prompt, sudo's password
+# prompt and `gh auth login`'s browser flow all need a real tty to draw on.
+# Nothing sensitive is lost by leaving it uncaptured -- a passphrase or a
+# sudo password is read straight from the tty by the prompting program, never
+# printed to stdout or stderr, so it was never going to be in the stream this
+# tees in the first place. The log gets a line saying capture was skipped and
+# why, instead of silently staying empty for that unit.
+#
+# stdout and stderr are teed through two separate named pipes, one `tee` each,
+# rather than merged with `2>&1` first: a capability's stderr (every warn(),
+# every err()) must keep landing on fd 2, or `./bootstrap >out.log` would
+# silently swallow it, and a caller further up would lose the ability to
+# handle the two streams differently. Named pipes rather than the more usual
+# `> >(tee ...) 2> >(tee ...)` process substitution: process substitution
+# backgrounds its reader with nothing forcing this function to wait for it,
+# so the tee could still be draining the pipe (and the log missing the
+# command's tail) by the time the "Completed"/"Failed" line below is written
+# -- a real race, not a theoretical one, confirmed with a capability that
+# prints thousands of lines before this fix and fixed by the explicit `wait`
+# below. Each tee is started first, so its open(2) on the fifo is already
+# blocked waiting for a writer when the command opens the other end; `wait`
+# after the command exits blocks until both tees have seen EOF and finished
+# writing, so nothing after this branch can run ahead of the log being
+# complete.
+#
+# The command sits in a plain redirection, not a pipe, so its own $? is the
+# real exit status right here in this shell -- no subshell, no PIPESTATUS,
+# nothing bash 3.2 could handle differently. `"$@" ... || rc=$?` (not a bare
+# `rc=$?` on the next line) keeps it on the losing side of `||`, which is
+# exempt from `set -e`, so a failing command cannot abort this function
+# before its exit code is saved.
 run_logged() {
   local name="$1" interactive="$2"
   shift 2
   local rc=0
   _teeup_log_line "Starting: $name"
   if [[ "$interactive" == "true" ]]; then
+    [[ -n "$TEEUP_LOG_FILE" ]] &&
+      _teeup_log_line "($name is interactive; its output was not captured -- it needs a real terminal.)"
     "$@" || rc=$?
+  elif [[ -n "$TEEUP_LOG_FILE" ]]; then
+    local fifo_dir out_fifo err_fifo out_tee_pid err_tee_pid
+    fifo_dir="$(mktemp -d)"
+    out_fifo="$fifo_dir/stdout"
+    err_fifo="$fifo_dir/stderr"
+    mkfifo "$out_fifo" "$err_fifo"
+    tee -a "$TEEUP_LOG_FILE" < "$out_fifo" &
+    out_tee_pid=$!
+    tee -a "$TEEUP_LOG_FILE" < "$err_fifo" >&2 &
+    err_tee_pid=$!
+    "$@" </dev/null > "$out_fifo" 2> "$err_fifo" || rc=$?
+    wait "$out_tee_pid" "$err_tee_pid" || true
+    rm -rf "$fifo_dir"
   else
     "$@" </dev/null || rc=$?
   fi
@@ -74,7 +126,7 @@ run_logged() {
   else
     _teeup_log_line "Failed: $name (exit code: $rc)"
   fi
-  return $rc
+  return "$rc"
 }
 
 is_macos()    { [[ "$(uname -s)" == "Darwin" ]]; }
