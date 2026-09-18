@@ -26,7 +26,24 @@ wezterm_macports_apps_dir() {
   printf '%s\n' "${dir:-/Applications/MacPorts}"
 }
 
+# Only say this when the bundle is actually there. `install` turns a failed
+# `port install wezterm` into a warning and carries on (there is no cask
+# fallback on MacPorts), and `configure` can run on its own without
+# `install` ever having run in the same invocation, so the bundle may well
+# not exist yet; naming a path and handing out an `open -a` for it would
+# directly contradict install's own warning. Testing for the bundle itself,
+# rather than asking `port installed wezterm`, is both simpler (no extra
+# process, no dependency on `port` behaving) and more direct: the bundle's
+# presence is what this message is actually about, and `port`'s own
+# bookkeeping could in principle disagree with it (a destroot that moved the
+# files but never activated, or a bundle deleted by hand afterwards).
+# Silence rather than a second, differently-worded "not installed" message:
+# install already said so and named a download link when the port failed,
+# and a standalone `configure` has nothing to report that would not be a
+# guess about why the bundle is missing.
 if ! casks_supported; then
   WEZTERM_APPS_DIR="$(wezterm_macports_apps_dir)"
-  log "MacPorts installs WezTerm.app under $WEZTERM_APPS_DIR, not /Applications, so Launchpad won't show it; open it with: open -a \"$WEZTERM_APPS_DIR/WezTerm.app\""
+  if [[ -d "$WEZTERM_APPS_DIR/WezTerm.app" ]]; then
+    log "MacPorts installs WezTerm.app under $WEZTERM_APPS_DIR, not /Applications, so Launchpad won't show it; open it with: open -a \"$WEZTERM_APPS_DIR/WezTerm.app\""
+  fi
 fi

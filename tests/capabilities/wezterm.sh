@@ -70,18 +70,33 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
-# MacPorts moves the built app bundle into applications_dir (default
-# /Applications/MacPorts) rather than /Applications, and Launchpad only
-# indexes /Applications, so a MacPorts install of WezTerm is real but
-# invisible there. This must not fire on Homebrew, where the cask lands in
-# /Applications.
+# Points MacPorts' applications_dir at a path under $TEST_HOME. Every
+# MacPorts test below uses this rather than letting wezterm_macports_apps_dir
+# fall through to its real default (/Applications/MacPorts): that path is a
+# real, absolute location on whatever machine runs this suite, and a test
+# that asserted a bundle there existed (or didn't) would either have to
+# create files outside $TEST_HOME or gamble that the runner never has a real
+# MacPorts WezTerm install to trip over.
+wezterm_set_macports_apps_dir() {
+  mkdir -p "$TEEUP_PKG_PREFIX/etc/macports"
+  printf 'applications_dir\t%s\n' "$1" > "$TEEUP_PKG_PREFIX/etc/macports/macports.conf"
+}
+
+# MacPorts moves the built app bundle into applications_dir rather than
+# /Applications, and Launchpad only indexes /Applications, so a MacPorts
+# install of WezTerm is real but invisible there -- when the bundle is
+# actually there to say that about. This must not fire on Homebrew, where
+# the cask lands in /Applications.
 test_configure_names_the_macports_app_location() {
   setup
   export TEEUP_PACKAGE_MANAGER=macports
   mock_command port 0 ""
+  local apps_dir="$TEST_HOME/FakeApps"
+  wezterm_set_macports_apps_dir "$apps_dir"
+  mkdir -p "$apps_dir/WezTerm.app"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure wezterm 2>&1)"
-  assert_contains "$out" "/Applications/MacPorts" || return 1
+  assert_contains "$out" "$apps_dir" || return 1
   assert_contains "$out" "WezTerm.app" || return 1
   assert_contains "$out" "open -a" "should say how to actually launch it" || return 1
   cleanup_test_env
@@ -91,9 +106,41 @@ test_configure_names_the_macports_app_location_in_dry_run_too() {
   setup
   export TEEUP_PACKAGE_MANAGER=macports
   mock_command port 0 ""
+  local apps_dir="$TEST_HOME/FakeApps"
+  wezterm_set_macports_apps_dir "$apps_dir"
+  mkdir -p "$apps_dir/WezTerm.app"
   local out
   out="$(DRY_RUN=true "$TEEUP" configure wezterm 2>&1)"
-  assert_contains "$out" "/Applications/MacPorts" || return 1
+  assert_contains "$out" "$apps_dir" || return 1
+  cleanup_test_env
+}
+
+# Review finding on the first round: `install` turns a failed
+# `port install wezterm` into a warning and carries on, and `configure` can
+# run on its own without `install` ever having run, so the bundle may well
+# not be there. Naming a path with `open -a` for a bundle that does not
+# exist would directly contradict install's own warning, so say nothing
+# instead once the bundle is confirmed missing.
+test_configure_says_nothing_when_the_bundle_is_missing() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  wezterm_set_macports_apps_dir "$TEST_HOME/FakeApps"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure wezterm 2>&1)"
+  assert_not_contains "$out" "open -a" "must not hand out an open command for a bundle that is not there" || return 1
+  assert_not_contains "$out" "$TEST_HOME/FakeApps/WezTerm.app" || return 1
+  cleanup_test_env
+}
+
+test_configure_says_nothing_when_the_bundle_is_missing_in_dry_run_too() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  wezterm_set_macports_apps_dir "$TEST_HOME/FakeApps"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure wezterm 2>&1)"
+  assert_not_contains "$out" "open -a" "must not hand out an open command for a bundle that is not there" || return 1
   cleanup_test_env
 }
 
@@ -104,14 +151,12 @@ test_configure_reads_applications_dir_from_macports_conf() {
   setup
   export TEEUP_PACKAGE_MANAGER=macports
   mock_command port 0 ""
-  mkdir -p "$TEEUP_PKG_PREFIX/etc/macports"
-  cat > "$TEEUP_PKG_PREFIX/etc/macports/macports.conf" <<'CONF'
-# a comment line above the real setting
-applications_dir	/Users/tester/CustomApps
-CONF
+  local apps_dir="$TEST_HOME/CustomApps"
+  wezterm_set_macports_apps_dir "$apps_dir"
+  mkdir -p "$apps_dir/WezTerm.app"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure wezterm 2>&1)"
-  assert_contains "$out" "/Users/tester/CustomApps" || return 1
+  assert_contains "$out" "$apps_dir" || return 1
   assert_not_contains "$out" "/Applications/MacPorts" "the custom applications_dir should win over the compiled-in default" || return 1
   cleanup_test_env
 }
@@ -412,6 +457,8 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "font entry does not force a weight" test_font_entry_does_not_force_a_weight
 run_test "configure names the MacPorts app location" test_configure_names_the_macports_app_location
 run_test "configure names the MacPorts app location in dry run too" test_configure_names_the_macports_app_location_in_dry_run_too
+run_test "configure says nothing when the bundle is missing" test_configure_says_nothing_when_the_bundle_is_missing
+run_test "configure says nothing when the bundle is missing in dry run too" test_configure_says_nothing_when_the_bundle_is_missing_in_dry_run_too
 run_test "configure reads applications_dir from macports.conf" test_configure_reads_applications_dir_from_macports_conf
 run_test "configure says nothing about MacPorts on Homebrew" test_configure_says_nothing_about_macports_on_homebrew
 run_test "theme-apply reloads the config" test_theme_apply_reloads_the_config
