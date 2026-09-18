@@ -139,12 +139,14 @@ seed_work_key() {
 # machines/<hostname>.conf is the only source of TEEUP_WORK_EMAIL and
 # TEEUP_WORK_GH_HOST. hostname is mocked to "testmac" by mock_macos_base.
 seed_machine_work() {
-  local email="$1" gh_host="${2:-}"
+  local email="$1" gh_host="${2:-}" gh_account="${3:-}"
   export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
   mkdir -p "$TEEUP_MACHINES_DIR"
   {
     printf 'TEEUP_WORK_EMAIL="%s"\n' "$email"
     [[ -n "$gh_host" ]] && printf 'TEEUP_WORK_GH_HOST="%s"\n' "$gh_host"
+    [[ -n "$gh_account" ]] && printf 'TEEUP_WORK_GH_ACCOUNT="%s"\n' "$gh_account"
+    :
   } > "$TEEUP_MACHINES_DIR/testmac.conf"
 }
 
@@ -431,21 +433,62 @@ test_configure_twice_uploads_nothing_new() {
   cleanup_test_env
 }
 
-test_configure_uploads_the_work_key_to_a_second_github_com_account() {
+# I3: GH_HOST selects a HOST, not an account, and a host has exactly one
+# active account. With both identities on github.com and nothing naming the
+# work account, teeup used to upload the work key to whatever account was
+# active -- the personal one -- and say it had done the work identity.
+test_configure_refuses_the_work_upload_with_no_account_named() {
   setup
   seed_keys
   seed_work_key
   seed_machine_work "ada@corp.example"
-  local out
+  local out calls
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  assert_not_contains "$calls" "id_ed25519_work.pub" "the work key must not land on the personal account" || return 1
+  assert_contains "$out" "TEEUP_WORK_GH_ACCOUNT" || return 1
+  assert_contains "$out" "$TEST_HOME/machines/testmac.conf" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_switches_accounts_for_a_second_github_com_account() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "" "adawork"
+  # Signed in on github.com as testuser (the mock's active account).
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
   local calls
   calls="$(cat "$MOCK_LOG")"
-  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication --title testmac personal" || return 1
+  assert_contains "$calls" "auth switch --hostname github.com --user adawork" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type authentication --title testmac work" || return 1
-  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type signing --title testmac work (signing)" || return 1
-  # Both identities land on the same host and file, since TEEUP_WORK_GH_HOST
-  # was not set: a second github.com account, not a separate service.
-  [[ ! -e "$TEST_HOME/gh-keys-github.com" ]] || { echo "a separate github.com key file was created"; return 1; }
+  assert_contains "$calls" "auth switch --hostname github.com --user testuser" "the account that was active is restored" || return 1
+  # The switch comes before the work upload, and the restore after it.
+  local order
+  order="$(grep -n 'auth switch\|ssh-key add .*id_ed25519_work.pub --type authentication' "$MOCK_LOG" | cut -d: -f1 | tr '\n' ' ')"
+  local first second third
+  read -r first second third <<ORDER
+$order
+ORDER
+  [[ "$first" -lt "$second" && "$second" -lt "$third" ]] ||
+    { echo "switch/upload/restore out of order: $order"; return 1; }
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_needs_no_account_on_a_separate_host() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type authentication" || return 1
+  assert_not_contains "$calls" "auth switch" "a host of its own needs no account switch" || return 1
   unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
@@ -592,7 +635,9 @@ run_test "configure never matches the key body against the title" test_configure
 run_test "configure dry run uploads nothing" test_configure_dry_run_uploads_nothing
 run_test "configure twice uploads nothing new" test_configure_twice_uploads_nothing_new
 run_test "a stale work email answer uploads nothing extra" test_a_stale_work_email_answer_uploads_nothing_extra
-run_test "configure uploads the work key to a second github.com account" test_configure_uploads_the_work_key_to_a_second_github_com_account
+run_test "configure refuses the work upload with no account named" test_configure_refuses_the_work_upload_with_no_account_named
+run_test "configure switches accounts for a second github.com account" test_configure_switches_accounts_for_a_second_github_com_account
+run_test "configure needs no account on a separate host" test_configure_needs_no_account_on_a_separate_host
 run_test "configure uploads the work key to a GitHub Enterprise host" test_configure_uploads_the_work_key_to_a_github_enterprise_host
 run_test "configure signs in to each host independently" test_configure_signs_in_to_each_host_independently
 run_test "configure skips a key already uploaded to the Enterprise host" test_configure_skips_a_key_already_uploaded_to_the_enterprise_host

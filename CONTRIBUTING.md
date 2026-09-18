@@ -454,9 +454,10 @@ Happy contributing! 🚀
    does not run on them, so keep them simple and guard every optional tool.
 10. Per-machine overrides go in `machines/<hostname>.conf`, which is committed
     and sourced last, so it wins over the answers file. It is also the only
-    place a work identity is configured (`TEEUP_WORK_EMAIL`, and
-    `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host): git has one identity
-    everywhere, and the wizard never asks about work. See
+    place a work identity is configured (`TEEUP_WORK_EMAIL`, plus
+    `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host or
+    `TEEUP_WORK_GH_ACCOUNT` for a second account on github.com): git has one
+    identity everywhere, and the wizard never asks about work. See
     `machines/example.conf.sample`.
 11. If the tool has colours, add `capabilities/<name>/themed/<file>.tpl`.
     `teeup theme set` renders every template once per mode with `{{ key }}`,

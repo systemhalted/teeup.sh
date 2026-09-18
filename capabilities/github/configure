@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
-# GitHub: per host (2026-09-17 decision). The personal identity always
-# uploads to github.com; a work identity uploads to whatever host
-# identity_gh_host names for it (lib/answers.sh) -- github.com by default (a
-# second github.com account), or a GitHub Enterprise host when
-# machines/<hostname>.conf sets TEEUP_WORK_GH_HOST. GH_HOST is pinned per
-# identity, not once at the top: a value left over in the caller's
-# environment would otherwise silently redirect every call below to the
-# wrong host, and the whole point of iterating identities is that they may
-# not share a host.
+# GitHub: per host AND per account (2026-09-17 decision). The personal
+# identity always uploads to github.com; a work identity uploads to whatever
+# host identity_gh_host names for it (lib/answers.sh) -- github.com by
+# default, or a GitHub Enterprise host when machines/<hostname>.conf sets
+# TEEUP_WORK_GH_HOST. GH_HOST is pinned per identity, not once at the top: a
+# value left over in the caller's environment would otherwise silently
+# redirect every call below to the wrong host, and the whole point of
+# iterating identities is that they may not share a host.
+#
+# GH_HOST selects a host, not an account, and every host has exactly one
+# active account that gh targets. So two identities on the same host (a work
+# account beside a personal one, both on github.com) are told apart by
+# `gh auth switch --hostname <host> --user <account>`, which is what
+# TEEUP_WORK_GH_ACCOUNT names. Without it there is no way to aim the upload,
+# and the work key would land on the personal account: teeup refuses that
+# upload rather than performing it on the wrong account.
 
 if ! have gh; then
   warn "gh is not installed; skipping the GitHub setup. Re-run: teeup install github"
@@ -38,11 +45,20 @@ _github_key_uploaded() {
     END { exit found ? 0 : 1 }'
 }
 
-host_short="$(hostname -s 2>/dev/null || hostname)"
+# _gh_active_account <host> -> the account gh currently targets on <host>, or
+# nothing when it is not signed in there. gh 2.100.0 prints it as
+# "Logged in to github.com account ada (keyring)".
+_gh_active_account() {
+  gh auth status --active -h "$1" 2>/dev/null |
+    awk '{ for (i = 1; i < NF; i++) if ($i == "account") { print $(i + 1); exit } }'
+}
 
-for identity in $(identity_list); do
-  gh_host="$(identity_gh_host "$identity")"
-  export GH_HOST="$gh_host"
+# github_configure_identity <identity>: everything done on the host and
+# account already selected for this identity. A function rather than the body
+# of the loop so that its several early exits cannot skip the switch back to
+# the account that was active before teeup ran.
+github_configure_identity() {
+  local identity="$1" gh_host="$2" status_out pub body listed type title
 
   # --active narrows the report to the one account gh will actually use for
   # this host (gh 2.100.0: "-a, --active  Display the active account only").
@@ -66,7 +82,7 @@ for identity in $(identity_list); do
     log "Signing in to GitHub ($gh_host). A browser window opens; approve the SSH key scopes."
     if ! run_cmd gh auth login --hostname "$gh_host" --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key; then
       warn "gh auth login did not complete for $gh_host. Re-run: teeup configure github"
-      continue
+      return 0
     fi
   fi
 
@@ -77,7 +93,7 @@ for identity in $(identity_list); do
   pub="$(identity_key "$identity").pub"
   if [[ ! -f "$pub" ]]; then
     warn "No $pub yet. Run: teeup configure ssh"
-    continue
+    return 0
   fi
   body="$(awk '{print $2}' < "$pub")"
   listed="$(gh ssh-key list 2>/dev/null || true)"
@@ -91,4 +107,39 @@ for identity in $(identity_list); do
     run_cmd gh ssh-key add "$pub" --type "$type" --title "$title" ||
       warn "Could not upload $pub as a $type key."
   done
+}
+
+host_short="$(hostname -s 2>/dev/null || hostname)"
+
+for identity in $(identity_list); do
+  gh_host="$(identity_gh_host "$identity")"
+  gh_account="$(identity_gh_account "$identity")"
+  export GH_HOST="$gh_host"
+  restore_account=""
+  if [[ -n "$gh_account" ]]; then
+    active_account="$(_gh_active_account "$gh_host")"
+    if [[ -n "$active_account" && "$active_account" != "$gh_account" ]]; then
+      if run_cmd gh auth switch --hostname "$gh_host" --user "$gh_account"; then
+        restore_account="$active_account"
+      else
+        warn "Could not switch gh to $gh_account on $gh_host; skipping the $identity identity."
+        warn "Check the account name in $(machine_file), or run: gh auth login --hostname $gh_host"
+        continue
+      fi
+    fi
+  elif [[ "$identity" != "personal" && "$gh_host" == "$(identity_gh_host personal)" ]]; then
+    # Same host as personal, no account named: gh would target the personal
+    # account and the work key would be uploaded to it.
+    warn "The $identity identity is on $gh_host, the same host as personal, and $(machine_file) names no TEEUP_WORK_GH_ACCOUNT."
+    warn "gh targets a host, not an account, so the $identity key would be uploaded to the personal account. Not uploading it."
+    warn "Set TEEUP_WORK_GH_ACCOUNT to the work account's GitHub login (see machines/example.conf.sample)."
+    continue
+  fi
+
+  github_configure_identity "$identity" "$gh_host"
+
+  if [[ -n "$restore_account" ]]; then
+    run_cmd gh auth switch --hostname "$gh_host" --user "$restore_account" ||
+      warn "Could not switch gh back to $restore_account on $gh_host. Run: gh auth switch --hostname $gh_host --user $restore_account"
+  fi
 done
