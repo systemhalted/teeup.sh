@@ -68,11 +68,19 @@ unset _teeup_answers
 # The machine file overrides the answers file (answers_load in lib/answers.sh
 # sources it last, for the same reason): it encodes hard constraints such as
 # the package manager, and the CLI and this shell layer must agree on which
-# backend is in effect. `hostname -s` matches machine_file()'s lookup, with
-# the same fallback to a bare `hostname` for a `-s` that is not supported.
-_teeup_machine="$TEEUP_PATH/machines/$(hostname -s 2>/dev/null || hostname).conf"
+# backend is in effect. It also has to agree on *which* machine file: the
+# user's own, under $TEEUP_CONFIG_DIR/machines/, wins over the checkout's,
+# the same overlay machine_file() in lib/answers.sh gives the CLI -- written
+# again here, in this file's own POSIX sh, because a shell startup path has
+# no access to that library. `hostname -s` runs once (with the same fallback
+# to a bare `hostname` for a `-s` that is not supported); trying the user's
+# path first costs one more `[ -r ]` test, a stat next to the fork `hostname`
+# already pays, so this stays cheap enough for every shell start.
+_teeup_host="$(hostname -s 2>/dev/null || hostname)"
+_teeup_machine="${TEEUP_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/teeup}/machines/$_teeup_host.conf"
+[ -r "$_teeup_machine" ] || _teeup_machine="$TEEUP_PATH/machines/$_teeup_host.conf"
 [ -r "$_teeup_machine" ] && . "$_teeup_machine"
-unset _teeup_machine
+unset _teeup_host _teeup_machine
 
 # No answer on record (a bare shell before the wizard ever ran, or an answers
 # file that predates this key) falls back to the old Darwin-version heuristic:

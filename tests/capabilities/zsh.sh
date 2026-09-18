@@ -302,6 +302,35 @@ test_default_env_lets_the_machine_file_override_the_answers_file() {
   cleanup_test_env
 }
 
+test_default_env_prefers_the_users_own_machine_file_over_the_repos() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/prefixroot"
+  mkdir -p "$root/opt/local/bin" "$root/opt/local/sbin"
+  mkdir -p "$root/opt/homebrew/bin" "$root/opt/homebrew/sbin"
+  : > "$root/opt/homebrew/bin/brew"
+  chmod +x "$root/opt/homebrew/bin/brew"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEST_HOME/.config/teeup/answers"
+  # Both a repo machine file, under the same throwaway TEEUP_PATH the test
+  # above stubs, and a user one under $XDG_CONFIG_HOME/teeup/machines/ (which
+  # setup_test_env already points at $TEST_HOME/.config). The user file names
+  # MacPorts, the repo file Homebrew, so only the user file winning puts
+  # MacPorts first on PATH.
+  mkdir -p "$TEST_HOME/machines" "$TEST_HOME/.config/teeup/machines"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEST_HOME/machines/testmac.conf"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEST_HOME/.config/teeup/machines/testmac.conf"
+  local out
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" zsh -f -c "export TEEUP_PATH='$TEST_HOME'; . '$TEEUP_PATH/capabilities/zsh/default/env'; printf '%s\n' \"\$PATH\"")"
+  local macports_pos brew_pos
+  macports_pos="$(printf '%s' "$out" | tr ':' '\n' | grep -n "^$root/opt/local/bin\$" | head -1 | cut -d: -f1)"
+  brew_pos="$(printf '%s' "$out" | tr ':' '\n' | grep -n "^$root/opt/homebrew/bin\$" | head -1 | cut -d: -f1)"
+  [[ -n "$macports_pos" && -n "$brew_pos" ]] || { echo "expected both prefixes on PATH, got: $out"; return 1; }
+  [[ "$macports_pos" -lt "$brew_pos" ]] ||
+    { echo "expected MacPorts before Homebrew (the user's own machine file must win), got: $out"; return 1; }
+  cleanup_test_env
+}
+
 test_rc_exports_appearance_and_sources_the_theme_env() {
   setup
   require_zsh || return 1
@@ -373,6 +402,7 @@ run_test "default env honours MISE_DATA_DIR for shims" test_default_env_honours_
 run_test "default env prefers macports when recorded" test_default_env_prefers_macports_when_recorded
 run_test "default env prefers homebrew when recorded" test_default_env_prefers_homebrew_when_recorded
 run_test "default env lets the machine file override the answers file" test_default_env_lets_the_machine_file_override_the_answers_file
+run_test "default env prefers the user's own machine file over the repo's" test_default_env_prefers_the_users_own_machine_file_over_the_repos
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero
 run_test "rc does not grow fpath on a second source" test_rc_does_not_grow_fpath_on_a_second_source
