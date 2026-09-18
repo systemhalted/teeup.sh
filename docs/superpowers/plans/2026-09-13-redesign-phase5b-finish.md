@@ -540,12 +540,12 @@ git commit -m "Ship the teeup mental model as an agent skill"
 - Modify: `lib/files.sh` (append `agent_skill_link`)
 - Modify: `capabilities/teeup-runtime/configure` (one call, after `shims_generate`)
 - Modify: `capabilities/teeup-runtime/doctor` (one check, before `doctor_verdict`)
-- Modify: `tests/lib/files.sh` (six tests)
+- Modify: `tests/lib/files.sh` (seven tests)
 - Modify: `tests/capabilities/teeup-runtime.sh` (two tests)
 
 **Interfaces:**
 - Consumes: `log ok warn run_cmd` (`lib/core.sh`, main), `doctor_ok doctor_warn doctor_fail` (`lib/doctor.sh`, phase 4b), `share/agents/skills/teeup/` (Task 1).
-- Produces: `agent_skill_link <source-dir> <name>` in `lib/files.sh`. It creates `$HOME/.agents/skills/<name>` unconditionally and `$HOME/.claude/skills/<name>`, `$HOME/.codex/skills/<name>` and `$HOME/.gemini/skills/<name>` when `$HOME/.claude`, `$HOME/.codex` or `$HOME/.gemini` exists. Each is a symlink to `<source-dir>`. It returns 1 only when `<source-dir>` is not a directory; a single link it refuses to replace is a warning, not a failure — and that includes a symlink already there: one that does not point into a checkout's `share/agents/skills/<name>` is left alone as somebody else's choice, and only one that does (this checkout's own, or a stale one from a previous checkout location) is replaced. Task 6's CONTRIBUTING entry and Task 5's README section both describe this behaviour and must stay in step with it.
+- Produces: `agent_skill_link <source-dir> <name>` in `lib/files.sh`. It creates `$HOME/.agents/skills/<name>` unconditionally and `$HOME/.claude/skills/<name>`, `$HOME/.codex/skills/<name>` and `$HOME/.gemini/skills/<name>` when `$HOME/.claude`, `$HOME/.codex` or `$HOME/.gemini` exists. Each is a symlink to `<source-dir>`. It returns 1 only when `<source-dir>` is not a directory; a single link it refuses to replace is a warning, not a failure — and that includes a symlink already there: it is kept, as somebody else's choice, unless it resolves (physically, on both sides — no `readlink -f` on macOS, so by `cd`-and-`pwd -P`) to `<source-dir>` itself, which is the only thing that makes it teeup's to replace. Task 6's CONTRIBUTING entry and Task 5's README section both describe this behaviour and must stay in step with it.
 
 **Where the four directories come from.** Checked against each tool's current documentation while writing this plan:
 
@@ -626,18 +626,41 @@ test_agent_skill_link_keeps_a_foreign_symlink() {
   cleanup_test_env
 }
 
-test_agent_skill_link_refreshes_its_own_stale_link() {
+test_agent_skill_link_keeps_a_link_into_a_different_checkout_with_the_same_layout() {
   setup
   mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
   printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
-  # A link left by a checkout at a different path, but shaped like teeup's
-  # own: it ends in share/agents/skills/<name>, so nothing but teeup would
-  # ever have put it there.
-  ln -s "$TEST_HOME/old-checkout/share/agents/skills/probe" "$TEST_HOME/.agents/skills/probe"
+  # A second, real checkout -- a fork, or the user's own skills repository --
+  # laid out the same way, so its path ends in share/agents/skills/probe too.
+  # Ownership is decided by where the link resolves, not by how the path
+  # looks, so this one has to be kept even though the shape matches.
+  local other="$TEST_HOME/a different checkout/share/agents/skills/probe"
+  mkdir -p "$other"
+  ln -s "$other" "$TEST_HOME/.agents/skills/probe"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "a same-shape foreign symlink is a warning, not a failure" || return 1
+  assert_contains "$out" "$TEST_HOME/.agents/skills/probe" "the warning names the link" || return 1
+  assert_contains "$out" "$other" "the warning names what it already points at" || return 1
+  assert_equals "$other" "$(readlink "$TEST_HOME/.agents/skills/probe")" "a different checkout's link is kept even though the path ends the same way" || return 1
+  cleanup_test_env
+}
+
+test_agent_skill_link_refreshes_a_link_into_the_real_checkout() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  # A link that does not spell $SKILLSRC exactly, so the exact-string fast
+  # path above is not what is under test, but resolves -- physically,
+  # through an alias symlink -- to this checkout's own skill directory. This
+  # is teeup's by resolution, not by shape, and gets refreshed.
+  local alias="$TEST_HOME/alias-to-the-checkout"
+  ln -s "$SKILLSRC" "$alias"
+  ln -s "$alias" "$TEST_HOME/.agents/skills/probe"
   local out
   out="$(agent_skill_link "$SKILLSRC" probe 2>&1)"
-  assert_contains "$out" "Linked" "a stale link shaped like teeup's own is refreshed, not kept" || return 1
-  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the refreshed link points at the current checkout" || return 1
+  assert_contains "$out" "Linked" "a link that resolves to this checkout is refreshed" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the refreshed link points at the checkout directly" || return 1
   cleanup_test_env
 }
 
@@ -659,12 +682,13 @@ run_test "agent_skill_link always writes the neutral directory" test_agent_skill
 run_test "agent_skill_link writes a tool directory that exists" test_agent_skill_link_writes_a_tool_directory_that_already_exists
 run_test "agent_skill_link keeps a file it did not write" test_agent_skill_link_keeps_a_file_it_did_not_write
 run_test "agent_skill_link keeps a foreign symlink" test_agent_skill_link_keeps_a_foreign_symlink
-run_test "agent_skill_link refreshes its own stale link" test_agent_skill_link_refreshes_its_own_stale_link
+run_test "agent_skill_link keeps a link into a different checkout with the same layout" test_agent_skill_link_keeps_a_link_into_a_different_checkout_with_the_same_layout
+run_test "agent_skill_link refreshes a link into the real checkout" test_agent_skill_link_refreshes_a_link_into_the_real_checkout
 run_test "agent_skill_link dry run, and a missing source" test_agent_skill_link_dry_run_and_missing_source
 print_summary
 ```
 
-The six tests need one more variable in the suite's `setup`, on a path with a space and a dollar sign so that the helper is proven to quote everything it passes to `ln`:
+The seven tests need one more variable in the suite's `setup`, on a path with a space and a dollar sign so that the helper is proven to quote everything it passes to `ln`:
 
 ```bash edit-old=tests/lib/files.sh
   SRC="$TEST_HOME/src.conf"
@@ -685,8 +709,8 @@ The six tests need one more variable in the suite's `setup`, on a path with a sp
 
 - [ ] **Step 2: Run them to watch them fail**
 
-Run: `bash tests/lib/files.sh 2>&1 | tail -14`
-Expected: the six new tests `FAIL` with `agent_skill_link: command not found`, and the summary line reports six failures.
+Run: `bash tests/lib/files.sh 2>&1 | tail -15`
+Expected: the seven new tests `FAIL` with `agent_skill_link: command not found`, and the summary line reports seven failures.
 
 - [ ] **Step 3: Write the helper**
 
@@ -713,19 +737,21 @@ replace_literal() {
 #
 # A path that is not a symlink is left alone with a warning: it is somebody
 # else's skill, or their own file, and neither is teeup's to replace. Neither
-# is a symlink that is not teeup's: a symlink already at $target that does not
-# point somewhere under a checkout's share/agents/skills/<name> is somebody
-# else's choice (their own skill, a dotfiles manager's link) and is kept, with
-# a warning naming both paths. A symlink whose target does have that shape --
-# this checkout's own path, or a stale one from before a checkout moved -- is
-# teeup's to refresh, because nothing else would ever point there.
+# is a symlink that is not teeup's -- and ownership is decided by where a
+# symlink resolves, not by how its path looks: a fork, or a user's own skills
+# repository laid out the same way, can end in share/agents/skills/<name>
+# without being this checkout. A symlink already at $target is kept, with a
+# warning naming both paths, unless it resolves -- physically, both sides --
+# to this checkout's own skill directory, in which case it is teeup's to
+# refresh.
 agent_skill_link() {
   local src="$1" name="$2"
-  local dir parent target current
+  local dir parent target current resolved_src resolved_current
   if [[ ! -d "$src" ]]; then
     warn "No skill directory at $src"
     return 1
   fi
+  resolved_src="$(cd "$src" 2>/dev/null && pwd -P)"
   for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.gemini/skills"; do
     parent="$(dirname "$dir")"
     if [[ "$dir" != "$HOME/.agents/skills" && ! -d "$parent" ]]; then
@@ -742,13 +768,16 @@ agent_skill_link() {
       continue
     fi
     if [[ -L "$target" ]]; then
-      case "$current" in
-        */share/agents/skills/"$name") ;; # teeup's own path shape: safe to refresh
-        *)
-          warn "Keeping $target, a symlink to $current rather than $src"
-          continue
-          ;;
-      esac
+      # No readlink -f on macOS: cd into the link's own directory first, so a
+      # relative target resolves the way the shell would resolve it, then
+      # into what it points at, then ask for the physical (symlink-free)
+      # path on both sides. A target that does not exist, or a chain that
+      # does not lead back here, fails this and is foreign.
+      resolved_current="$(cd "$(dirname "$target")" 2>/dev/null && cd "$current" 2>/dev/null && pwd -P)" || resolved_current=""
+      if [[ -z "$resolved_current" || "$resolved_current" != "$resolved_src" ]]; then
+        warn "Keeping $target, a symlink to $current rather than $src"
+        continue
+      fi
     fi
     if [[ ! -d "$dir" ]]; then
       run_cmd mkdir -p "$dir"
@@ -764,8 +793,8 @@ replace_literal() {
 
 - [ ] **Step 4: Run them to watch them pass**
 
-Run: `bash tests/lib/files.sh 2>&1 | tail -10`
-Expected: the six new tests `PASS`, and `Summary: N/N passed` with no failures.
+Run: `bash tests/lib/files.sh 2>&1 | tail -11`
+Expected: the seven new tests `PASS`, and `Summary: N/N passed` with no failures.
 
 Run: `shellcheck --severity=warning lib/files.sh tests/lib/files.sh`
 Expected: no output.
