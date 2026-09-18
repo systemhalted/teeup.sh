@@ -2,6 +2,7 @@
 
 Date: 2026-09-11
 Status: approved design, pre-implementation
+Amended: 2026-09-17, one identity (user decision; see the Git, SSH/signing, Dev dirs and Work vs personal rows of the interview table, section 4b, section 8 and section 10)
 
 ## Context
 
@@ -64,9 +65,9 @@ Not portable: pacman/AUR, systemd, Hyprland/Wayland/Quickshell, plymouth/limine/
 | Shell | Plain zsh, Omarchy-style layered default (`default/zsh/*` sourced by thin `~/.zshrc`); Starship; autosuggestions/syntax-highlighting/completions sourced directly; mise, zoxide, fzf, eza, bat wired in. No Oh My Zsh. |
 | Prompt | Starship (TOML). |
 | Editors | Emacs (flavor=starter default; doom/spacemacs/none switchable), Neovim (LazyVim), Zed, VS Code. |
-| Git | Ask name/email once + optional work email; `includeIf` for `~/Work` (work identity) and `~/Personal`; both identities used on work laptop. Aliases + modern defaults like Omarchy. |
+| Git | Ask name/email once; git carries that one identity, full stop -- no `includeIf`, no per-root switching. A repository that needs a different address gets `git config user.email ...` by hand. Aliases + modern defaults like Omarchy. *Decision of 2026-09-17; this row first asked for an optional work email and an `includeIf` per root.* |
 | Git extras | gh CLI + `gh auth login` + credential helper; lazygit; delta; git-lfs; pre-commit. |
-| SSH/signing | ed25519 keys, macOS Keychain via ssh-agent, upload via gh, SSH commit signing (`gpg.format=ssh`). Separate key per identity (work/personal); SSH config host aliases pick the key. |
+| SSH/signing | ed25519 keys, macOS Keychain via ssh-agent, upload via gh, SSH commit signing (`gpg.format=ssh`). Two keys are two separate identities: personal exists everywhere, work only on a machine whose `machines/<hostname>.conf` configures one. An existing `~/.ssh/config` is authority -- a `Host` block already naming a key wins over generating a new one. SSH config host aliases pick the key. |
 | AI CLIs | Claude Code, Codex, Gemini, Copilot, OpenCode: mise-backed lazy shims in `~/.local/bin` (Omarchy `mise-install` pattern). Ollama optional lazy (cask + CLI, no models). Cursor optional lazy cask. Ship a teeup agent skill. |
 | Languages | Python, Node/TS, Java/JVM (Kotlin/Scala), Ruby, Rust, Go. mise for everything; uv installed with Python; rustup for Rust. All lazy (`teeup install dev-env <lang>` / first-use). |
 | Containers | Colima + docker CLI, lazy on first `docker`. k8s: kubectl, helm, k9s via mise, lazy. |
@@ -79,8 +80,8 @@ Not portable: pacman/AUR, systemd, Hyprland/Wayland/Quickshell, plymouth/limine/
 | macOS prefs | Opinionated dev set on by default, one unit each, revertable. |
 | Keyboard | Native `hidutil` Caps Lock→Control at bootstrap (LaunchAgent); Karabiner optional lazy with hyper-key config. |
 | Secrets | macOS Keychain + `gh auth`; shell helper reads Keychain via `security`. Nothing in repo. |
-| Dev dirs | Bootstrap creates `~/Work` and `~/Personal`; identity + SSH key per root. |
-| Work vs personal | Only git identity + SSH key differ. |
+| Dev dirs | Bootstrap creates `~/Work`. Fixed, not a question; `~/Personal` is no longer created. *Decision of 2026-09-17; this row first created two roots, one per identity.* |
+| Work vs personal | Nothing about directories any more: git has one identity regardless of where a repository sits, and a work identity is a per-machine SSH key and GitHub upload, configured in `machines/<hostname>.conf`, never a question the wizard asks. *Decision of 2026-09-17; this row first said only git identity + SSH key differ by root.* |
 | Essential set | Core (Xcode CLT, PM, shell, git/gh/ssh, WezTerm, font, CLI set, mise, AeroSpace, macOS defaults, hidutil) **plus daily set** (Emacs, Neovim, Zed, VS Code, Chrome, Obsidian) at bootstrap. Everything else lazy. |
 | Profiles | No named profiles. Answers file + per-hostname overrides. |
 | Themes | Yes: cross-tool theme system, a few themes, light/dark following macOS appearance. |
@@ -213,7 +214,7 @@ Rules for `provides=`: never list a command macOS already ships (`python3`, `rub
   shims/                           # lazy-install shims, appended last on PATH
   logs/bootstrap.log, update.log
 ~/.local/bin/          # mise-backed wrappers for AI CLIs and other mise tools
-~/Work  ~/Personal     # created by dev-dirs capability
+~/Work                 # created by dev-dirs capability (2026-09-17: ~/Personal dropped, one identity)
 ```
 
 ### 5. Bootstrap process
@@ -285,7 +286,7 @@ Herdr is gated on a phase 3 check that it ships macOS builds; if it does not, th
 
 ### 8. Profiles
 
-No named profiles. "Sensible defaults + my profile + machine overrides" maps to capability defaults + `answers` + `machines/<hostname>.conf`. The only things that differ between work and personal are git identity and SSH key, and both identities coexist on the work laptop, so identity is a directory rule, not a profile: `git` writes `includeIf "gitdir:~/Work/"` and `includeIf "gitdir:~/Personal/"` blocks pointing at generated identity files, `ssh` generates one ed25519 key per identity and writes `Host github.com-work` style aliases. Machines that must skip a capability (no AeroSpace on a locked-down Mac) set `TEEUP_SKIP="aerospace"` in `machines/<hostname>.conf`.
+No named profiles. "Sensible defaults + my profile + machine overrides" maps to capability defaults + `answers` + `machines/<hostname>.conf`. *Amended 2026-09-17 (user decision; this section first made identity a directory rule -- see the Git, SSH/signing, Dev dirs and Work vs personal rows of the interview table): git carries one identity, full stop, so there is no `includeIf` and no per-root switching left to make a profile out of. The only thing "work" still means is a second SSH key and a second GitHub upload, and that is per-machine, not a question: `ssh` generates the work key (`id_ed25519_work`) and writes `Host github.com-work` style aliases only when `machines/<hostname>.conf` sets `TEEUP_WORK_EMAIL`; without it there is one key, one identity, no work anything.* Machines that must skip a capability (no AeroSpace on a locked-down Mac) set `TEEUP_SKIP="aerospace"` in `machines/<hostname>.conf`.
 
 ### 9. Updates
 
@@ -311,6 +312,7 @@ Migrations follow Omarchy's stock-checksum rule: refresh a user file only if its
 - `teeup migrate legacy` handles known predecessors: removes `~/.teeup.common`, `~/.config/mac-setup`, dangling legacy symlinks; disables SDKMAN, rbenv, pyenv init lines (reusing `disable_matching_lines`); detects a chezmoi-managed home, prints the list from `chezmoi managed`, backs those files up with `backup_target`, and asks before deleting only `~/.config/chezmoi` (the config that points chezmoi at its source). It never runs `chezmoi purge`, which would delete the source directory, and never touches `~/Work/environment/dotfiles`, which keeps serving Linux.
 - `teeup doctor` flags leftovers: a `[user]` block in `~/.gitconfig.local`, p10k remnants, Oh My Zsh directory, a chezmoi source dir still pointing at the Linux repo.
 - Content from the chezmoi repo worth porting into capability configs: `~/.config/shell/{envs,aliases,functions}`, `wezterm.lua` (minus the work Jira hyperlink rule, which moves to `~/.wezterm_local.lua`), gitconfig aliases, the `javav` function.
+- **An existing `~/.ssh/config` is authority (2026-09-17 decision; this section otherwise assumed `copy_config_once`'s general backup-and-replace rule would apply here too).** A machine already has a real `Host` block naming a real `IdentityFile` far more often than it has a stray `~/.config/git/config`, so ssh does not treat it like every other shipped file: when it exists, teeup neither backs it up nor replaces it, and the key it already names is used for the matching identity instead of a fresh `id_ed25519_<identity>`. The two-root git identity this section's own migration notes used to have to reconcile is gone with it: git carries one identity everywhere now, so there is no `includeIf` block for a migration to preserve or drop.
 
 ### 11. Fresh Mac
 
@@ -327,10 +329,10 @@ git clone <repo> ~/.local/share/teeup && cd ~/.local/share/teeup && ./bootstrap
    │
    ▼
 core tier (ordered, install then configure each)
-   ├── dev-dirs        ~/Work ~/Personal
+   ├── dev-dirs        ~/Work (2026-09-17: one root, one identity)
    ├── zsh + starship  thin ~/.zshrc → teeup default layer
    ├── cli-tools       rg fd fzf bat eza zoxide jq yq btop tldr dust
-   ├── git / ssh / github   identity + includeIf, ed25519 per identity, gh auth login, SSH signing
+   ├── git / ssh / github   one git identity, ed25519 per identity (work only when machines/*.conf configures one), gh auth login per host, SSH signing
    ├── mise            runtime + tool manager
    ├── wezterm, fonts  JetBrainsMono Nerd Font
    ├── aerospace, keyboard (hidutil), macos-defaults
