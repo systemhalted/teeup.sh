@@ -1181,7 +1181,7 @@ Expected: `Summary: 13/13 passed`.
 echo "capabilities/dev-dirs"
 ```
 ```bash edit-new=tests/capabilities/dev-dirs.sh
-test_doctor_passes_once_both_roots_exist() {
+test_doctor_passes_once_the_root_exists() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   DRY_RUN=false "$TEEUP" configure dev-dirs >/dev/null
@@ -1195,13 +1195,12 @@ test_doctor_passes_once_both_roots_exist() {
 test_doctor_reports_a_missing_root_with_its_fix() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
-  mkdir -p "$TEST_HOME/Work"
   local rc=0 out report="$TEST_HOME/report"
   : > "$report"
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(DRY_RUN=false cap_run dev-dirs doctor 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "$TEST_HOME/Personal is missing" || return 1
+  assert_contains "$out" "$TEST_HOME/Work is missing" || return 1
   assert_contains "$(cat "$report")" "teeup configure dev-dirs" || return 1
   cleanup_test_env
 }
@@ -1214,7 +1213,7 @@ run_test "existing dirs reported not recreated" test_existing_dirs_are_reported_
 ```
 ```bash edit-new=tests/capabilities/dev-dirs.sh
 run_test "existing dirs reported not recreated" test_existing_dirs_are_reported_not_recreated
-run_test "doctor passes once both roots exist" test_doctor_passes_once_both_roots_exist
+run_test "doctor passes once the root exists" test_doctor_passes_once_the_root_exists
 run_test "doctor reports a missing root with its fix" test_doctor_reports_a_missing_root_with_its_fix
 ```
 
@@ -1222,17 +1221,13 @@ run_test "doctor reports a missing root with its fix" test_doctor_reports_a_miss
 
 ```bash file=capabilities/dev-dirs/doctor
 #!/usr/bin/env bash
-# Two directories, and they matter more than they look: the git capability
-# writes `includeIf "gitdir:~/Work/"` and `gitdir:~/Personal/` blocks, so a
-# missing root means every repository that should have been under it quietly
-# gets the other identity's email on its commits.
-for d in Work Personal; do
-  if [[ -d "$HOME/$d" ]]; then
-    doctor_ok "$HOME/$d is present."
-  else
-    doctor_fail "$HOME/$d is missing, and git's includeIf identity rules key off it." "teeup configure dev-dirs"
-  fi
-done
+# One directory (2026-09-17 decision: git identity lives in generated
+# settings now, not a directory rule, so there is no second root to check).
+if [[ -d "$HOME/Work" ]]; then
+  doctor_ok "$HOME/Work is present."
+else
+  doctor_fail "$HOME/Work is missing." "teeup configure dev-dirs"
+fi
 
 doctor_verdict
 ```
@@ -1373,7 +1368,7 @@ git commit -m "Add doctor checks for the package manager, runtime, project roots
 ---
 ### Task 3: Doctor scripts for identity
 
-The three capabilities that decide what name is on a commit and which key pushes it. Their failures are the quiet kind: a commit signed with a key GitHub has never seen, or a repository under `~/Work` carrying the personal email, both look fine locally and are noticed weeks later.
+The three capabilities that decide what name is on a commit and which key pushes it. Their failures are the quiet kind: a commit signed with a key GitHub has never seen, or a push going out under a key `~/.ssh/config` names but teeup never generated, both look fine locally and are noticed weeks later.
 
 This task takes the `gpg.ssh.allowedSignersFile` finding that phase 2a's review deferred and phase 4a handed on: the shipped git config turns on `commit.gpgsign` with `gpg.format = ssh`, and git cannot verify a single one of those signatures without an allowed-signers file.
 
@@ -1382,7 +1377,7 @@ This task takes the `gpg.ssh.allowedSignersFile` finding that phase 2a's review 
 - Modify: `tests/capabilities/git.sh`, `tests/capabilities/ssh.sh`, `tests/capabilities/github.sh`
 
 **Interfaces:**
-- Consumes: `doctor_ok doctor_warn doctor_fail doctor_verdict` (Task 1); `identity_list identity_email identity_key answers_has_work` (`lib/answers.sh`); `user_config_dir have` (`lib/core.sh`).
+- Consumes: `doctor_ok doctor_warn doctor_fail doctor_verdict` (Task 1); `identity_list identity_email identity_key ssh_host_alias answers_has_work` (`lib/answers.sh`); `user_config_dir have` (`lib/core.sh`).
 - Produces: three executable `doctor` scripts, and a `gh_key_listed <key-body>` helper local to `capabilities/github/doctor`.
 
 **Real-Mac risk:** the GitHub checks talk to a real `gh` session over the network; the mocked suite proves the parsing of `gh auth status --active -h github.com` and the tab-separated `gh ssh-key list`, not that gh 2.100.0 on a real Mac prints those shapes. The key permission checks use `stat -c` with a `stat -f` fallback, and only BSD `stat` on a real Mac proves the fallback is the branch that runs.
@@ -1393,16 +1388,15 @@ This task takes the `gpg.ssh.allowedSignersFile` finding that phase 2a's review 
 echo "capabilities/git"
 ```
 ```bash edit-new=tests/capabilities/git.sh
-# A configured git tree with both key halves on disk, which is the state in
-# which commit signing is supposed to be on.
+# A configured git tree with its one key pair on disk, which is the state in
+# which commit signing is supposed to be on. Git has one identity, full stop,
+# so there is no work key to seed here -- that only ever exists when
+# machines/<hostname>.conf configures one, and git never reads it.
 configure_git_with_keys() {
-  seed_answers "${1:-}"
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
-  local identity
-  for identity in personal work; do
-    printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_$identity"
-    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY%s %s\n' "$identity" "$identity" > "$TEST_HOME/.ssh/id_ed25519_$identity.pub"
-  done
+  printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYpersonal personal\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
 }
 
@@ -1417,7 +1411,7 @@ test_doctor_passes_on_a_configured_tree() {
   local rc=0 out
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
   assert_success "$rc" || return 1
-  assert_contains "$out" "Identity personal:" || return 1
+  assert_contains "$out" "Identity: ada@example.com" || return 1
   assert_contains "$out" "Commit signing is on" || return 1
   cleanup_test_env
 }
@@ -1517,27 +1511,17 @@ if [[ ! -f "$git_dir/config" ]]; then
 fi
 doctor_ok "$git_dir/config is in place."
 
-# Identity by directory (spec section 8). Both blocks are always written, so a
-# missing one means the file was edited or replaced, not that there is no work
-# email.
-for marker in 'gitdir:~/Personal/' 'gitdir:~/Work/'; do
-  if grep -qF "$marker" "$git_dir/config"; then
-    doctor_ok "Identity rule present: includeIf $marker"
-  else
-    doctor_fail "$git_dir/config has no includeIf for $marker, so repositories there get the default identity." "teeup reset git"
-  fi
-done
-
-for identity in personal work; do
-  identity_file="$git_dir/identity-$identity"
-  if [[ ! -f "$identity_file" ]]; then
-    doctor_fail "No $identity_file, so the $identity identity resolves to nothing." "teeup configure git"
-  elif grep -q '^[[:space:]]*email[[:space:]]*=[[:space:]]*"..*"' "$identity_file"; then
-    doctor_ok "Identity $identity: $(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" | head -1)"
-  else
-    doctor_fail "$identity_file has no email, so commits there would be unattributed." "teeup configure git"
-  fi
-done
+# One identity, full stop (2026-09-17 decision): git carries whatever
+# $git_dir/identity says regardless of where a repository sits, so there is
+# only ever this one file to check, never a per-root pair.
+identity_file="$git_dir/identity"
+if [[ ! -f "$identity_file" ]]; then
+  doctor_fail "No $identity_file, so the git identity resolves to nothing." "teeup configure git"
+elif grep -q '^[[:space:]]*email[[:space:]]*=[[:space:]]*"..*"' "$identity_file"; then
+  doctor_ok "Identity: $(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" | head -1)"
+else
+  doctor_fail "$identity_file has no email, so commits would be unattributed." "teeup configure git"
+fi
 
 generated="$git_dir/teeup-generated"
 if [[ ! -f "$generated" ]]; then
@@ -1557,16 +1541,17 @@ if have delta; then
   fi
 fi
 
-# Signing turns itself on at the next configure once every identity has both
-# halves of its key. On a first bootstrap git runs before ssh, so this is the
-# ordinary state of a machine that has not been re-configured since.
-keys_present=true
-for identity in $(identity_list); do
-  key="$(identity_key "$identity")"
-  if [[ ! -s "$key" || ! -s "$key.pub" ]]; then
-    keys_present=false
-  fi
-done
+# Signing turns itself on at the next configure once the personal key has
+# both halves -- git signs with that key alone, whatever repository it is in,
+# so a work key (when one even exists) never enters into this. On a first
+# bootstrap git runs before ssh, so this is the ordinary state of a machine
+# that has not been re-configured since.
+personal_key="$(identity_key personal)"
+if [[ -s "$personal_key" && -s "$personal_key.pub" ]]; then
+  keys_present=true
+else
+  keys_present=false
+fi
 if grep -q '^[[:space:]]*gpgsign = true$' "$generated"; then
   doctor_ok "Commit signing is on."
   signing_on=true
@@ -1574,7 +1559,7 @@ elif [[ "$keys_present" == "true" ]]; then
   doctor_fail "git has every key it needs is on disk but commit signing is off in $generated." "teeup configure git"
   signing_on=false
 else
-  doctor_warn "Commit signing is off because at least one identity has no key yet. Run: teeup configure ssh"
+  doctor_warn "Commit signing is off because the personal key does not exist yet. Run: teeup configure ssh"
   signing_on=false
 fi
 
@@ -1720,10 +1705,15 @@ for identity in $(identity_list); do
   fi
 done
 
+# Only the aliases identity_list actually names: github.com-work is rendered
+# only on a machine whose machines/<hostname>.conf configures a work
+# identity, so checking for it unconditionally would fail every personal-only
+# machine, which is most of them.
 if [[ ! -f "$ssh_dir/config" ]]; then
-  doctor_fail "No $ssh_dir/config, so github.com-work resolves to nothing and every push uses the default key." "teeup configure ssh"
+  doctor_fail "No $ssh_dir/config, so no identity's key is ever offered to github.com." "teeup configure ssh"
 else
-  for host_alias in 'Host github.com' 'Host github.com-work'; do
+  for identity in $(identity_list); do
+    host_alias="Host $(ssh_host_alias "$identity")"
     if grep -q "^$host_alias\$" "$ssh_dir/config"; then
       doctor_ok "$ssh_dir/config declares $host_alias."
     else
