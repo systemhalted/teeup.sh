@@ -114,6 +114,37 @@ test_candidates_map_bash_completion_on_homebrew() {
   cleanup_test_env
 }
 
+# `tldr` itself is not a MacPorts port; tealdeer is tried first because its
+# binary is named `tldr`, which is what cli-tools's tldr:tldr package:command
+# pair checks for on PATH.
+test_candidates_map_tldr_to_tealdeer_then_tlrc_on_macports() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  assert_equals "tealdeer tlrc" "$(package_candidates tldr)" || return 1
+  cleanup_test_env
+}
+
+# The fallback chain from finding 1 actually falls through: tealdeer fails,
+# tlrc is tried next and succeeds.
+test_pkg_install_falls_back_from_tealdeer_to_tlrc_on_macports() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  export TEEUP_TEST_MISSING=tldr
+  mock_command port 0 ""
+  mock_command_script sudo <<'EOF2'
+case "$1 $2 ${3:-}" in
+  "port install tealdeer") exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  DRY_RUN=false
+  local out
+  out="$(pkg_install tldr tldr 2>&1)"
+  assert_contains "$out" "Failed to install 'tealdeer' with MacPorts; trying the next candidate." || return 1
+  assert_contains "$out" "✅ Installed tlrc (MacPorts)" || return 1
+  cleanup_test_env
+}
+
 test_pkg_installed_announces_the_backend_it_asks() {
   setup
   mock_command brew 0 ""
@@ -239,6 +270,8 @@ run_test "pkg_install calls brew when missing" test_pkg_install_calls_brew_when_
 run_test "pkg_install real-run wording is unchanged" test_pkg_install_real_run_wording_is_unchanged
 run_test "pkg_install uses sudo port on macports" test_pkg_install_uses_sudo_port_on_macports
 run_test "candidates map bash-completion" test_candidates_map_bash_completion_on_homebrew
+run_test "candidates map tldr to tealdeer then tlrc on macports" test_candidates_map_tldr_to_tealdeer_then_tlrc_on_macports
+run_test "pkg_install falls back from tealdeer to tlrc on macports" test_pkg_install_falls_back_from_tealdeer_to_tlrc_on_macports
 run_test "pkg_installed announces the backend it asks" test_pkg_installed_announces_the_backend_it_asks
 run_test "pkg_installed announces macports too" test_pkg_installed_announces_macports_too
 run_test "pkg_install have short-circuit does not announce" test_pkg_install_have_short_circuit_does_not_announce
