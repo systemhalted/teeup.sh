@@ -173,6 +173,14 @@ wizard() {
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
+  # The wizard that shipped before 2026-09-17 asked for a work email and wrote
+  # it into the answers file. This one neither asks nor reads it (the work
+  # identity comes from machines/<hostname>.conf alone), so the leftover answer
+  # is inert -- but leaving it there means the only way to be rid of it is a
+  # text editor. Clear it instead, and say so.
+  if answers_unset TEEUP_WORK_EMAIL; then
+    ok_unless_dry "Removed the old TEEUP_WORK_EMAIL answer; a work identity is configured in $(machine_file) now."
+  fi
   name="$(wizard_ask "Your full name" "$(answers_get TEEUP_NAME "$(id -F 2>/dev/null || true)")" _wizard_valid_name)"
   email="$(wizard_ask "Personal email (your git identity)" "$(answers_get TEEUP_EMAIL)" _wizard_valid_email)"
   # A theme pinned by machines/<hostname>.conf wins in answers_load, so asking

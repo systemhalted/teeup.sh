@@ -169,15 +169,69 @@ test_identity_helpers_without_work_email() {
   cleanup_test_env
 }
 
-test_identity_helpers_with_work_email() {
+# The work identity lives in the machine file and nowhere else, so every test
+# that needs one seeds it there. hostname is mocked to "testmac" by setup.
+seed_machine_work() {
+  printf '%s\n' "$@" > "$TEEUP_MACHINES_DIR/testmac.conf"
+}
+
+test_identity_helpers_with_a_work_machine_file() {
   setup
   answers_set TEEUP_EMAIL "ada@example.com"
-  answers_set TEEUP_WORK_EMAIL "ada@corp.example"
+  seed_machine_work 'TEEUP_WORK_EMAIL="ada@corp.example"'
   answers_load
   assert_equals "personal
 work" "$(identity_list)" || return 1
   assert_equals "ada@corp.example" "$(identity_email work)" || return 1
   assert_equals "$HOME/.ssh/id_ed25519_work" "$(identity_key work)" || return 1
+  cleanup_test_env
+}
+
+# B2: the wizard used to ask for a work email and wrote it into the answers
+# file. It no longer asks, so a leftover answer on an upgraded machine would
+# resurrect a work identity -- a second key, a second passphrase and a second
+# upload -- from a question the tool no longer admits exists. The machine file
+# is the only source there is.
+test_a_work_email_in_the_answers_file_is_inert() {
+  setup
+  answers_set TEEUP_EMAIL "ada@example.com"
+  answers_set TEEUP_WORK_EMAIL "ada@corp.example"
+  answers_load
+  assert_equals "personal" "$(identity_list)" || return 1
+  answers_has_work && { echo "a stale answer still configures a work identity"; return 1; }
+  assert_equals "ada@example.com" "$(identity_email work)" || return 1
+  cleanup_test_env
+}
+
+test_a_work_gh_host_in_the_answers_file_is_inert() {
+  setup
+  answers_set TEEUP_WORK_GH_HOST "github.enterprise.example.com"
+  answers_load
+  assert_equals "github.com" "$(identity_gh_host work)" || return 1
+  cleanup_test_env
+}
+
+test_answers_unset_removes_the_key() {
+  setup
+  answers_set TEEUP_EMAIL "ada@example.com"
+  answers_set TEEUP_WORK_EMAIL "ada@corp.example"
+  answers_unset TEEUP_WORK_EMAIL || { echo "answers_unset reported nothing to remove"; return 1; }
+  assert_not_contains "$(cat "$(answers_file)")" "TEEUP_WORK_EMAIL" || return 1
+  assert_contains "$(cat "$(answers_file)")" "TEEUP_EMAIL" "the other answers survive" || return 1
+  assert_equals "" "${TEEUP_WORK_EMAIL:-}" "the value is dropped from this shell too" || return 1
+  local rc=0
+  answers_unset TEEUP_WORK_EMAIL || rc=$?
+  assert_failure "$rc" "a second unset has nothing to remove" || return 1
+  cleanup_test_env
+}
+
+test_answers_unset_writes_nothing_in_a_dry_run() {
+  setup
+  answers_set TEEUP_WORK_EMAIL "ada@corp.example"
+  local out
+  out="$(DRY_RUN=true answers_unset TEEUP_WORK_EMAIL)"
+  assert_contains "$out" "[DRY-RUN] Would remove TEEUP_WORK_EMAIL" || return 1
+  assert_contains "$(cat "$(answers_file)")" "TEEUP_WORK_EMAIL" "a dry run must not rewrite the answers file" || return 1
   cleanup_test_env
 }
 
@@ -191,7 +245,7 @@ test_identity_gh_host_defaults_to_github_com() {
 
 test_identity_gh_host_honors_a_pinned_work_host() {
   setup
-  answers_set TEEUP_WORK_GH_HOST "github.enterprise.example.com"
+  seed_machine_work 'TEEUP_WORK_EMAIL="ada@corp.example"' 'TEEUP_WORK_GH_HOST="github.enterprise.example.com"'
   answers_load
   assert_equals "github.com" "$(identity_gh_host personal)" "personal never moves off github.com" || return 1
   assert_equals "github.enterprise.example.com" "$(identity_gh_host work)" || return 1
@@ -264,7 +318,11 @@ run_test "set rejects a bare prefix" test_set_rejects_a_bare_prefix
 run_test "set replaces only the exact key" test_set_replaces_only_the_exact_key
 run_test "set preserves a final line with no trailing newline" test_set_preserves_a_final_line_with_no_trailing_newline
 run_test "identity helpers without work email" test_identity_helpers_without_work_email
-run_test "identity helpers with work email" test_identity_helpers_with_work_email
+run_test "identity helpers with a work machine file" test_identity_helpers_with_a_work_machine_file
+run_test "a work email in the answers file is inert" test_a_work_email_in_the_answers_file_is_inert
+run_test "a work gh host in the answers file is inert" test_a_work_gh_host_in_the_answers_file_is_inert
+run_test "answers_unset removes the key" test_answers_unset_removes_the_key
+run_test "answers_unset writes nothing in a dry run" test_answers_unset_writes_nothing_in_a_dry_run
 run_test "identity_gh_host defaults to github.com" test_identity_gh_host_defaults_to_github_com
 run_test "identity_gh_host honors a pinned work host" test_identity_gh_host_honors_a_pinned_work_host
 run_test "identity_key reuses an existing ssh config entry" test_identity_key_reuses_an_existing_ssh_config_entry

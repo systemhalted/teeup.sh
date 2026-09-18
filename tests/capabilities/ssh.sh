@@ -425,9 +425,31 @@ test_configure_twice_changes_nothing() {
   cleanup_test_env
 }
 
+# B2: the wizard that shipped before 2026-09-17 wrote TEEUP_WORK_EMAIL into
+# the answers file. A machine upgrading from it must not get a second identity
+# out of that leftover: a second passphrase prompt, a second key and a second
+# upload, from a question the tool no longer asks. Only the machine file
+# configures work.
+test_a_stale_work_email_answer_generates_no_second_key() {
+  setup
+  mkdir -p "$TEST_HOME/.config/teeup"
+  {
+    printf 'TEEUP_NAME="Ada Lovelace"\n'
+    printf 'TEEUP_EMAIL="ada@example.com"\n'
+    printf 'TEEUP_WORK_EMAIL="ada@corp.example"\n'
+  } > "$TEST_HOME/.config/teeup/answers"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_work" ]] || { echo "a stale answer generated a work key"; return 1; }
+  assert_not_contains "$out" "Generating the work" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/ssh"
 run_test "configure generates one key on a machine with no work identity" test_configure_generates_one_key_on_a_machine_with_no_work_identity
 run_test "configure generates both keys when the machine file configures work" test_configure_generates_both_keys_when_the_machine_file_configures_work
+run_test "a stale work email answer generates no second key" test_a_stale_work_email_answer_generates_no_second_key
 run_test "configure generates the work key on a GitHub Enterprise host too" test_configure_generates_the_work_key_on_a_github_enterprise_host_too
 run_test "configure adds the keys to the keychain" test_configure_adds_the_keys_to_the_keychain
 run_test "configure uses --apple-use-keychain on macOS 12 and newer" test_configure_uses_apple_use_keychain_on_macos_12_and_newer
