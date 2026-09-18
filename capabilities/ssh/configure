@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# One ed25519 key per identity. ssh-keygen prompts for a passphrase; that is
-# why this capability is interactive. --apple-use-keychain then stores it in
-# the login Keychain, so it is typed once and never again.
+# One ed25519 key per identity, usually just one identity (personal); a work
+# identity exists only when machines/<hostname>.conf configures one. An
+# existing ~/.ssh/config is authority (2026-09-17 decision): identity_key
+# (lib/answers.sh) already prefers whatever key such a config names over
+# teeup's own id_ed25519_<identity> convention, so this script generates
+# nothing for an identity that already has one, and only ever writes its own
+# ssh config when the user has none. ssh-keygen prompts for a passphrase;
+# that is why this capability is interactive. --apple-use-keychain then
+# stores it in the login Keychain, so it is typed once and never again.
 ssh_dir="$HOME/.ssh"
 [[ -d "$ssh_dir" ]] || run_cmd mkdir -p "$ssh_dir"
 
@@ -34,6 +40,11 @@ unset ssh_macos_major
 
 for identity in $(identity_list); do
   key="$(identity_key "$identity")"
+  # identity_key already consulted ~/.ssh/config; a path that differs from
+  # teeup's own convention came from there, and is worth saying so about.
+  if [[ "$key" != "$HOME/.ssh/id_ed25519_$identity" ]]; then
+    log "Using the $identity key already named in $ssh_dir/config: $key"
+  fi
   # -s, not -f, for both halves: a zero-byte file is a missing one. The first
   # version of the rebuild below left exactly such a $key.pub behind when the
   # passphrase was mistyped, and a -f guard then reported the pair "Already
@@ -97,7 +108,16 @@ for identity in $(identity_list); do
   run_cmd ssh-add "$ssh_keychain_flag" "$key" || warn "ssh-add failed for $key."
 done
 
-copy_config_once "$TEEUP_CAP_DIR/config/ssh/config" "$ssh_dir/config"
+# An existing ~/.ssh/config is authority: teeup never backs up and replaces
+# a foreign one (copy_config_once's usual behaviour for every other shipped
+# config) because that would ask the Host blocks read above to point at
+# keys this run may have just decided not to touch. It only ever writes its
+# own config when there is none yet.
+if [[ -e "$ssh_dir/config" || -L "$ssh_dir/config" ]]; then
+  log "Already present: $ssh_dir/config"
+else
+  copy_config_once "$TEEUP_CAP_DIR/config/ssh/config" "$ssh_dir/config"
+fi
 chmod_once 600 "$ssh_dir/config"
 
 # git runs before ssh in the core list, so `git configure` ran with no keys on

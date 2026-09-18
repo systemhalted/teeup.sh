@@ -36,32 +36,60 @@ seed_answers() {
   {
     printf 'TEEUP_NAME="Ada Lovelace"\n'
     printf 'TEEUP_EMAIL="ada@example.com"\n'
-    printf 'TEEUP_WORK_EMAIL="%s"\n' "${1:-}"
   } > "$TEST_HOME/.config/teeup/answers"
 }
 
-test_configure_generates_one_key_without_a_work_email() {
+# A work identity is per-machine, not a wizard answer (2026-09-17 decision):
+# machines/<hostname>.conf is the only source of TEEUP_WORK_EMAIL. hostname is
+# mocked to "testmac" by mock_macos_base above.
+seed_machine_work() {
+  local email="$1" gh_host="${2:-}"
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  {
+    printf 'TEEUP_WORK_EMAIL="%s"\n' "$email"
+    [[ -n "$gh_host" ]] && printf 'TEEUP_WORK_GH_HOST="%s"\n' "$gh_host"
+  } > "$TEEUP_MACHINES_DIR/testmac.conf"
+}
+
+test_configure_generates_one_key_on_a_machine_with_no_work_identity() {
   setup
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
   assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal" || return 1
   assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
-  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_work" ]] || { echo "work key without a work email"; return 1; }
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_work" ]] || { echo "work key on a machine with no work identity"; return 1; }
   cleanup_test_env
 }
 
-test_configure_generates_both_keys_with_a_work_email() {
+test_configure_generates_both_keys_when_the_machine_file_configures_work() {
   setup
-  seed_answers "ada@corp.example"
+  seed_answers
+  seed_machine_work "ada@corp.example"
   DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
   assert_file_exists "$TEST_HOME/.ssh/id_ed25519_work" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519 -C ada@corp.example" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_generates_the_work_key_on_a_github_enterprise_host_too() {
+  setup
+  seed_answers
+  # The GitHub host the work identity uploads to (see the github suite) has
+  # no bearing on ssh's own key-per-identity loop: a work identity still gets
+  # exactly one key, named and commented the same way regardless of host.
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  assert_file_exists "$TEST_HOME/.ssh/id_ed25519_work" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519 -C ada@corp.example" || return 1
+  unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
 
 test_configure_adds_the_keys_to_the_keychain() {
   setup
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
   assert_contains "$(cat "$MOCK_LOG")" "ssh-add --apple-use-keychain $TEST_HOME/.ssh/id_ed25519_personal" || return 1
   cleanup_test_env
@@ -70,7 +98,7 @@ test_configure_adds_the_keys_to_the_keychain() {
 test_configure_uses_apple_use_keychain_on_macos_12_and_newer() {
   setup
   mock_command sw_vers 0 "12.0"
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
   assert_contains "$(cat "$MOCK_LOG")" "ssh-add --apple-use-keychain $TEST_HOME/.ssh/id_ed25519_personal" || return 1
   cleanup_test_env
@@ -79,7 +107,7 @@ test_configure_uses_apple_use_keychain_on_macos_12_and_newer() {
 test_configure_uses_dash_k_before_macos_12() {
   setup
   mock_command sw_vers 0 "11.6"
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
   assert_contains "$(cat "$MOCK_LOG")" "ssh-add -K $TEST_HOME/.ssh/id_ed25519_personal" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "--apple-use-keychain" || return 1
@@ -88,13 +116,15 @@ test_configure_uses_dash_k_before_macos_12() {
 
 test_configure_installs_the_ssh_config_with_both_hosts() {
   setup
-  seed_answers "ada@corp.example"
+  seed_answers
+  seed_machine_work "ada@corp.example"
   DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
   local body
   body="$(cat "$TEST_HOME/.ssh/config")"
   assert_contains "$body" "Host github.com-work" || return 1
   assert_contains "$body" "IdentityFile ~/.ssh/id_ed25519_work" || return 1
   assert_contains "$body" "UseKeychain yes" || return 1
+  unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
 
@@ -111,7 +141,7 @@ file_mode() {
 
 test_permissions_are_tightened() {
   setup
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
   assert_equals "700" "$(file_mode "$TEST_HOME/.ssh")" || return 1
   assert_equals "600" "$(file_mode "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
@@ -121,7 +151,7 @@ test_permissions_are_tightened() {
 
 test_existing_key_is_not_regenerated() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   printf 'MINE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
   printf 'ssh-ed25519 MINE comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
@@ -132,9 +162,71 @@ test_existing_key_is_not_regenerated() {
   cleanup_test_env
 }
 
+# An existing ~/.ssh/config is authority (2026-09-17 decision): a Host block
+# already naming an IdentityFile wins over teeup's own convention, so the key
+# it names is used instead of generating id_ed25519_personal.
+test_configure_reuses_the_key_an_existing_ssh_config_already_names() {
+  setup
+  seed_answers
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'MINE-LEGACY-PRIVATE\n' > "$TEST_HOME/.ssh/id_rsa_legacy"
+  printf 'ssh-ed25519 LEGACY comment\n' > "$TEST_HOME/.ssh/id_rsa_legacy.pub"
+  cat > "$TEST_HOME/.ssh/config" <<CFG
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile $TEST_HOME/.ssh/id_rsa_legacy
+  IdentitiesOnly yes
+CFG
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Using the personal key already named in $TEST_HOME/.ssh/config: $TEST_HOME/.ssh/id_rsa_legacy" || return 1
+  assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_rsa_legacy" || return 1
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "teeup generated a second personal key"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519" || return 1
+  cleanup_test_env
+}
+
+test_configure_never_replaces_an_existing_ssh_config() {
+  setup
+  seed_answers
+  mkdir -p "$TEST_HOME/.ssh"
+  cat > "$TEST_HOME/.ssh/config" <<'CFG'
+Host example.org
+  User someone
+CFG
+  local before after
+  before="$(cat "$TEST_HOME/.ssh/config")"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  after="$(cat "$TEST_HOME/.ssh/config")"
+  assert_equals "$before" "$after" "an existing ~/.ssh/config must never be rewritten" || return 1
+  assert_contains "$out" "Already present: $TEST_HOME/.ssh/config" || return 1
+  assert_not_contains "$out" "Would install" "teeup config" || true
+  cleanup_test_env
+}
+
+test_configure_dry_run_reuse_writes_nothing_and_generates_nothing() {
+  setup
+  seed_answers
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'MINE-LEGACY-PRIVATE\n' > "$TEST_HOME/.ssh/id_rsa_legacy"
+  printf 'ssh-ed25519 LEGACY comment\n' > "$TEST_HOME/.ssh/id_rsa_legacy.pub"
+  cat > "$TEST_HOME/.ssh/config" <<CFG
+Host github.com
+  IdentityFile $TEST_HOME/.ssh/id_rsa_legacy
+CFG
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "Using the personal key already named in $TEST_HOME/.ssh/config" || return 1
+  assert_not_contains "$out" "Would execute: ssh-keygen -t ed25519" || return 1
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "key generated in dry run"; return 1; }
+  cleanup_test_env
+}
+
 test_configure_dry_run_writes_nothing() {
   setup
-  seed_answers ""
+  seed_answers
   local out
   out="$(DRY_RUN=true "$TEEUP" configure ssh 2>&1)"
   assert_contains "$out" "Would execute: ssh-keygen -t ed25519 -C ada@example.com" || return 1
@@ -144,7 +236,7 @@ test_configure_dry_run_writes_nothing() {
 
 test_configure_rebuilds_a_missing_public_half() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   printf 'MINE-PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
   local out
@@ -164,7 +256,7 @@ test_configure_rebuilds_a_missing_public_half() {
 
 test_configure_rebuilds_a_zero_byte_public_half() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   # The state the first version of the rebuild left behind after a mistyped
   # passphrase: a good private key next to an empty .pub. A -f guard called
@@ -185,7 +277,7 @@ test_configure_rebuilds_a_zero_byte_public_half() {
 
 test_configure_replaces_a_zero_byte_private_key() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   # The mirror image: an empty private half beside a good .pub. With -f it
   # was "Already present" forever, ssh-add could only warn, and the github
@@ -212,7 +304,7 @@ test_configure_replaces_a_zero_byte_private_key() {
 
 test_configure_leaves_no_pub_behind_when_the_rebuild_fails() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   printf 'MINE-PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
   # A mistyped or cancelled passphrase: real ssh-keygen -y prints nothing and
@@ -237,7 +329,7 @@ EOF2
 
 test_configure_dry_run_rebuild_prints_the_command_and_writes_nothing() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   printf 'MINE-PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
   local out
@@ -251,7 +343,7 @@ test_configure_dry_run_rebuild_prints_the_command_and_writes_nothing() {
 
 test_configure_backs_up_a_pub_only_key_and_regenerates_the_pair() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   printf 'ssh-ed25519 ORPHAN comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
   local out
@@ -271,7 +363,7 @@ test_configure_backs_up_a_pub_only_key_and_regenerates_the_pair() {
 
 test_configure_dry_run_pub_only_backs_up_nothing_and_generates_nothing() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   printf 'ssh-ed25519 ORPHAN comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
   local out
@@ -285,7 +377,7 @@ test_configure_dry_run_pub_only_backs_up_nothing_and_generates_nothing() {
 
 test_configure_reruns_git_configure_once_the_keys_exist() {
   setup
-  seed_answers ""
+  seed_answers
   # git runs before ssh in the core list, so this is exactly the state a first
   # bootstrap reaches: a git config generated while no key existed, therefore
   # with commit signing off.
@@ -302,7 +394,7 @@ test_configure_reruns_git_configure_once_the_keys_exist() {
 
 test_configure_does_not_rerun_git_when_git_was_never_configured() {
   setup
-  seed_answers ""
+  seed_answers
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
   assert_not_contains "$out" "Re-running the git configuration" || return 1
@@ -314,32 +406,38 @@ test_configure_does_not_rerun_git_when_git_was_never_configured() {
 
 test_configure_twice_changes_nothing() {
   setup
-  seed_answers "ada@corp.example"
+  seed_answers
+  seed_machine_work "ada@corp.example"
   DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
   local marker="$TEST_HOME/.idempotency-marker"
   : > "$marker"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
   assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_ed25519_personal" || return 1
-  assert_contains "$out" "Already installed: $TEST_HOME/.ssh/config" || return 1
+  assert_contains "$out" "Already present: $TEST_HOME/.ssh/config" || return 1
   assert_not_contains "$out" "Generating the" || return 1
   # chmod_once keeps the second run silent, so nothing under $HOME may change.
   local changed
   changed="$(find "$TEST_HOME" -newer "$marker" -type f \
     ! -name 'mock.log' ! -name '.idempotency-marker' 2>/dev/null)"
   assert_equals "" "$changed" "second configure must write nothing" || return 1
+  unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
 
 echo "capabilities/ssh"
-run_test "configure generates one key without a work email" test_configure_generates_one_key_without_a_work_email
-run_test "configure generates both keys with a work email" test_configure_generates_both_keys_with_a_work_email
+run_test "configure generates one key on a machine with no work identity" test_configure_generates_one_key_on_a_machine_with_no_work_identity
+run_test "configure generates both keys when the machine file configures work" test_configure_generates_both_keys_when_the_machine_file_configures_work
+run_test "configure generates the work key on a GitHub Enterprise host too" test_configure_generates_the_work_key_on_a_github_enterprise_host_too
 run_test "configure adds the keys to the keychain" test_configure_adds_the_keys_to_the_keychain
 run_test "configure uses --apple-use-keychain on macOS 12 and newer" test_configure_uses_apple_use_keychain_on_macos_12_and_newer
 run_test "configure uses -K before macOS 12" test_configure_uses_dash_k_before_macos_12
 run_test "configure installs the ssh config with both hosts" test_configure_installs_the_ssh_config_with_both_hosts
 run_test "permissions are tightened" test_permissions_are_tightened
 run_test "existing key is not regenerated" test_existing_key_is_not_regenerated
+run_test "configure reuses the key an existing ssh config already names" test_configure_reuses_the_key_an_existing_ssh_config_already_names
+run_test "configure never replaces an existing ssh config" test_configure_never_replaces_an_existing_ssh_config
+run_test "configure dry run reuse writes nothing and generates nothing" test_configure_dry_run_reuse_writes_nothing_and_generates_nothing
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure rebuilds a missing public half" test_configure_rebuilds_a_missing_public_half
 run_test "configure rebuilds a zero-byte public half" test_configure_rebuilds_a_zero_byte_public_half
