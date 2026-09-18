@@ -513,12 +513,12 @@ git commit -m "Ship the teeup mental model as an agent skill"
 - Modify: `lib/files.sh` (append `agent_skill_link`)
 - Modify: `capabilities/teeup-runtime/configure` (one call, after `shims_generate`)
 - Modify: `capabilities/teeup-runtime/doctor` (one check, before `doctor_verdict`)
-- Modify: `tests/lib/files.sh` (four tests)
+- Modify: `tests/lib/files.sh` (six tests)
 - Modify: `tests/capabilities/teeup-runtime.sh` (two tests)
 
 **Interfaces:**
 - Consumes: `log ok warn run_cmd` (`lib/core.sh`, main), `doctor_ok doctor_warn doctor_fail` (`lib/doctor.sh`, phase 4b), `share/agents/skills/teeup/` (Task 1).
-- Produces: `agent_skill_link <source-dir> <name>` in `lib/files.sh`. It creates `$HOME/.agents/skills/<name>` unconditionally and `$HOME/.claude/skills/<name>`, `$HOME/.codex/skills/<name>` and `$HOME/.gemini/skills/<name>` when `$HOME/.claude`, `$HOME/.codex` or `$HOME/.gemini` exists. Each is a symlink to `<source-dir>`. It returns 1 only when `<source-dir>` is not a directory; a single link it refuses to replace is a warning, not a failure. Task 6's CONTRIBUTING entry and Task 5's README section both describe this behaviour and must stay in step with it.
+- Produces: `agent_skill_link <source-dir> <name>` in `lib/files.sh`. It creates `$HOME/.agents/skills/<name>` unconditionally and `$HOME/.claude/skills/<name>`, `$HOME/.codex/skills/<name>` and `$HOME/.gemini/skills/<name>` when `$HOME/.claude`, `$HOME/.codex` or `$HOME/.gemini` exists. Each is a symlink to `<source-dir>`. It returns 1 only when `<source-dir>` is not a directory; a single link it refuses to replace is a warning, not a failure — and that includes a symlink already there: one that does not point into a checkout's `share/agents/skills/<name>` is left alone as somebody else's choice, and only one that does (this checkout's own, or a stale one from a previous checkout location) is replaced. Task 6's CONTRIBUTING entry and Task 5's README section both describe this behaviour and must stay in step with it.
 
 **Where the four directories come from.** Checked against each tool's current documentation while writing this plan:
 
@@ -583,6 +583,37 @@ test_agent_skill_link_keeps_a_file_it_did_not_write() {
   cleanup_test_env
 }
 
+test_agent_skill_link_keeps_a_foreign_symlink() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  # A symlink pointing somewhere the user chose, not into any checkout's
+  # share/agents/skills/ -- their own skill, or a dotfiles manager's link.
+  ln -s "$TEST_HOME/elsewhere" "$TEST_HOME/.agents/skills/probe"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "a foreign symlink is a warning, not a failure" || return 1
+  assert_contains "$out" "$TEST_HOME/.agents/skills/probe" "the warning names the link" || return 1
+  assert_contains "$out" "$TEST_HOME/elsewhere" "the warning names what it already points at" || return 1
+  assert_equals "$TEST_HOME/elsewhere" "$(readlink "$TEST_HOME/.agents/skills/probe")" "somebody else's symlink is left alone" || return 1
+  cleanup_test_env
+}
+
+test_agent_skill_link_refreshes_its_own_stale_link() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  # A link left by a checkout at a different path, but shaped like teeup's
+  # own: it ends in share/agents/skills/<name>, so nothing but teeup would
+  # ever have put it there.
+  ln -s "$TEST_HOME/old-checkout/share/agents/skills/probe" "$TEST_HOME/.agents/skills/probe"
+  local out
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)"
+  assert_contains "$out" "Linked" "a stale link shaped like teeup's own is refreshed, not kept" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the refreshed link points at the current checkout" || return 1
+  cleanup_test_env
+}
+
 test_agent_skill_link_dry_run_and_missing_source() {
   setup
   mkdir -p "$SKILLSRC"
@@ -600,11 +631,13 @@ test_agent_skill_link_dry_run_and_missing_source() {
 run_test "agent_skill_link always writes the neutral directory" test_agent_skill_link_always_writes_the_tool_neutral_directory
 run_test "agent_skill_link writes a tool directory that exists" test_agent_skill_link_writes_a_tool_directory_that_already_exists
 run_test "agent_skill_link keeps a file it did not write" test_agent_skill_link_keeps_a_file_it_did_not_write
+run_test "agent_skill_link keeps a foreign symlink" test_agent_skill_link_keeps_a_foreign_symlink
+run_test "agent_skill_link refreshes its own stale link" test_agent_skill_link_refreshes_its_own_stale_link
 run_test "agent_skill_link dry run, and a missing source" test_agent_skill_link_dry_run_and_missing_source
 print_summary
 ```
 
-The four tests need one more variable in the suite's `setup`, on a path with a space and a dollar sign so that the helper is proven to quote everything it passes to `ln`:
+The six tests need one more variable in the suite's `setup`, on a path with a space and a dollar sign so that the helper is proven to quote everything it passes to `ln`:
 
 ```bash edit-old=tests/lib/files.sh
   SRC="$TEST_HOME/src.conf"
@@ -625,8 +658,8 @@ The four tests need one more variable in the suite's `setup`, on a path with a s
 
 - [ ] **Step 2: Run them to watch them fail**
 
-Run: `bash tests/lib/files.sh 2>&1 | tail -12`
-Expected: the four new tests `FAIL` with `agent_skill_link: command not found`, and the summary line reports four failures.
+Run: `bash tests/lib/files.sh 2>&1 | tail -14`
+Expected: the six new tests `FAIL` with `agent_skill_link: command not found`, and the summary line reports six failures.
 
 - [ ] **Step 3: Write the helper**
 
@@ -652,7 +685,13 @@ replace_literal() {
 # covered: teeup-runtime is a core capability, so `teeup update` re-runs this.
 #
 # A path that is not a symlink is left alone with a warning: it is somebody
-# else's skill, or their own file, and neither is teeup's to replace.
+# else's skill, or their own file, and neither is teeup's to replace. Neither
+# is a symlink that is not teeup's: a symlink already at $target that does not
+# point somewhere under a checkout's share/agents/skills/<name> is somebody
+# else's choice (their own skill, a dotfiles manager's link) and is kept, with
+# a warning naming both paths. A symlink whose target does have that shape --
+# this checkout's own path, or a stale one from before a checkout moved -- is
+# teeup's to refresh, because nothing else would ever point there.
 agent_skill_link() {
   local src="$1" name="$2"
   local dir parent target current
@@ -675,6 +714,15 @@ agent_skill_link() {
       warn "Keeping $target, which is not a symlink teeup wrote"
       continue
     fi
+    if [[ -L "$target" ]]; then
+      case "$current" in
+        */share/agents/skills/"$name") ;; # teeup's own path shape: safe to refresh
+        *)
+          warn "Keeping $target, a symlink to $current rather than $src"
+          continue
+          ;;
+      esac
+    fi
     if [[ ! -d "$dir" ]]; then
       run_cmd mkdir -p "$dir"
     fi
@@ -689,8 +737,8 @@ replace_literal() {
 
 - [ ] **Step 4: Run them to watch them pass**
 
-Run: `bash tests/lib/files.sh 2>&1 | tail -8`
-Expected: the four new tests `PASS`, and `Summary: N/N passed` with no failures.
+Run: `bash tests/lib/files.sh 2>&1 | tail -10`
+Expected: the six new tests `PASS`, and `Summary: N/N passed` with no failures.
 
 Run: `shellcheck --severity=warning lib/files.sh tests/lib/files.sh`
 Expected: no output.
@@ -2930,7 +2978,7 @@ for the executor:
 | After task | Suite | `commands --check` | shellcheck | `git diff --check` |
 |---|---|---|---|---|
 | 1 | `tests/docs.sh` 4/4; whole suite **All 61 suites passed.** (60 + the new one) | rc=0, silent | clean on `lib/dev.sh tests/docs.sh tests/run.sh` | clean |
-| 2 | `tests/lib/files.sh` 23/23, `tests/capabilities/teeup-runtime.sh` 16/16, `tests/docs.sh` 4/4 | rc=0, silent | clean on all five touched files | clean |
+| 2 | `tests/lib/files.sh` 25/25, `tests/capabilities/teeup-runtime.sh` 16/16, `tests/docs.sh` 4/4 | rc=0, silent | clean on all five touched files | clean |
 | 3 | `tests/lib/menu.sh` 17/17, `tests/lib/dev.sh` 15/15, `tests/docs.sh` 4/4; whole suite **All 61 suites passed.** | rc=0, silent | clean | clean |
 | 4 | `tests/docs.sh` 6/6 | rc=0, silent | clean | clean |
 | 5 | `tests/docs.sh` 10/10 | rc=0, silent | clean | clean |
