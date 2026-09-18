@@ -41,7 +41,7 @@ _machine_file_announce() {
   repo="$TEEUP_MACHINES_DIR/$host.conf"
   [[ "$user" == "$repo" ]] && return 0
   if [[ -f "$user" && -f "$repo" ]]; then
-    log "Using $user ($repo also exists and is ignored)"
+    warn "Using $user ($repo also exists and is ignored)"
   fi
 }
 

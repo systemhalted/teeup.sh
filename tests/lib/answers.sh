@@ -115,16 +115,20 @@ test_machine_file_user_wins_when_both_exist() {
 }
 
 # A shadowed repo file is never a silent mystery: answers_load says which
-# file it used, once, when both exist.
+# file it used, once, when both exist -- and it says so on stderr, never
+# stdout, since answers_load runs before every verb and several of them
+# (secret get, theme current, version, ...) treat their stdout as data.
 test_shadowed_machine_file_is_announced() {
   setup
   mkdir -p "$TEEUP_CONFIG_DIR/machines"
   printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_CONFIG_DIR/machines/testmac.conf"
   printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
-  local out
-  out="$(answers_load 2>&1)"
-  assert_contains "$out" "$TEEUP_CONFIG_DIR/machines/testmac.conf" || return 1
-  assert_contains "$out" "$TEEUP_MACHINES_DIR/testmac.conf" || return 1
+  local out err
+  out="$(answers_load 2>"$TEST_HOME/stderr.out")"
+  err="$(cat "$TEST_HOME/stderr.out")"
+  assert_equals "" "$out" "the notice must not land on stdout" || return 1
+  assert_contains "$err" "$TEEUP_CONFIG_DIR/machines/testmac.conf" || return 1
+  assert_contains "$err" "$TEEUP_MACHINES_DIR/testmac.conf" || return 1
   cleanup_test_env
 }
 
