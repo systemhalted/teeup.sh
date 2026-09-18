@@ -453,7 +453,11 @@ Happy contributing! 🚀
 9. Files under `default/` and `home/` are zsh or Lua, not bash: shellcheck
    does not run on them, so keep them simple and guard every optional tool.
 10. Per-machine overrides go in `machines/<hostname>.conf`, which is committed
-    and sourced last, so it wins over the answers file.
+    and sourced last, so it wins over the answers file. It is also the only
+    place a work identity is configured (`TEEUP_WORK_EMAIL`, and
+    `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host): git has one identity
+    everywhere, and the wizard never asks about work. See
+    `machines/example.conf.sample`.
 11. If the tool has colours, add `capabilities/<name>/themed/<file>.tpl`.
     `teeup theme set` renders every template once per mode with `{{ key }}`,
     `{{ key_strip }}` (no leading `#`) and `{{ key_rgb }}` (`r,g,b`) replaced
