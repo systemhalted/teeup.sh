@@ -357,6 +357,11 @@ seed_old_model() {
   mkdir -p "$dir"
   {
     printf '# ~/.config/git/config - installed once by teeup; this copy is yours to edit.\n'
+    printf '# Generated pieces (editor, pager, signing, the two identities) live in\n'
+    printf '# separate included files so teeup can regenerate them without touching your\n'
+    printf '# edits here. Include order is load-bearing: git keeps the LAST value it\n'
+    printf '# reads, so teeup-generated is included below the defaults it has to be able\n'
+    printf '# to override, and ~/.config/git/local last of all.\n'
     printf '\n'
     printf '[include]\n'
     printf '\t# Default identity; the includeIf blocks at the bottom override it per root.\n'
@@ -417,6 +422,8 @@ test_configure_repairs_an_old_two_identity_config() {
   assert_contains "$cfg" "path = \"$TEST_HOME/.config/git/identity\"" || return 1
   assert_contains "$cfg" 'path = "'"$TEST_HOME"'/.config/git/local"' "unrelated shipped lines survive" || return 1
   assert_contains "$out" "one identity" || return 1
+  assert_not_contains "$cfg" "the two identities" "the header paragraph teeup shipped is updated too" || return 1
+  assert_contains "$cfg" "signing, the identity) live in separate" || return 1
   [[ ! -e "$TEST_HOME/.config/git/identity-personal" ]] || { echo "identity-personal left in place"; return 1; }
   [[ ! -e "$TEST_HOME/.config/git/identity-work" ]] || { echo "identity-work left in place"; return 1; }
   assert_equals "ada@example.com" "$(resolved_email "$TEST_HOME/Work/repo")" "~/Work must resolve to the one identity" || return 1
