@@ -127,15 +127,15 @@ package_candidates() {
     homebrew:bash-completion) echo "bash-completion@2 bash-completion" ;;
     macports:gnupg) echo "gnupg2 gnupg" ;;
     macports:gh) echo "gh" ;;
-    # `tldr` itself is not a MacPorts port; both ports below are tldr
-    # clients. tealdeer first: its binary is named `tldr`, matching the
-    # `tldr:tldr` package:command pair cli-tools installs it under, so the
-    # on-PATH short-circuit and any future re-run recognize it. tlrc (the
-    # tldr-pages project's own official client) is the fallback for a
-    # machine where tealdeer's build fails; its binary is `tlrc`, not
-    # `tldr`, so pkg_install would try it again on a later run, which is
-    # harmless.
-    macports:tldr) echo "tealdeer tlrc" ;;
+    # `tldr` itself is not a MacPorts port; tealdeer is the only candidate,
+    # because its binary is named `tldr`, matching the `tldr:tldr`
+    # package:command pair cli-tools installs it under. tlrc, the
+    # tldr-pages project's own official client, is a real tldr client too
+    # and worth installing by hand, but it can't go in this chain: its
+    # binary is `tlrc`, not `tldr`, so pkg_install would report success
+    # while the `tldr` command still did not exist. If tealdeer fails to
+    # install, pkg_install's own warning is the honest outcome.
+    macports:tldr) echo "tealdeer" ;;
     *) echo "$pkg" ;;
   esac
 }
