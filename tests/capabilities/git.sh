@@ -14,12 +14,13 @@ EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
 }
 
+# One identity, full stop (2026-09-17 decision): git never asks about work,
+# so there is nothing here to seed beyond name and personal email.
 seed_answers() {
   mkdir -p "$TEST_HOME/.config/teeup"
   {
     printf 'TEEUP_NAME="Ada Lovelace"\n'
     printf 'TEEUP_EMAIL="ada@example.com"\n'
-    printf 'TEEUP_WORK_EMAIL="%s"\n' "${1:-}"
   } > "$TEST_HOME/.config/teeup/answers"
 }
 
@@ -38,40 +39,35 @@ test_install_gets_git_delta_lfs_and_lazygit() {
   cleanup_test_env
 }
 
-test_configure_writes_both_identities() {
+test_configure_writes_the_one_identity() {
   setup
-  seed_answers "ada@corp.example"
+  seed_answers
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
-  local personal work
-  personal="$(cat "$TEST_HOME/.config/git/identity-personal")"
-  work="$(cat "$TEST_HOME/.config/git/identity-work")"
-  assert_contains "$personal" 'email = "ada@example.com"' || return 1
-  assert_contains "$personal" 'name = "Ada Lovelace"' || return 1
-  assert_contains "$personal" "signingkey = \"$TEST_HOME/.ssh/id_ed25519_personal.pub\"" || return 1
-  assert_contains "$work" 'email = "ada@corp.example"' || return 1
-  assert_contains "$work" "signingkey = \"$TEST_HOME/.ssh/id_ed25519_work.pub\"" || return 1
+  local identity
+  identity="$(cat "$TEST_HOME/.config/git/identity")"
+  assert_contains "$identity" 'email = "ada@example.com"' || return 1
+  assert_contains "$identity" 'name = "Ada Lovelace"' || return 1
+  assert_contains "$identity" "signingkey = \"$TEST_HOME/.ssh/id_ed25519_personal.pub\"" || return 1
+  # No second identity file: work is not a git concept any more.
+  [[ ! -e "$TEST_HOME/.config/git/identity-work" ]] || { echo "identity-work written; git no longer has a work identity"; return 1; }
+  [[ ! -e "$TEST_HOME/.config/git/identity-personal" ]] || { echo "identity-personal written; the file is now just 'identity'"; return 1; }
   cleanup_test_env
 }
 
-test_work_identity_falls_back_to_the_personal_email() {
+# A work identity elsewhere on the machine (ssh, github) must not change what
+# git writes: git always signs with the personal key and the personal email.
+test_a_configured_work_identity_does_not_change_the_git_identity() {
   setup
-  seed_answers ""
+  seed_answers
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_WORK_EMAIL="ada@corp.example"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
-  assert_contains "$(cat "$TEST_HOME/.config/git/identity-work")" 'email = "ada@example.com"' || return 1
-  cleanup_test_env
-}
-
-test_work_identity_falls_back_to_the_personal_signingkey() {
-  setup
-  seed_answers ""
-  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
-  local work
-  work="$(cat "$TEST_HOME/.config/git/identity-work")"
-  assert_contains "$work" "signingkey = \"$TEST_HOME/.ssh/id_ed25519_personal.pub\"" || return 1
-  if [[ "$work" == *"id_ed25519_work"* ]]; then
-    echo "identity-work should not reference the never-created work key"
-    return 1
-  fi
+  local identity
+  identity="$(cat "$TEST_HOME/.config/git/identity")"
+  assert_contains "$identity" 'email = "ada@example.com"' || return 1
+  assert_not_contains "$identity" "ada@corp.example" || return 1
+  unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
 
@@ -79,19 +75,20 @@ test_configure_without_answers_warns_and_writes_no_identity() {
   setup
   local out
   out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
-  assert_contains "$out" "skipping the git identities" || return 1
-  [[ ! -e "$TEST_HOME/.config/git/identity-personal" ]] || { echo "identity written without answers"; return 1; }
+  assert_contains "$out" "skipping the git identity" || return 1
+  [[ ! -e "$TEST_HOME/.config/git/identity" ]] || { echo "identity written without answers"; return 1; }
   cleanup_test_env
 }
 
 test_configure_ships_the_config_and_the_editor() {
   setup
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   local body
   body="$(cat "$TEST_HOME/.config/git/config")"
-  assert_contains "$body" 'includeIf "gitdir:~/Work/"' || return 1
-  assert_contains "$body" 'includeIf "gitdir:~/Personal/"' || return 1
+  # Identity by directory is gone (2026-09-17 decision): no includeIf blocks.
+  assert_not_contains "$body" "includeIf" || return 1
+  assert_contains "$body" "path = \"$TEST_HOME/.config/git/identity\"" || return 1
   assert_contains "$body" "pager = delta" || return 1
   assert_contains "$body" "format = ssh" || return 1
   assert_contains "$body" "defaultBranch = main" || return 1
@@ -110,7 +107,7 @@ test_signing_and_delta_are_enabled_once_they_exist() {
   setup
   export TEEUP_TEST_MISSING="lazygit emacsclient"
   mock_command delta 0 ""
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   printf 'fake-private-key\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
   printf 'ssh-ed25519 AAAAFAKE ada@example.com\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
@@ -122,27 +119,9 @@ test_signing_and_delta_are_enabled_once_they_exist() {
   cleanup_test_env
 }
 
-test_signing_stays_off_with_a_work_email_and_no_work_key() {
-  setup
-  seed_answers "ada@corp.example"
-  mkdir -p "$TEST_HOME/.ssh"
-  printf 'fake-private-key\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
-  printf 'ssh-ed25519 AAAAFAKE ada@example.com\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
-  # No id_ed25519_work(.pub): the work identity file still points at it (see
-  # identity-work in the test above), so signing must stay off machine-wide
-  # rather than fail every commit under ~/Work. The personal identity has
-  # both halves present, so this failure is attributable to the work key
-  # alone, not an incidental gap on the personal side.
-  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
-  local generated
-  generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
-  assert_contains "$generated" "gpgsign = false" || return 1
-  cleanup_test_env
-}
-
 test_signing_stays_off_when_a_private_key_is_missing() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   # Only the .pub survives (e.g. the private half was deleted, or never
   # existed): the old check looked at .pub alone and would have turned
@@ -155,14 +134,12 @@ test_signing_stays_off_when_a_private_key_is_missing() {
   cleanup_test_env
 }
 
-test_signing_turns_on_once_both_identity_keys_exist() {
+test_signing_turns_on_once_the_key_exists() {
   setup
-  seed_answers "ada@corp.example"
+  seed_answers
   mkdir -p "$TEST_HOME/.ssh"
   printf 'fake-private-key\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
   printf 'ssh-ed25519 AAAAFAKE ada@example.com\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
-  printf 'fake-private-key\n' > "$TEST_HOME/.ssh/id_ed25519_work"
-  printf 'ssh-ed25519 AAAAWORK ada@corp.example\n' > "$TEST_HOME/.ssh/id_ed25519_work.pub"
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   local generated
   generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
@@ -172,7 +149,7 @@ test_signing_turns_on_once_both_identity_keys_exist() {
 
 test_generated_include_is_read_after_the_defaults() {
   setup
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   # git keeps the last value it reads, so the teeup-generated include must sit
   # below the [core] pager default it exists to override.
@@ -188,7 +165,7 @@ test_configure_prefers_emacsclient_when_present() {
   setup
   export TEEUP_TEST_MISSING="delta lazygit"
   mock_command emacsclient 0 ""
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "editor = emacsclient -t" || return 1
   cleanup_test_env
@@ -196,7 +173,7 @@ test_configure_prefers_emacsclient_when_present() {
 
 test_configure_ships_the_lfs_filter_and_warns_about_gitconfig() {
   setup
-  seed_answers ""
+  seed_answers
   printf '[user]\n\tname = Old\n' > "$TEST_HOME/.gitconfig"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
@@ -216,7 +193,7 @@ test_configure_ships_the_lfs_filter_and_warns_about_gitconfig() {
 
 test_configure_warns_when_git_config_global_is_set() {
   setup
-  seed_answers ""
+  seed_answers
   export GIT_CONFIG_GLOBAL="$TEST_HOME/somewhere/global-config"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
@@ -226,27 +203,27 @@ test_configure_warns_when_git_config_global_is_set() {
 
 test_configure_renders_include_paths_for_a_custom_xdg_config_home() {
   setup
-  seed_answers ""
+  seed_answers
   export XDG_CONFIG_HOME="$TEST_HOME/xdg"
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   local cfg="$TEST_HOME/xdg/git/config"
   assert_file_exists "$cfg" || return 1
   local body
   body="$(cat "$cfg")"
-  assert_contains "$body" "path = \"$TEST_HOME/xdg/git/identity-personal\"" || return 1
+  assert_contains "$body" "path = \"$TEST_HOME/xdg/git/identity\"" || return 1
   assert_contains "$body" "path = \"$TEST_HOME/xdg/git/teeup-generated\"" || return 1
   assert_contains "$body" "path = \"$TEST_HOME/xdg/git/local\"" || return 1
   # command -p bypasses the mocked `git` on PATH and finds the real binary,
-  # which is what actually has to parse the rendered includeIf path.
+  # which is what actually has to parse the rendered include path.
   local resolved
-  resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Work/.path')"
-  assert_equals "$TEST_HOME/xdg/git/identity-work" "$resolved" || return 1
+  resolved="$(command -p git config --file "$cfg" --get-all include.path | head -1)"
+  assert_equals "$TEST_HOME/xdg/git/identity" "$resolved" || return 1
   cleanup_test_env
 }
 
 test_configure_renders_include_paths_with_xdg_config_home_metacharacters() {
   setup
-  seed_answers ""
+  seed_answers
   # sed replacement metacharacters (&, |, \) in the directory name would
   # corrupt a `sed "s|~/.config/git|$git_dir|g"` render; the bash substitution
   # loop that replaced it has none of that.
@@ -256,12 +233,9 @@ test_configure_renders_include_paths_with_xdg_config_home_metacharacters() {
   assert_file_exists "$cfg" || return 1
   local body
   body="$(cat "$cfg")"
-  assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/identity-personal\"" || return 1
+  assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/identity\"" || return 1
   assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/teeup-generated\"" || return 1
   assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/local\"" || return 1
-  local resolved
-  resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Work/.path')"
-  assert_equals "$XDG_CONFIG_HOME/git/identity-work" "$resolved" || return 1
   cleanup_test_env
 }
 
@@ -269,63 +243,54 @@ test_configure_quotes_include_paths_with_hash_and_semicolon_in_xdg_config_home()
   setup
   # '#' and ';' both start a comment in git's config parser outside quotes;
   # an unquoted `path = ~/.config/git/...` render would silently truncate
-  # everything from the '#' on, dropping the includeIf paths and leaving
-  # ~/Personal and ~/Work with no identity at all. XDG_CONFIG_HOME is set
-  # before seeding the answers file (unlike seed_answers, which always writes
-  # under the default $TEST_HOME/.config) so the identity files actually get
-  # written under this same custom directory, and can be proven to load.
+  # everything from the '#' on, dropping the include path and leaving git
+  # with no identity at all. XDG_CONFIG_HOME is set before seeding the
+  # answers file (unlike seed_answers, which always writes under the default
+  # $TEST_HOME/.config) so the identity file actually gets written under this
+  # same custom directory, and can be proven to load.
   export XDG_CONFIG_HOME="$TEST_HOME/con#fig;x"
   mkdir -p "$XDG_CONFIG_HOME/teeup"
   {
     printf 'TEEUP_NAME="Ada Lovelace"\n'
     printf 'TEEUP_EMAIL="ada@example.com"\n'
-    printf 'TEEUP_WORK_EMAIL=""\n'
   } > "$XDG_CONFIG_HOME/teeup/answers"
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   local cfg="$XDG_CONFIG_HOME/git/config"
   assert_file_exists "$cfg" || return 1
   local body
   body="$(cat "$cfg")"
-  assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/identity-personal\"" || return 1
+  assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/identity\"" || return 1
   assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/teeup-generated\"" || return 1
   assert_contains "$body" "path = \"$XDG_CONFIG_HOME/git/local\"" || return 1
   # command -p bypasses the mocked `git` on PATH and finds the real binary,
   # which is what actually has to parse the quoted, hash-containing path.
   local includes
   includes="$(command -p git config --file "$cfg" --get-all include.path)"
-  assert_contains "$includes" "$XDG_CONFIG_HOME/git/identity-personal" || return 1
+  assert_contains "$includes" "$XDG_CONFIG_HOME/git/identity" || return 1
   assert_contains "$includes" "$XDG_CONFIG_HOME/git/teeup-generated" || return 1
   assert_contains "$includes" "$XDG_CONFIG_HOME/git/local" || return 1
-  local work_resolved personal_resolved
-  work_resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Work/.path')"
-  personal_resolved="$(command -p git config --file "$cfg" --get-all 'includeIf.gitdir:~/Personal/.path')"
-  assert_equals "$XDG_CONFIG_HOME/git/identity-work" "$work_resolved" || return 1
-  assert_equals "$XDG_CONFIG_HOME/git/identity-personal" "$personal_resolved" || return 1
   # Prove the identity actually loads, not just that the path string is
-  # intact: a repo under ~/Personal must resolve user.email through the
-  # quoted, hash-containing include path.
-  mkdir -p "$TEST_HOME/Personal/repo"
-  (cd "$TEST_HOME/Personal/repo" && command -p git init -q)
+  # intact.
   local loaded_email
-  loaded_email="$(cd "$TEST_HOME/Personal/repo" && GIT_CONFIG_GLOBAL="$cfg" command -p git config --get user.email)"
+  loaded_email="$(GIT_CONFIG_GLOBAL="$cfg" command -p git config --get user.email)"
   assert_equals "ada@example.com" "$loaded_email" || return 1
   cleanup_test_env
 }
 
 test_configure_is_idempotent() {
   setup
-  seed_answers ""
+  seed_answers
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   local out
   out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
-  assert_contains "$out" "Already current: $TEST_HOME/.config/git/identity-personal" || return 1
+  assert_contains "$out" "Already current: $TEST_HOME/.config/git/identity" || return 1
   assert_contains "$out" "Already installed: $TEST_HOME/.config/git/config" || return 1
   cleanup_test_env
 }
 
 test_configure_dry_run_writes_nothing() {
   setup
-  seed_answers ""
+  seed_answers
   DRY_RUN=true "$TEEUP" configure git >/dev/null 2>&1
   [[ ! -e "$TEST_HOME/.config/git/config" ]] || { echo "written in dry run"; return 1; }
   cleanup_test_env
@@ -336,7 +301,7 @@ test_configure_dry_run_writes_nothing() {
 # the shipped source the user could actually make sense of.
 test_configure_dry_run_names_the_shipped_source_not_a_temp_file() {
   setup
-  seed_answers ""
+  seed_answers
   local out
   out="$(DRY_RUN=true "$TEEUP" configure git 2>&1)"
   assert_contains "$out" "Would install $TEST_HOME/.config/git/config from $TEEUP_PATH/capabilities/git/config/git/config" || return 1
@@ -345,7 +310,7 @@ test_configure_dry_run_names_the_shipped_source_not_a_temp_file() {
 
 test_configure_dry_run_names_the_shipped_source_for_a_foreign_config() {
   setup
-  seed_answers ""
+  seed_answers
   mkdir -p "$TEST_HOME/.config/git"
   printf '[user]\n\tname = Foreign\n' > "$TEST_HOME/.config/git/config"
   local out
@@ -366,28 +331,25 @@ test_configure_quotes_special_characters_in_the_name() {
   {
     printf 'TEEUP_NAME="%s"\n' "$escaped"
     printf 'TEEUP_EMAIL="ada@example.com"\n'
-    printf 'TEEUP_WORK_EMAIL=""\n'
   } > "$TEST_HOME/.config/teeup/answers"
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
   # command -p bypasses the mocked `git` on PATH (see setup) and finds the
   # real binary, which is what actually has to parse the quoted value.
   local resolved
-  resolved="$(command -p git config --file "$TEST_HOME/.config/git/identity-personal" user.name)"
+  resolved="$(command -p git config --file "$TEST_HOME/.config/git/identity" user.name)"
   assert_equals "$name" "$resolved" || return 1
   cleanup_test_env
 }
 
 echo "capabilities/git"
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
-run_test "configure writes both identities" test_configure_writes_both_identities
-run_test "work identity falls back to the personal email" test_work_identity_falls_back_to_the_personal_email
-run_test "work identity falls back to the personal signingkey" test_work_identity_falls_back_to_the_personal_signingkey
+run_test "configure writes the one identity" test_configure_writes_the_one_identity
+run_test "a configured work identity does not change the git identity" test_a_configured_work_identity_does_not_change_the_git_identity
 run_test "configure without answers warns and writes no identity" test_configure_without_answers_warns_and_writes_no_identity
 run_test "configure ships the config and the editor" test_configure_ships_the_config_and_the_editor
 run_test "signing and delta are enabled once they exist" test_signing_and_delta_are_enabled_once_they_exist
-run_test "signing stays off with a work email and no work key" test_signing_stays_off_with_a_work_email_and_no_work_key
 run_test "signing stays off when a private key is missing" test_signing_stays_off_when_a_private_key_is_missing
-run_test "signing turns on once both identity keys exist" test_signing_turns_on_once_both_identity_keys_exist
+run_test "signing turns on once the key exists" test_signing_turns_on_once_the_key_exists
 run_test "generated include is read after the defaults" test_generated_include_is_read_after_the_defaults
 run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_configure_renders_include_paths_for_a_custom_xdg_config_home
 run_test "configure renders include paths with XDG_CONFIG_HOME metacharacters" test_configure_renders_include_paths_with_xdg_config_home_metacharacters

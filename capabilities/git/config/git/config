@@ -1,13 +1,14 @@
 # ~/.config/git/config - installed once by teeup; this copy is yours to edit.
-# Generated pieces (editor, pager, signing, the two identities) live in
-# separate included files so teeup can regenerate them without touching your
-# edits here. Include order is load-bearing: git keeps the LAST value it
-# reads, so teeup-generated is included below the defaults it has to be able
-# to override, and ~/.config/git/local last of all.
+# Generated pieces (editor, pager, signing, the identity) live in separate
+# included files so teeup can regenerate them without touching your edits
+# here. Include order is load-bearing: git keeps the LAST value it reads, so
+# teeup-generated is included below the defaults it has to be able to
+# override, and ~/.config/git/local last of all.
 
 [include]
-	# Default identity; the includeIf blocks at the bottom override it per root.
-	path = ~/.config/git/identity-personal
+	# One identity, full stop (2026-09-17 decision). A repository that needs a
+	# different address gets `git config user.email ...` by hand.
+	path = ~/.config/git/identity
 
 [user]
 	useConfigOnly = true     # never guess an identity from the hostname
@@ -112,13 +113,6 @@
 	added = green bold
 	changed = yellow bold
 	untracked = red bold
-
-# Identity by directory (spec section 8). Both identities live on every
-# machine; where the repository sits decides which one applies.
-[includeIf "gitdir:~/Personal/"]
-	path = ~/.config/git/identity-personal
-[includeIf "gitdir:~/Work/"]
-	path = ~/.config/git/identity-work
 
 # Untracked machine-local overrides, included last so they win over everything
 # above. Create it yourself; teeup never writes it.
