@@ -103,12 +103,63 @@ answers_set() {
   chmod 600 "$f"
 }
 
+# answers_unset <KEY>
+# Drop KEY from the answers file and from this shell, and say whether there was
+# anything to drop (0 = removed, 1 = the key was not there). The wizard uses it
+# to clear answers to questions it no longer asks: a value the tool can neither
+# ask about nor change is one only a text editor could ever remove.
+answers_unset() {
+  local key="$1" f tmp line found=false
+  f="$(answers_file)"
+  if ! [[ "$key" =~ ^TEEUP_[A-Z0-9_]+$ ]]; then
+    die "answers_unset: key must look like TEEUP_NAME, got '$key'"
+  fi
+  [[ -f "$f" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in "$key="*) found=true ;; esac
+  done < "$f"
+  [[ "$found" == "true" ]] || return 1
+  # Also out of this process: answers_load sourced (and answers_set exported)
+  # the value, so leaving it set would let the rest of this run read an answer
+  # the file no longer holds.
+  unset "$key"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would remove $key from $f"
+    return 0
+  fi
+  tmp="$(mktemp)"
+  # Matched with the shell, not grep, so the key is never read as a regex.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in "$key="*) continue ;; esac
+    printf '%s\n' "$line"
+  done < "$f" > "$tmp"
+  mv "$tmp" "$f"
+  chmod 600 "$f"
+  return 0
+}
+
 # Identity helpers. git, ssh and github all key off the same one-or-two
 # identities, so the mapping from identity name to email, key path and
-# GitHub host lives here once. Work exists only when machines/<hostname>.conf
-# sets TEEUP_WORK_EMAIL: the wizard never asks about it, so the answers file
-# itself is never this variable's source.
-answers_has_work() { [[ -n "$(answers_get TEEUP_WORK_EMAIL)" ]]; }
+# GitHub host lives here once.
+#
+# work_get <KEY> [default] -> the work identity's settings, read from
+# machines/<hostname>.conf and nowhere else. The wizard never asks about work,
+# so an answers-file TEEUP_WORK_EMAIL can only be a leftover from the wizard
+# that used to: reading it would hand an upgraded machine a second key, a
+# second passphrase and a second upload from a question the tool no longer
+# admits exists. answers_get cannot make that distinction -- it reads whatever
+# is in scope, the sourced answers file included -- so work settings never go
+# through it.
+work_get() {
+  local key="$1" default="${2:-}" value
+  if value="$(machine_get "$key")" && [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+  else
+    printf '%s\n' "$default"
+  fi
+}
+
+answers_has_work() { [[ -n "$(work_get TEEUP_WORK_EMAIL)" ]]; }
 
 identity_list() {
   printf 'personal\n'
@@ -120,20 +171,20 @@ identity_email() {
   case "$1" in
     personal) answers_get TEEUP_EMAIL ;;
     work)
-      if answers_has_work; then answers_get TEEUP_WORK_EMAIL; else answers_get TEEUP_EMAIL; fi
+      if answers_has_work; then work_get TEEUP_WORK_EMAIL; else answers_get TEEUP_EMAIL; fi
       ;;
     *) die "identity_email: unknown identity '$1' (expected personal or work)" ;;
   esac
 }
 
 # identity_gh_host <identity> -> the GitHub host `gh` talks to for this
-# identity. Personal is always github.com; work defaults to github.com too
-# (a second github.com account works this way) but machines/<hostname>.conf
-# can point it at a GitHub Enterprise host by naming it in TEEUP_WORK_GH_HOST.
+# identity. Personal is always github.com; work defaults to github.com too,
+# but machines/<hostname>.conf can point it at a GitHub Enterprise host by
+# naming it in TEEUP_WORK_GH_HOST.
 identity_gh_host() {
   case "$1" in
     personal) printf 'github.com\n' ;;
-    work) answers_get TEEUP_WORK_GH_HOST github.com ;;
+    work) work_get TEEUP_WORK_GH_HOST github.com ;;
     *) die "identity_gh_host: unknown identity '$1' (expected personal or work)" ;;
   esac
 }

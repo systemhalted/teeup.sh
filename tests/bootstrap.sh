@@ -373,6 +373,59 @@ source_wizard_validators() {
   eval "$(sed -n '/^_wizard_valid_name() {/,/^wizard() {/p' "$BOOT" | sed '$d')"
 }
 
+# B2: the old wizard wrote TEEUP_WORK_EMAIL into the answers file. The new one
+# neither asks for it nor reads it, so a leftover answer would sit there
+# forever with no supported way to remove it. Running the wizard clears it.
+# Only the wizard's own functions are extracted and eval'd (see
+# source_wizard_validators above for why): sourcing all of bootstrap would run
+# its whole install flow.
+source_wizard() {
+  local f body
+  source "$TEEUP_PATH/lib/all.sh"
+  # wizard_ask's retry limit, normally set at bootstrap's top level.
+  # shellcheck disable=SC2034
+  WIZARD_MAX_TRIES=3
+  for f in wizard_ask _wizard_valid_name _wizard_valid_email wizard; do
+    # The extraction lands in a variable before eval sees it: bash 3.2
+    # mis-parses `eval "$(sed -n "/^$f() {/..." ...)"` and hands sed a
+    # truncated expression.
+    body="$(sed -n "/^$f() {/,/^}/p" "$BOOT")"
+    eval "$body"
+  done
+  export TEEUP_NO_GUM=1
+}
+
+test_the_wizard_clears_a_stale_work_email() {
+  setup
+  source_wizard
+  mkdir -p "$TEST_HOME/.config/teeup"
+  {
+    printf 'TEEUP_EMAIL="ada@example.com"\n'
+    printf 'TEEUP_NAME="Ada Lovelace"\n'
+    printf 'TEEUP_WORK_EMAIL="ada@corp.example"\n'
+  } > "$TEST_HOME/.config/teeup/answers"
+  answers_load
+  local out
+  # name, email, theme choice, daily confirm.
+  out="$(DRY_RUN=false wizard 2>&1 <<<$'Ada Lovelace\nada@example.com\n1\ny\n')"
+  assert_contains "$out" "Removed the old TEEUP_WORK_EMAIL answer" || return 1
+  assert_not_contains "$(cat "$TEST_HOME/.config/teeup/answers")" "TEEUP_WORK_EMAIL" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_EMAIL="ada@example.com"' || return 1
+  cleanup_test_env
+}
+
+test_the_wizard_says_nothing_about_work_on_a_clean_answers_file() {
+  setup
+  source_wizard
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_EMAIL="ada@example.com"\n' > "$TEST_HOME/.config/teeup/answers"
+  answers_load
+  local out
+  out="$(DRY_RUN=false wizard 2>&1 <<<$'Ada Lovelace\nada@example.com\n1\ny\n')"
+  assert_not_contains "$out" "TEEUP_WORK_EMAIL" || return 1
+  cleanup_test_env
+}
+
 test_wizard_email_validator_rejects_a_trailing_dot() {
   setup
   source_wizard_validators
@@ -440,6 +493,8 @@ run_test "core failure aborts" test_core_failure_aborts
 run_test "empty personal email re-prompts and the second answer is recorded" test_empty_personal_email_reprompts_and_second_answer_is_recorded
 run_test "valid wizard answers pass validation on the first try" test_valid_wizard_answers_pass_validation_on_the_first_try
 run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
+run_test "the wizard clears a stale work email" test_the_wizard_clears_a_stale_work_email
+run_test "the wizard says nothing about work on a clean answers file" test_the_wizard_says_nothing_about_work_on_a_clean_answers_file
 run_test "wizard email validator rejects a trailing dot" test_wizard_email_validator_rejects_a_trailing_dot
 run_test "wizard email validator still accepts a normal address" test_wizard_email_validator_still_accepts_a_normal_address
 run_test "wizard name validator stores the trimmed value" test_wizard_name_validator_stores_the_trimmed_value

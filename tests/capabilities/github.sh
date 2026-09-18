@@ -554,6 +554,22 @@ test_configure_twice_with_a_work_identity_uploads_nothing_new() {
   cleanup_test_env
 }
 
+# B2: a TEEUP_WORK_EMAIL left behind in the answers file by the wizard that
+# used to ask for one must not upload a second key to GitHub.
+test_a_stale_work_email_answer_uploads_nothing_extra() {
+  setup
+  seed_keys
+  seed_work_key
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_WORK_EMAIL="ada@corp.example"\n' > "$TEST_HOME/.config/teeup/answers"
+  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  assert_not_contains "$calls" "id_ed25519_work.pub" "a stale answer must not upload a work key" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/github"
 run_test "install gets gh" test_install_gets_gh
 run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
@@ -575,6 +591,7 @@ run_test "configure compares the key body exactly" test_configure_compares_the_k
 run_test "configure never matches the key body against the title" test_configure_never_matches_the_key_body_against_the_title
 run_test "configure dry run uploads nothing" test_configure_dry_run_uploads_nothing
 run_test "configure twice uploads nothing new" test_configure_twice_uploads_nothing_new
+run_test "a stale work email answer uploads nothing extra" test_a_stale_work_email_answer_uploads_nothing_extra
 run_test "configure uploads the work key to a second github.com account" test_configure_uploads_the_work_key_to_a_second_github_com_account
 run_test "configure uploads the work key to a GitHub Enterprise host" test_configure_uploads_the_work_key_to_a_github_enterprise_host
 run_test "configure signs in to each host independently" test_configure_signs_in_to_each_host_independently
