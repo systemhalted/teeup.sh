@@ -70,6 +70,60 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+# MacPorts moves the built app bundle into applications_dir (default
+# /Applications/MacPorts) rather than /Applications, and Launchpad only
+# indexes /Applications, so a MacPorts install of WezTerm is real but
+# invisible there. This must not fire on Homebrew, where the cask lands in
+# /Applications.
+test_configure_names_the_macports_app_location() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure wezterm 2>&1)"
+  assert_contains "$out" "/Applications/MacPorts" || return 1
+  assert_contains "$out" "WezTerm.app" || return 1
+  assert_contains "$out" "open -a" "should say how to actually launch it" || return 1
+  cleanup_test_env
+}
+
+test_configure_names_the_macports_app_location_in_dry_run_too() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure wezterm 2>&1)"
+  assert_contains "$out" "/Applications/MacPorts" || return 1
+  cleanup_test_env
+}
+
+# The default of /Applications/MacPorts is only macports-base's fallback for
+# when applications_dir is unset; a machine that has customised it in
+# macports.conf should be told the truth, not the compiled-in default.
+test_configure_reads_applications_dir_from_macports_conf() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  mkdir -p "$TEEUP_PKG_PREFIX/etc/macports"
+  cat > "$TEEUP_PKG_PREFIX/etc/macports/macports.conf" <<'CONF'
+# a comment line above the real setting
+applications_dir	/Users/tester/CustomApps
+CONF
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure wezterm 2>&1)"
+  assert_contains "$out" "/Users/tester/CustomApps" || return 1
+  assert_not_contains "$out" "/Applications/MacPorts" "the custom applications_dir should win over the compiled-in default" || return 1
+  cleanup_test_env
+}
+
+test_configure_says_nothing_about_macports_on_homebrew() {
+  setup
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure wezterm 2>&1)"
+  assert_not_contains "$out" "MacPorts" || return 1
+  cleanup_test_env
+}
+
 test_theme_apply_reloads_the_config() {
   setup
   DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
@@ -356,6 +410,10 @@ run_test "configure installs both user files" test_configure_installs_both_user_
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "font entry does not force a weight" test_font_entry_does_not_force_a_weight
+run_test "configure names the MacPorts app location" test_configure_names_the_macports_app_location
+run_test "configure names the MacPorts app location in dry run too" test_configure_names_the_macports_app_location_in_dry_run_too
+run_test "configure reads applications_dir from macports.conf" test_configure_reads_applications_dir_from_macports_conf
+run_test "configure says nothing about MacPorts on Homebrew" test_configure_says_nothing_about_macports_on_homebrew
 run_test "theme-apply reloads the config" test_theme_apply_reloads_the_config
 run_test "font-apply reloads the config" test_font_apply_reloads_the_config
 run_test "theme renders a wezterm scheme" test_theme_renders_a_wezterm_scheme
