@@ -108,17 +108,84 @@ for identity in $(identity_list); do
   run_cmd ssh-add "$ssh_keychain_flag" "$key" || warn "ssh-add failed for $key."
 done
 
+# ssh_work_alias_block: the Host block teeup's own config uses for the work
+# identity, printed only when there is a work identity to name. The alias is
+# local (github.com-work), but HostName is the identity's real host, so a work
+# identity on a GitHub Enterprise instance is reachable through the same alias
+# as a second github.com account.
+ssh_work_alias_block() {
+  local alias host key display
+  alias="$(ssh_host_alias work)"
+  host="$(identity_gh_host work)"
+  key="$(identity_key work)"
+  display="$key"
+  case "$key" in "$HOME"/*) display="~${key#"$HOME"}" ;; esac
+  printf '# Clone work repositories as git@%s:org/repo.git, which picks the\n' "$alias"
+  printf '# work key. git itself has one identity, whatever the directory.\n'
+  printf 'Host %s\n  HostName %s\n  User git\n  IdentityFile %s\n  IdentitiesOnly yes\n\n' \
+    "$alias" "$host" "$display"
+}
+
 # An existing ~/.ssh/config is authority: teeup never backs up and replaces
 # a foreign one (copy_config_once's usual behaviour for every other shipped
 # config) because that would ask the Host blocks read above to point at
 # keys this run may have just decided not to touch. It only ever writes its
 # own config when there is none yet.
+ssh_config_is_foreign=false
 if [[ -e "$ssh_dir/config" || -L "$ssh_dir/config" ]]; then
   log "Already present: $ssh_dir/config"
+  # A config teeup installed itself already carries the aliases below; only a
+  # file teeup never wrote is the user's to be told about.
+  [[ -n "$(stock_sha "$ssh_dir/config" || true)" ]] || ssh_config_is_foreign=true
 else
-  copy_config_once "$TEEUP_CAP_DIR/config/ssh/config" "$ssh_dir/config"
+  # Rendered, not copied as-is: the work alias exists only on a machine with a
+  # work identity. Shipping it everywhere left every other machine with a Host
+  # block naming a key that does not exist, under IdentitiesOnly yes.
+  ssh_rendered_config="$(mktemp)"
+  ssh_work_alias_written=false
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      "#TEEUP_WORK_ALIAS"*)
+        # The marker's own lines never reach the installed file; the block
+        # takes the place of the first of them, and only when this machine
+        # has a work identity at all.
+        if [[ "$ssh_work_alias_written" == "false" ]] && answers_has_work; then
+          ssh_work_alias_block
+          ssh_work_alias_written=true
+        fi
+        ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done < "$TEEUP_CAP_DIR/config/ssh/config" > "$ssh_rendered_config"
+  copy_config_once "$ssh_rendered_config" "$ssh_dir/config" "$TEEUP_CAP_DIR/config/ssh/config"
+  rm -f "$ssh_rendered_config"
 fi
 chmod_once 600 "$ssh_dir/config"
+
+# A config teeup did not write is never rewritten -- but then nothing has told
+# the user that the key this run just generated is not reachable through any
+# Host block, so `git@github.com-work:org/repo.git` resolves to a host that
+# does not exist and the key is only ever offered by the agent. Say so, with
+# the block to paste and the file to paste it into.
+if [[ "$ssh_config_is_foreign" == "true" ]]; then
+  for identity in $(identity_list); do
+    # What the config names for this alias, against the key actually in use:
+    # they differ when the config names none at all, and also when it names
+    # one that is not there (identity_key falls back to teeup's own path,
+    # which ssh would then never offer for that host).
+    ssh_named_key="$(ssh_config_named_key "$identity" || true)"
+    [[ "$ssh_named_key" == "$(identity_key "$identity")" ]] && continue
+    warn "$ssh_dir/config is yours and has no Host block for the $identity key."
+    warn "git@$(ssh_host_alias "$identity"):org/repo.git will not resolve until you add this to $ssh_dir/config:"
+    printf '\n'
+    printf 'Host %s\n' "$(ssh_host_alias "$identity")"
+    printf '  HostName %s\n' "$(identity_gh_host "$identity")"
+    printf '  User git\n'
+    printf '  IdentityFile %s\n' "$(identity_key "$identity")"
+    printf '  IdentitiesOnly yes\n'
+    printf '\n'
+  done
+fi
 
 # git runs before ssh in the core list, so `git configure` ran with no keys on
 # disk and wrote commit.gpgsign = false. The keys exist now, so re-render git's

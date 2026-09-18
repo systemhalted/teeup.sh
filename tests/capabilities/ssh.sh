@@ -128,6 +128,89 @@ test_configure_installs_the_ssh_config_with_both_hosts() {
   cleanup_test_env
 }
 
+# I2: the work alias used to be shipped unconditionally, so a machine with no
+# work identity got a Host block pointing at a key that does not exist -- with
+# IdentitiesOnly yes, so any accidental use of it fails with no usable
+# identity -- and the spec amendment this branch wrote said otherwise.
+test_the_shipped_config_has_no_work_alias_without_a_work_identity() {
+  setup
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  local body
+  body="$(cat "$TEST_HOME/.ssh/config")"
+  assert_not_contains "$body" "github.com-work" || return 1
+  assert_not_contains "$body" "id_ed25519_work" || return 1
+  assert_contains "$body" "Host github.com" || return 1
+  assert_contains "$body" "IdentityFile ~/.ssh/id_ed25519_personal" || return 1
+  cleanup_test_env
+}
+
+# The alias is local, but it has to point somewhere real: a work identity on a
+# GitHub Enterprise host is not reachable through github.com.
+test_the_work_alias_points_at_the_work_host() {
+  setup
+  seed_answers
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  local body
+  body="$(cat "$TEST_HOME/.ssh/config")"
+  assert_contains "$body" "Host github.com-work" || return 1
+  assert_contains "$body" "HostName github.enterprise.example.com" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+# I1: an existing ~/.ssh/config is the user's and teeup never rewrites it --
+# but then the alias the work key is meant to be used through does not exist,
+# git@github.com-work:org/repo.git resolves to nothing, and teeup used to say
+# nothing at all about it.
+test_configure_prints_the_block_a_foreign_config_is_missing() {
+  setup
+  seed_answers
+  seed_machine_work "ada@corp.example"
+  mkdir -p "$TEST_HOME/.ssh"
+  cat > "$TEST_HOME/.ssh/config" <<'CFG'
+Host myserver
+  User someone
+CFG
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_contains "$out" "$TEST_HOME/.ssh/config" || return 1
+  assert_contains "$out" "Host github.com-work" || return 1
+  assert_contains "$out" "IdentityFile $TEST_HOME/.ssh/id_ed25519_work" || return 1
+  assert_contains "$out" "IdentitiesOnly yes" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_configure_says_nothing_when_the_foreign_config_already_names_the_key() {
+  setup
+  seed_answers
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'MINE\n' > "$TEST_HOME/.ssh/id_rsa_legacy"
+  printf 'ssh-ed25519 LEGACY comment\n' > "$TEST_HOME/.ssh/id_rsa_legacy.pub"
+  cat > "$TEST_HOME/.ssh/config" <<CFG
+Host github.com
+  IdentityFile $TEST_HOME/.ssh/id_rsa_legacy
+CFG
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_not_contains "$out" "has no Host block" || return 1
+  cleanup_test_env
+}
+
+test_configure_says_nothing_about_a_config_teeup_installed() {
+  setup
+  seed_answers
+  seed_machine_work "ada@corp.example"
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_not_contains "$out" "has no Host block" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 # GNU stat first, BSD stat second. Trying BSD first would be wrong: GNU's
 # `stat -f` means "filesystem status", so it prints something and fails, and
 # the fallback's output would be appended to that garbage.
@@ -455,6 +538,11 @@ run_test "configure adds the keys to the keychain" test_configure_adds_the_keys_
 run_test "configure uses --apple-use-keychain on macOS 12 and newer" test_configure_uses_apple_use_keychain_on_macos_12_and_newer
 run_test "configure uses -K before macOS 12" test_configure_uses_dash_k_before_macos_12
 run_test "configure installs the ssh config with both hosts" test_configure_installs_the_ssh_config_with_both_hosts
+run_test "the shipped config has no work alias without a work identity" test_the_shipped_config_has_no_work_alias_without_a_work_identity
+run_test "the work alias points at the work host" test_the_work_alias_points_at_the_work_host
+run_test "configure prints the block a foreign config is missing" test_configure_prints_the_block_a_foreign_config_is_missing
+run_test "configure says nothing when the foreign config already names the key" test_configure_says_nothing_when_the_foreign_config_already_names_the_key
+run_test "configure says nothing about a config teeup installed" test_configure_says_nothing_about_a_config_teeup_installed
 run_test "permissions are tightened" test_permissions_are_tightened
 run_test "existing key is not regenerated" test_existing_key_is_not_regenerated
 run_test "configure reuses the key an existing ssh config already names" test_configure_reuses_the_key_an_existing_ssh_config_already_names
