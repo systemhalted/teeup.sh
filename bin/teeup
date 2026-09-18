@@ -63,9 +63,7 @@ cmd_install() {
       warn "Skipping $c (TEEUP_SKIP)"
       continue
     fi
-    cap_run "$c" install
-    cap_run "$c" configure
-    state_done mark "cap-$c"
+    cap_install_verbs "$c"
   done
 }
 
@@ -186,7 +184,7 @@ cmd_secret() {
 }
 
 cmd_status() {
-  local total=0 installed=0 name
+  local total=0 installed=0 unsupported=0 name
   echo "teeup $(cat "$TEEUP_PATH/version" 2>/dev/null || echo dev) at $TEEUP_PATH"
   echo "Package manager: $(pkg_backend)"
   if answers_exist; then echo "Answers: $(answers_file)"; else echo "Answers: missing (run ./bootstrap)"; fi
@@ -195,9 +193,14 @@ cmd_status() {
     if state_done check "cap-$name"; then
       installed=$((installed + 1))
       printf '  %-18s installed\n' "$name"
+    elif state_na check "cap-$name"; then
+      unsupported=$((unsupported + 1))
+      printf '  %-18s not applicable on this machine\n' "$name"
     fi
   done
   echo "Installed: $installed of $total capabilities"
+  [[ "$unsupported" -gt 0 ]] && echo "Not applicable on this machine: $unsupported"
+  return 0
 }
 
 cmd_commands() {

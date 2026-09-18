@@ -10,6 +10,32 @@ export TEEUP_CAPS_DIR
 # Commands macOS ships; a PATH-last shim for these can never fire.
 TEEUP_SHIM_FORBIDDEN="python3 ruby java git perl"
 
+# The reserved "not applicable here" exit status an install or configure
+# script hands back through not_applicable, below. 42 is not a value any
+# command teeup shells out to (brew, port, ssh-keygen, security, ...) is
+# documented to return on its own, so a script that never calls
+# not_applicable is vanishingly unlikely to produce it by accident -- and
+# cap_run does not trust the code alone anyway: it also requires the marker
+# file that only not_applicable writes, so a coincidental `exit 42` from some
+# other failure still reads as the real failure it is.
+TEEUP_CAP_NA_EXIT=42
+
+# not_applicable <message>
+# The one sanctioned way for a capability's install or configure to say "this
+# machine cannot have this capability" -- not a failure (bootstrap keeps
+# going, teeup install's exit code stays 0) and not success either (nothing
+# is marked done, `teeup has` still reports not-installed, `teeup status`
+# shows it as its own state). <message> is what the user sees in place of
+# instructions that could never have worked; state the fact, not an apology.
+# A genuine error must still go through warn/die/a non-zero exit -- never
+# call this to paper over one, or a real breakage would sail through
+# bootstrap's core-tier gate unnoticed.
+not_applicable() {
+  warn "$*"
+  [[ -n "${TEEUP_CAP_NA_MARKER:-}" ]] && : > "$TEEUP_CAP_NA_MARKER"
+  exit "$TEEUP_CAP_NA_EXIT"
+}
+
 cap_dir() { printf '%s/%s\n' "$TEEUP_CAPS_DIR" "$1"; }
 
 cap_exists() { [[ -f "$(cap_dir "$1")/capability" ]]; }
@@ -71,8 +97,17 @@ cap_skipped() {
 # Runs capabilities/<name>/<verb> as a fresh `bash -eu` with the libraries
 # loaded and the answers file sourced. Wrapped in run_logged, which closes
 # stdin unless the capability declares interactive=true.
+#
+# Sets TEEUP_CAP_NA to "true" or "false" before returning, for the caller to
+# read: "true" means the script called not_applicable rather than actually
+# running, and cap_run has already turned that into a 0 return here (it is
+# not a failure). A na_marker path is reserved with `mktemp -u` (named, not
+# created) and handed to the script as TEEUP_CAP_NA_MARKER; only
+# not_applicable ever creates that file, so treating TEEUP_CAP_NA_EXIT as the
+# not-applicable answer requires both the code and the file, not the exit
+# code alone.
 cap_run() {
-  local name="$1" verb="$2" dir script interactive
+  local name="$1" verb="$2" dir script interactive rc=0 na_marker
   dir="$(cap_dir "$name")"
   script="$dir/$verb"
   if [[ ! -f "$script" ]]; then
@@ -82,9 +117,46 @@ cap_run() {
   interactive="$(cap_meta_get "$name" interactive false)"
   TEEUP_CAP="$name"
   TEEUP_CAP_DIR="$dir"
-  export TEEUP_CAP TEEUP_CAP_DIR
+  na_marker="$(mktemp -u)"
+  TEEUP_CAP_NA_MARKER="$na_marker"
+  export TEEUP_CAP TEEUP_CAP_DIR TEEUP_CAP_NA_MARKER
+  TEEUP_CAP_NA=false
   run_logged "$name $verb" "$interactive" \
-    bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; answers_load; source "$1"' bash "$script"
+    bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; answers_load; source "$1"' bash "$script" || rc=$?
+  if [[ $rc -eq $TEEUP_CAP_NA_EXIT && -e "$na_marker" ]]; then
+    TEEUP_CAP_NA=true
+    rc=0
+  fi
+  rm -f "$na_marker"
+  unset TEEUP_CAP_NA_MARKER
+  return $rc
+}
+
+# cap_install_verbs <name>
+# install then configure, then record the outcome -- the one place that
+# decides between state_done and state_na, shared by `teeup install`
+# (bin/teeup) and bootstrap's core/daily tiers so the two entry points can
+# never disagree about what a machine has. "Not applicable" from either verb
+# wins over the other verb having genuinely run: a machine that cannot have
+# the capability at all has nothing "done" about it. Returns 0 on success or
+# not-applicable; non-zero (with neither marker touched) on a real failure,
+# for the caller's own core-vs-daily handling. Leaves TEEUP_CAP_NA set to the
+# combined "true"/"false" outcome, for a caller that wants to know (bootstrap
+# only adds a capability to CONFIGURED_THIS_RUN when it was not).
+cap_install_verbs() {
+  local name="$1" na=false
+  cap_run "$name" install || return 1
+  [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
+  cap_run "$name" configure || return 1
+  [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
+  if [[ "$na" == "true" ]]; then
+    state_done clear "cap-$name"
+    state_na mark "cap-$name"
+  else
+    state_na clear "cap-$name"
+    state_done mark "cap-$name"
+  fi
+  TEEUP_CAP_NA="$na"
 }
 
 # cap_check -> lints every capability; prints one problem per line.

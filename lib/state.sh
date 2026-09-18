@@ -43,6 +43,23 @@ state_done() {
   esac
 }
 
+# state_na check|mark|clear <name>
+# A capability a machine cannot have at all: cap_install_verbs marks this
+# instead of state_done when install or configure answered not_applicable,
+# so `teeup status` can tell "not applicable here" apart from both
+# "installed" and plain absence. Never set by hand -- see not_applicable in
+# lib/capability.sh.
+state_na() {
+  local op="$1" name="$2"
+  local marker="$TEEUP_STATE_DIR/na/$name"
+  case "$op" in
+    check) [[ -f "$marker" ]] ;;
+    mark) _state_touch "$marker" ;;
+    clear) _state_remove "$marker" ;;
+    *) die "state_na: unknown op '$op'" ;;
+  esac
+}
+
 # state_toggle <flag> [on|off|toggle]
 state_toggle() {
   local flag="$1" op="${2:-toggle}"

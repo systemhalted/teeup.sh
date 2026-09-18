@@ -172,6 +172,81 @@ test_run_optional_respects_teeup_skip() {
   cleanup_test_env
 }
 
+# not_applicable is the sanctioned "this machine cannot have this capability"
+# answer: cap_run must turn its reserved exit code into a plain success, but
+# only report it through TEEUP_CAP_NA, not through the run's own text output.
+test_run_returns_not_applicable_without_failing() {
+  setup
+  printf '#!/usr/bin/env bash\nnot_applicable "no thanks here"\n' > "$TEEUP_CAPS_DIR/alpha/install"
+  # Not `out="$(cap_run ...)"`: a command substitution forks a subshell, and
+  # TEEUP_CAP_NA is a variable cap_run sets in ITS caller's shell -- it would
+  # never escape the subshell for this test to see.
+  local rc=0 out_file="$TEST_HOME/out"
+  cap_run alpha install >"$out_file" 2>&1 || rc=$?
+  assert_success "$rc" "not-applicable is not a failure" || return 1
+  assert_equals "true" "$TEEUP_CAP_NA" || return 1
+  assert_contains "$(cat "$out_file")" "no thanks here" || return 1
+  cleanup_test_env
+}
+
+# The reserved exit code alone must never be enough: some other command
+# failing to happen to exit 42 is still a real failure, because it never
+# wrote the marker file only not_applicable creates.
+test_run_a_bare_matching_exit_code_is_still_a_failure() {
+  setup
+  printf '#!/usr/bin/env bash\nexit 42\n' > "$TEEUP_CAPS_DIR/alpha/install"
+  local rc=0
+  cap_run alpha install >/dev/null 2>&1 || rc=$?
+  assert_equals "42" "$rc" "exit 42 with no marker must not be read as not-applicable" || return 1
+  assert_equals "false" "$TEEUP_CAP_NA" || return 1
+  cleanup_test_env
+}
+
+# cap_install_verbs is what `teeup install` and bootstrap both call: it is
+# the one place that decides state_done vs state_na.
+test_install_verbs_marks_na_not_done_when_not_applicable() {
+  setup
+  printf '#!/usr/bin/env bash\nnot_applicable "install: nope"\n' > "$TEEUP_CAPS_DIR/alpha/install"
+  cap_install_verbs alpha || { echo "not-applicable must not fail the call"; return 1; }
+  state_done check "cap-alpha" && { echo "must not be marked done"; return 1; }
+  state_na check "cap-alpha" || { echo "must be marked not-applicable"; return 1; }
+  assert_equals "true" "$TEEUP_CAP_NA" || return 1
+  cleanup_test_env
+}
+
+test_install_verbs_marks_done_on_the_normal_path() {
+  setup
+  cap_install_verbs alpha || { echo "a normal install/configure must succeed"; return 1; }
+  state_done check "cap-alpha" || { echo "must be marked done"; return 1; }
+  state_na check "cap-alpha" && { echo "must not be marked not-applicable"; return 1; }
+  assert_equals "false" "$TEEUP_CAP_NA" || return 1
+  cleanup_test_env
+}
+
+# A machine that outgrows a not-applicable answer (macOS upgraded, say) must
+# not be stuck showing that stale state once the capability really runs.
+test_install_verbs_clears_a_stale_na_marker_once_applicable() {
+  setup
+  state_na mark "cap-alpha"
+  cap_install_verbs alpha || { echo "a normal install/configure must succeed"; return 1; }
+  state_na check "cap-alpha" && { echo "stale not-applicable marker must be cleared"; return 1; }
+  state_done check "cap-alpha" || { echo "must be marked done"; return 1; }
+  cleanup_test_env
+}
+
+# A genuine failure must still be a failure: neither marker is touched, and
+# the caller (teeup install, bootstrap) sees the same non-zero it always did.
+test_install_verbs_propagates_a_real_failure() {
+  setup
+  printf '#!/usr/bin/env bash\nfalse\n' > "$TEEUP_CAPS_DIR/alpha/install"
+  local rc=0
+  cap_install_verbs alpha >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" || return 1
+  state_done check "cap-alpha" && { echo "must not be marked done on failure"; return 1; }
+  state_na check "cap-alpha" && { echo "must not be marked not-applicable on failure"; return 1; }
+  cleanup_test_env
+}
+
 test_run_optional_warns_but_succeeds_on_failure() {
   setup
   printf '#!/usr/bin/env bash\necho "hook:alpha dir=$TEEUP_THEME_DIR"\nfalse\n' > "$TEEUP_CAPS_DIR/alpha/theme-apply"
@@ -194,6 +269,12 @@ run_test "order puts requires first and dedupes" test_order_puts_requires_first_
 run_test "run executes script with lib and env" test_run_executes_script_with_lib_and_env
 run_test "run propagates failure" test_run_propagates_failure
 run_test "run missing verb fails clearly" test_run_missing_verb_fails_clearly
+run_test "run returns not-applicable without failing" test_run_returns_not_applicable_without_failing
+run_test "run treats a bare matching exit code as a real failure" test_run_a_bare_matching_exit_code_is_still_a_failure
+run_test "install_verbs marks na not done when not applicable" test_install_verbs_marks_na_not_done_when_not_applicable
+run_test "install_verbs marks done on the normal path" test_install_verbs_marks_done_on_the_normal_path
+run_test "install_verbs clears a stale na marker once applicable" test_install_verbs_clears_a_stale_na_marker_once_applicable
+run_test "install_verbs propagates a real failure" test_install_verbs_propagates_a_real_failure
 run_test "skipped reads TEEUP_SKIP" test_skipped_reads_teeup_skip
 run_test "check passes on valid fixture" test_check_passes_on_valid_fixture
 run_test "check reports problems" test_check_reports_problems

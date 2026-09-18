@@ -322,6 +322,28 @@ test_core_failure_aborts() {
   cleanup_test_env
 }
 
+# AeroSpace's own README floor (macOS 13+) is stricter than package-manager's
+# MacPorts-vs-Homebrew line (macOS 12 or older). On a macOS 12 machine that
+# still answers Homebrew explicitly (bypassing package-manager's own MacPorts
+# auto-pick, so this test is isolated to aerospace's own floor), aerospace
+# must say so and skip cleanly rather than aborting the run core failures do.
+test_aerospace_not_applicable_completes_bootstrap() {
+  setup
+  mock_command sw_vers 0 "12.7.6"
+  # ask_package_manager's "detected" option is macports on this mocked OS
+  # (macos_major <= 12), so "2" (the other option) is the explicit Homebrew
+  # choice here, not "1" as on the modern Mac WIZARD_INPUT assumes.
+  local rc=0 out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'2\nAda Lovelace\nada@example.com\n1\ny\n')" || rc=$?
+  assert_success "$rc" "an unsupported capability must not abort bootstrap" || return 1
+  assert_contains "$out" "AeroSpace requires macOS 13 or newer; this Mac is on macOS 12, so there is nothing to install." || return 1
+  assert_contains "$out" "AeroSpace requires macOS 13 or newer; this Mac is on macOS 12, so there is nothing to configure." || return 1
+  assert_contains "$out" "Would record state: na/cap-aerospace" || return 1
+  assert_not_contains "$out" "Would record state: done/cap-aerospace" || return 1
+  assert_contains "$out" "Bootstrap finished" || return 1
+  cleanup_test_env
+}
+
 test_empty_personal_email_reprompts_and_second_answer_is_recorded() {
   setup
   # F2: the wizard used to accept an empty personal email outright. Now it
@@ -492,6 +514,7 @@ run_test "the wizard does not ask for a pinned theme" test_wizard_does_not_ask_f
 run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tier
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
 run_test "core failure aborts" test_core_failure_aborts
+run_test "aerospace not-applicable completes bootstrap" test_aerospace_not_applicable_completes_bootstrap
 run_test "empty personal email re-prompts and the second answer is recorded" test_empty_personal_email_reprompts_and_second_answer_is_recorded
 run_test "valid wizard answers pass validation on the first try" test_valid_wizard_answers_pass_validation_on_the_first_try
 run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
