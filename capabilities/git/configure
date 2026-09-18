@@ -181,6 +181,21 @@ git_repair_old_identity_model() {
         fi
         continue
       fi
+      # The file's own header paragraph, which still describes "the two
+      # identities" teeup used to generate.
+      if [[ "${lines[$i]}" == '# Generated pieces (editor, pager, signing, the two identities) live in' &&
+            "${lines[$((i + 1))]:-}" == '# separate included files so teeup can regenerate them without touching your' &&
+            "${lines[$((i + 2))]:-}" == '# edits here. Include order is load-bearing: git keeps the LAST value it' &&
+            "${lines[$((i + 3))]:-}" == '# reads, so teeup-generated is included below the defaults it has to be able' &&
+            "${lines[$((i + 4))]:-}" == '# to override, and ~/.config/git/local last of all.' ]]; then
+        out[${#out[@]}]='# Generated pieces (editor, pager, signing, the identity) live in separate'
+        out[${#out[@]}]='# included files so teeup can regenerate them without touching your edits'
+        out[${#out[@]}]='# here. Include order is load-bearing: git keeps the LAST value it reads, so'
+        out[${#out[@]}]='# teeup-generated is included below the defaults it has to be able to'
+        out[${#out[@]}]='# override, and ~/.config/git/local last of all.'
+        i=$((i + 5))
+        continue
+      fi
       # The remaining identity-personal include is the default-identity block at
       # the top; it becomes the one identity, comment and all.
       if [[ "${lines[$i]}" == "$old_a_comment" ]]; then
