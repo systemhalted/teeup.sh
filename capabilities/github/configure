@@ -1,63 +1,34 @@
 #!/usr/bin/env bash
-# Pinned before anything else runs: a GH_HOST left over in the caller's
-# environment (set for some other gh workflow) would silently redirect every
-# unscoped call below (auth login, ssh-key list, ssh-key add) to that other
-# host instead of github.com.
-export GH_HOST=github.com
+# GitHub: per host (2026-09-17 decision). The personal identity always
+# uploads to github.com; a work identity uploads to whatever host
+# identity_gh_host names for it (lib/answers.sh) -- github.com by default (a
+# second github.com account), or a GitHub Enterprise host when
+# machines/<hostname>.conf sets TEEUP_WORK_GH_HOST. GH_HOST is pinned per
+# identity, not once at the top: a value left over in the caller's
+# environment would otherwise silently redirect every call below to the
+# wrong host, and the whole point of iterating identities is that they may
+# not share a host.
 
 if ! have gh; then
   warn "gh is not installed; skipping the GitHub setup. Re-run: teeup install github"
   exit 0
 fi
 
-if status_out="$(gh auth status --active -h github.com 2>&1)"; then
-  ok "Already signed in to GitHub."
-  # --active narrows the report to the one account gh will actually use for
-  # this host (gh 2.100.0: "-a, --active  Display the active account only").
-  # Without it, `gh auth status -h github.com` reports every account known on
-  # the host and exits 1 if any of them has a problem, so an unrelated stale
-  # account would trigger a pointless login; worse, the scope check below
-  # would happily find the required scopes on an *inactive* account while the
-  # active one lacks them, and every `gh ssh-key add` would then fail with a
-  # scope error and only warn.
-  #
-  # A machine that authenticated `gh` before teeup existed may be missing the
-  # scopes the key uploads below need. `gh auth status` prints them on a
-  # "Token scopes:" line; refresh rather than assume they are there.
-  if [[ "$status_out" != *"admin:public_key"* || "$status_out" != *"admin:ssh_signing_key"* ]]; then
-    log "Refreshing gh's token scopes for SSH key uploads."
-    run_cmd gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key ||
-      warn "Could not refresh gh's auth scopes. Re-run: teeup configure github"
-  fi
-else
-  log "Signing in to GitHub. A browser window opens; approve the SSH key scopes."
-  if ! run_cmd gh auth login --hostname github.com --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key; then
-    warn "gh auth login did not complete. Re-run: teeup configure github"
-    exit 0
-  fi
-fi
-
-run_cmd gh config set git_protocol ssh --host github.com || warn "Could not set gh's git protocol to ssh."
-
-# One upload per identity, twice: an authentication key for pushing and a
-# signing key for the SSH commit signatures the git capability turns on.
-# `gh ssh-key list` is captured here, so gh takes its non-TTY path and prints
-# tab-separated columns. Verified against the installed gh 2.100.0: that
-# format is TITLE, KEY, ADDED, ID, TYPE. The title is the one column the user
-# types, and it comes first, so nothing may be found by scanning forward for
-# "the first field that looks like X": a key titled exactly `signing` (or
-# `ssh-laptop`) wins such a scan, teeup then believes the signing key is
-# already up and retries the authentication one as a duplicate instead. So the
-# type is the LAST field, full stop, and the key is found scanning backwards
-# from the type towards the title, stopping before field 1 so a title that
-# happens to hold our key body (a key that is not ours, titled with it) can
-# never count. The match is the field whose second word is exactly the public
-# key body ("ssh-ed25519 <body>"). Exact, not substring: a body that merely
-# contains ours is someone else's key.
-host="$(hostname -s 2>/dev/null || hostname)"
-listed="$(gh ssh-key list 2>/dev/null || true)"
+# _github_key_uploaded <listed> <body> <type> -> exits 0 when `gh ssh-key
+# list`'s output (a tab-separated TITLE/KEY/ADDED/ID/TYPE, the real non-TTY
+# format gh 2.100.0 prints) already has a row for this key body and type.
+# The title is free text and comes first, so it must never be scanned for a
+# type match (a key titled exactly "signing", or one that merely contains the
+# word, would otherwise be mistaken for the row it is not); the type is the
+# LAST field, full stop, and the key body is found scanning backwards from
+# the type towards the title, stopping before field 1 so a title that
+# happens to hold our key body can never count either. The match is the
+# field whose second word is exactly the public key body ("ssh-ed25519
+# <body>") -- exact, not substring, so a body that merely contains ours does
+# not count as ours.
 _github_key_uploaded() {
-  printf '%s\n' "$listed" | awk -F'\t' -v body="$1" -v type="$2" '
+  local listed="$1" body="$2" type="$3"
+  printf '%s\n' "$listed" | awk -F'\t' -v body="$body" -v type="$type" '
     NF < 2 || $NF != type { next }
     {
       for (i = NF - 1; i >= 2; i--) {
@@ -66,21 +37,56 @@ _github_key_uploaded() {
     }
     END { exit found ? 0 : 1 }'
 }
+
+host_short="$(hostname -s 2>/dev/null || hostname)"
+
 for identity in $(identity_list); do
+  gh_host="$(identity_gh_host "$identity")"
+  export GH_HOST="$gh_host"
+
+  # --active narrows the report to the one account gh will actually use for
+  # this host (gh 2.100.0: "-a, --active  Display the active account only").
+  # Without it, `gh auth status -h $gh_host` reports every account known on
+  # the host and exits 1 if any of them has a problem, so an unrelated stale
+  # account would trigger a pointless login; worse, the scope check below
+  # would happily find the required scopes on an *inactive* account while the
+  # active one lacks them, and every `gh ssh-key add` would then fail with a
+  # scope error and only warn.
+  if status_out="$(gh auth status --active -h "$gh_host" 2>&1)"; then
+    ok "Already signed in to GitHub ($gh_host)."
+    # A machine that authenticated `gh` before teeup existed may be missing
+    # the scopes the key uploads below need. `gh auth status` prints them on
+    # a "Token scopes:" line; refresh rather than assume they are there.
+    if [[ "$status_out" != *"admin:public_key"* || "$status_out" != *"admin:ssh_signing_key"* ]]; then
+      log "Refreshing gh's token scopes for SSH key uploads on $gh_host."
+      run_cmd gh auth refresh -h "$gh_host" -s admin:public_key,admin:ssh_signing_key ||
+        warn "Could not refresh gh's auth scopes for $gh_host. Re-run: teeup configure github"
+    fi
+  else
+    log "Signing in to GitHub ($gh_host). A browser window opens; approve the SSH key scopes."
+    if ! run_cmd gh auth login --hostname "$gh_host" --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key; then
+      warn "gh auth login did not complete for $gh_host. Re-run: teeup configure github"
+      continue
+    fi
+  fi
+
+  run_cmd gh config set git_protocol ssh --host "$gh_host" || warn "Could not set gh's git protocol to ssh for $gh_host."
+
+  # One upload per identity, twice: an authentication key for pushing and a
+  # signing key for the SSH commit signatures the git capability turns on.
   pub="$(identity_key "$identity").pub"
   if [[ ! -f "$pub" ]]; then
     warn "No $pub yet. Run: teeup configure ssh"
     continue
   fi
-  # The key body is the second field; comparing on it matches whatever title
-  # the key was uploaded under.
   body="$(awk '{print $2}' < "$pub")"
+  listed="$(gh ssh-key list 2>/dev/null || true)"
   for type in authentication signing; do
-    if [[ -n "$body" ]] && _github_key_uploaded "$body" "$type"; then
+    if [[ -n "$body" ]] && _github_key_uploaded "$listed" "$body" "$type"; then
       log "Already uploaded ($type): $pub"
       continue
     fi
-    title="$host $identity"
+    title="$host_short $identity"
     [[ "$type" == "signing" ]] && title="$title (signing)"
     run_cmd gh ssh-key add "$pub" --type "$type" --title "$title" ||
       warn "Could not upload $pub as a $type key."
