@@ -341,6 +341,141 @@ test_configure_quotes_special_characters_in_the_name() {
   cleanup_test_env
 }
 
+# B1: a machine that ran the old two-identity model keeps its ~/.config/git/config
+# until something repairs it. copy_config_once sees the file matching the sha it
+# recorded at install time and reports "Already installed", so the shipped
+# includeIf blocks and the identity-personal/identity-work files survive every
+# upgrade and ~/Work still commits as the work address. `teeup configure git`
+# repairs that shape in place.
+
+# seed_old_model: the tree an upgraded machine actually has -- the OLD shipped
+# config (rendered, i.e. the include paths already quoted and absolute), both
+# per-identity files, and a stock record holding the installed file's own sha so
+# copy_config_once still calls it pristine.
+seed_old_model() {
+  local dir="$TEST_HOME/.config/git" work_block="${1:-shipped}"
+  mkdir -p "$dir"
+  {
+    printf '# ~/.config/git/config - installed once by teeup; this copy is yours to edit.\n'
+    printf '\n'
+    printf '[include]\n'
+    printf '\t# Default identity; the includeIf blocks at the bottom override it per root.\n'
+    printf '\tpath = "%s/identity-personal"\n' "$dir"
+    printf '\n'
+    printf '[user]\n'
+    printf '\tuseConfigOnly = true     # never guess an identity from the hostname\n'
+    printf '\n'
+    printf '[include]\n'
+    printf '\tpath = "%s/teeup-generated"\n' "$dir"
+    printf '\n'
+    printf '# Identity by directory (spec section 8). Both identities live on every\n'
+    printf '# machine; where the repository sits decides which one applies.\n'
+    printf '[includeIf "gitdir:~/Personal/"]\n'
+    printf '\tpath = "%s/identity-personal"\n' "$dir"
+    printf '[includeIf "gitdir:~/Work/"]\n'
+    if [[ "$work_block" == "edited" ]]; then
+      printf '\tpath = "%s/identity-mine"\n' "$dir"
+    else
+      printf '\tpath = "%s/identity-work"\n' "$dir"
+    fi
+    printf '\n'
+    printf '# Untracked machine-local overrides, included last so they win over everything\n'
+    printf '# above. Create it yourself; teeup never writes it.\n'
+    printf '[include]\n'
+    printf '\tpath = "%s/local"\n' "$dir"
+  } > "$dir/config"
+  printf '[user]\n\tname = "Ada Lovelace"\n\temail = "ada@example.com"\n' > "$dir/identity-personal"
+  printf '[user]\n\tname = "Ada Lovelace"\n\temail = "ada@corp.example"\n' > "$dir/identity-work"
+  mkdir -p "$TEST_HOME/.local/state/teeup/stock"
+  { shasum -a 256 < "$dir/config" 2>/dev/null || sha256sum < "$dir/config"; } |
+    cut -d ' ' -f 1 > "$TEST_HOME/.local/state/teeup/stock/.config__git__config"
+}
+
+# resolved_email <repo> -> the user.email real git resolves for a repository,
+# reading the migrated config as the global one so its includes (and any
+# surviving includeIf) apply exactly as they would on the user's machine.
+resolved_email() {
+  local repo="$1"
+  mkdir -p "$repo"
+  GIT_CONFIG_GLOBAL="$TEST_HOME/.config/git/config" \
+    command -p git -C "$repo" --git-dir="$repo/.git" config --get user.email 2>/dev/null || true
+}
+
+test_configure_repairs_an_old_two_identity_config() {
+  setup
+  seed_answers
+  seed_old_model
+  command -p git init -q "$TEST_HOME/Work/repo" >/dev/null 2>&1
+  assert_equals "ada@corp.example" "$(resolved_email "$TEST_HOME/Work/repo")" "test setup must reproduce the old model" || return 1
+  local out cfg
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  cfg="$(cat "$TEST_HOME/.config/git/config")"
+  assert_not_contains "$cfg" 'includeIf "gitdir:~/Work/"' || return 1
+  assert_not_contains "$cfg" 'includeIf "gitdir:~/Personal/"' || return 1
+  assert_not_contains "$cfg" "identity-personal" || return 1
+  assert_not_contains "$cfg" "identity-work" || return 1
+  assert_contains "$cfg" "path = \"$TEST_HOME/.config/git/identity\"" || return 1
+  assert_contains "$cfg" 'path = "'"$TEST_HOME"'/.config/git/local"' "unrelated shipped lines survive" || return 1
+  assert_contains "$out" "one identity" || return 1
+  [[ ! -e "$TEST_HOME/.config/git/identity-personal" ]] || { echo "identity-personal left in place"; return 1; }
+  [[ ! -e "$TEST_HOME/.config/git/identity-work" ]] || { echo "identity-work left in place"; return 1; }
+  assert_equals "ada@example.com" "$(resolved_email "$TEST_HOME/Work/repo")" "~/Work must resolve to the one identity" || return 1
+  cleanup_test_env
+}
+
+test_configure_leaves_a_hand_edited_old_config_alone() {
+  setup
+  seed_answers
+  seed_old_model edited
+  local before out after
+  before="$(cat "$TEST_HOME/.config/git/config")"
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  after="$(cat "$TEST_HOME/.config/git/config")"
+  assert_equals "$before" "$after" "a config whose blocks teeup did not ship must not be edited" || return 1
+  assert_contains "$out" 'includeIf "gitdir:~/Work/"' "the warning names the lines" || return 1
+  assert_file_exists "$TEST_HOME/.config/git/identity-personal" || return 1
+  cleanup_test_env
+}
+
+test_configure_repairs_nothing_on_a_fresh_machine() {
+  setup
+  seed_answers
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  assert_not_contains "$out" "two-identity" || return 1
+  assert_not_contains "$out" "identity-personal" || return 1
+  cleanup_test_env
+}
+
+test_configure_twice_after_the_repair_changes_nothing() {
+  setup
+  seed_answers
+  seed_old_model
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local first out second
+  first="$(cat "$TEST_HOME/.config/git/config")"
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  second="$(cat "$TEST_HOME/.config/git/config")"
+  assert_equals "$first" "$second" "the second run must not touch the repaired config" || return 1
+  assert_contains "$out" "Already installed: $TEST_HOME/.config/git/config" || return 1
+  assert_not_contains "$out" "two-identity" || return 1
+  cleanup_test_env
+}
+
+test_configure_dry_run_repairs_nothing() {
+  setup
+  seed_answers
+  seed_old_model
+  local before out after
+  before="$(cat "$TEST_HOME/.config/git/config")"
+  out="$(DRY_RUN=true "$TEEUP" configure git 2>&1)"
+  after="$(cat "$TEST_HOME/.config/git/config")"
+  assert_equals "$before" "$after" "a dry run must not repair the config" || return 1
+  assert_contains "$out" "[DRY-RUN]" || return 1
+  assert_file_exists "$TEST_HOME/.config/git/identity-personal" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/git"
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
@@ -362,4 +497,9 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "configure dry run names the shipped source, not a temp file" test_configure_dry_run_names_the_shipped_source_not_a_temp_file
 run_test "configure dry run names the shipped source for a foreign config" test_configure_dry_run_names_the_shipped_source_for_a_foreign_config
 run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name
+run_test "configure repairs an old two-identity config" test_configure_repairs_an_old_two_identity_config
+run_test "configure leaves a hand-edited old config alone" test_configure_leaves_a_hand_edited_old_config_alone
+run_test "configure repairs nothing on a fresh machine" test_configure_repairs_nothing_on_a_fresh_machine
+run_test "configure twice after the repair changes nothing" test_configure_twice_after_the_repair_changes_nothing
+run_test "configure dry run repairs nothing" test_configure_dry_run_repairs_nothing
 print_summary

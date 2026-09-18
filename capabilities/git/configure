@@ -113,6 +113,137 @@ while IFS= read -r line || [[ -n "$line" ]]; do
       ;;
   esac
 done < "$TEEUP_CAP_DIR/config/git/config" > "$rendered_git_config"
+# An upgraded machine still has the two-identity config teeup used to ship:
+# copy_config_once compares the installed file against the sha recorded when it
+# was installed, they still match, and it reports "Already installed" -- so the
+# includeIf blocks and the identity-personal/identity-work files survive forever
+# and ~/Work keeps committing as the work address. The migration framework does
+# not exist yet, so the repair happens here, in place, and only on the blocks
+# teeup itself shipped: anything else in the file is the user's.
+#
+# git_repair_old_identity_model: takes no arguments; reads $git_dir.
+git_repair_old_identity_model() {
+  local config="$git_dir/config" was_pristine=false recorded current
+  local old_a_comment old_path_personal old_path_work new_path
+  local personal_file="$git_dir/identity-personal" work_file="$git_dir/identity-work"
+  local i=0 n tmp leftover="" line
+  local -a lines out
+
+  old_a_comment=$'\t''# Default identity; the includeIf blocks at the bottom override it per root.'
+  old_path_personal=$'\t''path = "'"$git_dir"'/identity-personal"'
+  old_path_work=$'\t''path = "'"$git_dir"'/identity-work"'
+  new_path=$'\t''path = "'"$git_dir"'/identity"'
+
+  # Nothing to do unless this machine actually carries the old shape.
+  if [[ ! -f "$personal_file" && ! -f "$work_file" ]]; then
+    [[ -f "$config" ]] || return 0
+    grep -q 'identity-personal\|identity-work' "$config" || return 0
+  fi
+
+  log "This machine still carries the old two-identity git model; repairing it."
+  log "git has one identity now, so the includeIf blocks and the per-root identity files go."
+
+  if [[ -f "$config" ]]; then
+    # Was this the file teeup installed, untouched? The answer decides whether
+    # the stock record can be refreshed below, and it has to be taken before
+    # the repair rewrites the file.
+    recorded="$(stock_sha "$config" || true)"
+    current="$(file_sha "$config")"
+    [[ -n "$recorded" && "$recorded" == "$current" ]] && was_pristine=true
+    # The whole file in memory (bash 3.2 indexed arrays, no mapfile): the
+    # includeIf pair is matched as a run of lines, which a line-at-a-time read
+    # cannot do without a lookahead.
+    lines=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      lines[${#lines[@]}]="$line"
+    done < "$config"
+    n=${#lines[@]}
+    out=()
+    while [[ $i -lt $n ]]; do
+      # The shipped includeIf pair, with its shipped two-line comment when that
+      # is still above it, and the blank line that followed it.
+      if [[ "${lines[$i]}" == '# Identity by directory (spec section 8). Both identities live on every' &&
+            "${lines[$((i + 1))]:-}" == '# machine; where the repository sits decides which one applies.' &&
+            "${lines[$((i + 2))]:-}" == '[includeIf "gitdir:~/Personal/"]' ]]; then
+        i=$((i + 2))
+        continue
+      fi
+      if [[ "${lines[$i]}" == '[includeIf "gitdir:~/Personal/"]' &&
+            "${lines[$((i + 1))]:-}" == "$old_path_personal" &&
+            "${lines[$((i + 2))]:-}" == '[includeIf "gitdir:~/Work/"]' &&
+            "${lines[$((i + 3))]:-}" == "$old_path_work" ]]; then
+        i=$((i + 4))
+        # Two blank lines where a block was removed read as a stray gap.
+        if [[ "${lines[$i]:-}" == "" && ${#out[@]} -gt 0 && "${out[$((${#out[@]} - 1))]}" == "" ]]; then
+          i=$((i + 1))
+        fi
+        continue
+      fi
+      # The remaining identity-personal include is the default-identity block at
+      # the top; it becomes the one identity, comment and all.
+      if [[ "${lines[$i]}" == "$old_a_comment" ]]; then
+        out[${#out[@]}]=$'\t''# One identity, full stop (2026-09-17 decision). A repository that needs a'
+        out[${#out[@]}]=$'\t''# different address gets `git config user.email ...` by hand.'
+        i=$((i + 1))
+        continue
+      fi
+      if [[ "${lines[$i]}" == "$old_path_personal" ]]; then
+        out[${#out[@]}]="$new_path"
+        i=$((i + 1))
+        continue
+      fi
+      out[${#out[@]}]="${lines[$i]}"
+      i=$((i + 1))
+    done
+
+    # Anything still naming the old model was not a block teeup shipped, so it
+    # is the user's line to change: name it and edit nothing at all.
+    for line in ${out+"${out[@]}"}; do
+      case "$line" in
+        *identity-personal*|*identity-work*|*'gitdir:~/Personal/'*|*'gitdir:~/Work/'*)
+          leftover="$leftover$line"$'\n' ;;
+      esac
+    done
+    if [[ -n "$leftover" ]]; then
+      warn "$config has lines from the old two-identity model that teeup did not ship:"
+      printf '%s' "$leftover" >&2
+      warn "Remove them by hand (git has one identity now); teeup changed nothing."
+      return 0
+    fi
+  fi
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    [[ -f "$config" ]] && printf "%b %s\n" "🔍" "[DRY-RUN] Would drop the old identity blocks from $config"
+    [[ -f "$personal_file" ]] && printf "%b %s\n" "🔍" "[DRY-RUN] Would back up $personal_file"
+    [[ -f "$work_file" ]] && printf "%b %s\n" "🔍" "[DRY-RUN] Would back up $work_file"
+    return 0
+  fi
+
+  if [[ -f "$config" ]]; then
+    backup_target "$config" >/dev/null
+    tmp="$(mktemp)"
+    for line in ${out+"${out[@]}"}; do printf '%s\n' "$line"; done > "$tmp"
+    mv "$tmp" "$config"
+    ok "Dropped the old identity blocks from $config"
+    # The record still holds the sha of the config teeup shipped before this
+    # branch, so copy_config_once would now call the repaired file a user edit
+    # and say so on every run. Re-record it when the file teeup just repaired
+    # was the pristine one it had installed; a config the user had already
+    # edited keeps its old record and goes on being reported as edited, which
+    # is what it is.
+    if [[ "$was_pristine" == "true" ]]; then
+      stock_record "$config" "$(file_sha "$config")"
+    fi
+  fi
+  for line in "$personal_file" "$work_file"; do
+    [[ -f "$line" ]] || continue
+    backup_target "$line" >/dev/null
+    ok "Removed $line; teeup no longer writes it."
+  done
+}
+
+git_repair_old_identity_model
+
 copy_config_once "$rendered_git_config" "$git_dir/config" "$TEEUP_CAP_DIR/config/git/config"
 rm -f "$rendered_git_config"
 
