@@ -6,6 +6,10 @@ for d in "done" toggles migrations shims logs current stock; do
   [[ -d "$TEEUP_STATE_DIR/$d" ]] || run_cmd mkdir -p "$TEEUP_STATE_DIR/$d"
 done
 [[ -d "$TEEUP_CONFIG_DIR/hooks" ]] || run_cmd mkdir -p "$TEEUP_CONFIG_DIR/hooks"
+# machine_file() in lib/answers.sh (and the matching lookup in
+# capabilities/zsh/default/env) checks here first, so the location exists and
+# is discoverable even before anyone puts a file in it.
+[[ -d "$TEEUP_CONFIG_DIR/machines" ]] || run_cmd mkdir -p "$TEEUP_CONFIG_DIR/machines"
 
 # TEEUP_CONFIG_DIR and TEEUP_STATE_DIR are written here too, not just
 # TEEUP_PATH: the shell layer's home files (capabilities/zsh/configure) bake

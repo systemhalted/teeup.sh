@@ -44,6 +44,8 @@ test_configure_creates_state_env_and_link() {
   assert_contains "$env_body" "export TEEUP_CONFIG_DIR=$(printf '%q' "$TEST_HOME/.config/teeup")" || return 1
   assert_contains "$env_body" "export TEEUP_STATE_DIR=$(printf '%q' "$TEST_HOME/.local/state/teeup")" || return 1
   assert_equals "$TEEUP_PATH/bin/teeup" "$(readlink "$TEST_HOME/.local/bin/teeup")" || return 1
+  assert_dir_exists "$TEST_HOME/.config/teeup/hooks" || return 1
+  assert_dir_exists "$TEST_HOME/.config/teeup/machines" || return 1
   cleanup_test_env
 }
 
