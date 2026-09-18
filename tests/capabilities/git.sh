@@ -375,13 +375,20 @@ seed_old_model() {
     printf '\n'
     printf '# Identity by directory (spec section 8). Both identities live on every\n'
     printf '# machine; where the repository sits decides which one applies.\n'
-    printf '[includeIf "gitdir:~/Personal/"]\n'
-    printf '\tpath = "%s/identity-personal"\n' "$dir"
-    printf '[includeIf "gitdir:~/Work/"]\n'
-    if [[ "$work_block" == "edited" ]]; then
-      printf '\tpath = "%s/identity-mine"\n' "$dir"
-    else
+    if [[ "$work_block" == "renamed" ]]; then
+      # The user renamed the root but kept teeup's identity files: nothing here
+      # is a block teeup shipped, so the repair has to leave the file alone.
+      printf '[includeIf "gitdir:~/Job/"]\n'
       printf '\tpath = "%s/identity-work"\n' "$dir"
+    else
+      printf '[includeIf "gitdir:~/Personal/"]\n'
+      printf '\tpath = "%s/identity-personal"\n' "$dir"
+      printf '[includeIf "gitdir:~/Work/"]\n'
+      if [[ "$work_block" == "edited" ]]; then
+        printf '\tpath = "%s/identity-mine"\n' "$dir"
+      else
+        printf '\tpath = "%s/identity-work"\n' "$dir"
+      fi
     fi
     printf '\n'
     printf '# Untracked machine-local overrides, included last so they win over everything\n'
@@ -506,6 +513,67 @@ test_configure_still_reports_the_identity_it_wrote() {
   cleanup_test_env
 }
 
+# N-b: the warning is what the user acts on, so it has to name what is actually
+# in their file. It used to list from the transformed copy, which has already
+# rewritten the top-level include, and to match only teeup's own two roots, so
+# a renamed root was never shown at all.
+test_the_leftover_warning_names_every_old_model_line() {
+  setup
+  seed_answers
+  seed_old_model renamed
+  local before out after dir="$TEST_HOME/.config/git"
+  before="$(cat "$dir/config")"
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  after="$(cat "$dir/config")"
+  assert_equals "$before" "$after" "a config teeup did not ship is not edited" || return 1
+  assert_contains "$out" 'includeIf "gitdir:~/Job/"' "a renamed root is named" || return 1
+  assert_contains "$out" "path = \"$dir/identity-work\"" || return 1
+  assert_contains "$out" "path = \"$dir/identity-personal\"" "the top-level include is named too" || return 1
+  assert_file_exists "$dir/identity-personal" || return 1
+  cleanup_test_env
+}
+
+# N-c: a ~/.config/git/config symlinked into a dotfiles repo. A symlink is
+# never a file teeup installed, so the repair treats it the way copy_config_once
+# and the ssh key path treat one -- back up the link, write a real file -- and
+# says so, naming the file the link pointed at, which still has the old blocks.
+link_config_into_dotfiles() {
+  mkdir -p "$TEST_HOME/dotfiles/git"
+  mv "$TEST_HOME/.config/git/config" "$TEST_HOME/dotfiles/git/config"
+  ln -s "$TEST_HOME/dotfiles/git/config" "$TEST_HOME/.config/git/config"
+}
+
+test_configure_replaces_a_symlinked_config_and_says_so() {
+  setup
+  seed_answers
+  seed_old_model
+  link_config_into_dotfiles
+  local dotfiles="$TEST_HOME/dotfiles/git/config" before out
+  before="$(cat "$dotfiles")"
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  [[ ! -L "$TEST_HOME/.config/git/config" ]] || { echo "the repaired config is still a symlink"; return 1; }
+  assert_not_contains "$(cat "$TEST_HOME/.config/git/config")" "includeIf" || return 1
+  assert_equals "$before" "$(cat "$dotfiles")" "the file the link pointed at is not rewritten" || return 1
+  assert_contains "$out" "$dotfiles" "the message names what the link pointed at" || return 1
+  assert_contains "$out" "symlink" || return 1
+  local backups
+  backups="$(find "$TEST_HOME/.config/git" -name 'config.teeup_backup_*' -type l | wc -l | tr -d ' ')"
+  assert_equals "1" "$backups" "the link itself is backed up" || return 1
+  cleanup_test_env
+}
+
+test_configure_dry_run_leaves_a_symlinked_config_alone() {
+  setup
+  seed_answers
+  seed_old_model
+  link_config_into_dotfiles
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure git 2>&1)"
+  [[ -L "$TEST_HOME/.config/git/config" ]] || { echo "a dry run replaced the symlink"; return 1; }
+  assert_contains "$out" "symlink" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/git"
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
@@ -531,6 +599,9 @@ run_test "configure dry run names the shipped source for a foreign config" test_
 run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name
 run_test "configure repairs an old two-identity config" test_configure_repairs_an_old_two_identity_config
 run_test "configure leaves a hand-edited old config alone" test_configure_leaves_a_hand_edited_old_config_alone
+run_test "the leftover warning names every old-model line" test_the_leftover_warning_names_every_old_model_line
+run_test "configure replaces a symlinked config and says so" test_configure_replaces_a_symlinked_config_and_says_so
+run_test "configure dry run leaves a symlinked config alone" test_configure_dry_run_leaves_a_symlinked_config_alone
 run_test "configure repairs nothing on a fresh machine" test_configure_repairs_nothing_on_a_fresh_machine
 run_test "configure twice after the repair changes nothing" test_configure_twice_after_the_repair_changes_nothing
 run_test "configure dry run repairs nothing" test_configure_dry_run_repairs_nothing
