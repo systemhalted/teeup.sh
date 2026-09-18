@@ -137,6 +137,70 @@ test_configure_refuses_skipped_capability() {
   cleanup_test_env
 }
 
+# seed_shadowed_machine_files -> both the user's own machine file and the
+# checkout's exist for "testmac" (mock_macos_base's hostname), so
+# answers_load has something to announce. TEEUP_CONFIG_DIR is left at its
+# default (derived from XDG_CONFIG_HOME, set by setup_test_env) so it need
+# not be threaded through by hand.
+seed_shadowed_machine_files() {
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  mkdir -p "$XDG_CONFIG_HOME/teeup/machines"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$XDG_CONFIG_HOME/teeup/machines/testmac.conf"
+}
+
+# A verb whose stdout is data, not a report, must stay machine-readable even
+# when answers_load has a shadowed-machine-file notice to give: the notice
+# has to land on stderr, never mixed into the value a caller is capturing
+# (teeup-env, `x=$(teeup secret get ...)`, and friends).
+test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file() {
+  setup
+  seed_shadowed_machine_files
+  mock_command security 0 "s3cr3t"
+  local out errfile
+  errfile="$TEST_HOME/stderr.out"
+
+  out="$("$TEEUP" version 2>"$errfile")"
+  assert_equals "0.1.0-dev" "$out" "version stdout" || return 1
+  assert_contains "$(cat "$errfile")" "also exists and is ignored" "version stderr" || return 1
+
+  out="$("$TEEUP" theme current 2>"$errfile")"
+  assert_equals "none" "$out" "theme current stdout" || return 1
+  assert_contains "$(cat "$errfile")" "also exists and is ignored" "theme current stderr" || return 1
+
+  out="$("$TEEUP" theme list 2>"$errfile")"
+  assert_equals "catppuccin" "$out" "theme list stdout" || return 1
+  assert_contains "$(cat "$errfile")" "also exists and is ignored" "theme list stderr" || return 1
+
+  out="$("$TEEUP" secret get mysecret 2>"$errfile")"
+  assert_equals "s3cr3t" "$out" "secret get stdout" || return 1
+  assert_contains "$(cat "$errfile")" "also exists and is ignored" "secret get stderr" || return 1
+
+  out="$("$TEEUP" list 2>"$errfile")"
+  assert_contains "$out" "alpha" "list stdout still lists capabilities" || return 1
+  assert_contains "$(cat "$errfile")" "also exists and is ignored" "list stderr" || return 1
+
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+# `has` is checked for stdout exactly, not just "contains": its whole
+# contract is an exit code, so any stray byte on stdout (the notice
+# included) is itself the bug.
+test_has_stdout_stays_empty_with_a_shadowed_machine_file() {
+  setup
+  seed_shadowed_machine_files
+  "$TEEUP" install alpha >/dev/null 2>/dev/null
+  local out errfile
+  errfile="$TEST_HOME/stderr.out"
+  out="$("$TEEUP" has alpha 2>"$errfile")"
+  assert_equals "" "$out" "has must print nothing on stdout" || return 1
+  assert_contains "$(cat "$errfile")" "also exists and is ignored" "has stderr" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 test_list_tier_without_a_value_errors() {
   setup
   local rc=0 out
@@ -162,4 +226,6 @@ run_test "TEEUP_PATH derives from location" test_teeup_path_derives_from_locatio
 run_test "dry run env reaches scripts" test_dry_run_env_reaches_scripts
 run_test "configure refuses skipped capability" test_configure_refuses_skipped_capability
 run_test "list --tier without a value errors" test_list_tier_without_a_value_errors
+run_test "data verbs keep stdout clean with a shadowed machine file" test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file
+run_test "has stdout stays empty with a shadowed machine file" test_has_stdout_stays_empty_with_a_shadowed_machine_file
 print_summary
