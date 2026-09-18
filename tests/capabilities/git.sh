@@ -476,6 +476,29 @@ test_configure_dry_run_repairs_nothing() {
   cleanup_test_env
 }
 
+# M3: the identity line is a claim about a mutation, so it belongs to a run
+# that made one. A second configure writes nothing and says "Already current",
+# and used to print the success line under it anyway.
+test_configure_twice_does_not_claim_the_identity_again() {
+  setup
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  assert_contains "$out" "Already current: $TEST_HOME/.config/git/identity" || return 1
+  assert_not_contains "$out" "git identity: ada@example.com" || return 1
+  cleanup_test_env
+}
+
+test_configure_still_reports_the_identity_it_wrote() {
+  setup
+  seed_answers
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  assert_contains "$out" "git identity: ada@example.com" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/git"
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
@@ -493,6 +516,8 @@ run_test "configure prefers emacsclient when present" test_configure_prefers_ema
 run_test "configure ships the lfs filter and warns about gitconfig" test_configure_ships_the_lfs_filter_and_warns_about_gitconfig
 run_test "configure warns when GIT_CONFIG_GLOBAL is set" test_configure_warns_when_git_config_global_is_set
 run_test "configure is idempotent" test_configure_is_idempotent
+run_test "configure twice does not claim the identity again" test_configure_twice_does_not_claim_the_identity_again
+run_test "configure still reports the identity it wrote" test_configure_still_reports_the_identity_it_wrote
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure dry run names the shipped source, not a temp file" test_configure_dry_run_names_the_shipped_source_not_a_temp_file
 run_test "configure dry run names the shipped source for a foreign config" test_configure_dry_run_names_the_shipped_source_for_a_foreign_config

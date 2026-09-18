@@ -95,7 +95,10 @@ github_configure_identity() {
     warn "No $pub yet. Run: teeup configure ssh"
     return 0
   fi
-  body="$(awk '{print $2}' < "$pub")"
+  # NR == 1: a .pub is one line, but a file with a stray second line would
+  # otherwise yield a multi-line body that can never match a listed row, and
+  # the key would be re-uploaded on every run.
+  body="$(awk 'NR == 1 { print $2 }' < "$pub")"
   listed="$(gh ssh-key list 2>/dev/null || true)"
   for type in authentication signing; do
     if [[ -n "$body" ]] && _github_key_uploaded "$listed" "$body" "$type"; then
