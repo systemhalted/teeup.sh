@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Two roots. The git capability keys identity off them (includeIf), so they
-# must exist before git is configured.
-for d in "$HOME/Work" "$HOME/Personal"; do
-  if [[ -d "$d" ]]; then
-    log "Already present: $d"
-  else
-    run_cmd mkdir -p "$d"
-    ok_unless_dry "Created $d"
-  fi
-done
+# One root (2026-09-17 decision): git identity lives in generated settings
+# now, not a directory rule, so there is no longer a reason for a second,
+# ~/Personal root to exist.
+d="$HOME/Work"
+if [[ -d "$d" ]]; then
+  log "Already present: $d"
+else
+  run_cmd mkdir -p "$d"
+  ok_unless_dry "Created $d"
+fi
