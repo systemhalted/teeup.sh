@@ -26,7 +26,9 @@ else
 	email = $(git_quote "$email")
 	signingkey = $(git_quote "$key.pub")
 GIT_IDENTITY
-  ok_unless_dry "git identity: $email"
+  # Only when this run actually wrote it: a second configure reports "Already
+  # current" and has no mutation to announce under it.
+  [[ "$WRITE_MANAGED_FILE_CHANGED" == "true" ]] && ok_unless_dry "git identity: $email"
 fi
 
 # Three settings depend on what is actually installed, so they are generated

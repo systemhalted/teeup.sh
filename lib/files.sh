@@ -60,8 +60,14 @@ append_once() {
 }
 
 # write_managed_file <file> <label>   (content on stdin)
+# Sets WRITE_MANAGED_FILE_CHANGED to true when the file was actually written
+# (and in a dry run, when it would have been), so a caller with its own
+# success line to print can tell a write from a no-op instead of claiming a
+# mutation on every run.
 write_managed_file() {
   local file="$1" label="$2" tmp
+  # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
+  WRITE_MANAGED_FILE_CHANGED=true
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would write $file ($label)"
     cat >/dev/null
@@ -72,6 +78,8 @@ write_managed_file() {
   cat > "$tmp"
   if [[ -f "$file" ]] && cmp -s "$tmp" "$file"; then
     rm -f "$tmp"
+    # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
+    WRITE_MANAGED_FILE_CHANGED=false
     log "Already current: $file"
     return 0
   fi

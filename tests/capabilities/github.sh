@@ -613,6 +613,24 @@ test_a_stale_work_email_answer_uploads_nothing_extra() {
   cleanup_test_env
 }
 
+# M5: `awk '{print $2}'` over the whole file takes field 2 of every line, so a
+# .pub with a stray second line yielded a multi-line body that could never
+# match a row in `gh ssh-key list` -- and the key would be uploaded again on
+# every single run.
+test_configure_reads_only_the_first_line_of_a_public_key() {
+  setup
+  seed_keys
+  printf 'ssh-ed25519 AAAAPERSONALKEY ada@example.com\nstray trailing line\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  printf 'testmac personal\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'testmac personal (signing)\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "Already uploaded (authentication)" || return 1
+  assert_contains "$out" "Already uploaded (signing)" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "ssh-key add" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/github"
 run_test "install gets gh" test_install_gets_gh
 run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
@@ -631,6 +649,7 @@ run_test "configure does not let a signing-titled authentication key suppress si
 run_test "configure does not let a key titled exactly 'signing' suppress signing" test_configure_does_not_let_a_key_titled_exactly_signing_suppress_signing
 run_test "configure reads the type from the last column whatever the title" test_configure_reads_the_type_from_the_last_column_whatever_the_title
 run_test "configure compares the key body exactly" test_configure_compares_the_key_body_exactly
+run_test "configure reads only the first line of a public key" test_configure_reads_only_the_first_line_of_a_public_key
 run_test "configure never matches the key body against the title" test_configure_never_matches_the_key_body_against_the_title
 run_test "configure dry run uploads nothing" test_configure_dry_run_uploads_nothing
 run_test "configure twice uploads nothing new" test_configure_twice_uploads_nothing_new
