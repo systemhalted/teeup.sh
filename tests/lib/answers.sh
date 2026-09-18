@@ -256,26 +256,246 @@ test_identity_gh_host_honors_a_pinned_work_host() {
 # already naming an IdentityFile wins over teeup's own id_ed25519_<identity>
 # convention, so git, ssh and github all pick up the key the user already had
 # instead of teeup generating (and uploading) a second one.
+#
+# What a config means is ssh's question, not teeup's: these tests write the
+# shapes a real config actually takes -- trailing comments, relative paths,
+# lowercase keywords, the `=` form, `Host *`, a global IdentityFile, a `Match`
+# block, an `Include` -- and check teeup's answer against what `ssh -G` itself
+# reports for the same file. $HOME is the throwaway one, and every ssh call is
+# pinned to it with -F, so nothing here reads the developer's own config.
+
+write_ssh_config() {
+  mkdir -p "$TEST_HOME/.ssh"
+  cat > "$TEST_HOME/.ssh/config"
+}
+
+# make_key <path...>: the key files a config names have to exist, or teeup
+# falls back to its own convention rather than adopting a path that is not
+# there.
+make_key() {
+  local f
+  for f in "$@"; do
+    mkdir -p "$(dirname "$f")"
+    printf 'PRIVATE\n' > "$f"
+  done
+}
+
+# ssh_says <host>: the first IdentityFile real ssh resolves from the test
+# config, with a leading ~ expanded and a relative path resolved against
+# ~/.ssh the way ssh does at connect time. The ground truth every assertion
+# below is compared against.
+ssh_says() { ssh_says_from "$TEST_HOME/.ssh/config" "$1"; }
+
+# The same question with no config at all: ssh's built-in candidates.
+ssh_says_without_a_config() { ssh_says_from /dev/null "$1"; }
+
+ssh_says_from() {
+  local raw
+  raw="$(ssh -G -F "$1" "$2" 2>/dev/null |
+    awk 'tolower($1) == "identityfile" { sub(/^[^ ]+ /, ""); print; exit }')"
+  # shellcheck disable=SC2088  # the tilde is a literal token from ssh, not a path
+  case "$raw" in
+    "~/"*) printf '%s/%s\n' "$HOME" "${raw#\~/}" ;;
+    /*) printf '%s\n' "$raw" ;;
+    *) printf '%s/.ssh/%s\n' "$HOME" "$raw" ;;
+  esac
+}
+
 test_identity_key_reuses_an_existing_ssh_config_entry() {
   setup
-  mkdir -p "$TEST_HOME/.ssh"
-  cat > "$TEST_HOME/.ssh/config" <<'SSHCONFIG'
+  make_key "$TEST_HOME/.ssh/id_rsa_legacy"
+  write_ssh_config <<'SSHCONFIG'
 Host github.com
   HostName github.com
   User git
   IdentityFile ~/.ssh/id_rsa_legacy
   IdentitiesOnly yes
 SSHCONFIG
+  assert_equals "$(ssh_says github.com)" "$(identity_key personal)" || return 1
   assert_equals "$TEST_HOME/.ssh/id_rsa_legacy" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+# B3, the damaging one: teeup used to take the comment as part of the path and
+# generate, sign with and upload a key literally named "mykey # personal",
+# while ssh went on looking for ~/.ssh/mykey.
+test_identity_key_ignores_a_trailing_comment() {
+  setup
+  make_key "$TEST_HOME/.ssh/mykey"
+  write_ssh_config <<'SSHCONFIG'
+Host github.com
+  IdentityFile ~/.ssh/mykey # personal
+SSHCONFIG
+  assert_equals "$(ssh_says github.com)" "$(identity_key personal)" || return 1
+  assert_equals "$TEST_HOME/.ssh/mykey" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+# ssh resolves a relative IdentityFile against ~/.ssh, not the current
+# directory.
+test_identity_key_resolves_a_relative_path_against_dot_ssh() {
+  setup
+  make_key "$TEST_HOME/.ssh/mykey"
+  write_ssh_config <<'SSHCONFIG'
+Host github.com
+  IdentityFile mykey
+SSHCONFIG
+  assert_equals "$(ssh_says github.com)" "$(identity_key personal)" || return 1
+  assert_equals "$TEST_HOME/.ssh/mykey" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_reads_lowercase_keywords() {
+  setup
+  make_key "$TEST_HOME/.ssh/mykey"
+  write_ssh_config <<'SSHCONFIG'
+host github.com
+  identityfile ~/.ssh/mykey
+SSHCONFIG
+  assert_equals "$(ssh_says github.com)" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_reads_the_equals_form() {
+  setup
+  make_key "$TEST_HOME/.ssh/mykey"
+  write_ssh_config <<'SSHCONFIG'
+Host=github.com
+IdentityFile=~/.ssh/mykey
+SSHCONFIG
+  assert_equals "$(ssh_says github.com)" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_honors_a_wildcard_host() {
+  setup
+  make_key "$TEST_HOME/.ssh/wildkey"
+  write_ssh_config <<'SSHCONFIG'
+Host *
+  IdentityFile ~/.ssh/wildkey
+SSHCONFIG
+  assert_equals "$(ssh_says github.com)" "$(identity_key personal)" || return 1
+  assert_equals "$TEST_HOME/.ssh/wildkey" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+# B4: the pattern used to be split unquoted and unprotected by `set -f`, so
+# `Host *` globbed against the current directory and which key teeup adopted
+# depended on where it was run from.
+test_identity_key_does_not_depend_on_the_current_directory() {
+  setup
+  make_key "$TEST_HOME/.ssh/wildkey"
+  write_ssh_config <<'SSHCONFIG'
+Host *
+  IdentityFile ~/.ssh/wildkey
+SSHCONFIG
+  mkdir -p "$TEST_HOME/globbait"
+  : > "$TEST_HOME/globbait/github.com"
+  local from_bait from_root
+  from_bait="$(cd "$TEST_HOME/globbait" && identity_key personal)"
+  from_root="$(cd / && identity_key personal)"
+  assert_equals "$from_root" "$from_bait" "the adopted key must not depend on the cwd" || return 1
+  assert_equals "$TEST_HOME/.ssh/wildkey" "$from_bait" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_honors_a_global_identityfile() {
+  setup
+  make_key "$TEST_HOME/.ssh/globalkey"
+  write_ssh_config <<'SSHCONFIG'
+IdentityFile ~/.ssh/globalkey
+
+Host example.org
+  User someone
+SSHCONFIG
+  assert_equals "$(ssh_says github.com)" "$(identity_key personal)" || return 1
+  assert_equals "$TEST_HOME/.ssh/globalkey" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+# A Match block that follows the matching Host block used to donate its key:
+# in_block was only ever reset by another Host line.
+test_identity_key_ignores_a_match_block_for_another_host() {
+  setup
+  make_key "$TEST_HOME/.ssh/otherkey"
+  write_ssh_config <<'SSHCONFIG'
+Host github.com
+  User git
+
+Match host other
+  IdentityFile ~/.ssh/otherkey
+SSHCONFIG
+  # ssh itself gives github.com nothing but its built-in candidates here, so
+  # there is no key in this config to reuse.
+  assert_equals "$(ssh_says_without_a_config github.com)" "$(ssh_says github.com)" || return 1
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" "a Match block for another host is not github.com's key" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_follows_an_include() {
+  setup
+  make_key "$TEST_HOME/.ssh/included_key"
+  mkdir -p "$TEST_HOME/.ssh/conf.d"
+  cat > "$TEST_HOME/.ssh/conf.d/github.conf" <<'INCLUDED'
+Host github.com
+  IdentityFile ~/.ssh/included_key
+INCLUDED
+  write_ssh_config <<'SSHCONFIG'
+Include ~/.ssh/conf.d/*.conf
+
+Host example.org
+  User someone
+SSHCONFIG
+  assert_equals "$(ssh_says github.com)" "$(identity_key personal)" || return 1
+  assert_equals "$TEST_HOME/.ssh/included_key" "$(identity_key personal)" || return 1
   cleanup_test_env
 }
 
 test_identity_key_falls_back_when_the_host_block_is_not_named() {
   setup
-  mkdir -p "$TEST_HOME/.ssh"
-  cat > "$TEST_HOME/.ssh/config" <<'SSHCONFIG'
+  make_key "$TEST_HOME/.ssh/id_ed25519_other"
+  write_ssh_config <<'SSHCONFIG'
 Host example.org
   IdentityFile ~/.ssh/id_ed25519_other
+SSHCONFIG
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+# ssh's own built-in candidates (~/.ssh/id_rsa, ~/.ssh/id_ed25519, ...) are not
+# a choice the user made, so a config that names no key for the host leaves
+# teeup on its own convention even when one of those files exists.
+test_identity_key_does_not_adopt_ssh_s_built_in_defaults() {
+  setup
+  make_key "$TEST_HOME/.ssh/id_rsa" "$TEST_HOME/.ssh/id_ed25519"
+  write_ssh_config <<'SSHCONFIG'
+Host github.com
+  User git
+SSHCONFIG
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_falls_back_when_the_named_key_does_not_exist() {
+  setup
+  write_ssh_config <<'SSHCONFIG'
+Host github.com
+  IdentityFile ~/.ssh/not_there
+SSHCONFIG
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+# -e and -s both follow a symlink, so a dangling one is neither "there" nor
+# "missing"; adopting it would hand ssh-keygen a path that writes through the
+# link to wherever it points.
+test_identity_key_falls_back_for_a_dangling_symlink() {
+  setup
+  mkdir -p "$TEST_HOME/.ssh"
+  ln -s "$TEST_HOME/.ssh/gone" "$TEST_HOME/.ssh/dangling"
+  write_ssh_config <<'SSHCONFIG'
+Host github.com
+  IdentityFile ~/.ssh/dangling
 SSHCONFIG
   assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
   cleanup_test_env
@@ -290,8 +510,8 @@ test_identity_key_falls_back_when_there_is_no_ssh_config() {
 
 test_identity_key_reuses_the_work_alias_separately() {
   setup
-  mkdir -p "$TEST_HOME/.ssh"
-  cat > "$TEST_HOME/.ssh/config" <<'SSHCONFIG'
+  make_key "$TEST_HOME/.ssh/id_ed25519_personal" "$TEST_HOME/.ssh/id_ed25519_corp"
+  write_ssh_config <<'SSHCONFIG'
 Host github.com
   IdentityFile ~/.ssh/id_ed25519_personal
 
@@ -299,7 +519,41 @@ Host github.com-work
   IdentityFile ~/.ssh/id_ed25519_corp
 SSHCONFIG
   assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  assert_equals "$(ssh_says github.com-work)" "$(identity_key work)" || return 1
   assert_equals "$TEST_HOME/.ssh/id_ed25519_corp" "$(identity_key work)" || return 1
+  cleanup_test_env
+}
+
+# ssh is how a config is read, so without it teeup cannot know what the config
+# means. It says so and stays on its own convention rather than guessing.
+test_identity_key_warns_and_falls_back_without_ssh() {
+  setup
+  make_key "$TEST_HOME/.ssh/mykey"
+  write_ssh_config <<'SSHCONFIG'
+Host github.com
+  IdentityFile ~/.ssh/mykey
+SSHCONFIG
+  export TEEUP_TEST_MISSING="ssh"
+  local out key
+  out="$( { key="$(identity_key personal)"; } 2>&1; printf '%s' "$key" )"
+  assert_contains "$out" "ssh" || return 1
+  assert_contains "$out" "$TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  unset TEEUP_TEST_MISSING
+  cleanup_test_env
+}
+
+test_identity_key_warns_and_falls_back_when_ssh_cannot_read_the_config() {
+  setup
+  make_key "$TEST_HOME/.ssh/mykey"
+  write_ssh_config <<'SSHCONFIG'
+Host github.com
+  ThisIsNotAnSshOption yes
+  IdentityFile ~/.ssh/mykey
+SSHCONFIG
+  local out key
+  out="$( { key="$(identity_key personal)"; } 2>&1; printf '%s' "$key" )"
+  assert_contains "$out" "$TEST_HOME/.ssh/config" || return 1
+  assert_contains "$out" "$TEST_HOME/.ssh/id_ed25519_personal" || return 1
   cleanup_test_env
 }
 
@@ -326,7 +580,21 @@ run_test "answers_unset writes nothing in a dry run" test_answers_unset_writes_n
 run_test "identity_gh_host defaults to github.com" test_identity_gh_host_defaults_to_github_com
 run_test "identity_gh_host honors a pinned work host" test_identity_gh_host_honors_a_pinned_work_host
 run_test "identity_key reuses an existing ssh config entry" test_identity_key_reuses_an_existing_ssh_config_entry
+run_test "identity_key ignores a trailing comment" test_identity_key_ignores_a_trailing_comment
+run_test "identity_key resolves a relative path against ~/.ssh" test_identity_key_resolves_a_relative_path_against_dot_ssh
+run_test "identity_key reads lowercase keywords" test_identity_key_reads_lowercase_keywords
+run_test "identity_key reads the = form" test_identity_key_reads_the_equals_form
+run_test "identity_key honors a wildcard host" test_identity_key_honors_a_wildcard_host
+run_test "identity_key does not depend on the current directory" test_identity_key_does_not_depend_on_the_current_directory
+run_test "identity_key honors a global IdentityFile" test_identity_key_honors_a_global_identityfile
+run_test "identity_key ignores a Match block for another host" test_identity_key_ignores_a_match_block_for_another_host
+run_test "identity_key follows an Include" test_identity_key_follows_an_include
 run_test "identity_key falls back when the host block is not named" test_identity_key_falls_back_when_the_host_block_is_not_named
+run_test "identity_key does not adopt ssh's built-in defaults" test_identity_key_does_not_adopt_ssh_s_built_in_defaults
+run_test "identity_key falls back when the named key does not exist" test_identity_key_falls_back_when_the_named_key_does_not_exist
+run_test "identity_key falls back for a dangling symlink" test_identity_key_falls_back_for_a_dangling_symlink
 run_test "identity_key falls back when there is no ssh config" test_identity_key_falls_back_when_there_is_no_ssh_config
 run_test "identity_key reuses the work alias separately" test_identity_key_reuses_the_work_alias_separately
+run_test "identity_key warns and falls back without ssh" test_identity_key_warns_and_falls_back_without_ssh
+run_test "identity_key warns and falls back when ssh cannot read the config" test_identity_key_warns_and_falls_back_when_ssh_cannot_read_the_config
 print_summary
