@@ -181,6 +181,74 @@ work" "$(identity_list)" || return 1
   cleanup_test_env
 }
 
+test_identity_gh_host_defaults_to_github_com() {
+  setup
+  answers_load
+  assert_equals "github.com" "$(identity_gh_host personal)" || return 1
+  assert_equals "github.com" "$(identity_gh_host work)" || return 1
+  cleanup_test_env
+}
+
+test_identity_gh_host_honors_a_pinned_work_host() {
+  setup
+  answers_set TEEUP_WORK_GH_HOST "github.enterprise.example.com"
+  answers_load
+  assert_equals "github.com" "$(identity_gh_host personal)" "personal never moves off github.com" || return 1
+  assert_equals "github.enterprise.example.com" "$(identity_gh_host work)" || return 1
+  cleanup_test_env
+}
+
+# An existing ~/.ssh/config is authority (2026-09-17 decision): a Host block
+# already naming an IdentityFile wins over teeup's own id_ed25519_<identity>
+# convention, so git, ssh and github all pick up the key the user already had
+# instead of teeup generating (and uploading) a second one.
+test_identity_key_reuses_an_existing_ssh_config_entry() {
+  setup
+  mkdir -p "$TEST_HOME/.ssh"
+  cat > "$TEST_HOME/.ssh/config" <<'SSHCONFIG'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_rsa_legacy
+  IdentitiesOnly yes
+SSHCONFIG
+  assert_equals "$TEST_HOME/.ssh/id_rsa_legacy" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_falls_back_when_the_host_block_is_not_named() {
+  setup
+  mkdir -p "$TEST_HOME/.ssh"
+  cat > "$TEST_HOME/.ssh/config" <<'SSHCONFIG'
+Host example.org
+  IdentityFile ~/.ssh/id_ed25519_other
+SSHCONFIG
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_falls_back_when_there_is_no_ssh_config() {
+  setup
+  [[ ! -e "$TEST_HOME/.ssh/config" ]] || { echo "test setup left a config behind"; return 1; }
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  cleanup_test_env
+}
+
+test_identity_key_reuses_the_work_alias_separately() {
+  setup
+  mkdir -p "$TEST_HOME/.ssh"
+  cat > "$TEST_HOME/.ssh/config" <<'SSHCONFIG'
+Host github.com
+  IdentityFile ~/.ssh/id_ed25519_personal
+
+Host github.com-work
+  IdentityFile ~/.ssh/id_ed25519_corp
+SSHCONFIG
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_corp" "$(identity_key work)" || return 1
+  cleanup_test_env
+}
+
 echo "lib/answers.sh"
 run_test "set then get" test_set_then_get
 run_test "set replaces existing key" test_set_replaces_existing_key
@@ -197,4 +265,10 @@ run_test "set replaces only the exact key" test_set_replaces_only_the_exact_key
 run_test "set preserves a final line with no trailing newline" test_set_preserves_a_final_line_with_no_trailing_newline
 run_test "identity helpers without work email" test_identity_helpers_without_work_email
 run_test "identity helpers with work email" test_identity_helpers_with_work_email
+run_test "identity_gh_host defaults to github.com" test_identity_gh_host_defaults_to_github_com
+run_test "identity_gh_host honors a pinned work host" test_identity_gh_host_honors_a_pinned_work_host
+run_test "identity_key reuses an existing ssh config entry" test_identity_key_reuses_an_existing_ssh_config_entry
+run_test "identity_key falls back when the host block is not named" test_identity_key_falls_back_when_the_host_block_is_not_named
+run_test "identity_key falls back when there is no ssh config" test_identity_key_falls_back_when_there_is_no_ssh_config
+run_test "identity_key reuses the work alias separately" test_identity_key_reuses_the_work_alias_separately
 print_summary

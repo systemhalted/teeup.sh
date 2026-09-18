@@ -103,10 +103,11 @@ answers_set() {
   chmod 600 "$f"
 }
 
-# Identity helpers. git, ssh and github all key off the same two identities,
-# so the mapping from identity name to email and key path lives here once.
-# Work exists only when the wizard was given a work email; otherwise both
-# directory roots use the personal identity.
+# Identity helpers. git, ssh and github all key off the same one-or-two
+# identities, so the mapping from identity name to email, key path and
+# GitHub host lives here once. Work exists only when machines/<hostname>.conf
+# sets TEEUP_WORK_EMAIL: the wizard never asks about it, so the answers file
+# itself is never this variable's source.
 answers_has_work() { [[ -n "$(answers_get TEEUP_WORK_EMAIL)" ]]; }
 
 identity_list() {
@@ -125,9 +126,88 @@ identity_email() {
   esac
 }
 
-identity_key() {
+# identity_gh_host <identity> -> the GitHub host `gh` talks to for this
+# identity. Personal is always github.com; work defaults to github.com too
+# (a second github.com account works this way) but machines/<hostname>.conf
+# can point it at a GitHub Enterprise host by naming it in TEEUP_WORK_GH_HOST.
+identity_gh_host() {
   case "$1" in
-    personal|work) printf '%s/.ssh/id_ed25519_%s\n' "$HOME" "$1" ;;
+    personal) printf 'github.com\n' ;;
+    work) answers_get TEEUP_WORK_GH_HOST github.com ;;
+    *) die "identity_gh_host: unknown identity '$1' (expected personal or work)" ;;
+  esac
+}
+
+# ssh_host_alias <identity> -> the Host name teeup's own shipped ssh config
+# (capabilities/ssh/config/ssh/config) uses for this identity. Fixed, unlike
+# identity_gh_host: it names a *local* alias, not the real GitHub host, so a
+# work identity on a GitHub Enterprise host still clones through
+# git@github.com-work:org/repo.git.
+ssh_host_alias() {
+  case "$1" in
+    personal) printf 'github.com\n' ;;
+    work) printf 'github.com-work\n' ;;
+    *) die "ssh_host_alias: unknown identity '$1' (expected personal or work)" ;;
+  esac
+}
+
+# ssh_config_identity_file <identity> -> prints the IdentityFile an existing
+# ~/.ssh/config already names for this identity's Host alias, and fails
+# (printing nothing) when there is no such config, no matching Host block, or
+# no IdentityFile inside it. This is what makes an existing ~/.ssh/config
+# authority: identity_key below prefers whatever key the user already has
+# wired up over teeup's own naming convention. A leading ~ is expanded to
+# $HOME the way ssh itself expands it, so callers get a plain, usable path.
+# bash 3.2-safe: no associative arrays, no extended globs.
+ssh_config_identity_file() {
+  local identity="$1" alias config line trimmed rest word in_block=false found=""
+  alias="$(ssh_host_alias "$identity")"
+  config="$HOME/.ssh/config"
+  [[ -f "$config" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    trimmed="${line#"${line%%[![:space:]]*}"}"
+    case "$trimmed" in
+      Host[[:space:]]*)
+        in_block=false
+        rest="${trimmed#Host}"
+        for word in $rest; do
+          [[ "$word" == "$alias" ]] && in_block=true
+        done
+        ;;
+      IdentityFile[[:space:]]*)
+        if [[ "$in_block" == "true" && -z "$found" ]]; then
+          found="${trimmed#IdentityFile}"
+          found="${found#"${found%%[![:space:]]*}"}"
+          found="${found%\"}"
+          found="${found#\"}"
+          # shellcheck disable=SC2088  # the tilde is a literal token here, not a path
+          case "$found" in
+            "~/"*) found="$HOME/${found#\~/}" ;;
+            "~") found="$HOME" ;;
+          esac
+        fi
+        ;;
+    esac
+  done < "$config"
+  [[ -n "$found" ]] || return 1
+  printf '%s\n' "$found"
+}
+
+# identity_key <identity> -> the private-key path this identity signs and
+# authenticates with. An existing ~/.ssh/config naming an IdentityFile for
+# this identity's host alias wins (see ssh_config_identity_file); otherwise
+# teeup's own convention, $HOME/.ssh/id_ed25519_<identity>, which is also
+# what a fresh machine gets once the ssh capability has generated it.
+identity_key() {
+  local reused
+  case "$1" in
+    personal|work)
+      if reused="$(ssh_config_identity_file "$1")"; then
+        printf '%s\n' "$reused"
+      else
+        printf '%s/.ssh/id_ed25519_%s\n' "$HOME" "$1"
+      fi
+      ;;
     *) die "identity_key: unknown identity '$1' (expected personal or work)" ;;
   esac
 }
