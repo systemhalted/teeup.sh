@@ -202,46 +202,112 @@ ssh_host_alias() {
   esac
 }
 
-# ssh_config_identity_file <identity> -> prints the IdentityFile an existing
-# ~/.ssh/config already names for this identity's Host alias, and fails
-# (printing nothing) when there is no such config, no matching Host block, or
-# no IdentityFile inside it. This is what makes an existing ~/.ssh/config
-# authority: identity_key below prefers whatever key the user already has
-# wired up over teeup's own naming convention. A leading ~ is expanded to
-# $HOME the way ssh itself expands it, so callers get a plain, usable path.
-# bash 3.2-safe: no associative arrays, no extended globs.
-ssh_config_identity_file() {
-  local identity="$1" alias config line trimmed rest word in_block=false found=""
+# _ssh_identity_files <config file> <host> -> the IdentityFile lines ssh
+# resolves for <host> from <config file>, one per line, verbatim (a leading ~
+# and a relative path are still ssh's spellings here). Fails, printing
+# nothing, when ssh cannot read the file.
+#
+# What a config means is ssh's question, not teeup's. Parsing it by hand got
+# every real-world spelling wrong -- a trailing comment became part of the
+# path, a relative path resolved against the current directory, lowercase
+# keywords and the `=` form were missed, `Host *` and a pre-Host global
+# IdentityFile were missed, a `Match` block donated its key to the Host block
+# above it, and `Include` was not followed at all -- so ssh is asked instead.
+# -F pins it to exactly this file, so teeup never reads a config it was not
+# pointed at.
+_ssh_identity_files() {
+  local config="$1" host="$2" out line
+  out="$(ssh -G -F "$config" -- "$host" 2>/dev/null)" || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      "identityfile "*) printf '%s\n' "${line#identityfile }" ;;
+    esac
+  done <<EOF
+$out
+EOF
+}
+
+# _ssh_path_expand <ssh path> -> the path ssh would actually open: ~ and %d
+# are the user's home, and a relative path is relative to ~/.ssh, not to the
+# current directory.
+_ssh_path_expand() {
+  # shellcheck disable=SC2088  # the tilde is a literal token from ssh, not a path
+  case "$1" in
+    "~/"*) printf '%s/%s\n' "$HOME" "${1#\~/}" ;;
+    "~") printf '%s\n' "$HOME" ;;
+    "%d/"*) printf '%s/%s\n' "$HOME" "${1#%d/}" ;;
+    "%d") printf '%s\n' "$HOME" ;;
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s/.ssh/%s\n' "$HOME" "$1" ;;
+  esac
+}
+
+# ssh_config_named_key <identity> -> the key the user's own ~/.ssh/config
+# names for this identity's Host alias, expanded to a usable path; fails
+# (printing nothing) when the config names none.
+#
+# "Names one" means: something other than the keys ssh falls back to on its
+# own. ssh -G always reports an identityfile list -- its built-in candidates
+# (~/.ssh/id_rsa, ~/.ssh/id_ed25519 and friends) when the config says nothing
+# -- so the same question is put to ssh twice, once with the user's config and
+# once with none, and the lines the two answers do not share are the user's
+# deliberate choice. A config that names one of ssh's own default paths on
+# purpose still counts: the two lists then differ in order or length, and its
+# first entry is what ssh would offer first.
+ssh_config_named_key() {
+  local identity="$1" alias config user_keys default_keys key chosen="" first=""
   alias="$(ssh_host_alias "$identity")"
   config="$HOME/.ssh/config"
   [[ -f "$config" ]] || return 1
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    trimmed="${line#"${line%%[![:space:]]*}"}"
-    case "$trimmed" in
-      Host[[:space:]]*)
-        in_block=false
-        rest="${trimmed#Host}"
-        for word in $rest; do
-          [[ "$word" == "$alias" ]] && in_block=true
-        done
-        ;;
-      IdentityFile[[:space:]]*)
-        if [[ "$in_block" == "true" && -z "$found" ]]; then
-          found="${trimmed#IdentityFile}"
-          found="${found#"${found%%[![:space:]]*}"}"
-          found="${found%\"}"
-          found="${found#\"}"
-          # shellcheck disable=SC2088  # the tilde is a literal token here, not a path
-          case "$found" in
-            "~/"*) found="$HOME/${found#\~/}" ;;
-            "~") found="$HOME" ;;
-          esac
-        fi
-        ;;
-    esac
-  done < "$config"
-  [[ -n "$found" ]] || return 1
-  printf '%s\n' "$found"
+  if ! have ssh; then
+    warn "ssh is not installed, so $config cannot be read; using teeup's own key path."
+    return 1
+  fi
+  if ! user_keys="$(_ssh_identity_files "$config" "$alias")"; then
+    warn "ssh could not read $config (run: ssh -G $alias); using teeup's own key path."
+    return 1
+  fi
+  default_keys="$(_ssh_identity_files /dev/null "$alias")" || return 1
+  [[ "$user_keys" == "$default_keys" ]] && return 1
+  while IFS= read -r key || [[ -n "$key" ]]; do
+    [[ -n "$key" ]] || continue
+    [[ -n "$first" ]] || first="$key"
+    _ssh_list_contains "$default_keys" "$key" && continue
+    chosen="$key"
+    break
+  done <<EOF
+$user_keys
+EOF
+  [[ -n "$chosen" ]] || chosen="$first"
+  [[ -n "$chosen" ]] || return 1
+  _ssh_path_expand "$chosen"
+}
+
+# _ssh_list_contains <newline-separated list> <value>: an exact, literal
+# match. `case` would read a key path containing * or ? as a pattern.
+_ssh_list_contains() {
+  local item
+  while IFS= read -r item || [[ -n "$item" ]]; do
+    [[ "$item" == "$2" ]] && return 0
+  done <<EOF
+$1
+EOF
+  return 1
+}
+
+# ssh_config_identity_file <identity> -> the key an existing ~/.ssh/config
+# names for this identity, but only when that key is really there and readable.
+# This is what makes an existing ~/.ssh/config authority: identity_key below
+# prefers whatever key the user already has wired up over teeup's own naming
+# convention. A named key that does not exist is not a key to reuse -- teeup
+# would have had to create it, at a path ssh may spell differently, and then
+# claim it had reused it -- so it falls through to teeup's own convention. -f
+# and -r, not -e: a dangling symlink and a directory are both "there" to -e.
+ssh_config_identity_file() {
+  local key
+  key="$(ssh_config_named_key "$1")" || return 1
+  [[ -f "$key" && -r "$key" ]] || return 1
+  printf '%s\n' "$key"
 }
 
 # identity_key <identity> -> the private-key path this identity signs and
