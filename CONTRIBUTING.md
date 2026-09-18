@@ -452,8 +452,11 @@ Happy contributing! 🚀
    anything the user edited. Thin user files source thick default files.
 9. Files under `default/` and `home/` are zsh or Lua, not bash: shellcheck
    does not run on them, so keep them simple and guard every optional tool.
-10. Per-machine overrides go in `machines/<hostname>.conf`, which is committed
-    and sourced last, so it wins over the answers file. It is also the only
+10. Per-machine overrides go in `<config>/teeup/machines/<hostname>.conf`,
+    which is the user's own file and survives a `git pull`; the checkout's
+    `machines/<hostname>.conf` is the fallback, for anyone keeping a fork.
+    Either is sourced last, so it wins over the answers file. It is also the
+    only
     place a work identity is configured (`TEEUP_WORK_EMAIL`, plus
     `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host or
     `TEEUP_WORK_GH_ACCOUNT` for a second account on github.com): git has one
