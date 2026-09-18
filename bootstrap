@@ -137,31 +137,10 @@ _wizard_valid_name() {
   return 0
 }
 
-# _wizard_valid_email <candidate> -> prints <candidate> for
-# something@something.tld, no spaces, else warns and fails. Deliberately
-# simple, not RFC 5322: it exists to catch the two shapes the dry run
-# actually hit (an empty answer, and a filesystem path typed into the
-# field), not to validate every edge case.
-_wizard_valid_email() {
-  local v="$1"
-  if [[ -z "$v" ]]; then
-    warn "An email address is required."
-    return 1
-  fi
-  case "$v" in
-    *[[:space:]]*) warn "'$v' contains a space; expected something@something.tld"; return 1 ;;
-    # The regex below's final group matches an internal dot too, so
-    # "ada@example.com." would otherwise pass with the trailing dot folded
-    # into the "tld" group.
-    *.) warn "'$v' ends with a dot; expected something@something.tld"; return 1 ;;
-  esac
-  if ! [[ "$v" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
-    warn "'$v' does not look like an email address; expected something@something.tld"
-    return 1
-  fi
-  printf '%s\n' "$v"
-  return 0
-}
+# _wizard_valid_email <candidate>: the wizard's validator contract (print the
+# accepted value, warn and fail otherwise) over the shared email check in
+# lib/answers.sh, which the machine-file check uses too.
+_wizard_valid_email() { email_valid "$1"; }
 
 # The package manager is NOT asked here: step 2 below installs it, and this
 # wizard runs after step 3. See ask_package_manager.

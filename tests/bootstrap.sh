@@ -369,7 +369,9 @@ test_the_retry_limit_dies_with_a_clear_message() {
 # actually calls, not a reimplementation of them. lib/core.sh supplies warn,
 # which every validator's failure path calls.
 source_wizard_validators() {
-  source "$TEEUP_PATH/lib/core.sh"
+  # all.sh, not core.sh alone: _wizard_valid_email is the wizard's contract
+  # over email_valid, which lives in lib/answers.sh.
+  source "$TEEUP_PATH/lib/all.sh"
   eval "$(sed -n '/^_wizard_valid_name() {/,/^wizard() {/p' "$BOOT" | sed '$d')"
 }
 

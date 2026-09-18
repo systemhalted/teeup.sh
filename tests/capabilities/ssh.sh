@@ -597,10 +597,28 @@ test_configure_still_tightens_the_files_it_created() {
   cleanup_test_env
 }
 
+# I6: the machine file is hand-edited and now carries the whole work model, so
+# a malformed work email must stop the run rather than become an ssh key's
+# comment and a GitHub upload.
+test_a_malformed_work_email_stops_the_run() {
+  setup
+  seed_answers
+  seed_machine_work "not-an-email"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "TEEUP_WORK_EMAIL" || return 1
+  assert_contains "$out" "$TEST_HOME/machines/testmac.conf" || return 1
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_work" ]] || { echo "a work key was generated from a malformed address"; return 1; }
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 echo "capabilities/ssh"
 run_test "configure generates one key on a machine with no work identity" test_configure_generates_one_key_on_a_machine_with_no_work_identity
 run_test "configure generates both keys when the machine file configures work" test_configure_generates_both_keys_when_the_machine_file_configures_work
 run_test "a stale work email answer generates no second key" test_a_stale_work_email_answer_generates_no_second_key
+run_test "a malformed work email stops the run" test_a_malformed_work_email_stops_the_run
 run_test "configure generates the work key on a GitHub Enterprise host too" test_configure_generates_the_work_key_on_a_github_enterprise_host_too
 run_test "configure adds the keys to the keychain" test_configure_adds_the_keys_to_the_keychain
 run_test "configure uses --apple-use-keychain on macOS 12 and newer" test_configure_uses_apple_use_keychain_on_macos_12_and_newer

@@ -557,6 +557,64 @@ SSHCONFIG
   cleanup_test_env
 }
 
+# I6: machines/<hostname>.conf is the one file that now carries the whole work
+# model, and it is hand-edited. Nothing validated it: a malformed address gave
+# a work identity whose key carried that string as its comment, an unbalanced
+# quote left the file half-sourced with the error swallowed, and a host or
+# account set with no email was ignored without a word.
+test_a_malformed_work_email_fails_loudly() {
+  setup
+  seed_machine_work 'TEEUP_WORK_EMAIL="not-an-email"'
+  local rc=0 out
+  out="$( (answers_load) 2>&1 )" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TEEUP_MACHINES_DIR/testmac.conf" || return 1
+  assert_contains "$out" "TEEUP_WORK_EMAIL" || return 1
+  assert_contains "$out" "not-an-email" || return 1
+  cleanup_test_env
+}
+
+test_an_unparseable_machine_file_fails_loudly() {
+  setup
+  printf 'TEEUP_WORK_EMAIL="a"b;c@x.com"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  local rc=0 out
+  out="$( (answers_load) 2>&1 )" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TEEUP_MACHINES_DIR/testmac.conf" || return 1
+  cleanup_test_env
+}
+
+test_a_work_host_without_an_email_warns() {
+  setup
+  seed_machine_work 'TEEUP_WORK_GH_HOST="github.enterprise.example.com"'
+  local out
+  out="$(answers_load 2>&1)"
+  assert_contains "$out" "TEEUP_WORK_GH_HOST" || return 1
+  assert_contains "$out" "TEEUP_WORK_EMAIL" || return 1
+  assert_equals "personal" "$(identity_list)" || return 1
+  cleanup_test_env
+}
+
+test_a_work_account_without_an_email_warns() {
+  setup
+  seed_machine_work 'TEEUP_WORK_GH_ACCOUNT="ada-at-work"'
+  local out
+  out="$(answers_load 2>&1)"
+  assert_contains "$out" "TEEUP_WORK_GH_ACCOUNT" || return 1
+  cleanup_test_env
+}
+
+test_a_valid_work_machine_file_says_nothing() {
+  setup
+  seed_machine_work 'TEEUP_WORK_EMAIL="ada@corp.example"' 'TEEUP_WORK_GH_ACCOUNT="ada-at-work"'
+  local out
+  out="$(answers_load 2>&1)"
+  assert_equals "" "$out" || return 1
+  assert_equals "ada-at-work" "$(identity_gh_account work)" || return 1
+  assert_equals "" "$(identity_gh_account personal)" || return 1
+  cleanup_test_env
+}
+
 echo "lib/answers.sh"
 run_test "set then get" test_set_then_get
 run_test "set replaces existing key" test_set_replaces_existing_key
@@ -573,6 +631,11 @@ run_test "set replaces only the exact key" test_set_replaces_only_the_exact_key
 run_test "set preserves a final line with no trailing newline" test_set_preserves_a_final_line_with_no_trailing_newline
 run_test "identity helpers without work email" test_identity_helpers_without_work_email
 run_test "identity helpers with a work machine file" test_identity_helpers_with_a_work_machine_file
+run_test "a malformed work email fails loudly" test_a_malformed_work_email_fails_loudly
+run_test "an unparseable machine file fails loudly" test_an_unparseable_machine_file_fails_loudly
+run_test "a work host without an email warns" test_a_work_host_without_an_email_warns
+run_test "a work account without an email warns" test_a_work_account_without_an_email_warns
+run_test "a valid work machine file says nothing" test_a_valid_work_machine_file_says_nothing
 run_test "a work email in the answers file is inert" test_a_work_email_in_the_answers_file_is_inert
 run_test "a work gh host in the answers file is inert" test_a_work_gh_host_in_the_answers_file_is_inert
 run_test "answers_unset removes the key" test_answers_unset_removes_the_key
