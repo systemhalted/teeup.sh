@@ -1,0 +1,27 @@
+# machines/<hostname>.conf.sample - copy to machines/$(hostname -s).conf,
+# edit, and commit it. teeup sources this file after the answers file
+# (lib/answers.sh: answers_load), so anything set here wins over an answer,
+# and it is the ONLY place a work identity is configured: the wizard never
+# asks about work (see .superpowers/identity/brief.md, 2026-09-17).
+#
+# Every key below is optional; a machine with no work identity needs no file
+# at all.
+
+# A work identity exists only when this is set. It gives the ssh capability a
+# second ed25519 key (~/.ssh/id_ed25519_work), the git capability still signs
+# with the personal key alone (git has one identity, full stop), and the
+# github capability uploads the work key to whatever host TEEUP_WORK_GH_HOST
+# names below.
+#TEEUP_WORK_EMAIL="ada@corp.example"
+
+# The GitHub host the work key uploads to. Defaults to github.com when
+# TEEUP_WORK_EMAIL is set and this is not -- that is how a second github.com
+# account is configured. Name a GitHub Enterprise host here instead when work
+# lives on one.
+#TEEUP_WORK_GH_HOST="github.enterprise.example.com"
+
+# Hard constraints unrelated to identity, shown here because they are the
+# other common reason a machine file exists at all.
+#TEEUP_PACKAGE_MANAGER="macports"
+#TEEUP_SKIP="aerospace"
+#TEEUP_THEME="catppuccin"
