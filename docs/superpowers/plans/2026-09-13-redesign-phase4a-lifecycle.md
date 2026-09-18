@@ -22,7 +22,7 @@
 - Paths: `user_config_dir` for `~/.config`; `TEEUP_CONFIG_DIR`, `TEEUP_STATE_DIR` and (new here) `TEEUP_MIGRATIONS_DIR` are honoured. Paths with spaces and metacharacters must work: `tests/lib/hooks.sh` uses a config dir named `con fig $HOME 'q' & co`, `tests/lib/migrations.sh` a migrations dir named `mig rations 'q' $x & co`, `tests/lib/files.sh` a config directory named `it's a & $dir`, and `tests/capabilities/zsh.sh` a config dir named `con fig $x`.
 - Machine file precedence (answers, then `machines/<hostname>.conf`) for every consumer of an answer. This plan adds no answer; `TEEUP_SKIP` is honoured by `update`, `reset`, `remove` and every hook loop.
 - `capability` metadata contract: `summary group tier requires provides packages casks apps interactive`. `teeup update <cap>` and the generic `teeup remove <cap>` read `packages` and `casks` from it, and `remove` reads `requires` of every other installed capability. No capability is added or moved between tiers here, so `capabilities/core.list` and `capabilities/daily.list` are untouched.
-- Tests: `tests/helper.sh` (temp `HOME`, `MOCK_BIN` first on the narrowed `PATH` `$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin`, `mock_command`, `mock_command_script`, `mock_macos_base`, `TEEUP_TEST_MISSING`, `TEEUP_PKG_PREFIX`, `TEEUP_APPS_DIR`, and 3b's `hide_host_commands`). The narrowed `PATH` hides Homebrew but not `/usr/bin`: `git` is on every developer machine and both CI runners, so every test of `teeup update` mocks `git` rather than relying on the checkout's state. `lib/ui.sh` uses `gum` whenever `TEEUP_NO_GUM` is empty and `gum` is on `PATH`, and the narrowed `PATH` still exposes a host `/usr/bin/gum`, so a test that can reach `ui_confirm` or `ui_choose` exports `TEEUP_NO_GUM=1` (as `tests/cli.sh`, `tests/bootstrap.sh`, `tests/capabilities/secrets.sh` and 3b's `ai` and `colima` suites do). CI runs `macos-14`, `macos-15-intel` and `ubuntu-latest`; a test that passes on only one of them, or only on a developer's machine, is a defect.
+- Tests: `tests/helper.sh` (temp `HOME`, `MOCK_BIN` first on the narrowed `PATH` `$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin`, `mock_command`, `mock_command_script`, `mock_macos_base`, `TEEUP_TEST_MISSING`, `TEEUP_PKG_PREFIX`, `TEEUP_APPS_DIR`, and 3b's `hide_host_commands`). The narrowed `PATH` hides Homebrew but not `/usr/bin`: `git` is on every developer machine and both CI runners, so every test of `teeup update` mocks `git` rather than relying on the checkout's state; the checkout itself is whatever `TEEUP_PATH` is (the repository the tests run from), worktree or plain clone, and `_update_checkout`'s own checks must not care which. `lib/ui.sh` uses `gum` whenever `TEEUP_NO_GUM` is empty and `gum` is on `PATH`, and the narrowed `PATH` still exposes a host `/usr/bin/gum`, so a test that can reach `ui_confirm` or `ui_choose` exports `TEEUP_NO_GUM=1` (as `tests/cli.sh`, `tests/bootstrap.sh`, `tests/capabilities/secrets.sh` and 3b's `ai` and `colima` suites do). CI runs `macos-14`, `macos-15-intel` and `ubuntu-latest`; a test that passes on only one of them, or only on a developer's machine, is a defect.
 - Every task ends with `./tests/run.sh` green, `./bin/teeup commands --check` silent with exit 0, `shellcheck --severity=warning` clean on every new or edited script and test, `git diff --check` clean, and **one** commit with a plain imperative subject and no trailer of any kind (no `Co-Authored-By`, no `Claude-Session`, no "Generated with").
 - Suite counts: `tests/run.sh` ends with `All N suites passed.` Never hard-code N. Each task states "the suite count printed before this task, plus K". Per-suite counts (`Summary: x/y passed`) are exact.
 - Nothing in this phase has run on a real Mac. Each task carries a **Real-Mac risk** note naming what only hardware proves.
@@ -2922,7 +2922,14 @@ cmd_theme() {
 # Every other failure (offline, no upstream, a diverged branch) is a warning,
 # because everything after this step works from the checkout already here.
 _update_checkout() {
-  if [[ ! -d "$TEEUP_PATH/.git" ]]; then
+  # -e, not -d: a linked worktree's .git is a file (it points at the real
+  # repository's .git/worktrees/<name>), not a directory. TEEUP_PATH is
+  # whatever checkout is running teeup, worktree or plain clone either way,
+  # and the tests below run this against that same checkout, so treating a
+  # worktree as "not a git checkout" would both be wrong on a real machine
+  # and make the tests depend on which kind of checkout happens to be on
+  # disk.
+  if [[ ! -e "$TEEUP_PATH/.git" ]]; then
     log "$TEEUP_PATH is not a git checkout; nothing to pull."
     return 0
   fi
