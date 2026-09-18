@@ -540,12 +540,12 @@ git commit -m "Ship the teeup mental model as an agent skill"
 - Modify: `lib/files.sh` (append `agent_skill_link`)
 - Modify: `capabilities/teeup-runtime/configure` (one call, after `shims_generate`)
 - Modify: `capabilities/teeup-runtime/doctor` (one check, before `doctor_verdict`)
-- Modify: `tests/lib/files.sh` (seven tests)
+- Modify: `tests/lib/files.sh` (eight tests)
 - Modify: `tests/capabilities/teeup-runtime.sh` (two tests)
 
 **Interfaces:**
 - Consumes: `log ok warn run_cmd` (`lib/core.sh`, main), `doctor_ok doctor_warn doctor_fail` (`lib/doctor.sh`, phase 4b), `share/agents/skills/teeup/` (Task 1).
-- Produces: `agent_skill_link <source-dir> <name>` in `lib/files.sh`. It creates `$HOME/.agents/skills/<name>` unconditionally and `$HOME/.claude/skills/<name>`, `$HOME/.codex/skills/<name>` and `$HOME/.gemini/skills/<name>` when `$HOME/.claude`, `$HOME/.codex` or `$HOME/.gemini` exists. Each is a symlink to `<source-dir>`. It returns 1 only when `<source-dir>` is not a directory; a single link it refuses to replace is a warning, not a failure — and that includes a symlink already there: it is kept, as somebody else's choice, unless it resolves (physically, on both sides — no `readlink -f` on macOS, so by `cd`-and-`pwd -P`) to `<source-dir>` itself, which is the only thing that makes it teeup's to replace. Task 6's CONTRIBUTING entry and Task 5's README section both describe this behaviour and must stay in step with it.
+- Produces: `agent_skill_link <source-dir> <name>` in `lib/files.sh`. It creates `$HOME/.agents/skills/<name>` unconditionally and `$HOME/.claude/skills/<name>`, `$HOME/.codex/skills/<name>` and `$HOME/.gemini/skills/<name>` when `$HOME/.claude`, `$HOME/.codex` or `$HOME/.gemini` exists. Each is a symlink to `<source-dir>`. It returns 1 only when `<source-dir>` is not a directory; a single link it refuses to replace is a warning, not a failure — and that includes a symlink already there: it is kept, as somebody else's choice, unless it resolves (physically, on both sides — no `readlink -f` on macOS, so `cd -P` and `pwd -P` on every step, never a bare `cd`, because a bare `cd` cancels a `component/..` pair textually without checking whether `component` is itself a symlink) to `<source-dir>` itself, which is the only thing that makes it teeup's to replace. Task 6's CONTRIBUTING entry and Task 5's README section both describe this behaviour and must stay in step with it.
 
 **Where the four directories come from.** Checked against each tool's current documentation while writing this plan:
 
@@ -664,6 +664,30 @@ test_agent_skill_link_refreshes_a_link_into_the_real_checkout() {
   cleanup_test_env
 }
 
+test_agent_skill_link_resolves_symlinks_physically_not_logically() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills" "$TEST_HOME/user-owns-this"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  # A path that answers "this checkout" only if `..` is cancelled textually
+  # (bash's default, logical cd) rather than by physically walking the
+  # symlink and asking its real parent for .. : "alias" sits beside
+  # $SKILLSRC and points at a directory the user owns, and the crafted
+  # target routes through it and back out. `cd` without -P treats
+  # "alias/.." as a no-op regardless of what alias points to and lands back
+  # on $SKILLSRC; `cd -P` actually enters alias, so ".." leaves the user's
+  # own tree instead, and "probe" is not there.
+  ln -s "$TEST_HOME/user-owns-this" "$(dirname "$SKILLSRC")/alias"
+  local crafted
+  crafted="$(dirname "$SKILLSRC")/alias/../probe"
+  ln -s "$crafted" "$TEST_HOME/.agents/skills/probe"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "an unresolvable crafted link is a warning, not a failure" || return 1
+  assert_contains "$out" "$TEST_HOME/.agents/skills/probe" "the warning names the link" || return 1
+  assert_equals "$crafted" "$(readlink "$TEST_HOME/.agents/skills/probe")" "a link whose physical and logical resolutions differ is left alone" || return 1
+  cleanup_test_env
+}
+
 test_agent_skill_link_dry_run_and_missing_source() {
   setup
   mkdir -p "$SKILLSRC"
@@ -684,11 +708,12 @@ run_test "agent_skill_link keeps a file it did not write" test_agent_skill_link_
 run_test "agent_skill_link keeps a foreign symlink" test_agent_skill_link_keeps_a_foreign_symlink
 run_test "agent_skill_link keeps a link into a different checkout with the same layout" test_agent_skill_link_keeps_a_link_into_a_different_checkout_with_the_same_layout
 run_test "agent_skill_link refreshes a link into the real checkout" test_agent_skill_link_refreshes_a_link_into_the_real_checkout
+run_test "agent_skill_link resolves symlinks physically, not logically" test_agent_skill_link_resolves_symlinks_physically_not_logically
 run_test "agent_skill_link dry run, and a missing source" test_agent_skill_link_dry_run_and_missing_source
 print_summary
 ```
 
-The seven tests need one more variable in the suite's `setup`, on a path with a space and a dollar sign so that the helper is proven to quote everything it passes to `ln`:
+The eight tests need one more variable in the suite's `setup`, on a path with a space and a dollar sign so that the helper is proven to quote everything it passes to `ln`:
 
 ```bash edit-old=tests/lib/files.sh
   SRC="$TEST_HOME/src.conf"
@@ -709,8 +734,8 @@ The seven tests need one more variable in the suite's `setup`, on a path with a 
 
 - [ ] **Step 2: Run them to watch them fail**
 
-Run: `bash tests/lib/files.sh 2>&1 | tail -15`
-Expected: the seven new tests `FAIL` with `agent_skill_link: command not found`, and the summary line reports seven failures.
+Run: `bash tests/lib/files.sh 2>&1 | tail -17`
+Expected: the eight new tests `FAIL` with `agent_skill_link: command not found`, and the summary line reports eight failures.
 
 - [ ] **Step 3: Write the helper**
 
@@ -751,7 +776,7 @@ agent_skill_link() {
     warn "No skill directory at $src"
     return 1
   fi
-  resolved_src="$(cd "$src" 2>/dev/null && pwd -P)"
+  resolved_src="$(cd -P "$src" 2>/dev/null && pwd -P)"
   for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.gemini/skills"; do
     parent="$(dirname "$dir")"
     if [[ "$dir" != "$HOME/.agents/skills" && ! -d "$parent" ]]; then
@@ -772,8 +797,13 @@ agent_skill_link() {
       # relative target resolves the way the shell would resolve it, then
       # into what it points at, then ask for the physical (symlink-free)
       # path on both sides. A target that does not exist, or a chain that
-      # does not lead back here, fails this and is foreign.
-      resolved_current="$(cd "$(dirname "$target")" 2>/dev/null && cd "$current" 2>/dev/null && pwd -P)" || resolved_current=""
+      # does not lead back here, fails this and is foreign. -P on every cd
+      # here, not just on the final pwd: bash's default (logical) cd cancels
+      # a "component/.." pair textually, without checking whether
+      # "component" is a symlink to somewhere else entirely, so a target
+      # such as "alias/../probe" can read back as this checkout without -P
+      # while actually resolving somewhere else.
+      resolved_current="$(cd -P "$(dirname "$target")" 2>/dev/null && cd -P "$current" 2>/dev/null && pwd -P)" || resolved_current=""
       if [[ -z "$resolved_current" || "$resolved_current" != "$resolved_src" ]]; then
         warn "Keeping $target, a symlink to $current rather than $src"
         continue
@@ -793,8 +823,8 @@ replace_literal() {
 
 - [ ] **Step 4: Run them to watch them pass**
 
-Run: `bash tests/lib/files.sh 2>&1 | tail -11`
-Expected: the seven new tests `PASS`, and `Summary: N/N passed` with no failures.
+Run: `bash tests/lib/files.sh 2>&1 | tail -13`
+Expected: the eight new tests `PASS`, and `Summary: N/N passed` with no failures.
 
 Run: `shellcheck --severity=warning lib/files.sh tests/lib/files.sh`
 Expected: no output.
@@ -3122,7 +3152,7 @@ for the executor:
 | After task | Suite | `commands --check` | shellcheck | `git diff --check` |
 |---|---|---|---|---|
 | 1 | `tests/docs.sh` 4/4; whole suite **All 61 suites passed.** (60 + the new one) | rc=0, silent | clean on `lib/dev.sh tests/docs.sh tests/run.sh` | clean |
-| 2 | `tests/lib/files.sh` 26/26, `tests/capabilities/teeup-runtime.sh` 16/16, `tests/docs.sh` 4/4 | rc=0, silent | clean on all five touched files | clean |
+| 2 | `tests/lib/files.sh` 27/27, `tests/capabilities/teeup-runtime.sh` 16/16, `tests/docs.sh` 4/4 | rc=0, silent | clean on all five touched files | clean |
 | 3 | `tests/lib/menu.sh` 17/17, `tests/lib/dev.sh` 15/15, `tests/docs.sh` 4/4; whole suite **All 61 suites passed.** | rc=0, silent | clean | clean |
 | 4 | `tests/docs.sh` 6/6 | rc=0, silent | clean | clean |
 | 5 | `tests/docs.sh` 10/10 | rc=0, silent | clean | clean |
