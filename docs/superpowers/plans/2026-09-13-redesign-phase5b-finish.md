@@ -2659,11 +2659,14 @@ Run:
   mkdir -p "$TEEUP_MACHINES_DIR"
   export DRY_RUN=true
   out="$("$TEEUP_PATH/bin/teeup" migrate legacy 2>&1)"
+  rc=$?
   cleanup_test_env
   n=$(printf '%s\n' "$out" | grep -c \
     'Removing what older teeup versions left in your home directory\|Disabling the runtime managers mise replaces\|nothing to take over' \
     || true)
-  printf '%s\n' "${n:-0}" )
+  n="${n:-0}"
+  [[ $rc -eq 0 ]] || n=0
+  printf '%s\n' "$n" )
 ```
 Expected: `3`. This is 5a Tasks 3 to 6 together, proven by behaviour rather
 than by text: the same throwaway-`$HOME`, temp-config/state/machines,
@@ -2678,13 +2681,22 @@ nothing to take over." on a machine without chezmoi and "chezmoi is
 installed but reports no source directory here; nothing to take over." on
 one where this fake `$HOME` has no chezmoi source configured — both share
 "nothing to take over", which is the substring matched so the check reads the
-same on either kind of machine. **This is the check that decides, not the
-four above it.** If it is anything other than `3` — nothing ran
-(`teeup migrate legacy` still reaches `Unknown verb: migrate`,
-indistinguishable from a tree where 5a never started or from this plan's own
-two-line verification stand-in, see Self-review, "Mechanical transcription",
-"The 5a stand-in"), or some of it ran (a `cmd_migrate` that calls only some
-of the three, or comments one out) — stop. A transcription must not run
+same on either kind of machine. Counting the three lines is not enough by
+itself: each of `migrate_legacy_paths`, `migrate_disable_runtime_inits` and
+`migrate_chezmoi` prints its own line unconditionally near the top of the
+function, before anything in it can fail, so all three lines can appear even
+when one of them goes on to fail later and `cmd_migrate` returns non-zero.
+`rc` is `teeup migrate legacy`'s own exit status, `cmd_migrate`'s `$rc`
+propagated: `[[ $rc -eq 0 ]] || n=0` forces the count to `0` whenever the
+command itself did not exit clean, so a migration that printed all three
+previews and then failed reads the same as one that never ran. **This is the
+check that decides, not the four above it.** If it is anything other than
+`3` — nothing ran (`teeup migrate legacy` still reaches
+`Unknown verb: migrate`, indistinguishable from a tree where 5a never started
+or from this plan's own two-line verification stand-in, see Self-review,
+"Mechanical transcription", "The 5a stand-in"), some of it ran (a
+`cmd_migrate` that calls only some of the three, or comments one out), or all
+of it ran but one operation failed — stop. A transcription must not run
 Task 7 against any tree that fails one of the checks above.
 
 - [ ] **Step 2: Write the failing check**
