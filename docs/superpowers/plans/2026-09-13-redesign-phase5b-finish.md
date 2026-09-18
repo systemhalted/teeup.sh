@@ -2600,23 +2600,62 @@ but the migration itself has not, in full or in part — a partially applied
 `teeup migrate legacy` was still unable to do its one job.
 
 Run: `n=$(grep -c '^cmd_migrate()' bin/teeup 2>/dev/null || true); printf '%s\n' "${n:-0}"`
-Expected: `1`.
+Expected: `1`. This is 5a Task 6, first half: the verb exists as a function.
 
 Run: `n=$(grep -c '^  migrate) cmd_migrate' bin/teeup 2>/dev/null || true); printf '%s\n' "${n:-0}"`
-Expected: `1`.
+Expected: `1`. Still 5a Task 6: the dispatcher reaches it.
 
-Run: `n=$(awk '/^cmd_migrate\(\)/,/^}/' bin/teeup | grep -c 'migrate_legacy_paths\|migrate_disable_runtime_inits\|migrate_chezmoi' || true); printf '%s\n' "${n:-0}"`
-Expected: `3`. These three are 5a Task 6 — the verb, wired into the
-dispatcher, actually calling the three operations above rather than only
-existing beside them. If any of the three is short of its expected count,
-stop: `bin/teeup` either has no `cmd_migrate` at all, or dispatches `migrate`
-to nothing (`teeup migrate legacy` falls through to `Unknown verb: migrate`,
-the same failure as on a tree where 5a never started), or has a `cmd_migrate`
-that does not call every migration operation — any of which is indistinguishable
-from this plan's own verification stand-in (see Self-review, "Mechanical
-transcription", "The 5a stand-in"), which never calls them either. A
-transcription must not run Task 7 against any tree that fails one of the six
-checks above.
+Run: `n=$(grep -c '[[:space:]]migrate[[:space:];]' lib/all.sh 2>/dev/null || true); printf '%s\n' "${n:-0}"`
+Expected: `1`. `cmd_migrate` calls functions that live in `lib/migrate.sh`;
+they exist only once `lib/all.sh`'s source loop actually names `migrate`
+alongside `menu` and `dev`. A `0` here means every check above this one can
+still read `3`, `1` and `1` while `teeup migrate legacy` dies with
+`migrate_legacy_paths: command not found` the moment it runs.
+
+The four checks above are cheap and worth keeping as a first gate, but none of
+them is proof: `grep` over a function's text counts a name whether it is
+called, echoed, or only sitting in a comment — `migrate_legacy_paths ||
+rc=1` and `# migrate_legacy_paths || rc=1` match the same pattern. A
+`cmd_migrate` whose three calls were commented out would still print `3` on
+the check this replaced. The only check that cannot be fooled that way is
+running the verb and reading what it actually did:
+
+Run:
+```sh
+( source tests/helper.sh
+  setup_test_env
+  export TEEUP_NO_GUM=1
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  export DRY_RUN=true
+  out="$("$TEEUP_PATH/bin/teeup" migrate legacy 2>&1)"
+  cleanup_test_env
+  n=$(printf '%s\n' "$out" | grep -c \
+    'Removing what older teeup versions left in your home directory\|Disabling the runtime managers mise replaces\|nothing to take over' \
+    || true)
+  printf '%s\n' "${n:-0}" )
+```
+Expected: `3`. This is 5a Tasks 3 to 6 together, proven by behaviour rather
+than by text: the same throwaway-`$HOME`, temp-config/state/machines,
+`TEEUP_NO_GUM=1` isolation `tests/helper.sh` gives every suite, `DRY_RUN=true`
+so nothing is written even though `$TEST_HOME` is already disposable, and a
+count of how many of the three migration operations actually previewed their
+work — `migrate_legacy_paths`'s "Removing what older teeup versions left in
+your home directory", `migrate_disable_runtime_inits`'s "Disabling the
+runtime managers mise replaces (SDKMAN, rbenv, pyenv)", and
+`migrate_chezmoi`'s own log line, which reads "No chezmoi on this machine;
+nothing to take over." on a machine without chezmoi and "chezmoi is
+installed but reports no source directory here; nothing to take over." on
+one where this fake `$HOME` has no chezmoi source configured — both share
+"nothing to take over", which is the substring matched so the check reads the
+same on either kind of machine. **This is the check that decides, not the
+four above it.** If it is anything other than `3` — nothing ran
+(`teeup migrate legacy` still reaches `Unknown verb: migrate`,
+indistinguishable from a tree where 5a never started or from this plan's own
+two-line verification stand-in, see Self-review, "Mechanical transcription",
+"The 5a stand-in"), or some of it ran (a `cmd_migrate` that calls only some
+of the three, or comments one out) — stop. A transcription must not run
+Task 7 against any tree that fails one of the checks above.
 
 - [ ] **Step 2: Write the failing check**
 
@@ -3083,7 +3122,7 @@ for the executor:
 | After task | Suite | `commands --check` | shellcheck | `git diff --check` |
 |---|---|---|---|---|
 | 1 | `tests/docs.sh` 4/4; whole suite **All 61 suites passed.** (60 + the new one) | rc=0, silent | clean on `lib/dev.sh tests/docs.sh tests/run.sh` | clean |
-| 2 | `tests/lib/files.sh` 25/25, `tests/capabilities/teeup-runtime.sh` 16/16, `tests/docs.sh` 4/4 | rc=0, silent | clean on all five touched files | clean |
+| 2 | `tests/lib/files.sh` 26/26, `tests/capabilities/teeup-runtime.sh` 16/16, `tests/docs.sh` 4/4 | rc=0, silent | clean on all five touched files | clean |
 | 3 | `tests/lib/menu.sh` 17/17, `tests/lib/dev.sh` 15/15, `tests/docs.sh` 4/4; whole suite **All 61 suites passed.** | rc=0, silent | clean | clean |
 | 4 | `tests/docs.sh` 6/6 | rc=0, silent | clean | clean |
 | 5 | `tests/docs.sh` 10/10 | rc=0, silent | clean | clean |
