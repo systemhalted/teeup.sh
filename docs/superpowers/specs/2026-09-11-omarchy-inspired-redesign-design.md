@@ -231,9 +231,12 @@ Rules for `provides=`: never list a command macOS already ships (`python3`, `rub
      or when machines/<hostname>.conf sets TEEUP_PACKAGE_MANAGER=macports; confirmed in wizard
   3  minimal self-install, only what the CLI needs to exist: write ~/.config/teeup/env,
      link ~/.local/bin/teeup, install gum (state dirs and shims belong to teeup-runtime)
-  4  wizard (skipped when answers exist unless --reconfigure): name, personal email,
-     work email (optional), package manager confirm, theme, include daily set (default yes)
+  4  wizard (skipped when answers exist unless --reconfigure): name, email,
+     package manager confirm, theme, include daily set (default yes)
      -> writes ~/.config/teeup/answers
+     (Decision of 2026-09-17: this step also asked for an optional work email.
+      A work identity is per machine now and comes from machines/<hostname>.conf,
+      so the wizard never asks about it.)
   5  for cap in capabilities/core.list:  run_logged install; run_logged configure
   6  for cap in capabilities/daily.list: same (unless --skip-daily or answers say no)
   7  theme set <answers.theme>; mark all migrations applied; done mark bootstrap
