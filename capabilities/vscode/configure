@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# VS Code keeps user settings in ~/Library/Application Support/Code/User/
+# settings.json on macOS, outside ~/.config, and applies edits to that file
+# live. There is no shipped file: teeup owns four keys in whatever settings
+# you have (window.autoDetectColorScheme, the two preferred colour themes and
+# editor.fontFamily) and leaves the rest alone. configure brings them up to
+# date by running the two hooks `teeup theme set` and `teeup install font`
+# run. The hooks do nothing until teeup has installed VS Code;
+# TEEUP_CONFIGURING tells them this is that install.
+export TEEUP_CONFIGURING="$TEEUP_CAP"
+cap_run_optional "$TEEUP_CAP" theme-apply
+cap_run_optional "$TEEUP_CAP" font-apply
+app="Visual Studio Code"
+if [[ -d "${TEEUP_APPS_DIR:-/Applications}/$app.app" ]]; then
+  log "$app is installed; open it with: open -a '$app'"
+else
+  log "$app.app is not in ${TEEUP_APPS_DIR:-/Applications} yet; the settings are ready for it."
+fi

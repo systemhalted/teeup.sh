@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# With window.autoDetectColorScheme on, VS Code follows the system appearance
+# itself and picks workbench.preferredDarkColorTheme or
+# workbench.preferredLightColorTheme, so both rendered modes are written and
+# workbench.colorTheme (the theme used while detection is off) is left to
+# you. The theme comes from an extension (Catppuccin for the shipped
+# palette), which the `code` CLI installs when it is on PATH.
+#
+# `teeup theme set` runs every capability's hook; a settings file for an
+# editor teeup did not install is not this hook's to write.
+if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then
+  exit 0
+fi
+VSCODE_SETTINGS="$HOME/Library/Application Support/Code/User/settings.json"
+THEME_DIR="${TEEUP_THEME_DIR:-$TEEUP_STATE_DIR/current/theme}"
+dark="$THEME_DIR/dark/vscode.json"
+light="$THEME_DIR/light/vscode.json"
+if [[ ! -f "$dark" || ! -f "$light" ]]; then
+  log "No rendered VS Code theme in $THEME_DIR yet; the next teeup theme set writes it."
+  exit 0
+fi
+if ! have jq; then
+  warn "jq is not installed; cannot write $VSCODE_SETTINGS. Run: teeup install cli-tools"
+  exit 0
+fi
+json_set_key "$VSCODE_SETTINGS" window.autoDetectColorScheme true
+json_set_key "$VSCODE_SETTINGS" workbench.preferredDarkColorTheme "$(json_quote "$(jq -r .theme "$dark")")"
+json_set_key "$VSCODE_SETTINGS" workbench.preferredLightColorTheme "$(json_quote "$(jq -r .theme "$light")")"
+
+# The extension, once per distinct id; a palette whose theme is built in names
+# it "none". `code --list-extensions` is a read, so it stays outside run_cmd.
+for ext in $(jq -r .extension "$dark" "$light" | sort -u); do
+  if [[ "$ext" == "none" ]]; then
+    continue
+  fi
+  if ! have code; then
+    log "The code command is not on PATH; install the $ext extension from the Extensions view."
+  elif code --list-extensions 2>/dev/null | grep -qixF "$ext"; then
+    log "Already installed: VS Code extension $ext"
+  else
+    run_cmd code --install-extension "$ext" ||
+      warn "Could not install the $ext extension; install it from the Extensions view."
+  fi
+done
