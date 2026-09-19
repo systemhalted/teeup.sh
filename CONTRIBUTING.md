@@ -502,3 +502,24 @@ Happy contributing! 🚀
     Never call it to swallow a real error — a genuine failure must still
     `warn`/`die` or exit non-zero, or bootstrap's core-tier gate would wave
     it through unnoticed.
+15. An editor whose settings are JSON (Zed, VS Code) never gets a shipped
+    `settings.json`: its hooks set only the keys teeup owns, with
+    `json_set_key <file> <key> <json-value>` or
+    `json_merge_key <file> <key> <json-object>` from `lib/files.sh`. The key is
+    one literal top-level key (VS Code's `workbench.colorTheme` stays flat),
+    the value is a JSON literal (`json_quote` makes one from text), comments
+    and trailing commas are read, the write goes through
+    `write_managed_file` (so `DRY_RUN` previews it), and a symlink or a file
+    jq cannot edit is left alone with a warning.
+16. A `theme-apply` or `font-apply` that writes an app's settings or talks to
+    a running app starts with
+    `if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then exit 0; fi`:
+    `teeup theme set` runs every capability's hooks, including on machines
+    where that app was never installed through teeup. A `configure` that
+    wants the hooks' work done runs `export TEEUP_CONFIGURING="$TEEUP_CAP"`
+    and then `cap_run_optional "$TEEUP_CAP" theme-apply`. Theme names an
+    editor needs live in the palette next to the colours (`emacs_theme`,
+    `zed_theme`, `zed_extension`, `neovim_colorscheme`, `vscode_theme`,
+    `vscode_extension`; an extension of `none` installs nothing), so every
+    theme, a user theme included, must define each of them in both modes or
+    `teeup theme set` refuses to render.

@@ -37,8 +37,38 @@ teeup secret set <name>   # store a secret in the macOS Keychain
 The core tier is complete: `xcode-clt`, `package-manager`, `teeup-runtime`,
 `dev-dirs`, `zsh`, `starship`, `cli-tools`, `secrets`, `git`, `ssh`, `github`,
 `mise`, `wezterm`, `fonts`, `aerospace`, `keyboard`, `macos-defaults`,
-`theme`. The daily tier and everything lazy arrive in phase 3; `teeup list` is
-always the source of truth.
+`theme`. The daily tier (`emacs`, `zed`, `firefox-developer-edition`,
+`obsidian`) installs at bootstrap when you say yes to it. `neovim`, `vscode`
+and `chrome` are lazy: `teeup install <name>` brings one in when you want it.
+`teeup list` is always the source of truth.
+
+### Editors
+
+- **Emacs** runs as a daemon from the `sh.teeup.emacs` LaunchAgent, so
+  `emacsclient -t` (the editor git and the shell use) and `emacsclient -c`
+  (a window) always have a server. The answer `TEEUP_EMACS_FLAVOR` picks the
+  configuration: `starter` (the default: a thin `~/.config/emacs/init.el`
+  over teeup's built-ins-only layer), `doom` (Doom cloned into
+  `~/.config/emacs`, then `doom install --no-env`), `spacemacs` (cloned into
+  `~/.emacs.d`) or `none` (your own configuration, untouched). The wizard asks
+  it with the daily set; change it with `./bootstrap --reconfigure`, or pin it
+  in the machine file, then run `teeup configure emacs`.
+- **Zed** and **VS Code** keep their own `settings.json`
+  (`~/.config/zed/settings.json`, which Zed reads whatever `XDG_CONFIG_HOME`
+  says, and `~/Library/Application Support/Code/User/settings.json`). teeup
+  sets only the theme, font and theme-extension keys in them through `jq`,
+  and leaves the rest alone. Comments inside the object do not survive that
+  edit, so a file that has them is backed up first; a settings file that is a
+  symlink is never written.
+- **Neovim** gets the LazyVim starter layout under `~/.config/nvim`, every
+  file yours after the first copy, with teeup's layer on `package.path`.
+  LazyVim needs Neovim 0.11.2 or later.
+
+`teeup theme set` and `teeup install font` reach every editor teeup has
+installed: each has a themed template that names the theme for the palette
+(Modus for Emacs, `catppuccin-mocha`/`catppuccin-latte` for Neovim and the
+Catppuccin extension for Zed and VS Code) and a hook that tells a running
+editor to pick it up.
 
 Per-machine overrides live in `~/.config/teeup/machines/<hostname>.conf` -- your own file, never in this checkout, so `git pull` never touches it -- sourced after your answers and winning over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs. (`machines/<hostname>.conf` in the checkout itself still works, checked second, for anyone who keeps a fork instead.) It is also the only place a work identity is configured -- teeup's own git/ssh/GitHub identity is a single one, `TEEUP_NAME`/`TEEUP_EMAIL` from the wizard, full stop; a machine that also needs a work identity sets `TEEUP_WORK_EMAIL` here (plus `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host, or `TEEUP_WORK_GH_ACCOUNT` when work is a second account on github.com), which gives that machine a second SSH key uploaded to that identity's own GitHub host and account. See `machines/example.conf.sample`.
 

@@ -2,7 +2,7 @@
 
 Date: 2026-09-11
 Status: approved design, pre-implementation
-Amended: 2026-09-17, one identity (user decision; see the Git, SSH/signing, Dev dirs and Work vs personal rows of the interview table, section 4b, section 8 and section 10); 2026-09-18, personal overlay (a machine file is looked up in the user's own config dir before the checkout's, so recording a machine setting never requires a fork -- see section 7 and section 8)
+Amended: 2026-09-13, the daily tier (user decision; see the Editors, Browsers, Productivity and Essential set rows of the interview table); 2026-09-17, one identity (user decision; see the Git, SSH/signing, Dev dirs and Work vs personal rows of the interview table, section 4b, section 8 and section 10); 2026-09-18, personal overlay (a machine file is looked up in the user's own config dir before the checkout's, so recording a machine setting never requires a fork -- see section 7 and section 8)
 
 ## Context
 
@@ -64,7 +64,7 @@ Not portable: pacman/AUR, systemd, Hyprland/Wayland/Quickshell, plymouth/limine/
 | Herdr | Lazy optional; agent workspace manager; verify macOS support. |
 | Shell | Plain zsh, Omarchy-style layered default (`default/zsh/*` sourced by thin `~/.zshrc`); Starship; autosuggestions/syntax-highlighting/completions sourced directly; mise, zoxide, fzf, eza, bat wired in. No Oh My Zsh. |
 | Prompt | Starship (TOML). |
-| Editors | Emacs (flavor=starter default; doom/spacemacs/none switchable), Neovim (LazyVim), Zed, VS Code. |
+| Editors | Emacs (flavor=starter default; doom/spacemacs/none switchable) and Zed are the daily editors. Neovim (LazyVim) and VS Code are lazy: fully configured capabilities reached through their `nvim` and `code` shims, `teeup install` and `teeup launch`. *Decision of 2026-09-13; this row first listed all four as daily.* |
 | Git | Ask name/email once; git carries that one identity, full stop -- no `includeIf`, no per-root switching. A repository that needs a different address gets `git config user.email ...` by hand. Aliases + modern defaults like Omarchy. *Decision of 2026-09-17; this row first asked for an optional work email and an `includeIf` per root.* |
 | Git extras | gh CLI + `gh auth login` + credential helper; lazygit; delta; git-lfs; pre-commit. |
 | SSH/signing | ed25519 keys, macOS Keychain via ssh-agent, upload via gh, SSH commit signing (`gpg.format=ssh`). Two keys are two separate identities: personal exists everywhere, work only on a machine whose `machines/<hostname>.conf` configures one. An existing `~/.ssh/config` is authority -- a `Host` block already naming a key wins over generating a new one. SSH config host aliases pick the key. |
@@ -74,15 +74,15 @@ Not portable: pacman/AUR, systemd, Hyprland/Wayland/Quickshell, plymouth/limine/
 | Databases | Omarchy `docker-dbs` pattern: lazy picker starting localhost containers on Colima. |
 | CLI core | Omarchy modern set: ripgrep fd fzf bat eza zoxide jq yq btop tree wget curl gnupg tldr dust lazygit gh; Omarchy aliases (ls→eza, cd→zoxide). |
 | Fonts | JetBrainsMono Nerd Font at bootstrap; `teeup install font <name>` lazy, also switches terminal/editor font. |
-| Browsers | Chrome, Firefox, Brave/Arc/Zen: all lazy casks. |
+| Browsers | Firefox Developer Edition is the daily browser. Chrome, Firefox, Brave/Arc/Zen: lazy casks. *Decision of 2026-09-13; the daily set first carried Chrome.* |
 | Comms | Slack, Zoom, Signal/WhatsApp/Telegram, Discord/Teams: all lazy. |
-| Productivity | Obsidian, 1Password, Raycast, Bruno/Notion/Typora: all lazy. |
+| Productivity | Obsidian is daily (it was already in the essential set). 1Password, Raycast, Bruno/Notion/Typora: lazy. *Wording fixed 2026-09-13; this row first called Obsidian lazy while the essential set made it daily.* |
 | macOS prefs | Opinionated dev set on by default, one unit each, revertable. |
 | Keyboard | Native `hidutil` Caps Lock→Control at bootstrap (LaunchAgent); Karabiner optional lazy with hyper-key config. |
 | Secrets | macOS Keychain + `gh auth`; shell helper reads Keychain via `security`. Nothing in repo. |
 | Dev dirs | Bootstrap creates `~/Work`. Fixed, not a question; `~/Personal` is no longer created. *Decision of 2026-09-17; this row first created two roots, one per identity.* |
 | Work vs personal | Nothing about directories any more: git has one identity regardless of where a repository sits, and a work identity is a per-machine SSH key and GitHub upload, configured in `machines/<hostname>.conf`, never a question the wizard asks. *Decision of 2026-09-17; this row first said only git identity + SSH key differ by root.* |
-| Essential set | Core (Xcode CLT, PM, shell, git/gh/ssh, WezTerm, font, CLI set, mise, AeroSpace, macOS defaults, hidutil) **plus daily set** (Emacs, Neovim, Zed, VS Code, Chrome, Obsidian) at bootstrap. Everything else lazy. |
+| Essential set | Core (Xcode CLT, PM, shell, git/gh/ssh, WezTerm, font, CLI set, mise, AeroSpace, macOS defaults, hidutil) **plus daily set** (Emacs, Zed, Firefox Developer Edition, Obsidian) at bootstrap. Everything else lazy. *Decision of 2026-09-13: the daily set was Emacs, Neovim, Zed, VS Code, Chrome, Obsidian; Neovim, VS Code and Chrome are now lazy.* |
 | Profiles | No named profiles. Answers file + per-hostname overrides. |
 | Themes | Yes: cross-tool theme system, a few themes, light/dark following macOS appearance. |
 | Discoverability | CLI + `teeup menu` TUI (gum/fzf) from the same declarative data as `teeup list`/help. |
@@ -181,7 +181,7 @@ Note on the approved preview: the capability tree is named `capabilities/` rathe
 # capabilities/neovim/capability
 summary="Neovim with LazyVim"
 group=editors                  # editors|shell|git|languages|containers|apps|ai|macos|system
-tier=daily                     # core | daily | lazy
+tier=lazy                      # core | daily | lazy (neovim was daily until the 2026-09-13 decision)
 provides="nvim"                # commands that get lazy shims when tier=lazy (space separated)
 requires="package-manager git" # capabilities run before this one
 packages="neovim"              # pkg_install candidates; used by default update/remove
@@ -232,7 +232,9 @@ Rules for `provides=`: never list a command macOS already ships (`python3`, `rub
   3  minimal self-install, only what the CLI needs to exist: write ~/.config/teeup/env,
      link ~/.local/bin/teeup, install gum (state dirs and shims belong to teeup-runtime)
   4  wizard (skipped when answers exist unless --reconfigure): name, email,
-     package manager confirm, theme, include daily set (default yes)
+     package manager confirm, theme, include daily set (default yes),
+     Emacs flavor (starter|doom|spacemacs|none, default starter; asked only
+     with the daily set)
      -> writes ~/.config/teeup/answers
      (Decision of 2026-09-17: this step also asked for an optional work email.
       A work identity is per machine now and comes from machines/<hostname>.conf,
@@ -246,7 +248,7 @@ Rules for `provides=`: never list a command macOS already ships (`python3`, `rub
 `run_logged` redirects stdin from `/dev/null` like Omarchy unless the capability sets `interactive=true`; `github` (gh auth login with scopes `admin:public_key,admin:ssh_signing_key`), `ssh` (key passphrase) and `package-manager` (sudo) are interactive.
 
 Core list (ordered): `xcode-clt package-manager teeup-runtime dev-dirs zsh starship cli-tools secrets git ssh github mise wezterm fonts aerospace keyboard macos-defaults theme`.
-Daily list: `emacs neovim zed vscode chrome obsidian`.
+Daily list: `emacs zed firefox-developer-edition obsidian` (decision of 2026-09-13; `neovim`, `vscode` and `chrome` are lazy capabilities).
 Everything else is `tier=lazy`, including `xcode` (`mas install 497799835` after checking `mas account`; the user signs into the App Store by hand since `mas signin` no longer works).
 
 Capabilities that need a permission no script can grant (AeroSpace needs Accessibility, Karabiner needs driver approval) print the System Settings step from `configure` and check it from `doctor`.
@@ -268,9 +270,9 @@ Three entry points, one implementation.
 
 AI CLIs (Claude Code, Codex, Gemini, Copilot CLI, OpenCode) use mise wrappers instead of shims, exactly like Omarchy's `mise-install`: `~/.local/bin/claude` runs `mise use -g claude` on first call and `exec mise x claude -- claude "$@"` after, so `teeup update` upgrades them with `mise upgrade`. The `ai` capability writes the wrappers at configure time; nothing is downloaded until first call.
 
-Language runtimes are `teeup install dev-env <python|node|java|ruby|rust|go>`; Python also installs uv, Rust uses rustup, the rest are `mise use --global`. Runtimes get no shims (see the `provides=` rule). Shims exist only for commands macOS lacks: `docker`, `colima`, `kubectl`, `helm`, `k9s`, `tmux`, `herdr`, `ollama`, `lazydocker`.
+Language runtimes are `teeup install dev-env <python|node|java|ruby|rust|go>`; Python also installs uv, Rust uses rustup, the rest are `mise use --global`. Runtimes get no shims (see the `provides=` rule). Shims exist only for commands macOS lacks: `nvim`, `code`, `docker`, `colima`, `kubectl`, `helm`, `k9s`, `tmux`, `herdr`, `ollama`, `lazydocker`.
 
-Bootstrap versus lazy: bootstrap installs what every terminal session needs (core) plus the daily set, which defaults to yes. Lazy covers languages, containers, Kubernetes, `docker-dbs`, AI CLIs, Ollama, Cursor, Herdr, tmux, Karabiner, Xcode, browsers beyond Chrome, communication and productivity apps (1Password, Raycast, Bruno, Notion, Typora).
+Bootstrap versus lazy: bootstrap installs what every terminal session needs (core) plus the daily set, which defaults to yes. Lazy covers languages, containers, Kubernetes, `docker-dbs`, AI CLIs, Ollama, Cursor, Herdr, tmux, Karabiner, Xcode, Neovim, VS Code, Chrome and every browser other than Firefox Developer Edition, communication and productivity apps (1Password, Raycast, Bruno, Notion, Typora). (Decision of 2026-09-13: Neovim, VS Code and Chrome were daily in the first version of this document.)
 
 Herdr is gated on a phase 3 check that it ships macOS builds; if it does not, the capability is dropped.
 
@@ -342,7 +344,7 @@ core tier (ordered, install then configure each)
    └── theme           default theme rendered for dark and light
    │
    ▼
-daily tier (if chosen): emacs neovim zed vscode chrome obsidian
+daily tier (if chosen): emacs zed firefox-developer-edition obsidian
    │
    ▼
 lazy capabilities: shims in place, nothing downloaded
