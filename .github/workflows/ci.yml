@@ -45,6 +45,14 @@ jobs:
           fi
           luac -v
 
+      - name: Install emacs (the emacs suite loads the shipped Elisp; Linux only, the Elisp is platform-independent)
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get install -y emacs-nox
+            emacs --version | head -1
+          fi
+
       - name: Shellcheck legacy scripts
         run: shellcheck --severity=warning legacy/teeup.sh legacy/teeup-wizard.sh
 

@@ -8,6 +8,10 @@ mode = "dark"
 # closest built-in. Rendered into env.sh as BAT_THEME.
 bat_theme = "OneHalfDark"
 
+# Not colours either: the name each editor knows the closest theme by. Every
+# key here must exist in both modes, and a user theme must define them too.
+emacs_theme = "modus-vivendi"
+
 accent = "#89b4fa"
 selection = "#45475a"
 muted = "#585b70"

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# The same reload as theme-apply: teeup-apply re-reads current/font as well as
+# current/theme, the fboundp guard keeps Doom and Spacemacs quiet, and
+# `-a false` keeps the probe from starting a daemon.
+if ! state_done check "cap-$TEEUP_CAP"; then
+  exit 0
+fi
+if have emacsclient && emacsclient -a false -e t >/dev/null 2>&1; then
+  run_cmd emacsclient -a false -e "(when (fboundp 'teeup-apply) (teeup-apply))" ||
+    warn "Could not tell the Emacs daemon to reload its font; it picks the new one up at the next restart."
+else
+  log "No Emacs daemon is running; the font is read at the next start."
+fi

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Unload the daemon agent and drop its plist. Your configuration under
+# ~/.config/emacs, ~/.config/doom or ~/.emacs.d is yours and stays.
+launchagent_remove sh.teeup.emacs
+ok_unless_dry "The Emacs daemon no longer starts at login."
