@@ -1,0 +1,9 @@
+summary="Zed editor, following the teeup theme and font"
+group=editors
+tier=daily
+requires="package-manager cli-tools"
+provides=""
+packages=""
+casks="zed"
+apps="Zed"
+interactive=false

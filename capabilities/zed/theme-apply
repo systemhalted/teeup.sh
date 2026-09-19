@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Zed picks a theme by name and follows the system appearance itself when
+# `theme` is an object with mode "system", so the rendered files carry names,
+# not colours: both modes are read here and written as one object. The theme
+# comes from an extension (Catppuccin for the shipped palette), which Zed
+# installs on its next start because of auto_install_extensions.
+#
+# Zed on macOS reads ~/.config/zed whatever XDG_CONFIG_HOME says (its
+# paths::config_dir is home_dir/.config/zed on every platform but Linux,
+# FreeBSD and Windows), so the path is built from $HOME, not user_config_dir.
+#
+# `teeup theme set` runs every capability's hook; a settings file for an
+# editor teeup did not install is not this hook's to write.
+if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then
+  exit 0
+fi
+ZED_SETTINGS="$HOME/.config/zed/settings.json"
+THEME_DIR="${TEEUP_THEME_DIR:-$TEEUP_STATE_DIR/current/theme}"
+dark="$THEME_DIR/dark/zed.json"
+light="$THEME_DIR/light/zed.json"
+if [[ ! -f "$dark" || ! -f "$light" ]]; then
+  log "No rendered Zed theme in $THEME_DIR yet; the next teeup theme set writes it."
+  exit 0
+fi
+if ! have jq; then
+  warn "jq is not installed; cannot write $ZED_SETTINGS. Run: teeup install cli-tools"
+  exit 0
+fi
+dark_theme="$(jq -r .theme "$dark")"
+light_theme="$(jq -r .theme "$light")"
+json_set_key "$ZED_SETTINGS" theme "$(jq -cn --arg l "$light_theme" --arg d "$dark_theme" '{mode: "system", light: $l, dark: $d}')"
+# A palette whose Zed theme is built in names the extension "none".
+for ext in $(jq -r .extension "$dark" "$light" | sort -u); do
+  if [[ "$ext" == "none" ]]; then
+    continue
+  fi
+  json_merge_key "$ZED_SETTINGS" auto_install_extensions "$(jq -cn --arg e "$ext" '{($e): true}')"
+done

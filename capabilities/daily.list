@@ -2,3 +2,4 @@
 # Ordered; each entry's requires= must already be satisfied by core.list or
 # the entries above it.
 emacs
+zed
