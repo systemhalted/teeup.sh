@@ -13,5 +13,9 @@ app="Firefox Developer Edition"
 if [[ -d "${TEEUP_APPS_DIR:-/Applications}/$app.app" ]]; then
   log "$app is installed; open it with: open -a '$app'"
 else
-  log "$app.app is not in ${TEEUP_APPS_DIR:-/Applications}; the install step above says why."
+  # M4: a standalone `teeup configure firefox-developer-edition` has no
+  # install step above it to point at, so this says only what is actually
+  # known here -- casks are supported (the guard above already passed) and
+  # the app is simply not there yet.
+  log "$app.app is not in ${TEEUP_APPS_DIR:-/Applications}; run: teeup install $TEEUP_CAP"
 fi
