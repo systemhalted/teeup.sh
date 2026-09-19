@@ -511,6 +511,22 @@ test_dry_run_walks_the_daily_tier() {
   cleanup_test_env
 }
 
+test_dry_run_walks_the_daily_tier_in_order() {
+  setup
+  local out e z f o
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  e="$(printf '%s\n' "$out" | grep -n 'Completed: emacs configure' | head -1 | cut -d: -f1)"
+  z="$(printf '%s\n' "$out" | grep -n 'Completed: zed configure' | head -1 | cut -d: -f1)"
+  f="$(printf '%s\n' "$out" | grep -n 'Completed: firefox-developer-edition configure' | head -1 | cut -d: -f1)"
+  o="$(printf '%s\n' "$out" | grep -n 'Completed: obsidian configure' | head -1 | cut -d: -f1)"
+  [[ -n "$e" && -n "$z" && -n "$f" && -n "$o" ]] || { echo "a daily capability did not complete:"; printf '%s\n' "$out"; return 1; }
+  [[ "$e" -lt "$z" && "$z" -lt "$f" && "$f" -lt "$o" ]] || { echo "the daily tier ran out of order"; return 1; }
+  assert_not_contains "$out" "Starting: chrome install" "chrome is lazy" || return 1
+  assert_not_contains "$out" "Starting: neovim install" "neovim is lazy" || return 1
+  assert_not_contains "$out" "Starting: vscode install" "vscode is lazy" || return 1
+  cleanup_test_env
+}
+
 test_wizard_records_the_emacs_flavor() {
   setup
   # Option 2 after "y" is doom (the current answer, starter, is offered first).
@@ -575,6 +591,7 @@ run_test "wizard name validator stores the trimmed value" test_wizard_name_valid
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect
 run_test "dry run walks the daily tier" test_dry_run_walks_the_daily_tier
+run_test "dry run walks the daily tier in order" test_dry_run_walks_the_daily_tier_in_order
 run_test "the wizard records the Emacs flavor" test_wizard_records_the_emacs_flavor
 run_test "the wizard does not ask the flavor without the daily tier" test_wizard_does_not_ask_the_flavor_without_the_daily_tier
 run_test "the wizard does not ask for a pinned flavor" test_wizard_does_not_ask_for_a_pinned_flavor

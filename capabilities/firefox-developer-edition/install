@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Homebrew's own cask carries no macOS floor (depends_on macos is empty), so
+# the only machine this can never run on is one without casks at all.
+# MacPorts has no casks and no port of the browser: say so up front, through
+# not_applicable, rather than warning and reporting the capability installed
+# anyway.
+if ! casks_supported; then
+  not_applicable "Firefox Developer Edition is a cask and MacPorts has no port of it; download it from https://www.mozilla.org/firefox/developer/"
+fi
+
+# Homebrew's token is firefox@developer-edition (the versioned Firefox casks
+# live in the main tap under @-suffixed names). The cask updates itself
+# (auto_updates), so brew never fights the browser's own updater.
+cask_install firefox@developer-edition

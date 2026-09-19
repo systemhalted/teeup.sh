@@ -1,0 +1,9 @@
+summary="Google Chrome, installed when you first ask for it"
+group=apps
+tier=lazy
+requires="package-manager"
+provides=""
+packages=""
+casks="google-chrome"
+apps="Google Chrome"
+interactive=false

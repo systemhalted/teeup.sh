@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Same guard as install, repeated here because configure can run on its own
+# (teeup configure obsidian): a machine below the floor, or a MacPorts Mac,
+# must report this capability not-applicable, not installed.
+obsidian_macos_major="$(macos_major)"
+if [[ "${obsidian_macos_major:-99}" -lt 12 ]] 2>/dev/null; then
+  not_applicable "Obsidian requires macOS 12 or newer; this Mac is on macOS $obsidian_macos_major, so there is nothing to configure."
+fi
+unset obsidian_macos_major
+if ! casks_supported; then
+  not_applicable "Obsidian is a cask and MacPorts has no port of it; download it from https://obsidian.md/download"
+fi
+
+# Vaults are folders you pick, and Obsidian keeps its settings inside each
+# vault, so there is nothing to ship. The script records that decision, and
+# says whether the app is in place.
+app="Obsidian"
+if [[ -d "${TEEUP_APPS_DIR:-/Applications}/$app.app" ]]; then
+  log "$app is installed; open it with: open -a '$app'"
+else
+  log "$app.app is not in ${TEEUP_APPS_DIR:-/Applications}; the install step above says why."
+fi

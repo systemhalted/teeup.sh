@@ -1,0 +1,9 @@
+summary="Obsidian notes"
+group=apps
+tier=daily
+requires="package-manager"
+provides=""
+packages=""
+casks="obsidian"
+apps="Obsidian"
+interactive=false
