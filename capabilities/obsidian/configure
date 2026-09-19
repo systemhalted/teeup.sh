@@ -18,5 +18,9 @@ app="Obsidian"
 if [[ -d "${TEEUP_APPS_DIR:-/Applications}/$app.app" ]]; then
   log "$app is installed; open it with: open -a '$app'"
 else
-  log "$app.app is not in ${TEEUP_APPS_DIR:-/Applications}; the install step above says why."
+  # M4: a standalone `teeup configure obsidian` has no install step above it
+  # to point at, so this says only what is actually known here -- casks are
+  # supported and the floor is met (both guards above already passed) and
+  # the app is simply not there yet.
+  log "$app.app is not in ${TEEUP_APPS_DIR:-/Applications}; run: teeup install $TEEUP_CAP"
 fi

@@ -50,6 +50,11 @@ test_configure_reports_the_app() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure firefox-developer-edition)"
   assert_contains "$out" "Firefox Developer Edition.app is not in $TEST_HOME/Applications" || return 1
+  # M4: a standalone `teeup configure firefox-developer-edition` has no
+  # install step above it, so it must say what is actually known, not point
+  # at a step that never ran.
+  assert_contains "$out" "run: teeup install firefox-developer-edition" || return 1
+  assert_not_contains "$out" "the install step above says why" || return 1
   mkdir -p "$TEST_HOME/Applications/Firefox Developer Edition.app"
   out="$(DRY_RUN=false "$TEEUP" configure firefox-developer-edition)"
   assert_contains "$out" "Firefox Developer Edition is installed; open it with: open -a 'Firefox Developer Edition'" || return 1

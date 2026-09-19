@@ -50,6 +50,10 @@ test_configure_reports_the_app() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure chrome)"
   assert_contains "$out" "Google Chrome.app is not in $TEST_HOME/Applications" || return 1
+  # M4: a standalone `teeup configure chrome` has no install step above it,
+  # so it must say what is actually known, not point at a step that never ran.
+  assert_contains "$out" "run: teeup install chrome" || return 1
+  assert_not_contains "$out" "the install step above says why" || return 1
   mkdir -p "$TEST_HOME/Applications/Google Chrome.app"
   out="$(DRY_RUN=false "$TEEUP" configure chrome)"
   assert_contains "$out" "Google Chrome is installed; open it with: open -a 'Google Chrome'" || return 1
