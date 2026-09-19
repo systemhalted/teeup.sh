@@ -91,6 +91,17 @@ write_managed_file() {
     log "Already current: $file"
     return 0
   fi
+  # A file that exists but is not writable (mode 0444, say) usually signals
+  # intent the same way a symlink does (M11): `mv` onto the path would still
+  # succeed (only the directory's permissions govern a rename) and silently
+  # rewrite it, so this is checked explicitly rather than left to `mv`.
+  if [[ -e "$file" && ! -L "$file" && ! -w "$file" ]]; then
+    rm -f "$tmp"
+    # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
+    WRITE_MANAGED_FILE_CHANGED=false
+    warn "$file is not writable; teeup leaves it alone. Set it by hand: $label"
+    return 1
+  fi
   # A file that already exists keeps its own mode across a rewrite: mktemp's
   # 0600 would otherwise land on it once mv puts the temp file's inode at
   # that path, quietly narrowing a 0644 editor settings file to 0600 and
@@ -247,6 +258,14 @@ replace_literal() {
 # The program runs per line with its state carried across lines, so it never
 # indexes into one long string. With ENVIRON["JSONC_DETECT"] set it prints
 # nothing and exits 0 when the input holds a comment, 1 when it holds none.
+#
+# Two byte-level things this does not round-trip, both benign for a Zed/VS
+# Code settings file (M7, M10): a raw NUL byte is silently dropped (bash's
+# own command substitution already drops it with "ignored null byte in
+# input" before awk ever sees it, and a file with one is not valid JSON
+# anyway), and a UTF-8 BOM at the start of the file is silently stripped
+# (jq 1.7+ already skips a leading BOM when reading, so the rewrite below
+# simply never puts one back).
 _JSONC_AWK='
 function out(s) { if (!detect) printf "%s", s }
 BEGIN { detect = (ENVIRON["JSONC_DETECT"] != ""); found = 0 }
@@ -280,7 +299,16 @@ END {
 '
 
 # json_quote <text> -> <text> as one JSON string literal, escaped by jq.
-json_quote() { jq -n --arg v "$1" '$v'; }
+# Every current caller already checks `have jq` first (M1), but this guard
+# keeps a caller that forgot it from getting bash's raw
+# "jq: command not found" and an empty value instead of a warning.
+json_quote() {
+  if ! have jq; then
+    warn "jq is not installed; cannot quote a JSON value. Run: teeup install cli-tools"
+    return 1
+  fi
+  jq -n --arg v "$1" '$v'
+}
 
 # _json_edit <set|merge> <file> <key> <json-value>
 _json_edit() {
@@ -318,10 +346,16 @@ _json_edit() {
     warn "$file is not a JSON object jq can edit; set it by hand: \"$key\": $value"
     return 1
   fi
-  if [[ "$DRY_RUN" != "true" ]] && printf '%s\n' "$body" | JSONC_DETECT=1 awk "$_JSONC_AWK"; then
-    backup="${file}.teeup_backup_$(date +%Y%m%d%H%M%S)"
-    cp "$file" "$backup"
-    warn "Comments inside $file do not survive the edit; your previous file is at $backup"
+  if printf '%s\n' "$body" | JSONC_DETECT=1 awk "$_JSONC_AWK"; then
+    if [[ "$DRY_RUN" != "true" ]]; then
+      backup="${file}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+      cp "$file" "$backup"
+      warn "Comments inside $file do not survive the edit; your previous file is at $backup"
+    else
+      # M2: a dry run previews the write below but must still say the
+      # comments are about to go, not just that a write would happen.
+      warn "Comments inside $file do not survive the edit; would back up your previous file first"
+    fi
   fi
   {
     if [[ -n "$header" ]]; then printf '%s\n' "$header"; fi

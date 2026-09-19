@@ -75,6 +75,25 @@ test_write_managed_file_dry_run_changes_no_mode() {
   cleanup_test_env
 }
 
+# M11: a non-writable existing file (mode 0444) is treated like a symlink --
+# `mv` onto the path would still succeed (only the directory's permissions
+# govern a rename), silently rewriting the file and then restoring 0444,
+# which usually contradicts why it was made read-only in the first place.
+test_write_managed_file_leaves_a_non_writable_file_alone() {
+  setup
+  local f="$TEST_HOME/readonly.conf"
+  printf 'old\n' > "$f"
+  chmod 444 "$f"
+  local rc=0 out
+  out="$(echo new | write_managed_file "$f" "test" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$f is not writable; teeup leaves it alone." || return 1
+  assert_equals "old" "$(cat "$f")" "the file's content is untouched" || return 1
+  assert_equals "444" "$(mode_of "$f")" "the file's mode is untouched" || return 1
+  chmod 644 "$f"
+  cleanup_test_env
+}
+
 test_backup_target_moves_and_prints_path() {
   setup
   echo old > "$TEST_HOME/file"
@@ -233,6 +252,7 @@ run_test "write_managed_file noops when identical" test_write_managed_file_noops
 run_test "write_managed_file keeps an existing mode" test_write_managed_file_keeps_an_existing_mode
 run_test "write_managed_file new file keeps today's behavior" test_write_managed_file_new_file_keeps_todays_behavior
 run_test "write_managed_file dry run changes no mode" test_write_managed_file_dry_run_changes_no_mode
+run_test "write_managed_file leaves a non-writable file alone" test_write_managed_file_leaves_a_non_writable_file_alone
 run_test "backup_target moves and prints path" test_backup_target_moves_and_prints_path
 run_test "copy_config_once copies and records sha" test_copy_config_once_copies_and_records_sha
 run_test "copy_config_once skips user-edited file" test_copy_config_once_skips_user_edited_file

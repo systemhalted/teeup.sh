@@ -114,6 +114,25 @@ EOF2
   cleanup_test_env
 }
 
+# M2: a dry run previews the write but must still warn that the comments are
+# about to go, as a "would back up" line -- and must not actually make one.
+test_comments_inside_the_object_warn_in_dry_run_too() {
+  setup || return 1
+  mkdir -p "$(dirname "$FILE")"
+  cat > "$FILE" <<'EOF2'
+{
+  // the size I like
+  "editor.fontSize": 13,
+}
+EOF2
+  local out
+  out="$(DRY_RUN=true json_set_key "$FILE" editor.fontFamily '"Hack Nerd Font"' 2>&1)"
+  assert_contains "$out" "Comments inside $FILE do not survive the edit; would back up your previous file first" || return 1
+  assert_contains "$out" "[DRY-RUN] Would write $FILE" || return 1
+  ! ls "$FILE".teeup_backup_* >/dev/null 2>&1 || { echo "a backup was made in dry run"; return 1; }
+  cleanup_test_env
+}
+
 test_set_key_is_idempotent() {
   setup || return 1
   json_set_key "$FILE" theme '"One Dark"' >/dev/null
@@ -203,12 +222,27 @@ test_json_quote_escapes() {
   cleanup_test_env
 }
 
+# M1: json_quote had no `have jq` guard of its own (unlike _json_edit), so a
+# caller that forgot to check first got bash's raw "jq: command not found"
+# and an empty value instead of a warning.
+test_json_quote_without_jq_warns() {
+  setup || return 1
+  export TEEUP_TEST_MISSING="jq"
+  local rc=0 out
+  out="$(json_quote 'Ada Lovelace' 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "jq is not installed" || return 1
+  unset TEEUP_TEST_MISSING
+  cleanup_test_env
+}
+
 echo "lib/json"
 run_test "set_key creates the file" test_set_key_creates_the_file
 run_test "a dotted key is one flat key" test_a_dotted_key_is_one_flat_key
 run_test "set_key accepts objects and booleans" test_set_key_accepts_objects_and_booleans
 run_test "Zed's initial file is edited and keeps its header" test_zeds_initial_file_is_edited_and_keeps_its_header
 run_test "comments inside the object are backed up" test_comments_inside_the_object_are_backed_up
+run_test "comments inside the object warn in dry run too" test_comments_inside_the_object_warn_in_dry_run_too
 run_test "set_key is idempotent" test_set_key_is_idempotent
 run_test "set_key dry run writes nothing" test_set_key_dry_run_writes_nothing
 run_test "a file that is not an object is left alone" test_a_file_that_is_not_an_object_is_left_alone
@@ -217,4 +251,5 @@ run_test "set_key rejects a non-JSON value" test_set_key_rejects_a_non_json_valu
 run_test "set_key without jq warns" test_set_key_without_jq_warns
 run_test "merge_key keeps the user's entries" test_merge_key_keeps_the_users_entries
 run_test "json_quote escapes" test_json_quote_escapes
+run_test "json_quote without jq warns" test_json_quote_without_jq_warns
 print_summary

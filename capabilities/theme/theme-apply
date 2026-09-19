@@ -114,5 +114,7 @@ TEEUP_AWK_BLOCK="$block" TEEUP_AWK_PALETTE="$active" TEEUP_AWK_START="$START" TE
   { print }
 ' "$STARSHIP" > "$rewritten"
 
-write_managed_file "$STARSHIP" "starship palette ($active)" < "$rewritten"
+# write_managed_file already warns on its own refusal (M11); `|| true` keeps
+# that a warning instead of skipping the cleanup below under `bash -eu`.
+write_managed_file "$STARSHIP" "starship palette ($active)" < "$rewritten" || true
 rm -f "$block" "$rewritten"

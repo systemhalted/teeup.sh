@@ -5,7 +5,10 @@
 if [[ -s "$(font_file)" ]]; then
   log "Font already recorded: $(font_current)"
 else
-  write_managed_file "$(font_file)" "font family" <<FONT_STATE
+  # write_managed_file already warns on its own refusal (M11); `|| true`
+  # keeps that a warning instead of aborting the rest of this script under
+  # `bash -eu`.
+  write_managed_file "$(font_file)" "font family" <<FONT_STATE || true
 $TEEUP_FONT_DEFAULT
 FONT_STATE
 fi

@@ -26,7 +26,10 @@ done
 teeup_path_q="$(printf '%q' "$TEEUP_PATH")"
 teeup_config_dir_q="$(printf '%q' "$TEEUP_CONFIG_DIR")"
 teeup_state_dir_q="$(printf '%q' "$TEEUP_STATE_DIR")"
-write_managed_file "$TEEUP_CONFIG_DIR/env" "teeup env" <<TEEUP_ENV
+# write_managed_file already warns on its own refusal (M11); `|| true` keeps
+# that a warning instead of aborting the symlink setup below under
+# `bash -eu`.
+write_managed_file "$TEEUP_CONFIG_DIR/env" "teeup env" <<TEEUP_ENV || true
 export TEEUP_PATH=$teeup_path_q
 export TEEUP_CONFIG_DIR=$teeup_config_dir_q
 export TEEUP_STATE_DIR=$teeup_state_dir_q
