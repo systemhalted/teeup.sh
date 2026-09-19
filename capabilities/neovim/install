@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# The formula and the port are both called neovim and both install `nvim`.
+# LazyVim wants git (partial clones), ripgrep, fd and fzf, which the git and
+# cli-tools capabilities this one requires already provide; lazy.nvim and the
+# plugins are cloned by Neovim itself on the first start.
+pkg_install neovim nvim || die "Neovim could not be installed."

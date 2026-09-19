@@ -1,0 +1,12 @@
+-- lua/plugins/local.lua - your plugin specs. Every file in this directory is
+-- loaded by lazy.nvim; this one ships empty. Add plugins, disable LazyVim
+-- ones, or override their options here, for example:
+--
+-- return {
+--   { "tpope/vim-fugitive" },
+--   { "folke/flash.nvim", enabled = false },
+-- }
+--
+-- The colorscheme is chosen by `teeup theme set`; to pin your own, override
+-- it here with { "LazyVim/LazyVim", opts = { colorscheme = "gruvbox" } }.
+return {}

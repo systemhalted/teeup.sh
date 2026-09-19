@@ -1,0 +1,9 @@
+summary="Neovim with LazyVim, following the teeup theme"
+group=editors
+tier=lazy
+requires="package-manager git cli-tools"
+provides="nvim"
+packages="neovim"
+casks=""
+apps=""
+interactive=false

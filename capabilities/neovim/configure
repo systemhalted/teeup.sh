@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# The LazyVim starter layout, shipped file by file and copied once: every file
+# under ~/.config/nvim is the user's from then on. The thin init.lua adds the
+# teeup layer (capabilities/neovim/default/teeup/neovim.lua) to package.path;
+# that layer is teeup's and is upgraded by `teeup update`. Neovim reads
+# $XDG_CONFIG_HOME/nvim, so user_config_dir is the right root here.
+NVIM_DIR="$(user_config_dir)/nvim"
+for rel in init.lua stylua.toml lua/config/lazy.lua lua/config/options.lua \
+           lua/config/keymaps.lua lua/config/autocmds.lua lua/plugins/local.lua; do
+  copy_config_once "$TEEUP_CAP_DIR/config/nvim/$rel" "$NVIM_DIR/$rel"
+done
+
+# With both init.vim and init.lua, Neovim reports E5422 ("Conflicting
+# configs") and loads only init.lua; ~/.vimrc is Vim's and Neovim never reads
+# it. Both are reported, neither is moved.
+if [[ -f "$NVIM_DIR/init.vim" ]]; then
+  warn "$NVIM_DIR/init.vim exists next to init.lua; Neovim reports E5422 and ignores it. Fold what you need into $NVIM_DIR/lua/config/options.lua."
+fi
+if [[ -f "$HOME/.vimrc" ]]; then
+  log "$HOME/.vimrc is Vim's; Neovim reads $NVIM_DIR/init.lua instead."
+fi
+
+# LazyVim stops with an error on a Neovim older than 0.11.2, and pkg_install
+# keeps whatever nvim is already on PATH, so an old one is reported here.
+if have nvim; then
+  nvim_version="$(nvim --version 2>/dev/null | head -1 | sed -n 's/^NVIM v\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2 \3/p')"
+  if [[ -n "$nvim_version" ]]; then
+    read -r major minor patch <<< "$nvim_version"
+    if (( 10#$major * 10000 + 10#$minor * 100 + 10#$patch < 1102 )); then
+      warn "$(command -v nvim) is Neovim $major.$minor.$patch; LazyVim needs 0.11.2 or later. Upgrade it, or put a newer nvim first on PATH."
+    fi
+  fi
+fi
+log "Plugins are cloned by Neovim on the first start: run nvim, then :LazyHealth."
