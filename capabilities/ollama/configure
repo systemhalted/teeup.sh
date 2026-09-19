@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# No models are pulled: they are gigabytes each and the choice is yours.
+# Name the follow-up command only after confirming the CLI exists.
+if have ollama; then
+  log "Pull a model when you need one, for example: ollama pull llama3.2"
+else
+  warn "Ollama is not installed; skipping model guidance."
+fi

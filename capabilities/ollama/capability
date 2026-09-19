@@ -1,0 +1,9 @@
+summary="Ollama local LLM runtime (no models downloaded)"
+group=ai
+tier=lazy
+requires="package-manager"
+provides="ollama"
+packages="ollama"
+casks="ollama-app"
+apps="Ollama"
+interactive=false
