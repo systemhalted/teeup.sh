@@ -113,9 +113,19 @@ test_list_shows_tier_and_summary() {
   assert_contains "$out" "alpha" || return 1
   assert_contains "$out" "core" || return 1
   assert_contains "$out" "Fixture alpha" || return 1
+  # A cask that also links a command, and a lazy capability with neither.
+  make_cap zapper lazy "" "zap" "Zap App"
+  make_cap plain lazy
   out="$("$TEEUP" list --tier lazy)"
   assert_contains "$out" "lazyone" || return 1
   assert_not_contains "$out" "alpha" || return 1
+  # Lazy rows say how they are reached; core rows have no such column.
+  assert_contains "$out" "[on first: frob]" || return 1
+  assert_contains "$out" "[launch: Sketch Pad]" || return 1
+  assert_contains "$out" "[on first: zap; launch: Zap App]" || return 1
+  assert_contains "$out" "[teeup install plain]" || return 1
+  out="$("$TEEUP" list --tier core)"
+  assert_not_contains "$out" "[" || return 1
   cleanup_test_env
 }
 
@@ -125,8 +135,18 @@ test_status_reports_backend_and_installed() {
   local out
   out="$("$TEEUP" status)"
   assert_contains "$out" "Package manager: homebrew" || return 1
+  assert_contains "$out" "alpha              installed (core)" || return 1
   assert_contains "$out" "Installed: 1 of 4" || return 1
   assert_contains "$out" "Answers: missing" || return 1
+  assert_contains "$out" "Lazy shims: none (run: teeup configure teeup-runtime)" || return 1
+  assert_contains "$out" "Dev envs: none" || return 1
+  # With shims in place and a dev-env marked, both lines list them.
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false shims_generate >/dev/null
+  DRY_RUN=false state_done mark dev-env-go
+  out="$("$TEEUP" status)"
+  assert_contains "$out" "Lazy shims: frob" || return 1
+  assert_contains "$out" "Dev envs: go" || return 1
   cleanup_test_env
 }
 
@@ -195,6 +215,8 @@ test_help_lists_verbs() {
   setup
   assert_contains "$("$TEEUP" help)" "teeup install <capability>" || return 1
   assert_contains "$("$TEEUP" help)" "teeup install font list" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup install dev-env <lang>" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup launch <app|capability>" || return 1
   assert_contains "$("$TEEUP" help)" "teeup lazy-run <cap> <cmd> [args]" || return 1
   cleanup_test_env
 }
@@ -405,6 +427,92 @@ test_lazy_run_rejects_a_command_the_capability_does_not_provide() {
   cleanup_test_env
 }
 
+test_launch_opens_an_installed_app_without_installing() {
+  setup
+  mock_command open 0 ""
+  mkdir -p "$TEEUP_APPS_DIR/Sketch Pad.app"
+  local out
+  out="$("$TEEUP" launch "sketch pad")"
+  assert_contains "$out" "Opening Sketch Pad" || return 1
+  assert_not_contains "$out" "install:sketch" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "open -a Sketch Pad" || return 1
+  # Unquoted, the way people type `teeup launch Google Chrome`.
+  out="$("$TEEUP" launch Sketch Pad 2>&1)" || { echo "an unquoted app name must resolve: $out"; return 1; }
+  assert_contains "$out" "Opening Sketch Pad" || return 1
+  cleanup_test_env
+}
+
+test_launch_installs_the_capability_then_opens() {
+  setup
+  mock_command open 0 ""
+  # The fixture's install "installs" the app by creating its bundle.
+  printf '#!/usr/bin/env bash\necho "install:sketch"\nmkdir -p "$TEEUP_APPS_DIR/Sketch Pad.app"\n' > "$TEEUP_CAPS_DIR/sketch/install"
+  local out
+  out="$("$TEEUP" launch sketch)"
+  assert_contains "$out" "Sketch Pad is not installed; installing sketch first." || return 1
+  assert_contains "$out" "install:sketch" || return 1
+  assert_contains "$out" "configure:sketch" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "open -a Sketch Pad" || return 1
+  "$TEEUP" has sketch || { echo "sketch must be marked installed"; return 1; }
+  cleanup_test_env
+}
+
+test_launch_fails_clearly_when_the_app_never_appears() {
+  setup
+  mock_command open 0 ""
+  # What a MacPorts machine sees: cask_install warned and returned 0, so the
+  # capability "succeeded" and the bundle is still missing.
+  local rc=0 out
+  out="$("$TEEUP" launch sketch 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Sketch Pad is still not in $TEEUP_APPS_DIR after installing sketch" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "open -a" || return 1
+  cleanup_test_env
+}
+
+test_launch_dry_run_previews_the_open() {
+  setup
+  local out
+  out="$(DRY_RUN=true "$TEEUP" launch sketch)"
+  assert_contains "$out" "[DRY-RUN] Would execute: open -a Sketch Pad" || return 1
+  cleanup_test_env
+}
+
+test_launch_unknown_app_and_skipped_capability() {
+  setup
+  local rc=0 out
+  out="$("$TEEUP" launch "Nothing Here" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No capability provides an app named 'Nothing Here'" || return 1
+  rc=0
+  out="$(TEEUP_SKIP=sketch "$TEEUP" launch sketch 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "sketch is skipped on this machine (TEEUP_SKIP); install Sketch Pad by hand." || return 1
+  cleanup_test_env
+}
+
+test_install_dev_env_goes_through_mise() {
+  setup
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+case "$*" in
+  "ls --global"*) : ;;
+  "where "*) exit 1 ;;
+  *) : ;;
+esac
+exit 0
+EOF2
+  local out
+  out="$("$TEEUP" install dev-env go)"
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / use -g go@latest" || return 1
+  assert_contains "$out" "go is ready" || return 1
+  local rc=0
+  out="$("$TEEUP" install dev-env cobol 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Usage: teeup install dev-env <python|node|java|ruby|rust|go>" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
@@ -431,6 +539,12 @@ run_test "lazy-run reinstalls a capability whose command went missing" test_lazy
 run_test "lazy-run finds a command under the package prefix" test_lazy_run_finds_a_command_under_the_package_prefix
 run_test "lazy-run dry run previews and runs nothing" test_lazy_run_dry_run_previews_and_runs_nothing
 run_test "lazy-run rejects a command the capability does not provide" test_lazy_run_rejects_a_command_the_capability_does_not_provide
+run_test "launch opens an installed app without installing" test_launch_opens_an_installed_app_without_installing
+run_test "launch installs the capability then opens" test_launch_installs_the_capability_then_opens
+run_test "launch fails clearly when the app never appears" test_launch_fails_clearly_when_the_app_never_appears
+run_test "launch dry run previews the open" test_launch_dry_run_previews_the_open
+run_test "launch unknown app and skipped capability" test_launch_unknown_app_and_skipped_capability
+run_test "install dev-env goes through mise" test_install_dev_env_goes_through_mise
 run_test "data verbs keep stdout clean with a shadowed machine file" test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file
 run_test "has stdout stays empty with a shadowed machine file" test_has_stdout_stays_empty_with_a_shadowed_machine_file
 print_summary

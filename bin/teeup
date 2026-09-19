@@ -24,11 +24,13 @@ usage() {
 teeup - your Mac, as a distribution
 
   teeup install <capability>     install and configure it (and what it requires)
+  teeup install dev-env <lang>   python|node|java|ruby|rust|go through mise
   teeup install font <name>      install a Nerd Font and point every tool at it
   teeup install font list        list the fonts teeup knows by name
   teeup configure <capability>   re-run only its configuration
   teeup list [--tier core|daily|lazy]
   teeup theme set|list|current   apply, list or print the cross-tool theme
+  teeup launch <app|capability>  open a GUI app, installing its cask first if needed
   teeup lazy-run <cap> <cmd> [args]  what a lazy shim runs: install <cap> on first use, then exec <cmd>
   teeup has <capability>         exit 0 when installed (for scripts and menus)
   teeup secret get|set|rm <name>  read, store or delete a Keychain secret
@@ -51,6 +53,13 @@ cmd_install() {
       die "fonts is skipped on this machine (TEEUP_SKIP)"
     fi
     font_set "$*"
+    return $?
+  fi
+  # `dev-env` is not a capability either: runtimes come through mise and get
+  # no shims (spec section 6), so they have their own switch.
+  if [[ "$target" == "dev-env" ]]; then
+    shift
+    dev_env_install "${1:-}"
     return $?
   fi
   [[ -n "$target" ]] || die "Usage: teeup install <capability>"
@@ -122,8 +131,24 @@ cmd_list() {
   for name in $(cap_list); do
     tier="$(cap_meta_get "$name" tier)"
     [[ -z "$tier_filter" || "$tier" == "$tier_filter" ]] || continue
-    printf '%-18s %-6s %s\n' "$name" "$tier" "$(cap_meta_get "$name" summary)"
+    printf '%-18s %-6s %s%s\n' "$name" "$tier" "$(cap_meta_get "$name" summary)" "$(cap_list_via "$name")"
   done
+}
+
+# The lazy column: how a lazy capability is reached, since nothing installs
+# it at bootstrap. Commands come from provides= (they have shims), an app
+# from apps= (it has `teeup launch`); a capability can have both (a cask that
+# links a command, like vscode's `code`), and one with neither is reached by
+# `teeup install` alone.
+cap_list_via() {
+  local name="$1" tier provides app via=""
+  tier="$(cap_meta_get "$name" tier)"
+  [[ "$tier" == "lazy" ]] || return 0
+  provides="$(cap_meta_get "$name" provides)"
+  app="$(cap_apps "$name" | head -1)"
+  [[ -z "$provides" ]] || via="on first: $provides"
+  [[ -z "$app" ]] || via="${via:+$via; }launch: $app"
+  printf '  [%s]' "${via:-teeup install $name}"
 }
 
 # What every lazy shim runs (lib/lazy.sh writes them). A real binary anywhere
@@ -175,6 +200,32 @@ cmd_lazy_run() {
   fi
   err "$cap is installed but $command is still not on PATH. Open a new terminal and try again."
   exit 127
+}
+
+# `open -a` launches the app, or brings it to the front when it is already
+# running, so one call covers Omarchy's launch-or-focus. A missing app means
+# its capability's cask is not installed yet: install it, then open. The
+# arguments are joined, so `teeup launch Google Chrome` needs no quotes. A
+# GUI-only capability (apps= and no provides=, like 3a's chrome) is reached
+# only this way and through `teeup install`.
+cmd_launch() {
+  local target="$*" cap app
+  [[ -n "$target" ]] || die "Usage: teeup launch <app|capability>"
+  cap="$(launch_resolve "$target")" || exit 1
+  app="$(cap_apps "$cap" | head -1)"
+  if app_installed "$app"; then
+    log "Opening $app"
+  else
+    if cap_skipped "$cap"; then
+      die "$cap is skipped on this machine (TEEUP_SKIP); install $app by hand."
+    fi
+    log "$app is not installed; installing $cap first."
+    cmd_install "$cap"
+    if [[ "$DRY_RUN" != "true" ]] && ! app_installed "$app"; then
+      die "$app is still not in ${TEEUP_APPS_DIR:-/Applications} after installing $cap. On a MacPorts machine install it by hand, then run: teeup launch $target"
+    fi
+  fi
+  run_cmd open -a "$app"
 }
 
 cmd_has() {
@@ -236,15 +287,16 @@ cmd_secret() {
 }
 
 cmd_status() {
-  local total=0 installed=0 unsupported=0 name
+  local total=0 installed=0 unsupported=0 name tier shims="" f envs
   echo "teeup $(cat "$TEEUP_PATH/version" 2>/dev/null || echo dev) at $TEEUP_PATH"
   echo "Package manager: $(pkg_backend)"
   if answers_exist; then echo "Answers: $(answers_file)"; else echo "Answers: missing (run ./bootstrap)"; fi
   for name in $(cap_list); do
     total=$((total + 1))
+    tier="$(cap_meta_get "$name" tier)"
     if state_done check "cap-$name"; then
       installed=$((installed + 1))
-      printf '  %-18s installed\n' "$name"
+      printf '  %-18s installed (%s)\n' "$name" "$tier"
     elif state_na check "cap-$name"; then
       unsupported=$((unsupported + 1))
       printf '  %-18s not applicable on this machine\n' "$name"
@@ -252,6 +304,15 @@ cmd_status() {
   done
   echo "Installed: $installed of $total capabilities"
   [[ "$unsupported" -gt 0 ]] && echo "Not applicable on this machine: $unsupported"
+  # What the lazy machinery has in place: the shims the shell will fall back
+  # to, and the runtimes `teeup install dev-env` has set up.
+  for f in "$(shims_dir)"/*; do
+    [[ -x "$f" ]] || continue
+    shims="$shims ${f##*/}"
+  done
+  echo "Lazy shims:${shims:- none (run: teeup configure teeup-runtime)}"
+  envs="$(dev_env_installed | tr '\n' ' ')"
+  echo "Dev envs: ${envs:-none (teeup install dev-env <python|node|java|ruby|rust|go>)}"
   return 0
 }
 
@@ -269,6 +330,7 @@ case "$verb" in
   configure) cmd_configure "$@" ;;
   theme) cmd_theme "$@" ;;
   list) cmd_list "$@" ;;
+  launch) cmd_launch "$@" ;;
   lazy-run) cmd_lazy_run "$@" ;;
   has) cmd_has "$@" ;;
   secret) cmd_secret "$@" ;;
