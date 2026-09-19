@@ -531,3 +531,38 @@ Happy contributing! 🚀
     `vscode_extension`; an extension of `none` installs nothing), so every
     theme, a user theme included, must define each of them in both modes or
     `teeup theme set` refuses to render.
+17. A `tier=lazy` capability is reached on first use, never at bootstrap.
+    `provides` lists the commands it makes available: `teeup configure
+    teeup-runtime` (`shims_generate` in `lib/lazy.sh`) writes one shim per
+    command into `~/.local/state/teeup/shims`, last on `PATH`, and each shim
+    runs `teeup lazy-run <cap> <command>`. There is no list of lazy
+    capabilities to update; adding the directory registers it. Every token
+    must be a plain command name (letters, digits and `_.+-`, starting with a
+    letter or digit), and two lazy capabilities must not provide the same
+    command; `teeup commands --check` fails on either condition. `have`
+    (`lib/core.sh`) never counts a shim as an installed command, so
+    `pkg_install <pkg> <command>` still installs the package represented by
+    the shim.
+18. `apps` names the application bundles `teeup launch` opens, separated by
+    `;` because names contain spaces (`apps="Visual Studio Code"`). Use the
+    `app` artifact name from the cask, without `.app`. The first entry is what
+    `launch` opens with `open -a`; when that bundle is missing from
+    `/Applications` and `~/Applications`, the capability is installed first.
+    Tests point `TEEUP_APPS_DIR` at an empty directory.
+19. mise-managed tools go through `lib/mise.sh`. `mise_ensure_global <tool>
+    [version]` adds a tool to the global config without rewriting a version
+    the user pinned; `mise_wrapper_write <command> <tool> [runtime...]` writes
+    an install-on-first-call wrapper into `~/.local/bin` (the `ai`
+    capability) and never replaces a file there that it did not write. Every
+    mise call except the wrapper's `mise x` runs with `-C /`, so a project's
+    `mise.toml` in the current directory cannot shadow the global file. Check
+    registry names with `mise registry`. Language runtimes use `teeup install
+    dev-env <lang>` (`dev_env_install`), never a capability or a shim.
+20. Two test hooks join `TEEUP_TEST_MISSING`: `TEEUP_TEST_TTY=yes|no`
+    overrides the terminal check in `teeup lazy-run`, so a piped `y` can
+    answer its question, and `hide_host_commands <name...>`
+    (`tests/helper.sh`) adds every copy of a command on the host's `PATH` to
+    `TEEUP_TEST_MISSING` by absolute path. A test can then prove an install on
+    a runner that has `docker` in `/usr/bin` while still finding the copy made
+    by the mocked install. `tests/capabilities/colima.sh` is the reference
+    round trip.

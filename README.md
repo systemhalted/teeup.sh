@@ -30,6 +30,8 @@ teeup install <name>      # install and configure one capability
 teeup theme set catppuccin        # re-render every app's colours, light and dark
 teeup install font "Fira Code"    # switch every tool to another Nerd Font
 teeup secret set <name>   # store a secret in the macOS Keychain
+teeup launch cursor       # open an app, installing its cask on first use
+teeup install dev-env go  # install a language runtime through mise
 ```
 
 ~/.local/bin joins your PATH through the shell layer the zsh capability installs, so teeup is spelled ~/.local/bin/teeup until you open a new terminal.
@@ -79,6 +81,52 @@ Catppuccin extension for Zed and VS Code) and a hook that tells a running
 editor to pick it up.
 
 Per-machine overrides live in `~/.config/teeup/machines/<hostname>.conf` -- your own file, never in this checkout, so `git pull` never touches it -- sourced after your answers and winning over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs. (`machines/<hostname>.conf` in the checkout itself still works, checked second, for anyone who keeps a fork instead.) It is also the only place a work identity is configured -- teeup's own git/ssh/GitHub identity is a single one, `TEEUP_NAME`/`TEEUP_EMAIL` from the wizard, full stop; a machine that also needs a work identity sets `TEEUP_WORK_EMAIL` here (plus `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host, or `TEEUP_WORK_GH_ACCOUNT` when work is a second account on github.com), which gives that machine a second SSH key uploaded to that identity's own GitHub host and account. See `machines/example.conf.sample`.
+
+### Lazy capabilities
+
+Capabilities outside the core and daily tiers use `tier=lazy`. Bootstrap does
+not download them; `teeup list --tier lazy` shows each capability and how to
+reach it.
+
+```bash
+docker ps                         # asks to install Colima on the first call
+teeup launch cursor               # installs and opens Cursor when supported
+teeup install dev-env python      # installs Python and uv through mise
+claude                            # installs Claude Code through mise, then runs it
+teeup install colima              # explicit install form for a capability
+```
+
+- **Shims.** `teeup configure teeup-runtime` writes one shim for each command
+  in a lazy capability's `provides=` field under
+  `~/.local/state/teeup/shims`. The shell appends that directory last on
+  `PATH`. `teeup lazy-run` executes a real command when one exists elsewhere
+  on `PATH` or under the package-manager prefix. At a terminal, a missing
+  command prompts before installing and configuring its capability, then runs
+  with the original arguments. Without a terminal it prints the corresponding
+  `teeup install` command and exits 127. `TEEUP_SKIP` removes a capability's
+  shims and makes `lazy-run` refuse it.
+- **Launchers.** `teeup launch <app|capability>` uses `open -a` for an app in
+  `/Applications` or `~/Applications`, installing the capability first when
+  the bundle is absent. A cask-only capability such as Cursor is recorded as
+  not applicable with MacPorts; Cursor also requires macOS 12 or newer.
+- **Runtimes.** `teeup install dev-env <python|node|java|ruby|rust|go>` uses
+  mise's global configuration from `/`, so a project `mise.toml` cannot
+  redirect it, and keeps a version the user pinned. Python also installs
+  `uv`; Rust uses mise's rust backend and rustup. Runtimes do not get shims,
+  because macOS already provides some of their command names. `javav 21`
+  switches Java for one shell.
+- **AI CLIs.** The `ai` capability provides `claude`, `codex`, `gemini`,
+  `copilot` and `opencode`. Its configure script writes small wrappers under
+  `~/.local/bin`; each wrapper installs its tool through mise on first use and
+  runs it with `mise x` afterward. Gemini also loads Node. A file at one of
+  those paths that teeup did not write, including Claude Code's native
+  launcher, is preserved.
+- **Shipped lazy capabilities.** `neovim`, `vscode` and `chrome` come from the
+  daily-tier phase. This phase adds `colima` (Colima, Docker CLI and Compose),
+  `ai`, `herdr`, `tmux`, `ollama` (app and CLI where available, without model
+  downloads) and `cursor`. The tmux config is copied once and remains
+  user-owned; teeup skips that copy when `~/.tmux.conf` exists. `teeup status`
+  lists generated shims and installed development environments.
 
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
