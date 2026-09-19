@@ -141,6 +141,31 @@ test_check_reports_duplicate_template_basenames() {
   cleanup_test_env
 }
 
+test_check_rejects_a_bad_provides_token_and_a_duplicate() {
+  setup
+  # A token with a slash would write the shim somewhere else; a leading dash
+  # reads as an option on the shim's exec line.
+  make_cap lazytwo lazy "" "gam tools/x"
+  sed -i.bak 's/^tier=daily/tier=lazy/' "$TEEUP_CAPS_DIR/gamma/capability" && rm "$TEEUP_CAPS_DIR/gamma/capability.bak"
+  : > "$TEEUP_CAPS_DIR/daily.list"
+  local rc=0 out
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "lazytwo: provides token 'tools/x' is not a plain command name" || return 1
+  assert_contains "$out" "lazytwo: provides gam, which gamma already provides" || return 1
+  cleanup_test_env
+}
+
+test_check_rejects_an_apps_path() {
+  setup
+  printf 'apps="/Applications/Thing.app"\n' >> "$TEEUP_CAPS_DIR/lazyone/capability"
+  local rc=0 out
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "lazyone: apps must be application names, not paths" || return 1
+  cleanup_test_env
+}
+
 test_cap_order_fails_on_unknown_requires() {
   setup
   make_cap orphan core "ghost"
@@ -279,6 +304,8 @@ run_test "skipped reads TEEUP_SKIP" test_skipped_reads_teeup_skip
 run_test "check passes on valid fixture" test_check_passes_on_valid_fixture
 run_test "check reports problems" test_check_reports_problems
 run_test "check reports duplicate template basenames" test_check_reports_duplicate_template_basenames
+run_test "check rejects a bad provides token and a duplicate" test_check_rejects_a_bad_provides_token_and_a_duplicate
+run_test "check rejects an apps path" test_check_rejects_an_apps_path
 run_test "cap_order fails on unknown requires" test_cap_order_fails_on_unknown_requires
 run_test "run_optional skips a missing verb" test_run_optional_skips_a_missing_verb
 run_test "run_optional respects TEEUP_SKIP" test_run_optional_respects_teeup_skip

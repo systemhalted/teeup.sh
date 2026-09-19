@@ -66,6 +66,29 @@ mock_command_script() {
   chmod +x "$MOCK_BIN/$cmd"
 }
 
+# hide_host_commands <name...>
+# Pretend the host does not have these commands *as it has them now*: every
+# copy reachable through a PATH directory is added to TEEUP_TEST_MISSING by
+# its absolute path (all of them, not just the first: on a merged-/usr Linux
+# /bin/docker and /usr/bin/docker are the same file under two PATH entries),
+# so a copy the test installs later (into MOCK_BIN or a bin directory of its
+# own) is still found. Hiding by name (TEEUP_TEST_MISSING="gum jq") is the
+# right tool when the test never installs the command. Call after
+# setup_test_env, which narrows PATH, and before mocking any of the names.
+hide_host_commands() {
+  local name rest dir
+  for name in "$@"; do
+    rest="$PATH:"
+    while [[ -n "$rest" ]]; do
+      dir="${rest%%:*}"
+      rest="${rest#*:}"
+      [[ -n "$dir" && -f "$dir/$name" && -x "$dir/$name" ]] || continue
+      TEEUP_TEST_MISSING="${TEEUP_TEST_MISSING:+$TEEUP_TEST_MISSING }${dir%/}/$name"
+    done
+  done
+  export TEEUP_TEST_MISSING
+}
+
 # A modern Apple Silicon Mac with CLT present and Homebrew missing.
 mock_macos_base() {
   mock_command_script uname <<'EOF2'
