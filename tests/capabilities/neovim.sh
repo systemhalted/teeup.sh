@@ -123,6 +123,24 @@ test_configure_warns_about_a_neovim_too_old_for_lazyvim() {
   cleanup_test_env
 }
 
+# M6: a `-dev` build of the floor version is a pre-release of 0.11.2, not
+# the released 0.11.2 itself, so it must still warn -- but a banner that
+# cannot be parsed at all must keep failing open (skipped, no warning).
+test_configure_warns_about_a_dev_build_of_the_floor_version() {
+  setup
+  mock_command nvim 0 "NVIM v0.11.2-dev+g1234"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure neovim 2>&1)"
+  assert_contains "$out" "$MOCK_BIN/nvim is a pre-release build of Neovim 0.11.2; LazyVim needs the released 0.11.2 or later." || return 1
+  mock_command nvim 0 "NVIM v0.12.0-dev+g5678"
+  out="$(DRY_RUN=true "$TEEUP" configure neovim 2>&1)"
+  assert_not_contains "$out" "LazyVim needs" "a dev build above the floor is not below it" || return 1
+  mock_command nvim 0 "not a version banner at all"
+  out="$(DRY_RUN=true "$TEEUP" configure neovim 2>&1)"
+  assert_not_contains "$out" "LazyVim needs" "an unparsed banner must fail open" || return 1
+  cleanup_test_env
+}
+
 test_theme_renders_the_neovim_palette() {
   setup
   DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
@@ -281,6 +299,7 @@ run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure reports a conflicting init.vim" test_configure_reports_a_conflicting_init_vim
 run_test "configure warns about a Neovim too old for LazyVim" test_configure_warns_about_a_neovim_too_old_for_lazyvim
+run_test "configure warns about a dev build of the floor version" test_configure_warns_about_a_dev_build_of_the_floor_version
 run_test "theme renders the neovim palette" test_theme_renders_the_neovim_palette
 run_test "hooks reload every running neovim" test_hooks_reload_every_running_neovim
 run_test "hooks leave a Neovim teeup did not install alone" test_hooks_leave_a_neovim_teeup_did_not_install_alone

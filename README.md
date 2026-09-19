@@ -67,8 +67,10 @@ and `chrome` are lazy: `teeup install <name>` brings one in when you want it.
   edit, so a file that has them is backed up first; a settings file that is a
   symlink is never written.
 - **Neovim** gets the LazyVim starter layout under `~/.config/nvim`, every
-  file yours after the first copy, with teeup's layer on `package.path`.
-  LazyVim needs Neovim 0.11.2 or later.
+  file yours after the first copy, with teeup's layer on `package.path`. A
+  pre-existing `~/.config/nvim/init.lua` teeup did not install is backed up
+  and replaced, with the diff against your previous file printed. LazyVim
+  needs Neovim 0.11.2 or later.
 
 `teeup theme set` and `teeup install font` reach every editor teeup has
 installed: each has a themed template that names the theme for the palette

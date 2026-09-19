@@ -21,13 +21,23 @@ if [[ -f "$HOME/.vimrc" ]]; then
 fi
 
 # LazyVim stops with an error on a Neovim older than 0.11.2, and pkg_install
-# keeps whatever nvim is already on PATH, so an old one is reported here.
+# keeps whatever nvim is already on PATH, so an old one is reported here. The
+# fourth capture is a bare "-" when the version has a pre-release suffix
+# right after the patch number (e.g. "0.11.2-dev+g1234"): such a build is not
+# yet the released 0.11.2 and must still warn (M6), so it is treated as one
+# below the floor exactly when it equals the floor version.
 if have nvim; then
-  nvim_version="$(nvim --version 2>/dev/null | head -1 | sed -n 's/^NVIM v\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2 \3/p')"
+  nvim_version="$(nvim --version 2>/dev/null | head -1 | sed -n 's/^NVIM v\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\)\(-\)\{0,1\}.*/\1 \2 \3 \4/p')"
   if [[ -n "$nvim_version" ]]; then
-    read -r major minor patch <<< "$nvim_version"
-    if (( 10#$major * 10000 + 10#$minor * 100 + 10#$patch < 1102 )); then
-      warn "$(command -v nvim) is Neovim $major.$minor.$patch; LazyVim needs 0.11.2 or later. Upgrade it, or put a newer nvim first on PATH."
+    read -r major minor patch prerelease <<< "$nvim_version"
+    nvim_version_num=$((10#$major * 10000 + 10#$minor * 100 + 10#$patch))
+    if (( nvim_version_num < 1102 )) ||
+       { [[ -n "$prerelease" ]] && (( nvim_version_num == 1102 )); }; then
+      if [[ -n "$prerelease" ]]; then
+        warn "$(command -v nvim) is a pre-release build of Neovim $major.$minor.$patch; LazyVim needs the released 0.11.2 or later. Upgrade it, or put a newer nvim first on PATH."
+      else
+        warn "$(command -v nvim) is Neovim $major.$minor.$patch; LazyVim needs 0.11.2 or later. Upgrade it, or put a newer nvim first on PATH."
+      fi
     fi
   fi
 fi
