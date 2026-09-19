@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# tmux 3.1 and newer read ~/.config/tmux/tmux.conf (or
+# $XDG_CONFIG_HOME/tmux/tmux.conf) on their own, so the config lives with the
+# rest of ~/.config. tmux loads every config file it finds, ~/.tmux.conf
+# first, so a copy next to an existing ~/.tmux.conf would silently override
+# it; in that case nothing is installed.
+if [[ -e "$HOME/.tmux.conf" || -L "$HOME/.tmux.conf" ]]; then
+  log "Keeping your $HOME/.tmux.conf; not adding $(user_config_dir)/tmux/tmux.conf, which tmux would load after it."
+else
+  copy_config_once "$TEEUP_CAP_DIR/config/tmux/tmux.conf" "$(user_config_dir)/tmux/tmux.conf"
+fi
