@@ -182,11 +182,18 @@ test_theme_set_and_install_font_update_an_installed_vscode() {
 
 test_hooks_without_jq_warn_and_continue() {
   setup || return 1
+  # Render the theme while jq is still here: without a rendered theme
+  # theme-apply exits earlier, at "no rendered theme", and its own jq guard is
+  # never reached -- the warning below would then come from font-apply alone
+  # and the assertion would pass with theme-apply's guard deleted.
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
   export TEEUP_TEST_MISSING="jq"
-  local rc=0 out
+  local rc=0 out warnings
   out="$(DRY_RUN=false "$TEEUP" configure vscode 2>&1)" || rc=$?
   assert_success "$rc" || return 1
-  assert_contains "$out" "jq is not installed; cannot write $SETTINGS" || return 1
+  # Twice: theme-apply and font-apply each refuse on their own.
+  warnings="$(printf '%s\n' "$out" | grep -c "jq is not installed; cannot write $SETTINGS" || true)"
+  assert_equals "2" "$warnings" || return 1
   [[ ! -e "$SETTINGS" ]] || { echo "settings written without jq"; return 1; }
   unset TEEUP_TEST_MISSING
   cleanup_test_env
