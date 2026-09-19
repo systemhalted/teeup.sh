@@ -7,6 +7,8 @@ bat_theme = "OneHalfLight"
 # Not colours either: the name each editor knows the closest theme by. Every
 # key here must exist in both modes, and a user theme must define them too.
 emacs_theme = "modus-operandi"
+zed_theme = "Catppuccin Latte"
+zed_extension = "catppuccin"
 
 accent = "#1e66f5"
 selection = "#ccd0da"

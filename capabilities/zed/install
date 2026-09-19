@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Zed is a cask, which also links the `zed` command into the Homebrew bin dir.
+# MacPorts has no casks, and its port named `zed` is an unrelated data tool
+# (Brim's "super-structured data" CLI), so pkg_install must never be tried
+# here: say where to get the editor and let configure carry on.
+if casks_supported; then
+  cask_install zed
+else
+  warn "Zed is a cask and MacPorts has no port of the editor; download it from https://zed.dev/download"
+fi

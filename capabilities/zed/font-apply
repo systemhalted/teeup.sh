@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# buffer_font_family is the editor font; Zed's terminal uses it too while
+# terminal.font_family is unset (Zed's default settings: "If this option is
+# not included, the terminal will default to matching the buffer's font
+# family"). Same install gate and same ~/.config/zed path as theme-apply.
+if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then
+  exit 0
+fi
+ZED_SETTINGS="$HOME/.config/zed/settings.json"
+if ! have jq; then
+  warn "jq is not installed; cannot write $ZED_SETTINGS. Run: teeup install cli-tools"
+  exit 0
+fi
+json_set_key "$ZED_SETTINGS" buffer_font_family "$(json_quote "${TEEUP_FONT_FAMILY:-$(font_current)}")"

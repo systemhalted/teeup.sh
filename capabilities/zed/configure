@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Zed reads ~/.config/zed/settings.json and applies changes live, so there is
+# no shipped file: teeup owns three keys in whatever settings you have (theme,
+# buffer_font_family and one entry of auto_install_extensions) and leaves the
+# rest alone. configure brings them up to date by running the two hooks
+# `teeup theme set` and `teeup install font` run. The hooks do nothing until
+# teeup has installed Zed; TEEUP_CONFIGURING tells them this is that install.
+export TEEUP_CONFIGURING="$TEEUP_CAP"
+cap_run_optional "$TEEUP_CAP" theme-apply
+cap_run_optional "$TEEUP_CAP" font-apply
+if [[ -d "${TEEUP_APPS_DIR:-/Applications}/Zed.app" ]]; then
+  log "Zed is installed; open it with: open -a Zed"
+else
+  log "Zed.app is not in ${TEEUP_APPS_DIR:-/Applications} yet; the settings are ready for it."
+fi
