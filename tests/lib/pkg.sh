@@ -54,6 +54,20 @@ EOF2
   cleanup_test_env
 }
 
+test_macports_apps_dir_falls_back_to_the_compiled_in_default() {
+  setup
+  assert_equals "/Applications/MacPorts" "$(macports_apps_dir)" || return 1
+  cleanup_test_env
+}
+
+test_macports_apps_dir_reads_macports_conf() {
+  setup
+  mkdir -p "$TEEUP_PKG_PREFIX/etc/macports"
+  printf 'applications_dir\t%s\n' "$TEST_HOME/CustomApps" > "$TEEUP_PKG_PREFIX/etc/macports/macports.conf"
+  assert_equals "$TEST_HOME/CustomApps" "$(macports_apps_dir)" || return 1
+  cleanup_test_env
+}
+
 test_pkg_install_skips_when_command_on_path() {
   setup
   mock_command jq 0 ""
@@ -283,6 +297,8 @@ run_test "backend is macports on macOS 12" test_backend_is_macports_on_macos_12
 run_test "backend honours answer" test_backend_honours_answer
 run_test "invalid backend answer dies" test_invalid_backend_answer_dies
 run_test "intel homebrew prefix" test_intel_homebrew_prefix
+run_test "macports_apps_dir falls back to the compiled-in default" test_macports_apps_dir_falls_back_to_the_compiled_in_default
+run_test "macports_apps_dir reads macports.conf" test_macports_apps_dir_reads_macports_conf
 run_test "pkg_install skips when command on PATH" test_pkg_install_skips_when_command_on_path
 run_test "pkg_install calls brew when missing" test_pkg_install_calls_brew_when_missing
 run_test "pkg_install real-run wording is unchanged" test_pkg_install_real_run_wording_is_unchanged

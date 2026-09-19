@@ -70,6 +70,25 @@ pkg_prefix() {
   esac
 }
 
+# macports_apps_dir -> where MacPorts installs .app bundles.
+# An aqua port's Portfile (wezterm, emacs-app, ...) moves its built .app into
+# applications_dir at destroot time and never touches /Applications, so
+# Launchpad and a plain /Applications search never see it there. `port dir
+# <name>` prints the *Portfile's* own directory in the ports tree, and
+# `port -q variants` lists build variants; neither exposes applications_dir.
+# macports-base ships that key active (uncommented) in macports.conf by
+# default, so it is read from there rather than assumed; when the file or key
+# is missing, the fallback is macports-base's own compiled-in default for the
+# same key: /Applications/MacPorts.
+macports_apps_dir() {
+  local conf dir=""
+  conf="$(pkg_prefix)/etc/macports/macports.conf"
+  if [[ -r "$conf" ]]; then
+    dir="$(awk '$1 == "applications_dir" { print $2; exit }' "$conf")"
+  fi
+  printf '%s\n' "${dir:-/Applications/MacPorts}"
+}
+
 # Put the backend's bin dirs first on PATH for this process. The shell
 # capability handles the persistent version later.
 pkg_backend_path() {

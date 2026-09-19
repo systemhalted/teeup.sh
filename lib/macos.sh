@@ -116,12 +116,25 @@ _launchagent_plist() { printf '%s/Library/LaunchAgents/%s.plist\n' "$HOME" "$1";
 # Always reloads, even when the plist did not change: bootout is the cheap way
 # to make the agent match the file, and it is how a manually unloaded agent
 # repairs itself on the next `teeup configure`.
+#
+# Returns non-zero when the retry bootstrap also fails, so a caller that
+# claims the agent is running (I1) can gate that claim on the load actually
+# having worked rather than printing it unconditionally; DRY_RUN=true never
+# reaches this failure path because run_cmd always returns 0 there.
 launchagent_install() {
-  local label="$1" dir plist uid
+  local label="$1" dir plist uid existed=false
   plist="$(_launchagent_plist "$label")"
   dir="$(dirname "$plist")"
   [[ -d "$dir" ]] || run_cmd mkdir -p "$dir"
+  [[ -e "$plist" ]] && existed=true
   write_managed_file "$plist" "LaunchAgent $label"
+  # A brand-new plist otherwise keeps write_managed_file's mktemp default of
+  # 600 (M5); every hand-made plist in ~/Library/LaunchAgents is 644. An
+  # existing plist keeps whatever mode it already has -- write_managed_file's
+  # own mode-preservation already covers a file the user chmod'ed.
+  if [[ "$existed" == "false" && "$DRY_RUN" != "true" && -f "$plist" ]]; then
+    chmod 644 "$plist"
+  fi
   uid="$(id -u)"
   # bootout exits non-zero when the agent is not loaded. That is the normal
   # first-install case, so the failure is ignored. Do not redirect run_cmd:
@@ -132,7 +145,7 @@ launchagent_install() {
   # yet), so a single retry after a short pause is normal, not a bug.
   run_cmd launchctl bootstrap "gui/$uid" "$plist" ||
     { sleep 1; run_cmd launchctl bootstrap "gui/$uid" "$plist"; } ||
-    warn "Could not load $label; run: launchctl bootstrap gui/$uid $plist"
+    { warn "Could not load $label; run: launchctl bootstrap gui/$uid $plist"; return 1; }
 }
 
 # launchagent_remove <label>

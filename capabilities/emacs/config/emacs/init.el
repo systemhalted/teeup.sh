@@ -12,6 +12,15 @@
 ;; `printf %q`, so a path with a space, a quote or a non-ASCII byte comes back
 ;; as a backslash-escaped word or a $'...' ANSI-C literal; teeup--unquote
 ;; undoes both.
+(defun teeup--find-quote (word start)
+  "Return the index of the next ' in WORD at or after START, or nil.
+`string-search' is Emacs 28+; on an older Emacs (M8) this degrades to
+`string-match' with the needle quoted, since a literal quote character has
+no regexp meaning to escape."
+  (if (fboundp 'string-search)
+      (string-search "'" word start)
+    (string-match (regexp-quote "'") word start)))
+
 (defun teeup--unquote (word)
   "Return the plain text of one shell WORD as bash would expand it."
   (let ((i 0) (n (length word)) (out nil))
@@ -20,7 +29,7 @@
         (cond
          ;; '...' keeps everything literal.
          ((eq c ?')
-          (let ((j (or (string-search "'" word (1+ i)) n)))
+          (let ((j (or (teeup--find-quote word (1+ i)) n)))
             (push (substring word (1+ i) j) out)
             (setq i (1+ j))))
          ;; "...": backslash escapes only $ ` " \ and newline.
