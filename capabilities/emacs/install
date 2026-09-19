@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Homebrew's `emacs` formula is the terminal-only build; the emacs-app cask
+# (emacsformacosx.com) is the GUI build and links `emacs` and `emacsclient`
+# into the Homebrew bin dir, so one install serves the daemon, windows and the
+# terminal client. MacPorts has no casks: its `emacs` port is the terminal
+# build with the same daemon and client commands, and its `emacs-app` port is
+# the GUI build without them on PATH, so the port is the one the daemon agent
+# can run.
+if casks_supported; then
+  # brew's cask link step skips a binary that already belongs to a formula
+  # ("It seems there is already a Binary at .../emacs from formula emacs;
+  # skipping link.") and still exits 0, so the cask install "succeeds" while
+  # emacs/emacsclient keep pointing at the formula's terminal-only build.
+  if pkg_installed emacs; then
+    warn "Homebrew's emacs formula is installed; the emacs-app cask will not link emacs or emacsclient over it, so the daemon and emacsclient -c would keep using the terminal-only build. Run: brew uninstall emacs, then: teeup configure emacs"
+  fi
+  cask_install emacs-app
+else
+  pkg_install emacs emacs || warn "No emacs port could be installed; download Emacs from https://emacsformacosx.com and re-run: teeup configure emacs"
+fi

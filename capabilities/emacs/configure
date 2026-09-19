@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# Two jobs: put the chosen flavor's configuration in place, and keep an Emacs
+# daemon running through a LaunchAgent so `emacsclient -t` (the editor the
+# git and zsh capabilities point at) always has something to talk to.
+#
+# The flavor is the answer TEEUP_EMACS_FLAVOR (starter, doom, spacemacs or
+# none; the wizard asks it when the daily tier is on, and a machine file can
+# pin it). Emacs reads ~/.emacs.el, ~/.emacs and ~/.emacs.d before
+# ~/.config/emacs (Emacs manual, "Find Init"), which decides where each
+# flavor lives: the starter and Doom use ~/.config/emacs, Spacemacs's own
+# instructions use ~/.emacs.d, and a leftover legacy location silently wins
+# over the starter, so it is reported rather than moved.
+flavor="$(answers_get TEEUP_EMACS_FLAVOR starter)"
+case "$flavor" in
+  starter|doom|spacemacs|none) ;;
+  *)
+    warn "Unknown TEEUP_EMACS_FLAVOR '$flavor' (expected starter, doom, spacemacs or none); using starter."
+    flavor=starter
+    ;;
+esac
+
+EMACS_DIR="$(user_config_dir)/emacs"
+DOOM_DIR="${DOOMDIR:-$(user_config_dir)/doom}"
+SPACEMACS_DIR="$HOME/.emacs.d"
+
+legacy_init=""
+for candidate in "$HOME/.emacs.el" "$HOME/.emacs" "$HOME/.emacs.d"; do
+  if [[ -e "$candidate" ]]; then
+    legacy_init="$candidate"
+    break
+  fi
+done
+
+# is_doom_checkout <dir>: Doom's CLI lives at bin/doom in its own checkout.
+is_doom_checkout() { [[ -x "$1/bin/doom" ]]; }
+# is_spacemacs_checkout <dir>: every Spacemacs checkout has core/ and layers/.
+is_spacemacs_checkout() { [[ -d "$1/core" && -d "$1/layers" && -f "$1/init.el" ]]; }
+
+case "$flavor" in
+  starter)
+    if is_doom_checkout "$EMACS_DIR"; then
+      log "$EMACS_DIR is a Doom checkout; moving it aside for the starter configuration."
+      backup_target "$EMACS_DIR" >/dev/null
+    fi
+    copy_config_once "$TEEUP_CAP_DIR/config/emacs/init.el" "$EMACS_DIR/init.el"
+    copy_config_once "$TEEUP_CAP_DIR/config/emacs/local.el" "$EMACS_DIR/local.el"
+    if [[ -n "$legacy_init" ]]; then
+      warn "$legacy_init exists and Emacs reads it instead of $EMACS_DIR/init.el. Move it aside to use the teeup starter."
+    fi
+    ;;
+  doom)
+    if is_doom_checkout "$EMACS_DIR"; then
+      log "Already a Doom checkout: $EMACS_DIR"
+    else
+      if [[ -e "$EMACS_DIR" ]]; then
+        log "$EMACS_DIR is not a Doom checkout; moving it aside."
+        backup_target "$EMACS_DIR" >/dev/null
+      fi
+      run_cmd git clone --depth 1 https://github.com/doomemacs/core "$EMACS_DIR" ||
+        warn "Could not clone Doom Emacs; check the network and re-run: teeup configure emacs"
+    fi
+    # `doom install` is idempotent by Doom's own description, but a sync takes
+    # minutes, so it runs only until the private config exists. --no-env
+    # skips the one interactive prompt (envvar file), which this non-TTY
+    # process could not answer.
+    if [[ -f "$DOOM_DIR/init.el" ]]; then
+      log "Doom is set up ($DOOM_DIR); after editing it run: doom sync"
+    elif ! have emacs; then
+      warn "emacs is not on PATH; once it is, run: $EMACS_DIR/bin/doom install --no-env"
+    else
+      run_cmd "$EMACS_DIR/bin/doom" install --no-env ||
+        warn "doom install did not finish; re-run it by hand: $EMACS_DIR/bin/doom install --no-env"
+    fi
+    if [[ -n "$legacy_init" ]]; then
+      warn "$legacy_init exists and Emacs reads it instead of $EMACS_DIR. Move it aside to use Doom."
+    fi
+    ;;
+  spacemacs)
+    if is_spacemacs_checkout "$SPACEMACS_DIR"; then
+      log "Already a Spacemacs checkout: $SPACEMACS_DIR"
+    else
+      if [[ -e "$SPACEMACS_DIR" ]]; then
+        log "$SPACEMACS_DIR is not a Spacemacs checkout; moving it aside."
+        backup_target "$SPACEMACS_DIR" >/dev/null
+      fi
+      run_cmd git clone https://github.com/syl20bnr/spacemacs "$SPACEMACS_DIR" ||
+        warn "Could not clone Spacemacs; check the network and re-run: teeup configure emacs"
+    fi
+    for candidate in "$HOME/.emacs.el" "$HOME/.emacs"; do
+      if [[ -e "$candidate" ]]; then
+        warn "$candidate exists and Emacs reads it instead of $SPACEMACS_DIR. Move it aside to use Spacemacs."
+      fi
+    done
+    log "Spacemacs finishes its own setup on the first start; ~/.spacemacs is written then."
+    ;;
+  none)
+    log "TEEUP_EMACS_FLAVOR=none: leaving your Emacs configuration alone."
+    ;;
+esac
+
+# --- the daemon --------------------------------------------------------------
+# launchd starts the agent with no PATH and none of the shell's environment,
+# so the plist carries the binary's full path and the variables the starter
+# layer reads: TEEUP_PATH first (a config that cannot find the checkout falls
+# back to a plain Emacs), and XDG_CONFIG_HOME, without which a daemon on a
+# machine with a non-default one would look for ~/.config/emacs, find nothing
+# and create ~/.emacs.d (Emacs manual, "Find Init"). The values are
+# XML-escaped: a home directory with an ampersand in it would otherwise be a
+# malformed plist.
+#
+# RunAtLoad starts the daemon at login and whenever the agent is (re)loaded.
+# KeepAlive with SuccessfulExit false restarts it only after a crash
+# (launchd.plist(5)): `kill-emacs` exits 0, so a daemon stopped on purpose
+# stays down until the next login, `launchctl kickstart`, or an `emacsclient`
+# from zsh (the shell layer exports an empty ALTERNATE_EDITOR, which starts
+# one).
+plist_escape() {
+  printf '%s\n' "$(replace_literal "$(replace_literal "$(replace_literal "$1" '&' '&amp;')" '<' '&lt;')" '>' '&gt;')"
+}
+
+# Prefer the emacs-app cask's own binary inside the bundle over a PATH
+# `emacs`: when Homebrew's terminal-only emacs formula is already installed
+# (I2, install's warning above), the cask's link step skips linking
+# emacs/emacsclient over the formula's binary, so `command -v emacs` still
+# resolves the formula build and the daemon would never open a GUI frame.
+# TEEUP_APPS_DIR is the test hook for /Applications; ~/Applications is where
+# HOMEBREW_CASK_OPTS can land a cask instead.
+emacs_bin=""
+for app_dir in "${TEEUP_APPS_DIR:-/Applications}" "$HOME/Applications"; do
+  if [[ -x "$app_dir/Emacs.app/Contents/MacOS/Emacs" ]]; then
+    emacs_bin="$app_dir/Emacs.app/Contents/MacOS/Emacs"
+    break
+  fi
+done
+if [[ -z "$emacs_bin" ]] && have emacs; then
+  emacs_bin="$(command -v emacs)"
+fi
+if [[ -z "$emacs_bin" ]]; then
+  log "emacs is not on PATH yet; the daemon LaunchAgent is written the next time you run: teeup configure emacs"
+else
+  agent_path="$(dirname "$emacs_bin"):$(pkg_prefix)/bin:$(pkg_prefix)/sbin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  # The server socket lives under TMPDIR (emacs<uid>), and emacsclient looks
+  # under its own TMPDIR, so the daemon gets the one this shell has: the
+  # per-user temporary directory macOS gives every login session.
+  tmpdir_entry=""
+  if [[ -n "${TMPDIR:-}" ]]; then
+    tmpdir_entry="
+    <key>TMPDIR</key>
+    <string>$(plist_escape "$TMPDIR")</string>"
+  fi
+  rendered_plist="$(mktemp)"
+  cat > "$rendered_plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>sh.teeup.emacs</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$(plist_escape "$emacs_bin")</string>
+    <string>--fg-daemon</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>$(plist_escape "$agent_path")</string>
+    <key>XDG_CONFIG_HOME</key>
+    <string>$(plist_escape "$(user_config_dir)")</string>
+    <key>TEEUP_PATH</key>
+    <string>$(plist_escape "$TEEUP_PATH")</string>
+    <key>TEEUP_CONFIG_DIR</key>
+    <string>$(plist_escape "$TEEUP_CONFIG_DIR")</string>
+    <key>TEEUP_STATE_DIR</key>
+    <string>$(plist_escape "$TEEUP_STATE_DIR")</string>$tmpdir_entry
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
+PLIST
+
+  # launchagent_install always reloads, which would kill a running daemon (and
+  # its unsaved buffers) on every `teeup configure emacs`. So the agent is only
+  # (re)installed when the plist changed or launchd does not have it loaded;
+  # `launchctl print` is the read that answers the second half.
+  plist_path="$HOME/Library/LaunchAgents/sh.teeup.emacs.plist"
+  if [[ -f "$plist_path" ]] && cmp -s "$rendered_plist" "$plist_path" &&
+     launchctl print "gui/$(id -u)/sh.teeup.emacs" >/dev/null 2>&1; then
+    log "Emacs daemon agent already loaded: sh.teeup.emacs"
+  else
+    launchagent_install sh.teeup.emacs < "$rendered_plist"
+    ok_unless_dry "Emacs runs as a daemon at login; emacsclient -t opens a terminal frame, emacsclient -c a window."
+  fi
+  rm -f "$rendered_plist"
+  log "A running daemon keeps its old configuration until: launchctl kickstart -k gui/$(id -u)/sh.teeup.emacs"
+fi
+
+# --- git's editor -------------------------------------------------------------
+# The git capability writes core.editor = emacsclient -t only when emacsclient
+# is on PATH, and git runs in the core tier, before this daily capability has
+# installed Emacs. Re-running it here (copying capabilities/ssh/configure's own
+# git re-run, DRY_RUN branch included) makes a first bootstrap end with git
+# opening emacsclient rather than vim. A machine where git was never
+# configured, or skips it, has nothing to update; a git already pointed at
+# emacsclient is left alone.
+git_generated="$(user_config_dir)/git/teeup-generated"
+git_wants_emacsclient=false
+if [[ -f "$git_generated" ]] && ! grep -q 'editor = emacsclient' "$git_generated"; then
+  git_wants_emacsclient=true
+fi
+if have emacsclient && ! cap_skipped git; then
+  if [[ "$DRY_RUN" == "true" || "$git_wants_emacsclient" == "true" ]]; then
+    log "Re-running the git configuration so git opens emacsclient."
+    cap_run git configure || warn "Could not re-run the git configuration. Run: teeup configure git"
+  else
+    log "No $git_generated to update, or it already opens emacsclient."
+  fi
+fi

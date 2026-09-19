@@ -1,2 +1,4 @@
 # Daily tier: installed at bootstrap when the answers say TEEUP_DAILY=yes.
-# Later phases append: emacs neovim zed vscode chrome obsidian
+# Ordered; each entry's requires= must already be satisfied by core.list or
+# the entries above it.
+emacs

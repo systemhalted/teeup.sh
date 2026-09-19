@@ -150,6 +150,7 @@ _wizard_valid_email() { email_valid "$1"; }
 # (see machines/example.conf.sample); this wizard has nothing to do with it.
 wizard() {
   local name email theme daily themes pinned_theme ask_theme=true
+  local flavor="" current_flavor other_flavor flavors pinned_flavor
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
@@ -178,15 +179,37 @@ wizard() {
     # shellcheck disable=SC2086  # one option per word is exactly what ui_choose wants
     theme="$(ui_choose "Theme" $themes)"
   fi
-  if ui_confirm "Install the daily set too (Emacs, Neovim, Zed, VS Code, Chrome, Obsidian)?" yes; then
+  if ui_confirm "Install the daily set too (Emacs, Zed, Firefox Developer Edition, Obsidian)?" yes; then
     daily=yes
   else
     daily=no
+  fi
+  # The Emacs flavor only matters when the daily tier (where emacs lives) is
+  # on. A pinned value is not asked, for the same reason as the theme. The
+  # current answer is offered first, so an empty reply keeps it; on a first
+  # run that is teeup's own starter configuration.
+  if [[ "$daily" == "yes" ]]; then
+    if pinned_flavor="$(machine_get TEEUP_EMACS_FLAVOR)"; then
+      log "Emacs flavor is pinned to ${pinned_flavor:-starter} by $(machine_file); not asking."
+    else
+      current_flavor="$(answers_get TEEUP_EMACS_FLAVOR starter)"
+      case "$current_flavor" in
+        starter|doom|spacemacs|none) ;;
+        *) current_flavor=starter ;;
+      esac
+      flavors="$current_flavor"
+      for other_flavor in starter doom spacemacs none; do
+        [[ "$other_flavor" == "$current_flavor" ]] || flavors="$flavors $other_flavor"
+      done
+      # shellcheck disable=SC2086  # one option per word is exactly what ui_choose wants
+      flavor="$(ui_choose "Emacs flavor (starter is teeup's config; none leaves ~/.config/emacs alone)" $flavors)"
+    fi
   fi
   answers_set TEEUP_NAME "$name"
   answers_set TEEUP_EMAIL "$email"
   if [[ "$ask_theme" == "true" ]]; then answers_set TEEUP_THEME "$theme"; fi
   answers_set TEEUP_DAILY "$daily"
+  if [[ -n "$flavor" ]]; then answers_set TEEUP_EMACS_FLAVOR "$flavor"; fi
   answers_load
 }
 

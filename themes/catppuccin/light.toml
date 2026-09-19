@@ -4,6 +4,10 @@ mode = "light"
 
 bat_theme = "OneHalfLight"
 
+# Not colours either: the name each editor knows the closest theme by. Every
+# key here must exist in both modes, and a user theme must define them too.
+emacs_theme = "modus-operandi"
+
 accent = "#1e66f5"
 selection = "#ccd0da"
 muted = "#acb0be"

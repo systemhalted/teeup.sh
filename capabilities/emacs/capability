@@ -1,0 +1,9 @@
+summary="Emacs as a login daemon with emacsclient, in the flavor you chose"
+group=editors
+tier=daily
+requires="package-manager git"
+provides=""
+packages=""
+casks="emacs-app"
+apps="Emacs"
+interactive=false

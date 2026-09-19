@@ -7,11 +7,14 @@ BOOT="$TEEUP_PATH/bootstrap"
 # Answers piped to the plain-read prompts, one per prompt. The package manager
 # is asked first and on its own, before step 2 installs one; the rest is the
 # wizard in step 4:
-# package manager choice, name, email, theme choice, daily confirm. Work is
-# never asked (it is per-machine, not a question; see machines/*.conf).
-# "1" is the detected backend (Homebrew on the mocked modern Mac), "2" the
-# other one; for the theme choice, "1" is the first theme themes/ ships, i.e.
-# catppuccin.
+# package manager choice, name, email, theme choice, daily confirm, Emacs
+# flavor. Work is never asked (it is per-machine, not a question; see
+# machines/*.conf). "1" is the detected backend (Homebrew on the mocked
+# modern Mac), "2" the other one; for the theme choice, "1" is the first
+# theme themes/ ships, i.e. catppuccin. The flavor question is asked only
+# after a "y" to the daily set, and the plain-read fallback takes an empty
+# answer (end of input here) as the first option, starter, so inputs that
+# stop after the daily confirm still work.
 WIZARD_INPUT=$'1\nAda Lovelace\nada@example.com\n1\ny\n'
 
 setup() {
@@ -73,7 +76,10 @@ case "$1 ${2:-}" in
 esac
 exit 0
 EOF2
-  export TEEUP_TEST_MISSING="brew gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit"
+  # emacs and emacsclient are in the list below because a fresh Mac has
+  # neither and a Linux developer machine may have both in /usr/bin: with them
+  # hidden, emacs configure skips the daemon agent and never reaches launchctl.
+  export TEEUP_TEST_MISSING="brew gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit emacs emacsclient"
   export TEEUP_NO_GUM=1
   export DRY_RUN=true
 }
@@ -495,6 +501,49 @@ test_dry_run_answers_take_effect() {
   cleanup_test_env
 }
 
+test_dry_run_walks_the_daily_tier() {
+  setup
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_contains "$out" "Completed: emacs install" || return 1
+  assert_contains "$out" "Completed: emacs configure" || return 1
+  assert_contains "$out" "Would install $TEST_HOME/.config/emacs/init.el" "the default flavor is the starter" || return 1
+  cleanup_test_env
+}
+
+test_wizard_records_the_emacs_flavor() {
+  setup
+  # Option 2 after "y" is doom (the current answer, starter, is offered first).
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n1\ny\n2\n')"
+  assert_contains "$out" "Would set TEEUP_EMACS_FLAVOR" || return 1
+  assert_contains "$out" "git clone --depth 1 https://github.com/doomemacs/core $TEST_HOME/.config/emacs" "the answer reached emacs configure in the same run" || return 1
+  cleanup_test_env
+}
+
+test_wizard_does_not_ask_the_flavor_without_the_daily_tier() {
+  setup
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n1\nn\n')"
+  assert_equals "0" "$(printf '%s\n' "$out" | grep -c 'Emacs flavor')" "the flavor question was asked" || return 1
+  assert_not_contains "$out" "Would set TEEUP_EMACS_FLAVOR" || return 1
+  cleanup_test_env
+}
+
+test_wizard_does_not_ask_for_a_pinned_flavor() {
+  setup
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEST_HOME/machines"
+  printf 'TEEUP_EMACS_FLAVOR="none"\n' > "$TEST_HOME/machines/testmac.conf"
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_contains "$out" "Emacs flavor is pinned to none by $TEST_HOME/machines/testmac.conf; not asking." || return 1
+  assert_not_contains "$out" "Would set TEEUP_EMACS_FLAVOR" || return 1
+  assert_contains "$out" "TEEUP_EMACS_FLAVOR=none: leaving your Emacs configuration alone." || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 echo "bootstrap"
 run_test "refuses non-macOS" test_refuses_non_macos
 run_test "refuses root" test_refuses_root
@@ -525,4 +574,8 @@ run_test "wizard email validator still accepts a normal address" test_wizard_ema
 run_test "wizard name validator stores the trimmed value" test_wizard_name_validator_stores_the_trimmed_value
 run_test "dry run summary is a preview, not a status suggestion" test_dry_run_summary_is_a_preview_not_a_status_suggestion
 run_test "dry run answers take effect" test_dry_run_answers_take_effect
+run_test "dry run walks the daily tier" test_dry_run_walks_the_daily_tier
+run_test "the wizard records the Emacs flavor" test_wizard_records_the_emacs_flavor
+run_test "the wizard does not ask the flavor without the daily tier" test_wizard_does_not_ask_the_flavor_without_the_daily_tier
+run_test "the wizard does not ask for a pinned flavor" test_wizard_does_not_ask_for_a_pinned_flavor
 print_summary

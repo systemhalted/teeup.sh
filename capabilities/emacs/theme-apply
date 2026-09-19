@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# A running daemon keeps the theme it loaded at startup; teeup-apply (defined
+# by the starter layer) re-reads current/theme and current/font. Doom and
+# Spacemacs do not define it, so the form is guarded with fboundp and is a
+# no-op there. Nothing happens until teeup installed emacs: `teeup theme set`
+# runs every capability's hook, and an emacsclient on PATH that teeup did not
+# set up is not this hook's to drive. `emacsclient -e t` is the cheapest "is a
+# daemon up" probe; `-a false` keeps it a probe, because the zsh layer exports
+# an empty ALTERNATE_EDITOR, which would otherwise start a daemon (emacsclient
+# Options: -a on the command line takes precedence over the variable).
+if ! state_done check "cap-$TEEUP_CAP"; then
+  exit 0
+fi
+if have emacsclient && emacsclient -a false -e t >/dev/null 2>&1; then
+  run_cmd emacsclient -a false -e "(when (fboundp 'teeup-apply) (teeup-apply))" ||
+    warn "Could not tell the Emacs daemon to reload its theme; it picks the new one up at the next restart."
+else
+  log "No Emacs daemon is running; the theme is read at the next start."
+fi
