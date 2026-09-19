@@ -1,0 +1,9 @@
+summary="Colima container runtime with the Docker CLI and Compose"
+group=containers
+tier=lazy
+requires="package-manager"
+provides="docker colima"
+packages="colima docker docker-compose"
+casks=""
+apps=""
+interactive=false

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Colima runs the Linux VM; the docker formula/port is the CLI only (no
+# Docker Desktop). Compose v2 is a docker CLI plugin: Homebrew's
+# docker-compose formula ships it under lib/docker/cli-plugins (configure
+# links it where docker looks), while MacPorts' docker-compose port is the
+# retired Python 1.x tool and the plugin is the docker-compose-plugin port.
+pkg_install colima colima
+pkg_install docker docker
+if [[ "$(pkg_backend)" == "homebrew" ]]; then
+  pkg_install docker-compose docker-compose
+else
+  pkg_install docker-compose-plugin
+fi
