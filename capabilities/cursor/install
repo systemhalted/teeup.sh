@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Cursor's cask requires macOS 12 or newer and is available only through
+# Homebrew. A machine outside either condition cannot install this capability.
+cursor_macos_major="$(macos_major)"
+if [[ "${cursor_macos_major:-99}" -lt 12 ]] 2>/dev/null; then
+  not_applicable "Cursor requires macOS 12 or newer; this Mac is on macOS $cursor_macos_major, so there is nothing to install."
+fi
+unset cursor_macos_major
+
+if ! casks_supported; then
+  not_applicable "Cursor is a Homebrew cask and MacPorts has no Cursor port, so teeup cannot install it on this machine."
+fi
+cask_install cursor

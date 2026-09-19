@@ -1,0 +1,9 @@
+summary="Cursor, the AI code editor"
+group=editors
+tier=lazy
+requires="package-manager"
+provides="cursor"
+packages=""
+casks="cursor"
+apps="Cursor"
+interactive=false
