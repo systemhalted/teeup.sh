@@ -29,6 +29,7 @@ teeup - your Mac, as a distribution
   teeup configure <capability>   re-run only its configuration
   teeup list [--tier core|daily|lazy]
   teeup theme set|list|current   apply, list or print the cross-tool theme
+  teeup lazy-run <cap> <cmd> [args]  what a lazy shim runs: install <cap> on first use, then exec <cmd>
   teeup has <capability>         exit 0 when installed (for scripts and menus)
   teeup secret get|set|rm <name>  read, store or delete a Keychain secret
   teeup status                   package manager, answers, installed capabilities
@@ -125,6 +126,57 @@ cmd_list() {
   done
 }
 
+# What every lazy shim runs (lib/lazy.sh writes them). A real binary anywhere
+# on PATH other than the shims directory wins outright; the package manager's
+# bin directories are added first, because a shim fires whenever the calling
+# shell's PATH lacks the command, and a stripped environment (an editor's
+# process runner, a script run with `env -i`) can lack /opt/homebrew/bin
+# while the tool is already installed there. Otherwise the capability is
+# installed, on a terminal and after a yes, and the real binary is exec'd
+# with the original arguments. A capability already marked installed whose
+# command has gone missing (uninstalled by hand) gets the same question: its
+# install is idempotent and puts the command back. Exit 127 is "command not
+# found" for every path that ends without running the command, so a script
+# that hit the shim fails the way it would have without teeup, with a hint.
+cmd_lazy_run() {
+  local cap="${1:-}" command="${2:-}" real p found=false
+  if [[ -z "$cap" || -z "$command" ]]; then
+    die "Usage: teeup lazy-run <capability> <command> [args...]"
+  fi
+  shift 2
+  cap_exists "$cap" || die "Unknown capability: $cap"
+  for p in $(cap_meta_get "$cap" provides); do
+    if [[ "$p" == "$command" ]]; then found=true; fi
+  done
+  [[ "$found" == "true" ]] || die "$cap does not provide $command"
+  pkg_backend_path
+  if real="$(lazy_real_command "$command")"; then
+    exec "$real" "$@"
+  fi
+  if cap_skipped "$cap"; then
+    err "$command is provided by capability $cap, which is skipped on this machine (TEEUP_SKIP)."
+    exit 127
+  fi
+  if ! lazy_is_tty; then
+    err "$command is not installed. It is provided by capability $cap; run: teeup install $cap"
+    exit 127
+  fi
+  if ! ui_confirm "$command is provided by capability $cap. Install now?" yes; then
+    err "Not installed. When you want it: teeup install $cap"
+    exit 127
+  fi
+  cmd_install "$cap"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log "Dry run: $command was not installed, so it was not run."
+    exit 0
+  fi
+  if real="$(lazy_real_command "$command")"; then
+    exec "$real" "$@"
+  fi
+  err "$cap is installed but $command is still not on PATH. Open a new terminal and try again."
+  exit 127
+}
+
 cmd_has() {
   [[ -n "${1:-}" ]] || die "Usage: teeup has <capability>"
   state_done check "cap-$1"
@@ -217,6 +269,7 @@ case "$verb" in
   configure) cmd_configure "$@" ;;
   theme) cmd_theme "$@" ;;
   list) cmd_list "$@" ;;
+  lazy-run) cmd_lazy_run "$@" ;;
   has) cmd_has "$@" ;;
   secret) cmd_secret "$@" ;;
   status) cmd_status ;;

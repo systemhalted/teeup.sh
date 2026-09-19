@@ -128,23 +128,36 @@ path_prepend "$HOME/.local/bin"
 # shims come after them and after everything else: a shim exists only to
 # catch a command nothing real provides (spec section 6).
 path_append "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"
+# Moved rather than only appended: path_append leaves an entry where an
+# inherited PATH already had it, and a nested shell can inherit the shims
+# ahead of a directory its parent's local.zsh appended.
+path_remove "$TEEUP_STATE_DIR/shims"
 path_append "$TEEUP_STATE_DIR/shims"
 export PATH
 
 # --- editor ------------------------------------------------------------------
+# A lazy shim answers `command -v` for a command nothing installed provides
+# (the neovim capability's provides="nvim"), so a hit inside the shims
+# directory is not an editor. The shims are last on PATH, so a real nvim
+# anywhere would have been found first.
+_teeup_nvim="$(command -v nvim 2>/dev/null)"
+case "$_teeup_nvim" in
+  "$TEEUP_STATE_DIR/shims/"*) _teeup_nvim="" ;;
+esac
 if [ -z "${EDITOR:-}" ]; then
   if command -v emacsclient >/dev/null 2>&1; then
     # An empty ALTERNATE_EDITOR makes emacsclient start the daemon itself.
     ALTERNATE_EDITOR=""
     export ALTERNATE_EDITOR
     EDITOR="emacsclient -t"
-  elif command -v nvim >/dev/null 2>&1; then
+  elif [ -n "$_teeup_nvim" ]; then
     EDITOR="nvim"
   else
     EDITOR="vim"
   fi
   export EDITOR
 fi
+unset _teeup_nvim
 # Defaulted, not forced: a parent process that set VISUAL or SUDO_EDITOR on
 # purpose keeps its value, and an inherited EDITOR does not silently become
 # all three.

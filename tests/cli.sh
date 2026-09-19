@@ -3,10 +3,10 @@ set -euo pipefail
 source "$(dirname "$0")/helper.sh"
 
 make_cap() {
-  local name="$1" tier="$2" requires="${3:-}"
+  local name="$1" tier="$2" requires="${3:-}" provides="${4:-}" apps="${5:-}"
   local dir="$TEEUP_CAPS_DIR/$name"
   mkdir -p "$dir"
-  printf 'summary="Fixture %s"\ngroup=system\ntier=%s\nrequires="%s"\nprovides=""\ninteractive=false\n' "$name" "$tier" "$requires" > "$dir/capability"
+  printf 'summary="Fixture %s"\ngroup=system\ntier=%s\nrequires="%s"\nprovides="%s"\napps="%s"\ninteractive=false\n' "$name" "$tier" "$requires" "$provides" "$apps" > "$dir/capability"
   printf '#!/usr/bin/env bash\necho "install:%s"\n' "$name" > "$dir/install"
   printf '#!/usr/bin/env bash\necho "configure:%s"\n' "$name" > "$dir/configure"
   chmod +x "$dir/install" "$dir/configure"
@@ -41,10 +41,27 @@ setup() {
   mkdir -p "$TEEUP_CAPS_DIR"
   make_cap alpha core
   make_cap beta core alpha
-  make_cap lazyone lazy
+  make_cap lazyone lazy "" "frob" ""
+  make_cap sketch lazy "" "" "Sketch Pad"
   printf 'alpha\nbeta\n' > "$TEEUP_CAPS_DIR/core.list"
   : > "$TEEUP_CAPS_DIR/daily.list"
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # lazy-run and launch ask through ui_confirm and probe /Applications; keep
+  # both away from gum and from the real folder.
+  export TEEUP_NO_GUM=1
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+}
+
+# lazyone's install puts a real `frob` on PATH (in MOCK_BIN, ahead of the
+# shims), the way a package install would; the binary echoes its arguments so
+# the exec at the end of lazy-run can be checked.
+make_frob_installable() {
+  cat > "$TEEUP_CAPS_DIR/lazyone/install" <<EOF2
+#!/usr/bin/env bash
+echo "install:lazyone"
+printf '#!/usr/bin/env bash\necho "frob ran: \$*"\n' > "$MOCK_BIN/frob"
+chmod +x "$MOCK_BIN/frob"
+EOF2
 }
 
 test_install_runs_requires_in_order_and_marks_done() {
@@ -108,7 +125,7 @@ test_status_reports_backend_and_installed() {
   local out
   out="$("$TEEUP" status)"
   assert_contains "$out" "Package manager: homebrew" || return 1
-  assert_contains "$out" "Installed: 1 of 3" || return 1
+  assert_contains "$out" "Installed: 1 of 4" || return 1
   assert_contains "$out" "Answers: missing" || return 1
   cleanup_test_env
 }
@@ -178,6 +195,7 @@ test_help_lists_verbs() {
   setup
   assert_contains "$("$TEEUP" help)" "teeup install <capability>" || return 1
   assert_contains "$("$TEEUP" help)" "teeup install font list" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup lazy-run <cap> <cmd> [args]" || return 1
   cleanup_test_env
 }
 
@@ -279,6 +297,114 @@ test_list_tier_without_a_value_errors() {
   cleanup_test_env
 }
 
+test_lazy_run_execs_a_real_binary_when_one_exists() {
+  setup
+  mock_command frob 0 "the real frob"
+  local out
+  out="$("$TEEUP" lazy-run lazyone frob --one "two words")"
+  assert_equals "the real frob" "$out" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "frob --one two words" || return 1
+  assert_not_contains "$out" "install:lazyone" || return 1
+  cleanup_test_env
+}
+
+test_lazy_run_without_a_tty_hints_and_exits_127() {
+  setup
+  local rc=0 out
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" lazy-run lazyone frob 2>&1)" || rc=$?
+  assert_equals "127" "$rc" || return 1
+  assert_contains "$out" "frob is not installed. It is provided by capability lazyone; run: teeup install lazyone" || return 1
+  assert_not_contains "$out" "install:lazyone" || return 1
+  cleanup_test_env
+}
+
+test_lazy_run_on_a_tty_installs_configures_and_execs() {
+  setup
+  make_frob_installable
+  local out
+  out="$(printf 'y\n' | TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob --flag "two words" 2>&1)"
+  assert_contains "$out" "frob is provided by capability lazyone. Install now?" || return 1
+  assert_contains "$out" "install:lazyone" || return 1
+  assert_contains "$out" "configure:lazyone" || return 1
+  assert_contains "$out" "frob ran: --flag two words" || return 1
+  "$TEEUP" has lazyone || { echo "lazyone must be marked installed"; return 1; }
+  cleanup_test_env
+}
+
+test_lazy_run_declined_exits_127_without_installing() {
+  setup
+  make_frob_installable
+  local rc=0 out
+  out="$(printf 'n\n' | TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob 2>&1)" || rc=$?
+  assert_equals "127" "$rc" || return 1
+  assert_contains "$out" "Not installed. When you want it: teeup install lazyone" || return 1
+  assert_not_contains "$out" "install:lazyone" || return 1
+  cleanup_test_env
+}
+
+test_lazy_run_respects_teeup_skip() {
+  setup
+  local rc=0 out
+  out="$(printf 'y\n' | TEEUP_SKIP=lazyone TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob 2>&1)" || rc=$?
+  assert_equals "127" "$rc" || return 1
+  assert_contains "$out" "frob is provided by capability lazyone, which is skipped on this machine (TEEUP_SKIP)." || return 1
+  assert_not_contains "$out" "install:lazyone" || return 1
+  cleanup_test_env
+}
+
+test_lazy_run_reinstalls_a_capability_whose_command_went_missing() {
+  setup
+  "$TEEUP" install lazyone >/dev/null
+  # Marked installed, but frob is gone: the question comes back, and an
+  # install that still produces no frob ends in a clear 127.
+  local rc=0 out
+  out="$(printf 'y\n' | TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob 2>&1)" || rc=$?
+  assert_equals "127" "$rc" || return 1
+  assert_contains "$out" "frob is provided by capability lazyone. Install now?" || return 1
+  assert_contains "$out" "install:lazyone" || return 1
+  assert_contains "$out" "lazyone is installed but frob is still not on PATH" || return 1
+  # With an install that does put frob back, the command runs.
+  make_frob_installable
+  out="$(printf 'y\n' | TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob again 2>&1)"
+  assert_contains "$out" "frob ran: again" || return 1
+  cleanup_test_env
+}
+
+test_lazy_run_finds_a_command_under_the_package_prefix() {
+  setup
+  # Installed by the package manager, but the calling PATH lacks its bin
+  # directory: lazy-run adds it and execs without asking.
+  mkdir -p "$TEEUP_PKG_PREFIX/bin"
+  printf '#!/usr/bin/env bash\necho "prefix frob: $*"\n' > "$TEEUP_PKG_PREFIX/bin/frob"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/frob"
+  local out
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" lazy-run lazyone frob x 2>&1)"
+  assert_equals "prefix frob: x" "$out" || return 1
+  cleanup_test_env
+}
+
+test_lazy_run_dry_run_previews_and_runs_nothing() {
+  setup
+  make_frob_installable
+  local out
+  out="$(printf 'y\n' | DRY_RUN=true TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob 2>&1)"
+  assert_contains "$out" "Would record state: done/cap-lazyone" || return 1
+  assert_contains "$out" "Dry run: frob was not installed, so it was not run." || return 1
+  assert_not_contains "$out" "frob ran" || return 1
+  cleanup_test_env
+}
+
+test_lazy_run_rejects_a_command_the_capability_does_not_provide() {
+  setup
+  local rc=0 out
+  out="$("$TEEUP" lazy-run lazyone nope 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "lazyone does not provide nope" || return 1
+  out="$("$TEEUP" lazy-run 2>&1)" || rc=$?
+  assert_contains "$out" "Usage: teeup lazy-run <capability> <command> [args...]" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
@@ -296,6 +422,15 @@ run_test "TEEUP_PATH derives from location" test_teeup_path_derives_from_locatio
 run_test "dry run env reaches scripts" test_dry_run_env_reaches_scripts
 run_test "configure refuses skipped capability" test_configure_refuses_skipped_capability
 run_test "list --tier without a value errors" test_list_tier_without_a_value_errors
+run_test "lazy-run execs a real binary when one exists" test_lazy_run_execs_a_real_binary_when_one_exists
+run_test "lazy-run without a tty hints and exits 127" test_lazy_run_without_a_tty_hints_and_exits_127
+run_test "lazy-run on a tty installs, configures and execs" test_lazy_run_on_a_tty_installs_configures_and_execs
+run_test "lazy-run declined exits 127 without installing" test_lazy_run_declined_exits_127_without_installing
+run_test "lazy-run respects TEEUP_SKIP" test_lazy_run_respects_teeup_skip
+run_test "lazy-run reinstalls a capability whose command went missing" test_lazy_run_reinstalls_a_capability_whose_command_went_missing
+run_test "lazy-run finds a command under the package prefix" test_lazy_run_finds_a_command_under_the_package_prefix
+run_test "lazy-run dry run previews and runs nothing" test_lazy_run_dry_run_previews_and_runs_nothing
+run_test "lazy-run rejects a command the capability does not provide" test_lazy_run_rejects_a_command_the_capability_does_not_provide
 run_test "data verbs keep stdout clean with a shadowed machine file" test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file
 run_test "has stdout stays empty with a shadowed machine file" test_has_stdout_stays_empty_with_a_shadowed_machine_file
 print_summary
