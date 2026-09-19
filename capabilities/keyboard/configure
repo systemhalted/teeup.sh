@@ -12,7 +12,11 @@
 # PATH of its own, so ProgramArguments must name the binary in full.
 KEYBOARD_MAPPING='{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x700000039,"HIDKeyboardModifierMappingDst":0x7000000E0}]}'
 
-launchagent_install sh.teeup.keyboard <<PLIST
+# launchagent_install now returns non-zero when launchd refuses the agent
+# (I1); this script still applies the mapping to the running session either
+# way, so a failed load must warn (already done inside launchagent_install)
+# and continue rather than abort under `bash -eu`.
+launchagent_install sh.teeup.keyboard <<PLIST || true
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

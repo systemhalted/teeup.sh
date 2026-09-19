@@ -10,22 +10,9 @@ copy_config_once "$TEEUP_CAP_DIR/config/wezterm/local.lua" "$WEZTERM_DIR/local.l
 # wezterm-gui binaries into ${prefix}/bin; it never touches /Applications.
 # Launchpad only indexes /Applications (and ~/Applications), so on MacPorts
 # the app is really installed but invisible there -- worth saying once,
-# since nothing else in this capability says so. `port dir <name>` prints
-# the *Portfile's* own directory in the ports tree, and `port -q variants`
-# lists build variants; neither exposes applications_dir. macports-base
-# ships that key active (uncommented) in macports.conf by default, so read
-# it there rather than assume; when the file or key is missing, fall back to
-# macports-base's own compiled-in default for the same key:
-# /Applications/MacPorts.
-wezterm_macports_apps_dir() {
-  local conf dir=""
-  conf="$(pkg_prefix)/etc/macports/macports.conf"
-  if [[ -r "$conf" ]]; then
-    dir="$(awk '$1 == "applications_dir" { print $2; exit }' "$conf")"
-  fi
-  printf '%s\n' "${dir:-/Applications/MacPorts}"
-}
-
+# since nothing else in this capability says so. macports_apps_dir
+# (lib/pkg.sh) is where that location is derived from macports.conf.
+#
 # Only say this when the bundle is actually there. `install` turns a failed
 # `port install wezterm` into a warning and carries on (there is no cask
 # fallback on MacPorts), and `configure` can run on its own without
@@ -42,7 +29,7 @@ wezterm_macports_apps_dir() {
 # and a standalone `configure` has nothing to report that would not be a
 # guess about why the bundle is missing.
 if ! casks_supported; then
-  WEZTERM_APPS_DIR="$(wezterm_macports_apps_dir)"
+  WEZTERM_APPS_DIR="$(macports_apps_dir)"
   if [[ -d "$WEZTERM_APPS_DIR/WezTerm.app" ]]; then
     log "MacPorts installs WezTerm.app under $WEZTERM_APPS_DIR, not /Applications, so Launchpad won't show it; open it with: open -a \"$WEZTERM_APPS_DIR/WezTerm.app\""
   fi

@@ -52,6 +52,17 @@ case "$1" in
   *) exit 0 ;;
 esac
 EOF2
+  # getconf DARWIN_USER_TEMP_DIR is what real macOS derives every session's
+  # TMPDIR from (I3). The mock passes this test's own TMPDIR through
+  # unchanged unless a test overrides the mock itself, so a real macOS CI
+  # runner's actual getconf output can never leak into a test's assertions,
+  # and every existing TMPDIR-based assertion keeps working unmodified.
+  mock_command_script getconf <<'EOF2'
+case "$1" in
+  DARWIN_USER_TEMP_DIR) [ -n "${TMPDIR:-}" ] && { printf '%s\n' "$TMPDIR"; exit 0; }; exit 1 ;;
+  *) exit 1 ;;
+esac
+EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
   EMACS_DIR="$TEST_HOME/.config/emacs"
   PLIST="$TEST_HOME/Library/LaunchAgents/sh.teeup.emacs.plist"
@@ -119,6 +130,41 @@ test_configure_prefers_the_app_bundle_over_a_path_emacs() {
   cleanup_test_env
 }
 
+# I4: MacPorts installs the emacs-app port's bundle under its own
+# applications_dir (read from macports.conf, same mechanism as
+# capabilities/wezterm), not /Applications or ~/Applications, so it must be
+# searched too -- and only on MacPorts, so a Homebrew machine never even
+# stats a path that could not exist there.
+test_configure_finds_the_bundle_under_macports_apps_dir() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 1 ""
+  local apps_dir="$TEST_HOME/MacPortsApps"
+  mkdir -p "$TEEUP_PKG_PREFIX/etc/macports"
+  printf 'applications_dir\t%s\n' "$apps_dir" > "$TEEUP_PKG_PREFIX/etc/macports/macports.conf"
+  mkdir -p "$apps_dir/Emacs.app/Contents/MacOS"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$apps_dir/Emacs.app/Contents/MacOS/Emacs"
+  chmod +x "$apps_dir/Emacs.app/Contents/MacOS/Emacs"
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  local plist_body
+  plist_body="$(cat "$PLIST")"
+  assert_contains "$plist_body" "<string>$apps_dir/Emacs.app/Contents/MacOS/Emacs</string>" || return 1
+  assert_not_contains "$plist_body" "<string>$MOCK_BIN/emacs</string>" "the terminal-only PATH emacs must not win" || return 1
+  cleanup_test_env
+}
+
+# I4's other half: the "opens a window" claim is only made for a GUI build.
+# With no Emacs.app bundle anywhere, emacs_bin falls back to the PATH
+# `emacs` (a terminal-only build in this setup), so that half must be
+# qualified rather than promised unconditionally.
+test_configure_qualifies_the_window_claim_for_a_terminal_only_build() {
+  setup
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$out" "emacsclient -t opens a terminal frame. $MOCK_BIN/emacs is a terminal-only build, so emacsclient -c cannot open a window" || return 1
+  cleanup_test_env
+}
+
 test_configure_starter_installs_the_config_and_the_daemon_agent() {
   setup
   DRY_RUN=false "$TEEUP" configure emacs >/dev/null
@@ -162,6 +208,64 @@ test_configure_reloads_when_the_plist_changed() {
   DRY_RUN=false "$TEEUP" configure emacs >/dev/null
   assert_contains "$(cat "$MOCK_LOG")" "launchctl bootstrap gui/501 $PLIST" || return 1
   assert_contains "$(cat "$PLIST")" "<string>--fg-daemon</string>" || return 1
+  cleanup_test_env
+}
+
+# I1: the "runs as a daemon" claim is only true once launchd actually loaded
+# the agent.
+test_configure_claims_the_daemon_only_when_it_loaded() {
+  setup
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$out" "Emacs runs as a daemon at login" || return 1
+  cleanup_test_env
+}
+
+# I1's failure half: launchd refuses both the first bootstrap and the retry
+# (real launchd's "Bootstrap failed: 5"). The daemon claim must not follow,
+# and the rest of the script (the git-editor section further down) must
+# still run rather than aborting under `bash -eu` (the set -e audit I1 asks
+# for).
+test_configure_does_not_claim_the_daemon_when_launchd_refuses() {
+  setup
+  mock_command_script launchctl <<'EOF2'
+case "$1" in
+  bootstrap) exit 5 ;;
+  print) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_not_contains "$out" "Emacs runs as a daemon at login" "the daemon claim must not follow a failed load" || return 1
+  assert_contains "$out" "Could not load sh.teeup.emacs; run: launchctl bootstrap gui/501 $PLIST" || return 1
+  assert_contains "$out" "Emacs is not running as a daemon; run: launchctl bootstrap gui/501 $PLIST" || return 1
+  # Proof the script did not abort: the line after the daemon block still ran.
+  assert_contains "$out" "A running daemon keeps its old configuration until" || return 1
+  assert_file_exists "$EMACS_DIR/init.el" "the starter config is still installed" || return 1
+  cleanup_test_env
+}
+
+# M5: a brand-new LaunchAgent plist matches every hand-made one in
+# ~/Library/LaunchAgents (mode 644), not write_managed_file's mktemp default
+# of 600.
+test_configure_creates_the_plist_at_mode_644() {
+  setup
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  assert_equals "644" "$(stat -c '%a' "$PLIST" 2>/dev/null || stat -f '%Lp' "$PLIST")" || return 1
+  cleanup_test_env
+}
+
+# M5's other half: a plist the user chmod'ed keeps that mode across a
+# rewrite (write_managed_file's own mode-preservation, unaffected by the new
+# 644-on-creation behaviour).
+test_configure_keeps_a_users_chmod_on_the_plist() {
+  setup
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  printf 'stale\n' > "$PLIST"
+  chmod 600 "$PLIST"
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  assert_equals "600" "$(stat -c '%a' "$PLIST" 2>/dev/null || stat -f '%Lp' "$PLIST")" || return 1
   cleanup_test_env
 }
 
@@ -308,6 +412,38 @@ print(d["EnvironmentVariables"]["TEEUP_STATE_DIR"] + "|" + d["EnvironmentVariabl
   cleanup_test_env
 }
 
+# I3: TMPDIR legitimately differs between sessions on the same Mac (a
+# Terminal.app session has one, an `ssh host teeup configure emacs` session
+# usually does not), but getconf DARWIN_USER_TEMP_DIR does not -- it is what
+# macOS derives every session's TMPDIR from. This overrides setup()'s
+# pass-through getconf mock with one that ignores TMPDIR entirely (the real
+# getconf does too), so the plist-unchanged gate must hold across a run with
+# TMPDIR set and a run with it unset.
+test_the_tmpdir_gate_holds_across_a_different_session() {
+  setup
+  mock_command_script getconf <<'EOF2'
+case "$1" in
+  DARWIN_USER_TEMP_DIR) echo "/var/folders/zz/session-independent/T"; exit 0 ;;
+  *) exit 1 ;;
+esac
+EOF2
+  export TMPDIR="$TEST_HOME/session1/T"
+  mkdir -p "$TMPDIR"
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  local plist_body
+  plist_body="$(cat "$PLIST")"
+  assert_contains "$plist_body" "<string>/var/folders/zz/session-independent/T</string>" || return 1
+  assert_not_contains "$plist_body" "<string>$TMPDIR</string>" "the session's own TMPDIR must not reach the plist" || return 1
+  : > "$TEST_HOME/agent-loaded"
+  unset TMPDIR
+  : > "$MOCK_LOG"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs)"
+  assert_contains "$out" "Emacs daemon agent already loaded" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "launchctl bootout" "the daemon must not restart across a TMPDIR-only difference" || return 1
+  cleanup_test_env
+}
+
 test_the_daemon_probe_never_starts_a_daemon() {
   setup
   mkdir -p "$TEST_HOME/.local/state/teeup/done"
@@ -449,14 +585,49 @@ test_env_file_paths_survive_special_bytes() {
   cleanup_test_env
 }
 
+# M8: `teeup--find-quote` (the `string-search` call `teeup--unquote` makes
+# for '...' quoting) must degrade to `string-match` on an Emacs without
+# `string-search` (28 and earlier) rather than erroring out of init. Run
+# against whatever real Emacs this suite already has (see EMACS_REQUIRED
+# above): `fmakunbound` simulates the missing function regardless of which
+# Emacs is actually installed.
+test_unquote_degrades_without_string_search() {
+  setup
+  local NO_EMACS_RC=0
+  if no_real_emacs; then
+    cleanup_test_env
+    return "$NO_EMACS_RC"
+  fi
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  # The word is built from char codes (39 is a single quote) rather than
+  # written as a literal Lisp string here, so the shell's own single-quoting
+  # of --eval never has to contain a ' itself. The word is "'ab'c'": two
+  # '...'-quoted runs, "ab" and (after the bare c) an empty one at the end.
+  local out rc=0
+  out="$(cd "$TEST_HOME" && env -u TEEUP_APPEARANCE TEEUP_PATH="$TEEUP_PATH" "$EMACS_REAL" -Q --batch \
+    -l "$EMACS_DIR/init.el" \
+    --eval '(progn (fmakunbound (quote string-search))
+                   (let ((q (char-to-string 39)))
+                     (princ (format "UNQUOTED=%s\n" (teeup--unquote (concat q "ab" q "c" q))))))' 2>&1)" || rc=$?
+  assert_success "$rc" "emacs --batch exited non-zero: $out" || return 1
+  assert_contains "$out" "UNQUOTED=abc" "the '...' branch must still find the closing quote via string-match" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/emacs"
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install falls back to the port on macports" test_install_falls_back_to_the_port_on_macports
 run_test "install warns when the formula is already installed" test_install_warns_when_the_formula_is_already_installed
 run_test "configure prefers the app bundle over a PATH emacs" test_configure_prefers_the_app_bundle_over_a_path_emacs
+run_test "configure finds the bundle under macports_apps_dir" test_configure_finds_the_bundle_under_macports_apps_dir
+run_test "configure qualifies the window claim for a terminal-only build" test_configure_qualifies_the_window_claim_for_a_terminal_only_build
 run_test "configure starter installs the config and the daemon agent" test_configure_starter_installs_the_config_and_the_daemon_agent
 run_test "configure is idempotent and leaves a loaded daemon alone" test_configure_is_idempotent_and_leaves_a_loaded_daemon_alone
 run_test "configure reloads when the plist changed" test_configure_reloads_when_the_plist_changed
+run_test "configure claims the daemon only when it loaded" test_configure_claims_the_daemon_only_when_it_loaded
+run_test "configure does not claim the daemon when launchd refuses" test_configure_does_not_claim_the_daemon_when_launchd_refuses
+run_test "configure creates the plist at mode 644" test_configure_creates_the_plist_at_mode_644
+run_test "configure keeps a user's chmod on the plist" test_configure_keeps_a_users_chmod_on_the_plist
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure without emacs skips the agent" test_configure_without_emacs_skips_the_agent
 run_test "flavor doom clones and installs" test_flavor_doom_clones_and_installs
@@ -468,6 +639,7 @@ run_test "the machine file wins over the answer" test_the_machine_file_wins_over
 run_test "unknown flavor warns and uses the starter" test_unknown_flavor_warns_and_uses_the_starter
 run_test "a legacy ~/.emacs.d is reported, not moved" test_a_legacy_emacs_d_is_reported_not_moved
 run_test "plist escapes metacharacters in paths" test_plist_escapes_metacharacters_in_paths
+run_test "the TMPDIR gate holds across a different session" test_the_tmpdir_gate_holds_across_a_different_session
 run_test "the daemon probe never starts a daemon" test_the_daemon_probe_never_starts_a_daemon
 run_test "theme renders the emacs palette" test_theme_renders_the_emacs_palette
 run_test "hooks wait until teeup installed emacs" test_hooks_wait_until_teeup_installed_emacs
@@ -476,4 +648,5 @@ run_test "remove unloads the agent through lib/macos" test_remove_unloads_the_ag
 run_test "configure points git at emacsclient" test_configure_points_git_at_emacsclient
 run_test "starter loads in a real emacs" test_starter_loads_in_a_real_emacs
 run_test "env file paths survive special bytes" test_env_file_paths_survive_special_bytes
+run_test "unquote degrades without string-search" test_unquote_degrades_without_string_search
 print_summary

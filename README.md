@@ -45,14 +45,20 @@ and `chrome` are lazy: `teeup install <name>` brings one in when you want it.
 ### Editors
 
 - **Emacs** runs as a daemon from the `sh.teeup.emacs` LaunchAgent, so
-  `emacsclient -t` (the editor git and the shell use) and `emacsclient -c`
-  (a window) always have a server. The answer `TEEUP_EMACS_FLAVOR` picks the
-  configuration: `starter` (the default: a thin `~/.config/emacs/init.el`
-  over teeup's built-ins-only layer), `doom` (Doom cloned into
-  `~/.config/emacs`, then `doom install --no-env`), `spacemacs` (cloned into
-  `~/.emacs.d`) or `none` (your own configuration, untouched). The wizard asks
-  it with the daily set; change it with `./bootstrap --reconfigure`, or pin it
-  in the machine file, then run `teeup configure emacs`.
+  `emacsclient -t` (the editor git and the shell use) always has a server;
+  `emacsclient -c` (a window) also does when the daemon is a GUI build (the
+  `emacs-app` cask, or MacPorts' `emacs-app` port, found under
+  `/Applications`, `~/Applications` or, on MacPorts, its own applications
+  directory). A terminal-only build (MacPorts' plain `emacs` port, or
+  Homebrew's `emacs` formula) still runs the daemon, but `emacsclient -c`
+  cannot open a window from it, which teeup says at configure time. The
+  answer `TEEUP_EMACS_FLAVOR` picks the configuration: `starter` (the
+  default: a thin `~/.config/emacs/init.el` over teeup's built-ins-only
+  layer), `doom` (Doom cloned into `~/.config/emacs`, then
+  `doom install --no-env`), `spacemacs` (cloned into `~/.emacs.d`) or `none`
+  (your own configuration, untouched). The wizard asks it with the daily set;
+  change it with `./bootstrap --reconfigure`, or pin it in the machine file,
+  then run `teeup configure emacs`.
 - **Zed** and **VS Code** keep their own `settings.json`
   (`~/.config/zed/settings.json`, which Zed reads whatever `XDG_CONFIG_HOME`
   says, and `~/Library/Application Support/Code/User/settings.json`). teeup

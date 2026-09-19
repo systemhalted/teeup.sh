@@ -28,6 +28,27 @@ test_configure_writes_the_agent_and_applies_the_mapping() {
   cleanup_test_env
 }
 
+# I1's set -e audit: launchagent_install now returns non-zero when launchd
+# refuses to load the agent (both the first bootstrap and the retry). This
+# script must still apply the mapping to the running session and print its
+# own success line, not abort under `bash -eu` the way a bare failing
+# statement would.
+test_configure_continues_when_launchd_refuses_to_load() {
+  setup
+  mock_command_script launchctl <<'EOF2'
+case "$1" in
+  bootstrap) exit 5 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure keyboard 2>&1)"
+  assert_contains "$out" "Could not load sh.teeup.keyboard; run: launchctl bootstrap gui/501 $PLIST" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "hidutil property --set $MAPPING" "the mapping must still be applied to the running session" || return 1
+  assert_contains "$out" "Caps Lock sends Control, now and at every login." || return 1
+  cleanup_test_env
+}
+
 test_configure_is_idempotent_on_the_plist() {
   setup
   DRY_RUN=false "$TEEUP" configure keyboard >/dev/null
@@ -97,6 +118,7 @@ test_remove_without_a_plist_is_quiet() {
 
 echo "capabilities/keyboard"
 run_test "configure writes the agent and applies the mapping" test_configure_writes_the_agent_and_applies_the_mapping
+run_test "configure continues when launchd refuses to load" test_configure_continues_when_launchd_refuses_to_load
 run_test "configure is idempotent on the plist" test_configure_is_idempotent_on_the_plist
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "remove unloads and clears the mapping" test_remove_unloads_and_clears_the_mapping

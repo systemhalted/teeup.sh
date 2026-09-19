@@ -124,11 +124,18 @@ plist_escape() {
 # emacs/emacsclient over the formula's binary, so `command -v emacs` still
 # resolves the formula build and the daemon would never open a GUI frame.
 # TEEUP_APPS_DIR is the test hook for /Applications; ~/Applications is where
-# HOMEBREW_CASK_OPTS can land a cask instead.
+# HOMEBREW_CASK_OPTS can land a cask instead; MacPorts moves the emacs-app
+# port's bundle under macports_apps_dir (lib/pkg.sh) instead of either (I4) --
+# only searched on MacPorts, so a Homebrew machine never even stats a path
+# that could not exist there.
 emacs_bin=""
-for app_dir in "${TEEUP_APPS_DIR:-/Applications}" "$HOME/Applications"; do
+emacs_bin_is_gui=false
+emacs_app_dirs="${TEEUP_APPS_DIR:-/Applications} $HOME/Applications"
+casks_supported || emacs_app_dirs="$emacs_app_dirs $(macports_apps_dir)"
+for app_dir in $emacs_app_dirs; do
   if [[ -x "$app_dir/Emacs.app/Contents/MacOS/Emacs" ]]; then
     emacs_bin="$app_dir/Emacs.app/Contents/MacOS/Emacs"
+    emacs_bin_is_gui=true
     break
   fi
 done
@@ -138,15 +145,30 @@ fi
 if [[ -z "$emacs_bin" ]]; then
   log "emacs is not on PATH yet; the daemon LaunchAgent is written the next time you run: teeup configure emacs"
 else
+  # pkg_prefix depends only on the package-manager answer and macos_major
+  # (or, in tests, TEEUP_PKG_PREFIX), none of which differ between sessions on
+  # the same machine, so unlike $TMPDIR below it cannot itself put a stale
+  # value in the plist-unchanged gate.
   agent_path="$(dirname "$emacs_bin"):$(pkg_prefix)/bin:$(pkg_prefix)/sbin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
   # The server socket lives under TMPDIR (emacs<uid>), and emacsclient looks
-  # under its own TMPDIR, so the daemon gets the one this shell has: the
-  # per-user temporary directory macOS gives every login session.
+  # under its own TMPDIR, so the daemon needs one in the plist. $TMPDIR
+  # itself legitimately differs between sessions on the same Mac (a
+  # Terminal.app/WindowServer session gets /var/folders/.../T/; a non-login
+  # context such as `ssh host teeup configure emacs` usually has it unset),
+  # and baking the session's own value into the plist made the
+  # plist-unchanged gate below flip on every other run, bootout-ing and
+  # rebootstrap-ing a live daemon for no reason (I3). getconf
+  # DARWIN_USER_TEMP_DIR is what macOS derives every session's TMPDIR from,
+  # so it is the same value no matter which session asks; ${TMPDIR:-} is only
+  # the fallback for a getconf without that variable (not macOS, and the
+  # test harness).
+  emacs_tmpdir="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
+  [[ -n "$emacs_tmpdir" ]] || emacs_tmpdir="${TMPDIR:-}"
   tmpdir_entry=""
-  if [[ -n "${TMPDIR:-}" ]]; then
+  if [[ -n "$emacs_tmpdir" ]]; then
     tmpdir_entry="
     <key>TMPDIR</key>
-    <string>$(plist_escape "$TMPDIR")</string>"
+    <string>$(plist_escape "$emacs_tmpdir")</string>"
   fi
   rendered_plist="$(mktemp)"
   cat > "$rendered_plist" <<PLIST
@@ -195,9 +217,20 @@ PLIST
   if [[ -f "$plist_path" ]] && cmp -s "$rendered_plist" "$plist_path" &&
      launchctl print "gui/$(id -u)/sh.teeup.emacs" >/dev/null 2>&1; then
     log "Emacs daemon agent already loaded: sh.teeup.emacs"
+  elif launchagent_install sh.teeup.emacs < "$rendered_plist"; then
+    # The "opens a window" half is only true when the chosen binary is a GUI
+    # build (an Emacs.app bundle, emacs_bin_is_gui above); the MacPorts
+    # terminal-only `emacs` port (I4) can never satisfy emacsclient -c.
+    if [[ "$emacs_bin_is_gui" == "true" ]]; then
+      ok_unless_dry "Emacs runs as a daemon at login; emacsclient -t opens a terminal frame, emacsclient -c a window."
+    else
+      ok_unless_dry "Emacs runs as a daemon at login; emacsclient -t opens a terminal frame. $emacs_bin is a terminal-only build, so emacsclient -c cannot open a window; install the emacs-app cask (or MacPorts' emacs-app port) for that."
+    fi
   else
-    launchagent_install sh.teeup.emacs < "$rendered_plist"
-    ok_unless_dry "Emacs runs as a daemon at login; emacsclient -t opens a terminal frame, emacsclient -c a window."
+    # launchagent_install already warned why; this says what is actually
+    # true now, instead of the unconditional success line I1 found (a "runs
+    # as a daemon" claim right after launchd refused to load it).
+    warn "Emacs is not running as a daemon; run: launchctl bootstrap gui/$(id -u) $plist_path"
   fi
   rm -f "$rendered_plist"
   log "A running daemon keeps its old configuration until: launchctl kickstart -k gui/$(id -u)/sh.teeup.emacs"
