@@ -49,3 +49,10 @@ else
   run_cmd ln -sfn "$TEEUP_PATH/bin/teeup" "$link"
   ok_unless_dry "Linked $link"
 fi
+
+# Lazy shims (spec section 6): one per command in provides= of every
+# tier=lazy capability, stale ones removed. The zsh layer appends the shims
+# directory last on PATH, so a shim only fires for a command nothing real
+# provides. Re-run `teeup configure teeup-runtime` after adding a lazy
+# capability; `teeup update` will do that for the whole core tier.
+shims_generate

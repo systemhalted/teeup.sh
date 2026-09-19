@@ -382,6 +382,48 @@ test_rc_leaves_git_revision_syntax_alone() {
   cleanup_test_env
 }
 
+test_default_env_moves_the_shims_last_under_a_macports_machine_file() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/prefixroot" shims="$TEST_HOME/.local/state/teeup/shims"
+  mkdir -p "$root/opt/local/bin" "$root/opt/local/sbin" "$root/opt/homebrew/bin" "$root/opt/homebrew/sbin"
+  : > "$root/opt/homebrew/bin/brew"
+  chmod +x "$root/opt/homebrew/bin/brew"
+  mkdir -p "$TEST_HOME/.local/bin" "$shims" "$TEST_HOME/machines"
+  # machine_file() looks up $TEEUP_PATH/machines/<hostname -s>.conf, and
+  # mock_macos_base answers "testmac"; TEEUP_PATH is pointed at TEST_HOME
+  # inside the zsh process only, as in the machine-file test above.
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEST_HOME/machines/testmac.conf"
+  local out n macports_pos brew_pos
+  out="$(PATH="$shims:$PATH:$TEST_HOME/appended" TEEUP_TEST_PREFIX_ROOT="$root" zsh -f -c "export TEEUP_PATH='$TEST_HOME'; . '$TEEUP_PATH/capabilities/zsh/default/env'; . '$TEEUP_PATH/capabilities/zsh/default/env'; printf '%s\n' \"\$PATH\"")"
+  [[ "$out" == *":$shims" ]] || { echo "teeup shims must be the last PATH entry, got: $out"; return 1; }
+  n="$(printf '%s' "$out" | tr ':' '\n' | grep -cxF "$shims" || true)"
+  assert_equals "1" "$n" "the shims directory appears once" || return 1
+  macports_pos="$(printf '%s' "$out" | tr ':' '\n' | grep -nxF "$root/opt/local/bin" | head -1 | cut -d: -f1)"
+  brew_pos="$(printf '%s' "$out" | tr ':' '\n' | grep -nxF "$root/opt/homebrew/bin" | head -1 | cut -d: -f1)"
+  [[ -n "$macports_pos" && -n "$brew_pos" && "$macports_pos" -lt "$brew_pos" ]] ||
+    { echo "expected MacPorts before Homebrew (machine file must win), got: $out"; return 1; }
+  cleanup_test_env
+}
+
+test_default_env_editor_ignores_a_lazy_shim() {
+  setup
+  require_zsh || return 1
+  local shims="$TEST_HOME/.local/state/teeup/shims" zsh_bin out
+  zsh_bin="$(command -v zsh)"
+  mkdir -p "$shims"
+  printf '#!/bin/bash\nexit 127\n' > "$shims/nvim"
+  chmod +x "$shims/nvim"
+  # Only MOCK_BIN and the shims are searched, so an nvim, emacsclient or vim
+  # on the host cannot answer the probe.
+  out="$(PATH="$MOCK_BIN:$shims" "$zsh_bin" -f -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- \$EDITOR" 2>/dev/null)"
+  assert_equals "vim" "$out" "a lazy shim is not an installed nvim" || return 1
+  mock_command nvim 0 ""
+  out="$(PATH="$MOCK_BIN:$shims" "$zsh_bin" -f -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- \$EDITOR" 2>/dev/null)"
+  assert_equals "nvim" "$out" "a real nvim ahead of the shims counts" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zsh"
 run_test "install gets the plugins and switches the login shell" test_install_gets_the_plugins_and_switches_the_login_shell
 run_test "install leaves an existing zsh login shell alone" test_install_leaves_an_existing_zsh_login_shell_alone
@@ -402,6 +444,8 @@ run_test "default env honours MISE_DATA_DIR for shims" test_default_env_honours_
 run_test "default env prefers macports when recorded" test_default_env_prefers_macports_when_recorded
 run_test "default env prefers homebrew when recorded" test_default_env_prefers_homebrew_when_recorded
 run_test "default env lets the machine file override the answers file" test_default_env_lets_the_machine_file_override_the_answers_file
+run_test "default env moves the shims last under a macports machine file" test_default_env_moves_the_shims_last_under_a_macports_machine_file
+run_test "default env editor ignores a lazy shim" test_default_env_editor_ignores_a_lazy_shim
 run_test "default env prefers the user's own machine file over the repo's" test_default_env_prefers_the_users_own_machine_file_over_the_repos
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero

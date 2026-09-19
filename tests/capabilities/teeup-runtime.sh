@@ -105,6 +105,55 @@ test_configure_backs_up_a_regular_file_at_the_link() {
   cleanup_test_env
 }
 
+# A capability tree of our own: the real teeup-runtime plus one lazy fixture,
+# so the shim assertions do not depend on which lazy capabilities the repo
+# ships at any given moment.
+setup_with_lazy_fixture() {
+  setup
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  mkdir -p "$TEEUP_CAPS_DIR/boxes"
+  cp -R "$TEEUP_PATH/capabilities/teeup-runtime" "$TEEUP_CAPS_DIR/teeup-runtime"
+  printf 'summary="Fixture boxes"\ngroup=containers\ntier=lazy\nrequires=""\nprovides="boxctl boxd"\ninteractive=false\n' > "$TEEUP_CAPS_DIR/boxes/capability"
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/boxes/install"
+  cp "$TEEUP_CAPS_DIR/boxes/install" "$TEEUP_CAPS_DIR/boxes/configure"
+  chmod +x "$TEEUP_CAPS_DIR/boxes/install" "$TEEUP_CAPS_DIR/boxes/configure"
+  printf 'teeup-runtime\n' > "$TEEUP_CAPS_DIR/core.list"
+  : > "$TEEUP_CAPS_DIR/daily.list"
+  SHIMS="$TEST_HOME/.local/state/teeup/shims"
+}
+
+test_configure_writes_the_lazy_shims() {
+  setup_with_lazy_fixture
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  assert_file_exists "$SHIMS/boxctl" || return 1
+  assert_file_exists "$SHIMS/boxd" || return 1
+  [[ -x "$SHIMS/boxd" ]] || { echo "shim must be executable"; return 1; }
+  assert_contains "$(cat "$SHIMS/boxd")" 'lazy-run boxes boxd "$@"' || return 1
+  [[ ! -e "$SHIMS/teeup-runtime" ]] || { echo "a core capability gets no shim"; return 1; }
+  cleanup_test_env
+}
+
+test_configure_removes_a_shim_its_capability_dropped() {
+  setup_with_lazy_fixture
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  sed -i.bak 's/^provides=.*/provides="boxd"/' "$TEEUP_CAPS_DIR/boxes/capability" && rm "$TEEUP_CAPS_DIR/boxes/capability.bak"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure teeup-runtime 2>&1)"
+  assert_contains "$out" "Removed stale shim: boxctl" || return 1
+  assert_contains "$out" "Already current: $SHIMS/boxd" || return 1
+  [[ ! -e "$SHIMS/boxctl" ]] || { echo "dropped command must lose its shim"; return 1; }
+  cleanup_test_env
+}
+
+test_configure_dry_run_writes_no_shims() {
+  setup_with_lazy_fixture
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure teeup-runtime)"
+  assert_contains "$out" "Would write $SHIMS/boxd" || return 1
+  [[ ! -e "$SHIMS/boxd" ]] || { echo "shim written in dry run"; return 1; }
+  cleanup_test_env
+}
+
 echo "capabilities/teeup-runtime"
 run_test "install gets gum and jq" test_install_gets_gum_and_jq
 run_test "configure creates state, env and link" test_configure_creates_state_env_and_link
@@ -112,4 +161,7 @@ run_test "configure quotes a path with shell metacharacters" test_configure_quot
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure backs up a regular file at the link" test_configure_backs_up_a_regular_file_at_the_link
+run_test "configure writes the lazy shims" test_configure_writes_the_lazy_shims
+run_test "configure removes a shim its capability dropped" test_configure_removes_a_shim_its_capability_dropped
+run_test "configure dry run writes no shims" test_configure_dry_run_writes_no_shims
 print_summary
