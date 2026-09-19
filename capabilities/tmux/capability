@@ -1,0 +1,9 @@
+summary="tmux terminal multiplexer"
+group=shell
+tier=lazy
+requires="package-manager"
+provides="tmux"
+packages="tmux"
+casks=""
+apps=""
+interactive=false
