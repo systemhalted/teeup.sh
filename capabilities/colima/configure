@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# docker looks for CLI plugins in the cli-plugins directory of its config
+# directory ($DOCKER_CONFIG, default ~/.docker) before its fixed system
+# directories (docker/cli, cli-plugins/manager). Homebrew's docker-compose
+# formula puts the Compose plugin in $(brew --prefix)/lib/docker/cli-plugins,
+# which is not one of them, so link it into the user directory: `docker
+# compose` then works with no ~/.docker/config.json edit. MacPorts needs
+# nothing here: its docker port rewrites the system plugin paths to
+# /opt/local, where the docker-compose-plugin port installs.
+if [[ "$(pkg_backend)" == "homebrew" ]]; then
+  plugin="$(pkg_prefix)/lib/docker/cli-plugins/docker-compose"
+  plugins_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+  link="$plugins_dir/docker-compose"
+  if [[ ! -e "$plugin" ]]; then
+    log "No Compose plugin at $plugin; docker compose stays unavailable until docker-compose is installed."
+  elif [[ "$(readlink "$link" 2>/dev/null)" == "$plugin" ]]; then
+    log "Already linked: $link"
+  else
+    [[ -d "$plugins_dir" ]] || run_cmd mkdir -p "$plugins_dir"
+    run_cmd ln -sfn "$plugin" "$link"
+    ok_unless_dry "Linked the docker compose plugin at $link"
+  fi
+fi
+
+# Start the VM once, so the `docker ps` that went through the shim has a
+# daemon to talk to. `colima status` returns an error ("colima is not
+# running", exit 1) while it is stopped, so starting is idempotent. Colima
+# makes itself the default docker context on start; `colima start --edit`
+# changes CPU, memory and disk later.
+if ! have colima; then
+  warn "colima is not installed; start it later with: colima start"
+  exit 0
+fi
+if colima status >/dev/null 2>&1; then
+  log "Colima is running."
+else
+  run_cmd colima start || warn "Colima did not start; run: colima start"
+fi
