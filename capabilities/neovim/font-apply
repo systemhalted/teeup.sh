@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# For Neovim the font is a GUI matter (vim.o.guifont, read by Neovide and the
+# like); in a terminal the font is WezTerm's. A running GUI instance is told
+# the same way theme-apply tells it: teeup.neovim's apply() re-reads the
+# theme and the font. Same install gate and socket locations as theme-apply.
+if ! state_done check "cap-$TEEUP_CAP"; then
+  exit 0
+fi
+if ! have nvim; then
+  exit 0
+fi
+keys='<Cmd>lua require("teeup.neovim").apply()<CR>'
+user="$(id -un)"
+found=0
+for sock in "${XDG_RUNTIME_DIR:-/nonexistent}"/nvim.*.0 "${TMPDIR:-/tmp}/nvim.$user"/*/nvim.*.0 "/tmp/nvim.$user"/*/nvim.*.0; do
+  [[ -e "$sock" ]] || continue
+  found=1
+  run_cmd nvim --server "$sock" --remote-send "$keys" ||
+    warn "Could not reach the Neovim at $sock; it picks the font up at its next start."
+done
+if [[ $found -eq 0 ]]; then
+  log "No running Neovim to tell; the font is read at the next start."
+fi

@@ -9,6 +9,7 @@ bat_theme = "OneHalfLight"
 emacs_theme = "modus-operandi"
 zed_theme = "Catppuccin Latte"
 zed_extension = "catppuccin"
+neovim_colorscheme = "catppuccin-latte"
 
 accent = "#1e66f5"
 selection = "#ccd0da"

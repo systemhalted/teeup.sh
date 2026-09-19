@@ -13,6 +13,7 @@ bat_theme = "OneHalfDark"
 emacs_theme = "modus-vivendi"
 zed_theme = "Catppuccin Mocha"
 zed_extension = "catppuccin"
+neovim_colorscheme = "catppuccin-mocha"
 
 accent = "#89b4fa"
 selection = "#45475a"
