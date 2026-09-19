@@ -1,0 +1,9 @@
+summary="AI coding CLIs: claude, codex, gemini, copilot, opencode through mise"
+group=ai
+tier=lazy
+requires="mise"
+provides="claude codex gemini copilot opencode"
+packages=""
+casks=""
+apps=""
+interactive=false
