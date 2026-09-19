@@ -210,6 +210,22 @@ test_ok_unless_dry_is_silent_when_dry_and_unchanged_otherwise() {
   cleanup_test_env
 }
 
+test_have_hides_a_binary_by_absolute_path() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local other
+  other="$(mktemp -d)"
+  mock_command frob 0 ""
+  # Hiding by path: the MOCK_BIN copy is invisible, a copy elsewhere is not.
+  export TEEUP_TEST_MISSING="$MOCK_BIN/frob"
+  have frob && { echo "the listed path must be hidden"; return 1; }
+  cp "$MOCK_BIN/frob" "$other/frob"
+  PATH="$other:$PATH" have frob || { echo "a copy at another path is found"; return 1; }
+  unset TEEUP_TEST_MISSING
+  rm -rf "$other"
+  cleanup_test_env
+}
+
 echo "lib/core.sh"
 run_test "paths default to XDG under HOME" test_paths_default_to_xdg
 run_test "run_cmd dry run prints and skips" test_run_cmd_dry_run_prints_and_skips
@@ -226,6 +242,7 @@ run_test "run_logged captures dry run preview lines" test_run_logged_captures_dr
 run_test "macos_major and arch" test_macos_major_and_arch_use_mocks
 run_test "format_duration" test_format_duration
 run_test "have honours TEEUP_TEST_MISSING hook" test_have_honours_test_missing_hook
+run_test "have hides a binary by absolute path" test_have_hides_a_binary_by_absolute_path
 run_test "user_config_dir follows XDG" test_user_config_dir_follows_xdg
 run_test "ok_unless_dry is silent when dry and unchanged otherwise" test_ok_unless_dry_is_silent_when_dry_and_unchanged_otherwise
 print_summary

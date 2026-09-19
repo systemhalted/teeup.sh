@@ -28,12 +28,28 @@ ok_unless_dry() {
 # have <command>
 # TEEUP_TEST_MISSING is a test-only hook: a space-separated list of commands
 # the harness pretends are absent, so a test can simulate a fresh Mac on a
-# host that already has them.
+# host that already has them. An entry is a bare name (hidden wherever it is
+# found) or an absolute path (only that binary is hidden, so a copy the test
+# installs somewhere else is still found; see hide_host_commands in
+# tests/helper.sh).
 have() {
+  local found
   case " ${TEEUP_TEST_MISSING:-} " in
     *" $1 "*) return 1 ;;
   esac
-  command -v "$1" >/dev/null 2>&1
+  found="$(command -v "$1" 2>/dev/null)" || return 1
+  case " ${TEEUP_TEST_MISSING:-} " in
+    *" $found "*) return 1 ;;
+  esac
+  # A teeup lazy shim (lib/lazy.sh) stands in for a command nothing real
+  # provides, and the shell puts the shims directory last on PATH, so when
+  # `command -v` answers with a shim there is no real binary anywhere ahead of
+  # it. Counting that as "installed" would make pkg_install skip the very
+  # package the shim exists to install.
+  case "$found" in
+    "$TEEUP_STATE_DIR/shims/"*) return 1 ;;
+  esac
+  return 0
 }
 
 # Every mutation goes through here so DRY_RUN=true is a faithful preview.

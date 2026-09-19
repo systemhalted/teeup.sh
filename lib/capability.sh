@@ -161,7 +161,7 @@ cap_install_verbs() {
 
 # cap_check -> lints every capability; prints one problem per line.
 cap_check() {
-  local problems=0 name dir tier provides p verb tpl base other d
+  local problems=0 name dir tier provides p verb tpl base other d seen
   for name in $(cap_list); do
     dir="$(cap_dir "$name")"
     tier="$(cap_meta_get "$name" tier)"
@@ -182,7 +182,18 @@ cap_check() {
       case " $TEEUP_SHIM_FORBIDDEN " in
         *" $p "*) echo "$name: provides must not list $p (macOS ships it, a shim can never fire)"; problems=$((problems + 1)) ;;
       esac
+      # A provides token becomes a file name under the shims directory and a
+      # bare word on the shim's exec line, so it has to be a plain command
+      # name: letters, digits and _.+- only, starting with a letter or digit.
+      if ! [[ "$p" =~ ^[A-Za-z0-9][A-Za-z0-9_.+-]*$ ]]; then
+        echo "$name: provides token '$p' is not a plain command name"; problems=$((problems + 1))
+      fi
     done
+    # apps= is ";"-separated (names contain spaces); an entry becomes
+    # "<name>.app" under /Applications and an argument to `open -a`.
+    case "$(cap_meta_get "$name" apps)" in
+      */*) echo "$name: apps must be application names, not paths"; problems=$((problems + 1)) ;;
+    esac
     case "$tier" in
       core|daily)
         cap_tier_list "$tier" | grep -qx "$name" || { echo "$name: tier is $tier but it is not listed in $tier.list"; problems=$((problems + 1)); }
@@ -219,6 +230,22 @@ cap_check() {
   for tier in core daily; do
     for name in $(cap_tier_list "$tier"); do
       cap_exists "$name" || { echo "$tier.list: unknown capability $name"; problems=$((problems + 1)); }
+    done
+  done
+  # One shim per command: two lazy capabilities providing the same command
+  # would leave whichever sorts first owning the shim, silently.
+  seen=" "
+  for name in $(cap_list); do
+    [[ "$(cap_meta_get "$name" tier)" == "lazy" ]] || continue
+    for p in $(cap_meta_get "$name" provides); do
+      case "$seen" in
+        *" $p="*)
+          other="${seen#*" $p="}"
+          other="${other%% *}"
+          echo "$name: provides $p, which $other already provides"; problems=$((problems + 1))
+          ;;
+        *) seen="$seen$p=$name " ;;
+      esac
     done
   done
   [[ $problems -eq 0 ]]
