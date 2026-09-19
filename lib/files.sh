@@ -59,13 +59,21 @@ append_once() {
   ok "Updated $(basename "$file") with: $marker"
 }
 
+# _file_mode <path> -> its octal permission bits (e.g. "644"), or nothing.
+# GNU stat is probed first on purpose: GNU's -f means "filesystem status" and
+# would print something odd before failing, while BSD stat rejects -c cleanly
+# on stderr. Same idiom as capabilities/ssh/configure's own file_mode.
+_file_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || true
+}
+
 # write_managed_file <file> <label>   (content on stdin)
 # Sets WRITE_MANAGED_FILE_CHANGED to true when the file was actually written
 # (and in a dry run, when it would have been), so a caller with its own
 # success line to print can tell a write from a no-op instead of claiming a
 # mutation on every run.
 write_managed_file() {
-  local file="$1" label="$2" tmp
+  local file="$1" label="$2" tmp mode=""
   # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
   WRITE_MANAGED_FILE_CHANGED=true
   if [[ "$DRY_RUN" == "true" ]]; then
@@ -83,7 +91,21 @@ write_managed_file() {
     log "Already current: $file"
     return 0
   fi
+  # A file that already exists keeps its own mode across a rewrite: mktemp's
+  # 0600 would otherwise land on it once mv puts the temp file's inode at
+  # that path, quietly narrowing a 0644 editor settings file to 0600 and
+  # showing up as a permissions diff in whatever dotfiles repo tracks it
+  # (Task 1 review). A file that does not exist yet keeps today's behaviour
+  # (mktemp's 0600, same as always) -- there is nothing to preserve, and a
+  # capability that wants something else (git identity, ssh material) chmods
+  # it itself afterward. Never through a symlink: mv replaces the link with a
+  # plain file regardless, and the link's target mode is not this file's mode
+  # to inherit.
+  if [[ -e "$file" && ! -L "$file" ]]; then
+    mode="$(_file_mode "$file")"
+  fi
   mv "$tmp" "$file"
+  [[ -n "$mode" ]] && chmod "$mode" "$file"
   ok "Wrote $file ($label)"
 }
 
