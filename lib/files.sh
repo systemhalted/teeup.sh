@@ -205,3 +205,121 @@ replace_literal() {
   done
   printf '%s\n' "$out$rest"
 }
+
+# --- JSON settings files ------------------------------------------------------
+# Zed and VS Code keep their settings in a JSON file the user also edits, so
+# teeup never ships one: it sets the few keys the theme and the font need and
+# leaves the rest alone. jq does the edit (cli-tools and teeup-runtime install
+# it); write_managed_file does the write, so DRY_RUN previews it and an
+# unchanged file is left alone.
+#
+# Both editors read JSON with comments and trailing commas ("JSONC"), and
+# Zed's own first settings file has both. jq reads neither, so the file is
+# converted first by the awk program below, which walks it character by
+# character outside strings: `//` and `/* */` comments are dropped and a comma
+# followed only by whitespace or comments before `}` or `]` is dropped. The
+# comment lines above the opening brace (Zed's header) are put back on the way
+# out; a comment inside the object cannot survive jq's rewrite, so a file that
+# has one is copied to <file>.teeup_backup_<timestamp> before the first write.
+#
+# The program runs per line with its state carried across lines, so it never
+# indexes into one long string. With ENVIRON["JSONC_DETECT"] set it prints
+# nothing and exits 0 when the input holds a comment, 1 when it holds none.
+_JSONC_AWK='
+function out(s) { if (!detect) printf "%s", s }
+BEGIN { detect = (ENVIRON["JSONC_DETECT"] != ""); found = 0 }
+{
+  line = $0 "\n"
+  n = length(line)
+  for (i = 1; i <= n; i++) {
+    c = substr(line, i, 1)
+    if (lc) { if (c == "\n") { lc = 0; if (pc) pw = pw c; else out(c) } ; continue }
+    if (bc) { if (c == "*" && substr(line, i + 1, 1) == "/") { bc = 0; i++ } ; continue }
+    if (ins) {
+      out(c)
+      if (esc) esc = 0
+      else if (c == "\\") esc = 1
+      else if (c == "\"") ins = 0
+      continue
+    }
+    if (c == "/" && substr(line, i + 1, 1) == "/") { lc = 1; found = 1; i++; continue }
+    if (c == "/" && substr(line, i + 1, 1) == "*") { bc = 1; found = 1; i++; continue }
+    if (c == " " || c == "\t" || c == "\r" || c == "\n") { if (pc) pw = pw c; else out(c); continue }
+    if (pc) { if (c != "}" && c != "]") out(","); out(pw); pc = 0; pw = "" }
+    if (c == ",") { pc = 1; continue }
+    if (c == "\"") ins = 1
+    out(c)
+  }
+}
+END {
+  if (pc) { out(","); out(pw) }
+  if (detect) exit(found ? 0 : 1)
+}
+'
+
+# json_quote <text> -> <text> as one JSON string literal, escaped by jq.
+json_quote() { jq -n --arg v "$1" '$v'; }
+
+# _json_edit <set|merge> <file> <key> <json-value>
+_json_edit() {
+  local op="$1" file="$2" key="$3" value="$4" header="" body="" stripped result filter backup
+  if ! have jq; then
+    warn "jq is not installed; cannot set $key in $file. Run: teeup install cli-tools"
+    return 1
+  fi
+  # A settings file that is a symlink belongs to a dotfile manager, and the
+  # write below (a rename onto the path) would replace the link with a copy
+  # the manager no longer tracks.
+  if [[ -L "$file" ]]; then
+    warn "$file is a symlink; teeup does not write through it. Set it by hand: \"$key\": $value"
+    return 1
+  fi
+  if ! jq -n --argjson v "$value" 'true' >/dev/null 2>&1; then
+    warn "json_${op}_key: not a JSON value: '$value' (a string needs its quotes: '\"text\"')"
+    return 1
+  fi
+  if [[ -f "$file" ]]; then
+    # The header is every blank or `//` line before the first other line.
+    header="$(awk '!body && /^[[:space:]]*(\/\/.*)?$/ { print; next } { body = 1 }' "$file")"
+    body="$(awk '!body && /^[[:space:]]*(\/\/.*)?$/ { next } { body = 1; print }' "$file")"
+  fi
+  stripped="$(printf '%s\n' "$body" | awk "$_JSONC_AWK")"
+  case "$stripped" in
+    *[![:space:]]*) ;;
+    *) stripped="{}" ;;
+  esac
+  case "$op" in
+    set) filter='if type == "object" then .[$k] = $v else error("not an object") end' ;;
+    merge) filter='if type == "object" and ((.[$k] // {}) | type) == "object" then .[$k] = ((.[$k] // {}) + $v) else error("not an object") end' ;;
+  esac
+  if ! result="$(printf '%s\n' "$stripped" | jq --arg k "$key" --argjson v "$value" "$filter" 2>/dev/null)" || [[ -z "$result" ]]; then
+    warn "$file is not a JSON object jq can edit; set it by hand: \"$key\": $value"
+    return 1
+  fi
+  if [[ "$DRY_RUN" != "true" ]] && printf '%s\n' "$body" | JSONC_DETECT=1 awk "$_JSONC_AWK"; then
+    backup="${file}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+    cp "$file" "$backup"
+    warn "Comments inside $file do not survive the edit; your previous file is at $backup"
+  fi
+  {
+    if [[ -n "$header" ]]; then printf '%s\n' "$header"; fi
+    printf '%s\n' "$result"
+  } | write_managed_file "$file" "$key"
+}
+
+# json_set_key <file> <dotted.key> <json-value>
+# Sets <dotted.key> in the JSON object in <file> to <json-value>, a JSON
+# literal ('"Catppuccin Mocha"', 'true', '{"mode":"system"}'; json_quote makes
+# one from text). The key is one literal top-level key, dots included: VS
+# Code's "workbench.colorTheme" is a single key, and a nested
+# {"workbench": {...}} object is not a setting VS Code reads. A missing or
+# empty file starts as {}. Returns 1, the file untouched, when jq is missing,
+# the file is a symlink, the value is not JSON, or the file is not a JSON
+# object.
+json_set_key() { _json_edit set "$1" "$2" "$3"; }
+
+# json_merge_key <file> <key> <json-object>
+# Like json_set_key, but the object already at <key> keeps the members
+# <json-object> does not name (Zed's auto_install_extensions gains one entry
+# and keeps the user's).
+json_merge_key() { _json_edit merge "$1" "$2" "$3"; }
