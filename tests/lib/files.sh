@@ -29,6 +29,52 @@ test_write_managed_file_noops_when_identical() {
   cleanup_test_env
 }
 
+# mode_of <path>: same GNU-then-BSD stat probe as _file_mode in lib/files.sh
+# and file_mode in capabilities/ssh/configure.
+mode_of() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || true
+}
+
+# Review of Task 1: write_managed_file writes through mktemp (0600) and mv's
+# the result into place, which used to carry mktemp's mode onto the
+# destination -- narrowing a 0644 editor settings file to 0600 on its very
+# first rewrite, a permissions diff in whatever dotfiles repo tracks it. An
+# existing file now keeps its own mode across a rewrite.
+test_write_managed_file_keeps_an_existing_mode() {
+  setup
+  local f="$TEST_HOME/existing.conf"
+  printf 'old\n' > "$f"
+  chmod 644 "$f"
+  echo new | write_managed_file "$f" "test" >/dev/null
+  assert_equals "644" "$(mode_of "$f")" "a 644 file keeps 644 after a rewrite" || return 1
+  chmod 600 "$f"
+  echo newer | write_managed_file "$f" "test" >/dev/null
+  assert_equals "600" "$(mode_of "$f")" "a 600 file keeps 600 after a rewrite" || return 1
+  cleanup_test_env
+}
+
+test_write_managed_file_new_file_keeps_todays_behavior() {
+  setup
+  local f="$TEST_HOME/brand-new.conf"
+  echo content | write_managed_file "$f" "test" >/dev/null
+  # Nothing existed to preserve a mode from, so the file is left exactly as
+  # mktemp -> mv always made it: today's behaviour, unmodified by this fix.
+  assert_equals "600" "$(mode_of "$f")" "a new file's mode is unchanged from today" || return 1
+  cleanup_test_env
+}
+
+test_write_managed_file_dry_run_changes_no_mode() {
+  setup
+  local f="$TEST_HOME/existing.conf"
+  printf 'old\n' > "$f"
+  chmod 644 "$f"
+  DRY_RUN=true
+  echo new | write_managed_file "$f" "test" >/dev/null
+  assert_equals "644" "$(mode_of "$f")" "a dry run touches no mode" || return 1
+  assert_equals "old" "$(cat "$f")" "a dry run writes nothing" || return 1
+  cleanup_test_env
+}
+
 test_backup_target_moves_and_prints_path() {
   setup
   echo old > "$TEST_HOME/file"
@@ -184,6 +230,9 @@ test_replace_literal_is_literal_and_repeats() {
 echo "lib/files.sh"
 run_test "append_once is idempotent" test_append_once_is_idempotent
 run_test "write_managed_file noops when identical" test_write_managed_file_noops_when_identical
+run_test "write_managed_file keeps an existing mode" test_write_managed_file_keeps_an_existing_mode
+run_test "write_managed_file new file keeps today's behavior" test_write_managed_file_new_file_keeps_todays_behavior
+run_test "write_managed_file dry run changes no mode" test_write_managed_file_dry_run_changes_no_mode
 run_test "backup_target moves and prints path" test_backup_target_moves_and_prints_path
 run_test "copy_config_once copies and records sha" test_copy_config_once_copies_and_records_sha
 run_test "copy_config_once skips user-edited file" test_copy_config_once_skips_user_edited_file
