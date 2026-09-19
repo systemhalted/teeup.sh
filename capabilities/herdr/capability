@@ -1,0 +1,9 @@
+summary="Herdr, the agent multiplexer that lives in your terminal"
+group=ai
+tier=lazy
+requires="package-manager"
+provides="herdr"
+packages="herdr"
+casks=""
+apps=""
+interactive=false
