@@ -11,4 +11,7 @@ if ! have jq; then
   warn "jq is not installed; cannot write $ZED_SETTINGS. Run: teeup install cli-tools"
   exit 0
 fi
-json_set_key "$ZED_SETTINGS" buffer_font_family "$(json_quote "${TEEUP_FONT_FAMILY:-$(font_current)}")"
+# json_set_key already warns on its own refusal (a symlinked settings file,
+# ...); `|| true` keeps that a warning instead of a false "font-apply failed"
+# from cap_run_optional (M3).
+json_set_key "$ZED_SETTINGS" buffer_font_family "$(json_quote "${TEEUP_FONT_FAMILY:-$(font_current)}")" || true

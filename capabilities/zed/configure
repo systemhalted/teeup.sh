@@ -5,11 +5,32 @@
 # rest alone. configure brings them up to date by running the two hooks
 # `teeup theme set` and `teeup install font` run. The hooks do nothing until
 # teeup has installed Zed; TEEUP_CONFIGURING tells them this is that install.
+#
+# TEEUP_CAP_NA_MARKER is saved before the hooks run: cap_run_optional below
+# calls cap_run again for each hook, which points the marker at a fresh
+# not-applicable file for that hook's own run and unsets it again once the
+# hook returns (lib/capability.sh). B1's not_applicable call sits at the very
+# end, after the settings have already been written, well past both of those
+# hook calls, so the marker this process was started with must be restored
+# before calling it or not_applicable's write would land nowhere and
+# cap_install_verbs would read this as a real failure rather than "not
+# applicable" (the same reason the three cask-only capabilities' guard sits
+# above their own `export TEEUP_CONFIGURING`).
+na_marker="${TEEUP_CAP_NA_MARKER:-}"
 export TEEUP_CONFIGURING="$TEEUP_CAP"
 cap_run_optional "$TEEUP_CAP" theme-apply
 cap_run_optional "$TEEUP_CAP" font-apply
+# Zed and VS Code (unlike firefox-developer-edition/obsidian/chrome) do not
+# refuse outright on a MacPorts machine: the settings above are useful even
+# for a hand-downloaded Zed.app, so they are written either way. Only when
+# there is still no Zed.app AND MacPorts has no port to have installed one is
+# the capability not-applicable (B1) -- casks_supported is checked last so a
+# hand-downloaded Zed.app on a MacPorts machine is still reported installed.
 if [[ -d "${TEEUP_APPS_DIR:-/Applications}/Zed.app" ]]; then
   log "Zed is installed; open it with: open -a Zed"
+elif ! casks_supported; then
+  TEEUP_CAP_NA_MARKER="$na_marker"
+  not_applicable "Zed is a cask and MacPorts has no port of the editor; download it from https://zed.dev/download -- the settings above are ready for a hand-downloaded Zed.app."
 else
   log "Zed.app is not in ${TEEUP_APPS_DIR:-/Applications} yet; the settings are ready for it."
 fi

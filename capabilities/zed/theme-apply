@@ -28,11 +28,26 @@ if ! have jq; then
 fi
 dark_theme="$(jq -r .theme "$dark")"
 light_theme="$(jq -r .theme "$light")"
-json_set_key "$ZED_SETTINGS" theme "$(jq -cn --arg l "$light_theme" --arg d "$dark_theme" '{mode: "system", light: $l, dark: $d}')"
-# A palette whose Zed theme is built in names the extension "none".
-for ext in $(jq -r .extension "$dark" "$light" | sort -u); do
+# json_set_key/json_merge_key already warn on their own refusal (a symlinked
+# settings file, jq missing, ...); `|| true` keeps that a warning instead of
+# aborting the rest of this hook under `bash -eu` (M3).
+json_set_key "$ZED_SETTINGS" theme "$(jq -cn --arg l "$light_theme" --arg d "$dark_theme" '{mode: "system", light: $l, dark: $d}')" || true
+# A palette whose Zed theme is built in names the extension "none". Read
+# without word splitting: TEEUP_PALETTE_VALUE_RE (lib/theme.sh) allows a
+# space in a palette value, and a bare `for ext in $(...)` would split an
+# extension id such as "Cat Puccin" into two bogus extensions (I2). An id
+# with a space is never a real extension id, so it is skipped with a warning
+# instead of being installed piecemeal.
+while IFS= read -r ext; do
+  [[ -n "$ext" ]] || continue
   if [[ "$ext" == "none" ]]; then
     continue
   fi
-  json_merge_key "$ZED_SETTINGS" auto_install_extensions "$(jq -cn --arg e "$ext" '{($e): true}')"
-done
+  case "$ext" in
+    *[[:space:]]*)
+      warn "Ignoring extension id with a space: '$ext' (an extension id never has one)"
+      continue
+      ;;
+  esac
+  json_merge_key "$ZED_SETTINGS" auto_install_extensions "$(jq -cn --arg e "$ext" '{($e): true}')" || true
+done < <(jq -r .extension "$dark" "$light" | sort -u)

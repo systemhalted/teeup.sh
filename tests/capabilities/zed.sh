@@ -179,6 +179,82 @@ test_an_extension_named_none_is_not_installed() {
   cleanup_test_env
 }
 
+# B1: on a MacPorts Mac with no Zed.app anywhere, zed is not applicable --
+# teeup status must not claim it installed once the install step already
+# said the editor cannot be installed.
+test_configure_is_not_applicable_on_macports_without_the_app() {
+  setup || return 1
+  source "$TEEUP_PATH/lib/all.sh"
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 1 ""
+  DRY_RUN=false cap_install_verbs zed >/dev/null 2>&1
+  state_done check "cap-zed" && { echo "must not be marked done"; return 1; }
+  state_na check "cap-zed" || { echo "must be marked not-applicable"; return 1; }
+  DRY_RUN=false "$TEEUP" has zed >/dev/null 2>&1 && { echo "has must report not-installed"; return 1; }
+  local out
+  out="$(DRY_RUN=false "$TEEUP" status)"
+  assert_contains "$out" "not applicable on this machine" || return 1
+  assert_not_contains "$out" "zed                installed" || return 1
+  cleanup_test_env
+}
+
+# B1's other half: the settings-file work is still worth keeping, so a
+# hand-downloaded Zed.app on the same MacPorts Mac is reported installed.
+test_configure_reports_installed_with_a_hand_downloaded_app_on_macports() {
+  setup || return 1
+  source "$TEEUP_PATH/lib/all.sh"
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 1 ""
+  mkdir -p "$TEEUP_APPS_DIR/Zed.app"
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
+  DRY_RUN=false cap_install_verbs zed >/dev/null 2>&1
+  state_done check "cap-zed" || { echo "must be marked done"; return 1; }
+  state_na check "cap-zed" && { echo "must not be marked not-applicable"; return 1; }
+  DRY_RUN=false "$TEEUP" has zed || { echo "has must report installed"; return 1; }
+  assert_equals "true" "$(read_setting .auto_install_extensions.catppuccin)" "the settings are still written" || return 1
+  cleanup_test_env
+}
+
+# I2: a user theme's extension id is allowed to contain a space
+# (TEEUP_PALETTE_VALUE_RE), but it is never a real Zed extension id, so it
+# must be skipped with a warning instead of word-splitting into bogus
+# extensions.
+test_an_extension_id_with_a_space_is_skipped_not_split() {
+  setup || return 1
+  mark_installed
+  local theme="$TEST_HOME/.config/teeup/themes/spacey"
+  mkdir -p "$theme"
+  sed -e 's/^zed_extension = .*/zed_extension = "Cat Puccin"/' \
+    "$TEEUP_PATH/themes/catppuccin/dark.toml" > "$theme/dark.toml"
+  sed -e 's/^zed_extension = .*/zed_extension = "Cat Puccin"/' \
+    "$TEEUP_PATH/themes/catppuccin/light.toml" > "$theme/light.toml"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" theme set spacey 2>&1)"
+  assert_contains "$out" "Ignoring extension id with a space: 'Cat Puccin'" || return 1
+  assert_equals "null" "$(read_setting .auto_install_extensions)" "no bogus extensions were merged in" || return 1
+  cleanup_test_env
+}
+
+# M3: a settings file that is correctly declined (a symlink into a dotfiles
+# repo) must not make cap_run_optional print a false "theme-apply failed",
+# and the rest of the hook (the extension loop) must still run rather than
+# being cut off by set -e at the first refusal.
+test_theme_apply_continues_past_a_symlinked_settings_file() {
+  setup || return 1
+  mark_installed
+  mkdir -p "$(dirname "$SETTINGS")"
+  printf '{}\n' > "$TEST_HOME/dotfiles-zed-settings.json"
+  ln -s "$TEST_HOME/dotfiles-zed-settings.json" "$SETTINGS"
+  local out warnings
+  out="$(DRY_RUN=false "$TEEUP" theme set catppuccin 2>&1)"
+  assert_not_contains "$out" "zed theme-apply failed" "the hook's own warning already said why" || return 1
+  warnings="$(printf '%s\n' "$out" | grep -c "is a symlink; teeup does not write through it" || true)"
+  assert_equals "2" "$warnings" "both the theme write and the extension merge must be attempted" || return 1
+  [[ -L "$SETTINGS" ]] || { echo "the symlink was replaced"; return 1; }
+  assert_equals "{}" "$(cat "$TEST_HOME/dotfiles-zed-settings.json")" "the link's target is untouched" || return 1
+  cleanup_test_env
+}
+
 test_hooks_without_jq_warn_and_continue() {
   setup || return 1
   # Render the theme while jq is still here: without a rendered theme
@@ -222,6 +298,10 @@ run_test "the user's settings and header survive" test_the_users_settings_and_he
 run_test "hooks leave an uninstalled Zed alone" test_hooks_leave_an_uninstalled_zed_alone
 run_test "theme set and install font update an installed Zed" test_theme_set_and_install_font_update_an_installed_zed
 run_test "an extension named none is not installed" test_an_extension_named_none_is_not_installed
+run_test "configure is not applicable on MacPorts without the app" test_configure_is_not_applicable_on_macports_without_the_app
+run_test "configure reports installed with a hand-downloaded app on MacPorts" test_configure_reports_installed_with_a_hand_downloaded_app_on_macports
+run_test "an extension id with a space is skipped, not split" test_an_extension_id_with_a_space_is_skipped_not_split
+run_test "theme-apply continues past a symlinked settings file" test_theme_apply_continues_past_a_symlinked_settings_file
 run_test "hooks without jq warn and continue" test_hooks_without_jq_warn_and_continue
 run_test "theme renders the zed names" test_theme_renders_the_zed_names
 print_summary

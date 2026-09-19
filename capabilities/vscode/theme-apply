@@ -23,16 +23,31 @@ if ! have jq; then
   warn "jq is not installed; cannot write $VSCODE_SETTINGS. Run: teeup install cli-tools"
   exit 0
 fi
-json_set_key "$VSCODE_SETTINGS" window.autoDetectColorScheme true
-json_set_key "$VSCODE_SETTINGS" workbench.preferredDarkColorTheme "$(json_quote "$(jq -r .theme "$dark")")"
-json_set_key "$VSCODE_SETTINGS" workbench.preferredLightColorTheme "$(json_quote "$(jq -r .theme "$light")")"
+# json_set_key already warns on its own refusal (a symlinked settings file,
+# ...); `|| true` keeps that a warning instead of aborting the rest of this
+# hook under `bash -eu` (M3).
+json_set_key "$VSCODE_SETTINGS" window.autoDetectColorScheme true || true
+json_set_key "$VSCODE_SETTINGS" workbench.preferredDarkColorTheme "$(json_quote "$(jq -r .theme "$dark")")" || true
+json_set_key "$VSCODE_SETTINGS" workbench.preferredLightColorTheme "$(json_quote "$(jq -r .theme "$light")")" || true
 
 # The extension, once per distinct id; a palette whose theme is built in names
 # it "none". `code --list-extensions` is a read, so it stays outside run_cmd.
-for ext in $(jq -r .extension "$dark" "$light" | sort -u); do
+# Read without word splitting: TEEUP_PALETTE_VALUE_RE (lib/theme.sh) allows a
+# space in a palette value, and a bare `for ext in $(...)` would split an
+# extension id such as "Cat Puccin vsc" into three bogus extensions (I2). An
+# id with a space is never a real extension id, so it is skipped with a
+# warning instead of being installed piecemeal.
+while IFS= read -r ext; do
+  [[ -n "$ext" ]] || continue
   if [[ "$ext" == "none" ]]; then
     continue
   fi
+  case "$ext" in
+    *[[:space:]]*)
+      warn "Ignoring extension id with a space: '$ext' (an extension id never has one)"
+      continue
+      ;;
+  esac
   if ! have code; then
     log "The code command is not on PATH; install the $ext extension from the Extensions view."
   elif code --list-extensions 2>/dev/null | grep -qixF "$ext"; then
@@ -41,4 +56,4 @@ for ext in $(jq -r .extension "$dark" "$light" | sort -u); do
     run_cmd code --install-extension "$ext" ||
       warn "Could not install the $ext extension; install it from the Extensions view."
   fi
-done
+done < <(jq -r .extension "$dark" "$light" | sort -u)

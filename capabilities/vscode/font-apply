@@ -12,4 +12,7 @@ if ! have jq; then
   exit 0
 fi
 family="${TEEUP_FONT_FAMILY:-$(font_current)}"
-json_set_key "$VSCODE_SETTINGS" editor.fontFamily "$(json_quote "'$family', Menlo, Monaco, 'Courier New', monospace")"
+# json_set_key already warns on its own refusal (a symlinked settings file,
+# ...); `|| true` keeps that a warning instead of a false "font-apply failed"
+# from cap_run_optional (M3).
+json_set_key "$VSCODE_SETTINGS" editor.fontFamily "$(json_quote "'$family', Menlo, Monaco, 'Courier New', monospace")" || true
