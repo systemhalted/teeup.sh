@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Herdr runs without a config file; ~/.config/herdr/config.toml is where one
+# goes when you want to change it. teeup ships no opinion about it yet.
+log "Start herdr in a project directory; ctrl+b q detaches and herdr reattaches."

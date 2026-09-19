@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Herdr ships macOS builds (herdr-macos-aarch64 and herdr-macos-x86_64 on
+# every GitHub release), a Homebrew formula and a MacPorts port, both named
+# herdr, so the package manager is the whole install.
+pkg_install herdr herdr
