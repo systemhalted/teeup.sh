@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# One wrapper per CLI in ~/.local/bin, which the zsh layer puts first on
+# PATH (Omarchy's omarchy-mise-install pattern, lib/mise.sh): the first call
+# installs the tool through mise, every later call execs it through `mise x`,
+# and `mise upgrade` keeps it current. Arguments are the command, the mise
+# registry name, then any runtime the tool needs. Registry names checked with
+# `mise registry` on 2026.9.4: claude -> aqua:anthropics/claude-code,
+# codex -> aqua:openai/codex, gemini-cli (alias gemini) ->
+# npm:@google/gemini-cli, copilot -> aqua:github/copilot-cli,
+# opencode -> aqua:anomalyco/opencode.
+# gemini-cli is the one npm package: mise's npm backend installs it without
+# Node but does not add Node, and the CLI runs on Node, so its wrapper brings
+# node.
+mise_wrapper_write claude claude
+mise_wrapper_write codex codex
+mise_wrapper_write gemini gemini-cli node
+mise_wrapper_write copilot copilot
+mise_wrapper_write opencode opencode
+log "The first call of claude, codex, gemini, copilot or opencode installs it through mise."
