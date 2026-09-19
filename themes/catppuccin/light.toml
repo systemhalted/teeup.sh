@@ -10,6 +10,8 @@ emacs_theme = "modus-operandi"
 zed_theme = "Catppuccin Latte"
 zed_extension = "catppuccin"
 neovim_colorscheme = "catppuccin-latte"
+vscode_theme = "Catppuccin Latte"
+vscode_extension = "Catppuccin.catppuccin-vsc"
 
 accent = "#1e66f5"
 selection = "#ccd0da"

@@ -1,0 +1,9 @@
+summary="Visual Studio Code, following the teeup theme and font"
+group=editors
+tier=lazy
+requires="package-manager cli-tools"
+provides="code"
+packages=""
+casks="visual-studio-code"
+apps="Visual Studio Code"
+interactive=false

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# editor.fontFamily is a CSS font list; VS Code's own macOS default,
+# "Menlo, Monaco, 'Courier New', monospace", stays behind the teeup family as
+# the fallback. terminal.integrated.fontFamily follows editor.fontFamily while
+# it is unset. Same install gate and settings path as theme-apply.
+if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then
+  exit 0
+fi
+VSCODE_SETTINGS="$HOME/Library/Application Support/Code/User/settings.json"
+if ! have jq; then
+  warn "jq is not installed; cannot write $VSCODE_SETTINGS. Run: teeup install cli-tools"
+  exit 0
+fi
+family="${TEEUP_FONT_FAMILY:-$(font_current)}"
+json_set_key "$VSCODE_SETTINGS" editor.fontFamily "$(json_quote "'$family', Menlo, Monaco, 'Courier New', monospace")"

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# The cask links `code` (the CLI inside the app bundle) into the Homebrew bin
+# dir, which theme-apply uses to install the theme extension. MacPorts has no
+# casks and no port of VS Code.
+if casks_supported; then
+  cask_install visual-studio-code
+else
+  warn "Visual Studio Code is a cask and MacPorts has no port of it; download it from https://code.visualstudio.com/download"
+fi
