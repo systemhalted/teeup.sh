@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# The Homebrew cask ollama-app installs Ollama.app and links the CLI bundled
+# inside it to $(brew --prefix)/bin/ollama, so one cask serves both
+# `teeup launch ollama` and the `ollama` shim. The cask needs macOS 14 or
+# newer; where it cannot install, the ollama formula (CLI and server, no app)
+# is the fallback. MacPorts has only that CLI, as the port ollama.
+if casks_supported; then
+  if ! cask_install ollama-app; then
+    warn "The ollama-app cask did not install (it needs macOS 14 or newer); installing the ollama formula instead."
+    pkg_install ollama ollama
+  fi
+else
+  pkg_install ollama ollama
+fi
