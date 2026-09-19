@@ -511,13 +511,21 @@ Happy contributing! 🚀
     and trailing commas are read, the write goes through
     `write_managed_file` (so `DRY_RUN` previews it), and a symlink or a file
     jq cannot edit is left alone with a warning.
-16. A `theme-apply` or `font-apply` that writes an app's settings or talks to
-    a running app starts with
-    `if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then exit 0; fi`:
-    `teeup theme set` runs every capability's hooks, including on machines
-    where that app was never installed through teeup. A `configure` that
-    wants the hooks' work done runs `export TEEUP_CONFIGURING="$TEEUP_CAP"`
-    and then `cap_run_optional "$TEEUP_CAP" theme-apply`. Theme names an
+16. A `theme-apply` or `font-apply` belonging to a capability that may not be
+    installed -- every editor, and anything outside the core tier -- starts
+    with `if ! state_done check "cap-$TEEUP_CAP"; then exit 0; fi`: `teeup
+    theme set` runs every capability's hooks, including on machines where that
+    app was never installed through teeup. (A core capability that is always
+    present, `wezterm` and `theme`, gates on its own config file existing
+    instead.) A hook whose own `configure` runs it --
+    one that writes the app's settings file, so there is work to do during the
+    install itself, before the done marker exists -- widens the gate to
+    `if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then exit 0; fi`
+    and that `configure` runs `export TEEUP_CONFIGURING="$TEEUP_CAP"` before
+    `cap_run_optional "$TEEUP_CAP" theme-apply` (Zed and VS Code do this). A
+    hook that only tells an already-running app to reload (Emacs, Neovim)
+    keeps the narrow gate: during a fresh install there is no running app to
+    tell, and the next start reads the theme anyway. Theme names an
     editor needs live in the palette next to the colours (`emacs_theme`,
     `zed_theme`, `zed_extension`, `neovim_colorscheme`, `vscode_theme`,
     `vscode_extension`; an extension of `none` installs nothing), so every
