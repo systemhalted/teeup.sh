@@ -191,6 +191,10 @@ cmd_lazy_run() {
     exit 127
   fi
   cmd_install "$cap"
+  if state_na check "cap-$cap"; then
+    err "$cap is not applicable on this machine; $command was not installed."
+    exit 127
+  fi
   if [[ "$DRY_RUN" == "true" ]]; then
     log "Dry run: $command was not installed, so it was not run."
     exit 0
@@ -221,6 +225,9 @@ cmd_launch() {
     fi
     log "$app is not installed; installing $cap first."
     cmd_install "$cap"
+    if state_na check "cap-$cap"; then
+      die "$cap is not applicable on this machine; $app was not installed."
+    fi
     if [[ "$DRY_RUN" != "true" ]] && ! app_installed "$app"; then
       die "$app is still not in ${TEEUP_APPS_DIR:-/Applications} after installing $cap. On a MacPorts machine install it by hand, then run: teeup launch $target"
     fi

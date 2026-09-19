@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Keep configure's applicability checks aligned with install: cap_install_verbs
+# runs both scripts before it records the combined state.
+cursor_macos_major="$(macos_major)"
+if [[ "${cursor_macos_major:-99}" -lt 12 ]] 2>/dev/null; then
+  not_applicable "Cursor requires macOS 12 or newer; this Mac is on macOS $cursor_macos_major, so there is nothing to configure."
+fi
+unset cursor_macos_major
+
+if ! casks_supported; then
+  not_applicable "Cursor is a Homebrew cask and MacPorts has no Cursor port, so teeup cannot configure it on this machine."
+fi
+
+# Cursor keeps its settings in its own application support folder; teeup
+# writes nothing there. Name launch paths and commands only after verifying
+# the corresponding app or command exists.
+if app_installed Cursor; then
+  if have cursor; then
+    log "Open it with: teeup launch cursor (or run cursor in a project directory)"
+  else
+    log "Open it with: teeup launch cursor"
+  fi
+else
+  warn "Cursor is not installed; skipping launch guidance."
+fi
