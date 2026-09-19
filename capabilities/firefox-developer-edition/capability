@@ -1,0 +1,9 @@
+summary="Firefox Developer Edition, the daily browser"
+group=apps
+tier=daily
+requires="package-manager"
+provides=""
+packages=""
+casks="firefox@developer-edition"
+apps="Firefox Developer Edition"
+interactive=false

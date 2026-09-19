@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Homebrew's own cask states its floor (depends_on macos: >= 13); below that
+# the cask refuses to install. MacPorts has no casks and no port of Chrome
+# either. Either way there is nothing this script could install, so
+# not_applicable says so up front rather than reporting the capability
+# installed on a machine that can never have it.
+chrome_macos_major="$(macos_major)"
+if [[ "${chrome_macos_major:-99}" -lt 13 ]] 2>/dev/null; then
+  not_applicable "Google Chrome requires macOS 13 or newer; this Mac is on macOS $chrome_macos_major, so there is nothing to install."
+fi
+unset chrome_macos_major
+if ! casks_supported; then
+  not_applicable "Google Chrome is a cask and MacPorts has no port of it; download it from https://www.google.com/chrome/"
+fi
+
+# Chrome is lazy: nothing runs at bootstrap, and `teeup install chrome`
+# brings it in. It has no command to shim, so apps= is how the launcher
+# finds it. The cask updates itself (auto_updates), so brew never fights
+# Chrome's own updater.
+cask_install google-chrome

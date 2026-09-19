@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Homebrew's own cask states its floor (depends_on macos: >= 12); below that
+# the cask refuses to install. MacPorts has no casks and no port of Obsidian
+# either. Either way there is nothing this script could install, so
+# not_applicable says so up front rather than reporting the capability
+# installed on a machine that can never have it.
+obsidian_macos_major="$(macos_major)"
+if [[ "${obsidian_macos_major:-99}" -lt 12 ]] 2>/dev/null; then
+  not_applicable "Obsidian requires macOS 12 or newer; this Mac is on macOS $obsidian_macos_major, so there is nothing to install."
+fi
+unset obsidian_macos_major
+if ! casks_supported; then
+  not_applicable "Obsidian is a cask and MacPorts has no port of it; download it from https://obsidian.md/download"
+fi
+
+# The cask updates itself (auto_updates), so brew never fights Obsidian's own
+# updater.
+cask_install obsidian
