@@ -634,6 +634,143 @@ EOF2
   cleanup_test_env
 }
 
+# A lazy capability with packages, a cask and a remove script of its own, the
+# shape `teeup remove` has to handle: the script undoes machine state, the
+# metadata names what to uninstall.
+make_removable_cap() {
+  make_cap tool lazy
+  printf 'summary="Fixture tool"\ngroup=system\ntier=lazy\nrequires=""\nprovides=""\npackages="ripgrep"\ncasks="wezterm"\ninteractive=false\n' > "$TEEUP_CAPS_DIR/tool/capability"
+  printf '#!/usr/bin/env bash\necho "remove:tool"\n' > "$TEEUP_CAPS_DIR/tool/remove"
+  chmod +x "$TEEUP_CAPS_DIR/tool/remove"
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula"|"list --cask") exit 0 ;;
+esac
+exit 0
+EOF2
+  "$TEEUP" install tool >/dev/null
+  : > "$MOCK_LOG"
+}
+
+test_remove_runs_the_script_then_uninstalls_from_metadata() {
+  setup
+  make_removable_cap
+  local out r u
+  out="$("$TEEUP" remove tool 2>&1)"
+  assert_contains "$out" "remove:tool" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
+  r="$(printf '%s\n' "$out" | grep -n 'remove:tool' | head -1 | cut -d: -f1)"
+  u="$(printf '%s\n' "$out" | grep -n 'Uninstalled wezterm' | head -1 | cut -d: -f1)"
+  [[ "$r" -lt "$u" ]] || { echo "the remove script runs while the tool is still installed"; return 1; }
+  assert_contains "$out" "Removed tool." || return 1
+  "$TEEUP" has tool && { echo "the done marker must be gone"; return 1; }
+  cleanup_test_env
+}
+
+test_remove_without_a_script_uses_metadata_alone() {
+  setup
+  make_removable_cap
+  rm -f "$TEEUP_CAPS_DIR/tool/remove"
+  local out
+  out="$("$TEEUP" remove tool 2>&1)"
+  assert_not_contains "$out" "has no remove script" "a capability without one is the normal case" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
+  assert_contains "$out" "Removed tool." || return 1
+  cleanup_test_env
+}
+
+test_remove_refuses_what_something_else_requires() {
+  setup
+  mock_command brew 0 ""
+  "$TEEUP" install beta >/dev/null
+  local rc=0 out
+  out="$("$TEEUP" remove alpha 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "alpha is required by: beta" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall" || return 1
+  "$TEEUP" has alpha || { echo "nothing was removed"; return 1; }
+  rc=0
+  out="$("$TEEUP" remove nope 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Unknown capability: nope" || return 1
+  rc=0
+  out="$("$TEEUP" remove lazyone 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "lazyone is not installed here." || return 1
+  assert_contains "$("$TEEUP" help)" "teeup remove <capability>" || return 1
+  cleanup_test_env
+}
+
+test_remove_keeps_config_files_and_previews_a_dry_run() {
+  setup
+  make_removable_cap
+  mkdir -p "$TEEUP_CAPS_DIR/tool/config"
+  printf 'shipped=1\n' > "$TEEUP_CAPS_DIR/tool/config/tool.conf"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" remove tool 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: brew uninstall --cask wezterm" || return 1
+  assert_contains "$out" "[DRY-RUN] Would clear state: done/cap-tool" || return 1
+  assert_contains "$out" "Your configuration files for tool were left in place." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall" "nothing was uninstalled" || return 1
+  "$TEEUP" has tool || { echo "the marker must survive a dry run"; return 1; }
+  cleanup_test_env
+}
+
+test_remove_keeps_the_marker_when_an_uninstall_fails() {
+  setup
+  make_removable_cap
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "uninstall --cask") exit 1 ;;
+  "list --formula"|"list --cask") exit 0 ;;
+esac
+exit 0
+EOF2
+  local rc=0 out
+  out="$("$TEEUP" remove tool 2>&1)" || rc=$?
+  assert_failure "$rc" "a failed uninstall must reach the exit status" || return 1
+  assert_contains "$out" "Could not uninstall the wezterm cask." || return 1
+  assert_contains "$out" "Leaving tool marked installed" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" "the package uninstall still runs" || return 1
+  "$TEEUP" has tool || { echo "the marker must survive a failed uninstall, so a retry can find the leftover cask"; return 1; }
+  cleanup_test_env
+}
+
+# D-1's general rule: a capability with no remove script and empty
+# packages=/casks= (xcode-clt, package-manager on `main`, ai before this
+# task gave it a remove script) has nothing teeup can undo, so `teeup
+# remove` must not claim it did.
+test_remove_dies_when_nothing_can_be_undone() {
+  setup
+  make_cap widget lazy
+  mock_command brew 0 ""
+  "$TEEUP" install widget >/dev/null
+  local rc=0 out
+  out="$("$TEEUP" remove widget 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "widget ships no remove script and installs no packages or casks that teeup tracks" || return 1
+  assert_not_contains "$out" "Removed widget." || return 1
+  "$TEEUP" has widget || { echo "the marker must survive; nothing was actually removed"; return 1; }
+  cleanup_test_env
+}
+
+# R-A2: a capability this machine can never have (state_na, not state_done)
+# must not be told to install something impossible, in cmd_remove either.
+test_remove_refuses_a_not_applicable_capability() {
+  setup
+  make_na_cap gamma core
+  printf 'alpha\nbeta\ngamma\n' > "$TEEUP_CAPS_DIR/core.list"
+  "$TEEUP" install gamma >/dev/null 2>&1
+  local rc=0 out
+  out="$("$TEEUP" remove gamma 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "gamma is not applicable on this machine." || return 1
+  cleanup_test_env
+}
+
 # Everything `teeup update` reaches out to, mocked: the checkout is clean, the
 # package manager and mise do nothing, and the fixture core.list is alpha+beta.
 mock_update_world() {
@@ -1013,4 +1150,11 @@ run_test "update one capability refuses what it cannot update" test_update_one_c
 run_test "update runs a capability's own update script" test_update_runs_a_capabilitys_own_update_script
 run_test "an update script is dry run and its failure is reported" test_an_update_script_is_dry_run_and_its_failure_is_reported
 run_test "update dry run changes nothing" test_update_dry_run_changes_nothing
+run_test "remove runs the script then uninstalls from metadata" test_remove_runs_the_script_then_uninstalls_from_metadata
+run_test "remove without a script uses metadata alone" test_remove_without_a_script_uses_metadata_alone
+run_test "remove refuses what something else requires" test_remove_refuses_what_something_else_requires
+run_test "remove keeps config files and previews a dry run" test_remove_keeps_config_files_and_previews_a_dry_run
+run_test "remove keeps the marker when an uninstall fails" test_remove_keeps_the_marker_when_an_uninstall_fails
+run_test "remove dies when nothing can be undone" test_remove_dies_when_nothing_can_be_undone
+run_test "remove refuses a not-applicable capability" test_remove_refuses_a_not_applicable_capability
 print_summary

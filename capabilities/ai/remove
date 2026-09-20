@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Delete only the wrappers teeup itself wrote at ~/.local/bin: a wrapper is
+# recognised by TEEUP_MISE_WRAPPER_MARKER on its second line (lib/mise.sh),
+# the same check mise_wrapper_write makes before overwriting one. A file a
+# native installer put there instead (Claude Code's own installer manages
+# ~/.local/bin/claude as a symlink, say) is left alone -- I4's rule for
+# configure ("name only what teeup actually touched") applies to remove too.
+removed=""
+for ai_cmd in claude codex gemini copilot opencode; do
+  file="$HOME/.local/bin/$ai_cmd"
+  if [[ ! -e "$file" && ! -L "$file" ]]; then
+    continue
+  fi
+  if ! sed -n 2p "$file" 2>/dev/null | grep -qxF "$TEEUP_MISE_WRAPPER_MARKER"; then
+    warn "Keeping $file: it was not written by teeup."
+    continue
+  fi
+  run_cmd rm -f "$file"
+  removed="$removed $ai_cmd"
+done
+removed="${removed# }"
+if [[ -n "$removed" ]]; then
+  ok_unless_dry "Removed the mise wrapper(s): $removed"
+else
+  log "No teeup-written wrappers were found in ~/.local/bin."
+fi

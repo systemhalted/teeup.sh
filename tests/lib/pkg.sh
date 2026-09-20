@@ -291,6 +291,39 @@ test_cask_install_dies_on_invalid_backend() {
   cleanup_test_env
 }
 
+test_uninstall_removes_only_what_is_installed() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula") [ "$3" = "ripgrep" ] && exit 0 || exit 1 ;;
+  "list --cask") [ "$3" = "wezterm" ] && exit 0 || exit 1 ;;
+esac
+exit 0
+EOF2
+  mock_command port 0 ""
+  mock_command sudo 0 ""
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  unset TEEUP_PKG_BACKEND
+  local out
+  out="$(pkg_uninstall ripgrep; pkg_uninstall nowhere; cask_uninstall wezterm; cask_uninstall absent)"
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall nowhere" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm" || return 1
+  assert_contains "$out" "Not installed here, so nothing to uninstall: nowhere" || return 1
+  assert_contains "$out" "Not installed here, so nothing to uninstall: absent (cask)" || return 1
+  : > "$MOCK_LOG"
+  out="$(DRY_RUN=true cask_uninstall wezterm; DRY_RUN=true pkg_uninstall ripgrep)"
+  assert_contains "$out" "[DRY-RUN] Would execute: brew uninstall --cask wezterm" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: brew uninstall ripgrep" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall" "a dry run uninstalls nothing" || return 1
+  export TEEUP_PACKAGE_MANAGER=macports
+  unset TEEUP_PKG_BACKEND
+  out="$(cask_uninstall wezterm)"
+  assert_contains "$out" "Casks are not available with MacPorts" || return 1
+  cleanup_test_env
+}
+
 test_update_and_upgrade_all_on_both_backends() {
   setup
   mock_command brew 0 ""
@@ -408,6 +441,7 @@ run_test "backend prepare installs homebrew" test_backend_prepare_installs_homeb
 run_test "backend prepare fails when installer fails" test_backend_prepare_fails_when_installer_fails
 run_test "run_privileged prefixes sudo" test_run_privileged_prefixes_sudo
 run_test "cask_install dies on invalid backend" test_cask_install_dies_on_invalid_backend
+run_test "uninstall removes only what is installed" test_uninstall_removes_only_what_is_installed
 run_test "update and upgrade_all on both backends" test_update_and_upgrade_all_on_both_backends
 run_test "upgrade one package or cask only when it is installed" test_upgrade_one_package_or_cask_only_when_it_is_installed
 run_test "cask_upgrade is a note on MacPorts" test_cask_upgrade_is_a_note_on_macports

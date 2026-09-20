@@ -142,6 +142,77 @@ cmd_reset() {
   ok_unless_dry "Reset $target."
 }
 
+# teeup remove <capability>
+# The inverse of `teeup install`, read from metadata. A capability that ships
+# a remove script owns the machine state it set up (a LaunchAgent, recorded
+# `defaults`, a hidutil mapping, a mise wrapper); that script runs first,
+# while its tool is still installed, and then the casks and packages its
+# metadata names are uninstalled. Configuration files stay where they are:
+# they are the user's, and re-installing the capability could not bring them
+# back. A lazy capability keeps its shim, so typing its command offers to
+# install it again. A capability with neither a remove script nor any
+# packages or casks (xcode-clt, package-manager before a wrapper capability
+# like ai grows one) has nothing teeup can undo, so it dies rather than
+# claim a removal that never happened.
+cmd_remove() {
+  local target="${1:-}" dependents="" name cask pkg failed=0 tier
+  local has_remove=false pkgs casks_meta
+  [[ -n "$target" ]] || die "Usage: teeup remove <capability>"
+  cap_exists "$target" || die "Unknown capability: $target"
+  if state_na check "cap-$target"; then
+    die "$target is not applicable on this machine."
+  fi
+  state_done check "cap-$target" || die "$target is not installed here."
+  for name in $(cap_list); do
+    if [[ "$name" == "$target" ]]; then continue; fi
+    if ! state_done check "cap-$name"; then continue; fi
+    case " $(cap_meta_get "$name" requires) " in
+      *" $target "*) dependents="$dependents $name" ;;
+    esac
+  done
+  if [[ -n "$dependents" ]]; then
+    die "$target is required by:$dependents. Remove those first, then $target."
+  fi
+  pkgs="$(cap_meta_get "$target" packages)"
+  casks_meta="$(cap_meta_get "$target" casks)"
+  [[ -f "$(cap_dir "$target")/remove" ]] && has_remove=true
+  if [[ "$has_remove" != "true" && -z "$pkgs" && -z "$casks_meta" ]]; then
+    die "$target ships no remove script and installs no packages or casks that teeup tracks, so teeup remove cannot undo it; $target is still marked installed."
+  fi
+  if [[ "$has_remove" == "true" ]]; then
+    cap_run "$target" remove || die "$target's remove script failed; nothing was uninstalled."
+  fi
+  for cask in $casks_meta; do
+    cask_uninstall "$cask" || failed=1
+  done
+  for pkg in $pkgs; do
+    pkg_uninstall "$pkg" || failed=1
+  done
+  # Only clear the done marker once every cask and package is actually gone.
+  # Clearing it after a failed uninstall would make a retry see the
+  # capability as not installed, and the leftover software could then never
+  # be removed: cmd_install would skip it ("Already installed") and
+  # cmd_remove itself would refuse with "not installed here".
+  if [[ $failed -eq 0 ]]; then
+    state_done clear "cap-$target"
+    state_na clear "cap-$target"
+  else
+    warn "Leaving $target marked installed since something above failed; fix it and run teeup remove $target again."
+  fi
+  if [[ -d "$(cap_dir "$target")/config" || -d "$(cap_dir "$target")/home" ]]; then
+    log "Your configuration files for $target were left in place."
+  fi
+  tier="$(cap_meta_get "$target" tier)"
+  if [[ "$tier" != "lazy" ]]; then
+    log "$target is in the $tier tier, so the next ./bootstrap installs it again unless machines/<hostname>.conf sets TEEUP_SKIP."
+  fi
+  if [[ $failed -ne 0 ]]; then
+    err "teeup remove $target finished, with the problems above."
+    exit 1
+  fi
+  ok_unless_dry "Removed $target."
+}
+
 # _update_checkout -> 0 updated, 1 could not update, 2 must not update.
 # Spec section 9's first line. A checkout with local changes is the one case
 # that stops the whole update: running migrations and seventeen configures
@@ -578,6 +649,7 @@ case "$verb" in
   configure) cmd_configure "$@" ;;
   reset) cmd_reset "$@" ;;
   update) cmd_update "$@" ;;
+  remove) cmd_remove "$@" ;;
   theme) cmd_theme "$@" ;;
   list) cmd_list "$@" ;;
   launch) cmd_launch "$@" ;;
