@@ -331,6 +331,12 @@ test_my_feature() {
 run_test "My feature" test_my_feature
 ```
 
+The `run_test` line is not optional bookkeeping: a `test_*` function nobody
+passes to `run_test` never runs, and the suite still reports green, which is
+worse than a failing test because nothing says so. `print_summary` compares the
+`test_*` functions the file defines against the ones it was asked to run and
+fails the suite over any that were left out.
+
 ### Test Assertions
 
 Available assertions:
