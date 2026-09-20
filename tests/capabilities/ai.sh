@@ -95,6 +95,34 @@ test_configure_keeps_a_native_claude() {
   assert_contains "$out" "Keeping $BIN/claude: it was not written by teeup" || return 1
   assert_equals "native" "$("$BIN/claude")" || return 1
   assert_file_exists "$BIN/codex" || return 1
+  # I4: the summary must name only the wrappers teeup actually wrote, not
+  # claude, whose native installer symlink teeup left alone.
+  assert_contains "$out" "The first call of codex, gemini, copilot or opencode installs it through mise." || return 1
+  assert_not_contains "$out" "The first call of claude, codex" || return 1
+  cleanup_test_env
+}
+
+# I4, the exact scenario in the adversarial review's probe_localbin.sh: three
+# of the five wrappers are refused (a foreign symlink, a foreign plain file
+# and a dangling symlink), and the summary line must name only the two teeup
+# actually wrote.
+test_configure_summary_names_only_the_wrappers_it_wrote() {
+  setup
+  mkdir -p "$BIN" "$TEST_HOME/.local/share/claude/versions"
+  printf '#!/bin/sh\necho native\n' > "$TEST_HOME/.local/share/claude/versions/2.1.0"
+  chmod +x "$TEST_HOME/.local/share/claude/versions/2.1.0"
+  ln -s "$TEST_HOME/.local/share/claude/versions/2.1.0" "$BIN/claude"
+  printf '#!/bin/sh\necho mine\n' > "$BIN/codex"
+  ln -s "$TEST_HOME/nowhere" "$BIN/gemini"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ai 2>&1)"
+  assert_contains "$out" "Keeping $BIN/claude: it was not written by teeup" || return 1
+  assert_contains "$out" "Keeping $BIN/codex: it was not written by teeup" || return 1
+  assert_contains "$out" "Keeping $BIN/gemini: it was not written by teeup" || return 1
+  assert_file_exists "$BIN/copilot" || return 1
+  assert_file_exists "$BIN/opencode" || return 1
+  assert_contains "$out" "The first call of copilot or opencode installs it through mise." || return 1
+  assert_not_contains "$out" "claude, codex, gemini" || return 1
   cleanup_test_env
 }
 
@@ -158,6 +186,7 @@ run_test "install downloads nothing" test_install_downloads_nothing
 run_test "configure writes the five wrappers" test_configure_writes_the_five_wrappers
 run_test "wrapper installs on first call then execs" test_wrapper_installs_on_first_call_then_execs
 run_test "configure keeps a native claude" test_configure_keeps_a_native_claude
+run_test "configure summary names only the wrappers it wrote" test_configure_summary_names_only_the_wrappers_it_wrote
 run_test "configure is idempotent and dry-run safe" test_configure_is_idempotent_and_dry_run_safe
 run_test "wrappers survive a home with spaces" test_wrappers_survive_a_home_with_spaces
 run_test "the claude shim installs ai then execs through mise" test_the_claude_shim_installs_ai_then_execs_through_mise

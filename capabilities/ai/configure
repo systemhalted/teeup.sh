@@ -11,9 +11,39 @@
 # gemini-cli is the one npm package: mise's npm backend installs it without
 # Node but does not add Node, and the CLI runs on Node, so its wrapper brings
 # node.
-mise_wrapper_write claude claude
-mise_wrapper_write codex codex
-mise_wrapper_write gemini gemini-cli node
-mise_wrapper_write copilot copilot
-mise_wrapper_write opencode opencode
-log "The first call of claude, codex, gemini, copilot or opencode installs it through mise."
+# mise_wrapper_write leaves a foreign file alone (a symlink Claude Code's own
+# installer put at ~/.local/bin/claude, say) and sets MISE_WRAPPER_WRITTEN to
+# say which it was: the summary line below must name only the commands it
+# actually put in place, not every command this capability knows about (I4)
+# -- claiming a wrapper is wired up when teeup left a foreign file untouched
+# would send the user to run a command that will not do what they are told.
+written=""
+add_wrapper() {
+  mise_wrapper_write "$@"
+  if [[ "$MISE_WRAPPER_WRITTEN" == "true" ]]; then
+    written="$written $1"
+  fi
+}
+add_wrapper claude claude
+add_wrapper codex codex
+add_wrapper gemini gemini-cli node
+add_wrapper copilot copilot
+add_wrapper opencode opencode
+written="${written# }"
+if [[ -n "$written" ]]; then
+  ai_count=0
+  for ai_cmd in $written; do ai_count=$((ai_count + 1)); done
+  ai_i=0
+  ai_list=""
+  for ai_cmd in $written; do
+    ai_i=$((ai_i + 1))
+    if [[ $ai_i -eq 1 ]]; then
+      ai_list="$ai_cmd"
+    elif [[ $ai_i -eq $ai_count ]]; then
+      ai_list="$ai_list or $ai_cmd"
+    else
+      ai_list="$ai_list, $ai_cmd"
+    fi
+  done
+  log "The first call of $ai_list installs it through mise."
+fi
