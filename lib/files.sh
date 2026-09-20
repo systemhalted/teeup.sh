@@ -73,7 +73,8 @@ _file_mode() {
 # success line to print can tell a write from a no-op instead of claiming a
 # mutation on every run.
 write_managed_file() {
-  local file="$1" label="$2" tmp mode=""
+  local file="$1" label="$2" dir tmp mode=""
+  dir="$(dirname "$file")"
   # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
   WRITE_MANAGED_FILE_CHANGED=true
   if [[ "$DRY_RUN" == "true" ]]; then
@@ -81,7 +82,7 @@ write_managed_file() {
     cat >/dev/null
     return 0
   fi
-  mkdir -p "$(dirname "$file")"
+  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null || true
   tmp="$(mktemp)"
   cat > "$tmp"
   if [[ -f "$file" ]] && cmp -s "$tmp" "$file"; then
@@ -100,6 +101,17 @@ write_managed_file() {
     # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
     WRITE_MANAGED_FILE_CHANGED=false
     warn "$file is not writable; teeup leaves it alone. Set it by hand: $label"
+    return 1
+  fi
+  # A read-only directory with no file yet to catch by the check above (a
+  # read-only ~/.local/bin the mise wrapper or a shim would land in, say)
+  # would otherwise reach `mv` below and fail with a raw, teeup-less error
+  # (M1): mkdir -p above cannot have created it either in that case.
+  if [[ ! -d "$dir" || ! -w "$dir" ]]; then
+    rm -f "$tmp"
+    # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
+    WRITE_MANAGED_FILE_CHANGED=false
+    warn "$dir is not writable; teeup leaves $file alone. Set it by hand: $label"
     return 1
   fi
   # A file that already exists keeps its own mode across a rewrite: mktemp's
