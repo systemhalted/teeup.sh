@@ -76,7 +76,7 @@ unset _teeup_answers
 # to a bare `hostname` for a `-s` that is not supported); trying the user's
 # path first costs one more `[ -r ]` test, a stat next to the fork `hostname`
 # already pays, so this stays cheap enough for every shell start.
-_teeup_host="$(hostname -s 2>/dev/null || hostname)"
+_teeup_host="$(hostname -s 2>/dev/null || hostname || true)"
 _teeup_machine="${TEEUP_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/teeup}/machines/$_teeup_host.conf"
 [ -r "$_teeup_machine" ] || _teeup_machine="$TEEUP_PATH/machines/$_teeup_host.conf"
 [ -r "$_teeup_machine" ] && . "$_teeup_machine"
@@ -88,7 +88,7 @@ unset _teeup_host _teeup_machine
 # Anything else, including a non-Darwin uname, defaults to Homebrew.
 _teeup_backend="${TEEUP_PACKAGE_MANAGER:-}"
 if [ -z "$_teeup_backend" ]; then
-  _teeup_darwin="$(uname -r 2>/dev/null)"
+  _teeup_darwin="$(uname -r 2>/dev/null || true)"
   _teeup_darwin="${_teeup_darwin%%.*}"
   if [ "${_teeup_darwin:-99}" -le 21 ] 2>/dev/null; then
     _teeup_backend=macports
@@ -140,7 +140,15 @@ export PATH
 # (the neovim capability's provides="nvim"), so a hit inside the shims
 # directory is not an editor. The shims are last on PATH, so a real nvim
 # anywhere would have been found first.
-_teeup_nvim="$(command -v nvim 2>/dev/null)"
+#
+# `|| true` is not decoration: an assignment whose command substitution exits
+# non-zero takes the whole shell down under `set -e` (verified in bash and in
+# zsh), and this file is read by every zsh that starts, including
+# `zsh -e -c ...`. Without it, a machine with no nvim and no shim -- neovim
+# skipped, say -- would abort shell startup here instead of falling through to
+# the vim fallback below. Every command substitution in this file needs the
+# same guard, for the same reason.
+_teeup_nvim="$(command -v nvim 2>/dev/null || true)"
 case "$_teeup_nvim" in
   "$TEEUP_STATE_DIR/shims/"*) _teeup_nvim="" ;;
 esac

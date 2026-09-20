@@ -425,6 +425,21 @@ test_default_env_editor_ignores_a_lazy_shim() {
 }
 
 echo "capabilities/zsh"
+test_env_survives_errexit_without_nvim() {
+  setup
+  require_zsh || return 1
+  local zsh_bin out rc=0
+  zsh_bin="$(command -v zsh)"
+  # An assignment whose command substitution exits non-zero ends the shell
+  # under errexit, and this file is read by every zsh that starts, including
+  # `zsh -e -c ...`. With no nvim, no hostname and no uname reachable, every
+  # substitution in the file fails at once: the file must still finish.
+  out="$(PATH="$MOCK_BIN" "$zsh_bin" -f -e -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- reached-the-end" 2>/dev/null)" || rc=$?
+  assert_success "$rc" "errexit must not abort the shell layer" || return 1
+  assert_contains "$out" "reached-the-end" || return 1
+  cleanup_test_env
+}
+
 run_test "install gets the plugins and switches the login shell" test_install_gets_the_plugins_and_switches_the_login_shell
 run_test "install leaves an existing zsh login shell alone" test_install_leaves_an_existing_zsh_login_shell_alone
 run_test "configure installs the thin home files" test_configure_installs_the_thin_home_files
@@ -446,6 +461,7 @@ run_test "default env prefers homebrew when recorded" test_default_env_prefers_h
 run_test "default env lets the machine file override the answers file" test_default_env_lets_the_machine_file_override_the_answers_file
 run_test "default env moves the shims last under a macports machine file" test_default_env_moves_the_shims_last_under_a_macports_machine_file
 run_test "default env editor ignores a lazy shim" test_default_env_editor_ignores_a_lazy_shim
+run_test "env survives errexit without nvim" test_env_survives_errexit_without_nvim
 run_test "default env prefers the user's own machine file over the repo's" test_default_env_prefers_the_users_own_machine_file_over_the_repos
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero
