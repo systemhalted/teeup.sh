@@ -212,6 +212,21 @@ test_post_bootstrap_hooks_run_before_the_summary() {
   cleanup_test_env
 }
 
+test_a_fresh_bootstrap_marks_every_migration_without_running_it() {
+  setup
+  export TEEUP_MIGRATIONS_DIR="$TEST_HOME/migrations"
+  mkdir -p "$TEEUP_MIGRATIONS_DIR"
+  printf '#!/usr/bin/env bash\ntouch "$HOME/migration-ran"\n' > "$TEEUP_MIGRATIONS_DIR/1780000000.sh"
+  cp "$TEEUP_MIGRATIONS_DIR/1780000000.sh" "$TEEUP_MIGRATIONS_DIR/1790000000.sh"
+  local out
+  out="$("$BOOT" --dry-run <<<"$WIZARD_INPUT")"
+  assert_contains "$out" "Would record state: migrations/1780000000.sh" || return 1
+  assert_contains "$out" "Would record state: migrations/1790000000.sh" || return 1
+  assert_not_contains "$out" "Starting: migration" "bootstrap runs no migration" || return 1
+  [[ ! -e "$TEST_HOME/migration-ran" ]] || { echo "a migration ran during bootstrap"; return 1; }
+  cleanup_test_env
+}
+
 test_dry_run_touches_nothing() {
   setup
   "$BOOT" --dry-run <<<"$WIZARD_INPUT" >/dev/null
@@ -584,6 +599,7 @@ run_test "the package manager is asked before it is installed" test_the_package_
 run_test "choosing macports runs the MacPorts path" test_choosing_macports_runs_the_macports_path
 run_test "git is reconfigured after ssh makes the keys" test_git_is_reconfigured_after_ssh_makes_the_keys
 run_test "post-bootstrap hooks run before the summary" test_post_bootstrap_hooks_run_before_the_summary
+run_test "a fresh bootstrap marks every migration without running it" test_a_fresh_bootstrap_marks_every_migration_without_running_it
 run_test "dry run touches nothing" test_dry_run_touches_nothing
 run_test "existing answers skip wizard" test_existing_answers_skip_wizard
 run_test "wizard runs when only backend recorded" test_wizard_runs_when_only_backend_recorded

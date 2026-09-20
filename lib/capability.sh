@@ -107,7 +107,7 @@ cap_skipped() {
 # not-applicable answer requires both the code and the file, not the exit
 # code alone.
 cap_run() {
-  local name="$1" verb="$2" dir script interactive rc=0 na_marker
+  local name="$1" verb="$2" dir script interactive rc=0 na_marker outer_cap="${TEEUP_CAP:-}" outer_dir="${TEEUP_CAP_DIR:-}"
   dir="$(cap_dir "$name")"
   script="$dir/$verb"
   if [[ ! -f "$script" ]]; then
@@ -129,6 +129,11 @@ cap_run() {
   fi
   rm -f "$na_marker"
   unset TEEUP_CAP_NA_MARKER
+  # A capability script that runs another one (ssh re-runs git's configure)
+  # is still itself afterwards: copy_config_once reads TEEUP_CAP to scope a
+  # migration's TEEUP_REFRESH to the capability it names.
+  TEEUP_CAP="$outer_cap"
+  TEEUP_CAP_DIR="$outer_dir"
   return $rc
 }
 

@@ -292,11 +292,9 @@ if cap_exists theme && ! cap_skipped theme; then
   esac
 fi
 if ! state_done check bootstrap; then
-  # A fresh install starts with every shipped migration already applied.
-  for m in "$TEEUP_PATH"/migrations/*.sh; do
-    [[ -f "$m" ]] || continue
-    state_migration_mark "$(basename "$m")"
-  done
+  # A fresh install starts with every shipped migration already applied: the
+  # capabilities above put the machine in the state those migrations lead to.
+  migrations_mark_all
 fi
 state_done mark bootstrap
 
