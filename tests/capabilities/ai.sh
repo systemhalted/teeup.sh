@@ -181,6 +181,52 @@ EOF2
   cleanup_test_env
 }
 
+# D-1/R-7.1: `teeup remove ai` used to report success while deleting nothing
+# -- packages= and casks= are both empty, so the generic uninstall loop had
+# nothing to do. capabilities/ai/remove now deletes the wrappers configure
+# wrote, and only those: a foreign claude symlink (Claude Code's own
+# installer, say) is left exactly as test_configure_keeps_a_native_claude
+# leaves it.
+test_remove_deletes_only_the_wrappers_teeup_wrote() {
+  setup
+  mkdir -p "$BIN" "$TEST_HOME/.local/share/claude/versions"
+  printf '#!/bin/sh\necho native\n' > "$TEST_HOME/.local/share/claude/versions/2.1.0"
+  chmod +x "$TEST_HOME/.local/share/claude/versions/2.1.0"
+  ln -s "$TEST_HOME/.local/share/claude/versions/2.1.0" "$BIN/claude"
+  DRY_RUN=false "$TEEUP" configure ai >/dev/null
+  source "$TEEUP_PATH/lib/all.sh"
+  local out c
+  out="$(DRY_RUN=false cap_run ai remove 2>&1)"
+  assert_contains "$out" "Keeping $BIN/claude: it was not written by teeup" || return 1
+  assert_contains "$out" "Removed the mise wrapper(s): codex gemini copilot opencode" || return 1
+  assert_equals "native" "$("$BIN/claude")" "the foreign claude symlink must survive" || return 1
+  for c in codex gemini copilot opencode; do
+    [[ ! -e "$BIN/$c" ]] || { echo "$c wrapper must be gone"; return 1; }
+  done
+  cleanup_test_env
+}
+
+test_remove_dry_run_deletes_no_wrapper() {
+  setup
+  DRY_RUN=false "$TEEUP" configure ai >/dev/null
+  source "$TEEUP_PATH/lib/all.sh"
+  local out
+  out="$(DRY_RUN=true cap_run ai remove 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: rm -f $BIN/claude" || return 1
+  assert_not_contains "$out" "Removed the mise wrapper(s)" || return 1
+  assert_file_exists "$BIN/claude" || return 1
+  cleanup_test_env
+}
+
+test_remove_without_any_wrapper_is_quiet() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local out
+  out="$(DRY_RUN=false cap_run ai remove 2>&1)"
+  assert_contains "$out" "No teeup-written wrappers were found in ~/.local/bin." || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/ai"
 run_test "install downloads nothing" test_install_downloads_nothing
 run_test "configure writes the five wrappers" test_configure_writes_the_five_wrappers
@@ -190,4 +236,7 @@ run_test "configure summary names only the wrappers it wrote" test_configure_sum
 run_test "configure is idempotent and dry-run safe" test_configure_is_idempotent_and_dry_run_safe
 run_test "wrappers survive a home with spaces" test_wrappers_survive_a_home_with_spaces
 run_test "the claude shim installs ai then execs through mise" test_the_claude_shim_installs_ai_then_execs_through_mise
+run_test "remove deletes only the wrappers teeup wrote" test_remove_deletes_only_the_wrappers_teeup_wrote
+run_test "remove dry run deletes no wrapper" test_remove_dry_run_deletes_no_wrapper
+run_test "remove without any wrapper is quiet" test_remove_without_any_wrapper_is_quiet
 print_summary

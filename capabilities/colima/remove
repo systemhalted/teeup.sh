@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Undo what colima/configure set up, while colima and the Compose formula are
+# still installed: stop the VM first. `brew uninstall colima` (which runs
+# right after this script) under a running lima VM leaves the VM process
+# orphaned and the docker context pointing at nothing -- a real-Mac risk,
+# invisible under mocks (R-7.2). Then drop the Compose plugin symlink
+# configure created (configure:9-27); Homebrew's own uninstall knows about
+# neither. Only the symlink teeup itself put there is touched: it is removed
+# only when it still points at this backend's Compose plugin, the same check
+# configure makes before deciding it is "Already linked".
+if have colima; then
+  if colima status >/dev/null 2>&1; then
+    if run_cmd colima stop; then
+      ok_unless_dry "Colima stopped."
+    else
+      warn "colima stop failed; stop it by hand before removing colima."
+    fi
+  fi
+else
+  log "colima is not on PATH; nothing to stop."
+fi
+
+if [[ "$(pkg_backend)" == "homebrew" ]]; then
+  plugin="$(pkg_prefix)/lib/docker/cli-plugins/docker-compose"
+  plugins_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+  link="$plugins_dir/docker-compose"
+  if [[ -L "$link" && "$(readlink "$link" 2>/dev/null)" == "$plugin" ]]; then
+    run_cmd rm -f "$link"
+    ok_unless_dry "Removed the docker compose plugin link at $link"
+  fi
+fi

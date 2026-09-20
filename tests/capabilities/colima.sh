@@ -217,6 +217,59 @@ test_round_trip_without_a_tty_exits_127_with_the_hint() {
   cleanup_test_env
 }
 
+# R-7.2: `brew uninstall colima` (which `teeup remove colima` runs right
+# after this script) under a running lima VM would orphan the VM process and
+# leave the docker context pointing at nothing -- invisible under mocks, so
+# this only asserts that colima/remove itself asks colima to stop and drops
+# the link configure made, before the package ever comes off.
+test_remove_stops_colima_and_drops_the_compose_link() {
+  setup
+  mock_colima_stopped
+  local plugin="$TEEUP_PKG_PREFIX/lib/docker/cli-plugins/docker-compose"
+  mkdir -p "$(dirname "$plugin")"
+  printf '#!/bin/sh\n' > "$plugin"
+  chmod +x "$plugin"
+  DRY_RUN=false "$TEEUP" configure colima >/dev/null
+  local link="$TEST_HOME/.docker/cli-plugins/docker-compose"
+  [[ -L "$link" ]] || { echo "fixture: compose link missing before remove"; return 1; }
+  source "$TEEUP_PATH/lib/all.sh"
+  local out
+  out="$(DRY_RUN=false cap_run colima remove 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "colima stop" || return 1
+  assert_contains "$out" "Colima stopped." || return 1
+  assert_contains "$out" "Removed the docker compose plugin link at $link" || return 1
+  [[ ! -e "$link" ]] || { echo "the compose link must be gone"; return 1; }
+  cleanup_test_env
+}
+
+test_remove_dry_run_stops_and_removes_nothing() {
+  setup
+  mock_colima_stopped
+  local plugin="$TEEUP_PKG_PREFIX/lib/docker/cli-plugins/docker-compose"
+  mkdir -p "$(dirname "$plugin")"
+  printf '#!/bin/sh\n' > "$plugin"
+  chmod +x "$plugin"
+  DRY_RUN=false "$TEEUP" configure colima >/dev/null
+  local link="$TEST_HOME/.docker/cli-plugins/docker-compose"
+  source "$TEEUP_PATH/lib/all.sh"
+  local out
+  out="$(DRY_RUN=true cap_run colima remove 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: colima stop" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: rm -f $link" || return 1
+  assert_not_contains "$out" "Colima stopped." || return 1
+  [[ -L "$link" ]] || { echo "dry run must not remove the link"; return 1; }
+  cleanup_test_env
+}
+
+test_remove_when_colima_is_not_installed_is_quiet() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local out
+  out="$(DRY_RUN=false cap_run colima remove 2>&1)"
+  assert_contains "$out" "colima is not on PATH; nothing to stop." || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/colima"
 run_test "install dry run gets colima, docker and compose" test_install_dry_run_gets_colima_docker_and_compose
 run_test "install on macports gets the compose plugin port" test_install_on_macports_gets_the_compose_plugin_port
@@ -228,4 +281,7 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "shims exist after runtime configure" test_shims_exist_after_runtime_configure
 run_test "round trip: shim installs, configures and execs docker" test_round_trip_shim_installs_configures_and_execs_docker
 run_test "round trip: without a tty exits 127 with the hint" test_round_trip_without_a_tty_exits_127_with_the_hint
+run_test "remove stops colima and drops the compose link" test_remove_stops_colima_and_drops_the_compose_link
+run_test "remove dry run stops and removes nothing" test_remove_dry_run_stops_and_removes_nothing
+run_test "remove when colima is not installed is quiet" test_remove_when_colima_is_not_installed_is_quiet
 print_summary

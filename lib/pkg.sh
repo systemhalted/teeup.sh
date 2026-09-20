@@ -301,3 +301,39 @@ cask_upgrade() {
   fi
   run_cmd brew upgrade --cask "$cask" || { warn "Could not upgrade the $cask cask."; return 1; }
 }
+
+# pkg_uninstall <pkg>
+# The inverse of pkg_install, for `teeup remove`. Only the candidate this
+# machine actually has is uninstalled; a package that is not here is a log
+# line, so removing a capability twice is not an error.
+pkg_uninstall() {
+  _pkg_backend_resolve
+  local pkg="$1" candidate
+  for candidate in $(package_candidates "$pkg"); do
+    if pkg_installed "$candidate"; then
+      case "$TEEUP_PKG_BACKEND" in
+        homebrew) run_cmd brew uninstall "$candidate" || { warn "Could not uninstall $candidate."; return 1; } ;;
+        macports) run_privileged port uninstall "$candidate" || { warn "Could not uninstall $candidate."; return 1; } ;;
+      esac
+      ok_unless_dry "Uninstalled $candidate ($(pkg_backend_label))"
+      return 0
+    fi
+  done
+  log "Not installed here, so nothing to uninstall: $pkg"
+  return 0
+}
+
+# cask_uninstall <cask>
+cask_uninstall() {
+  local cask="$1"
+  if ! casks_supported; then
+    log "Casks are not available with MacPorts; remove $cask by hand if it is on this machine."
+    return 0
+  fi
+  if ! cask_installed "$cask"; then
+    log "Not installed here, so nothing to uninstall: $cask (cask)"
+    return 0
+  fi
+  run_cmd brew uninstall --cask "$cask" || { warn "Could not uninstall the $cask cask."; return 1; }
+  ok_unless_dry "Uninstalled $cask (cask)"
+}
