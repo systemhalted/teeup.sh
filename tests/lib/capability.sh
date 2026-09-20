@@ -286,6 +286,34 @@ test_run_optional_warns_but_succeeds_on_failure() {
   cleanup_test_env
 }
 
+test_hook_eligible_needs_the_marker_or_a_running_configure() {
+  setup
+  cap_hook_eligible alpha && { echo "alpha was never installed"; return 1; }
+  state_done mark cap-alpha
+  cap_hook_eligible alpha || { echo "an installed capability is eligible"; return 1; }
+  TEEUP_CONFIGURING=beta cap_hook_eligible beta || { echo "the capability being configured is eligible"; return 1; }
+  TEEUP_CONFIGURING=alpha cap_hook_eligible beta && { echo "only the capability named by TEEUP_CONFIGURING"; return 1; }
+  cleanup_test_env
+}
+
+test_run_hooks_skips_capabilities_that_were_never_installed() {
+  setup
+  local name
+  for name in alpha beta lazyone; do
+    printf '#!/usr/bin/env bash\necho "hook:%s"\n' "$name" > "$TEEUP_CAPS_DIR/$name/font-apply"
+    chmod +x "$TEEUP_CAPS_DIR/$name/font-apply"
+  done
+  state_done mark cap-alpha
+  state_done mark cap-lazyone
+  local out rc=0
+  out="$(TEEUP_SKIP=lazyone cap_run_hooks font-apply 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "hook:alpha" || return 1
+  assert_not_contains "$out" "hook:beta" "beta was never installed" || return 1
+  assert_not_contains "$out" "hook:lazyone" "a skipped capability stays skipped" || return 1
+  cleanup_test_env
+}
+
 echo "lib/capability.sh"
 run_test "list and exists" test_list_and_exists
 run_test "meta get with default" test_meta_get_with_default
@@ -310,4 +338,6 @@ run_test "cap_order fails on unknown requires" test_cap_order_fails_on_unknown_r
 run_test "run_optional skips a missing verb" test_run_optional_skips_a_missing_verb
 run_test "run_optional respects TEEUP_SKIP" test_run_optional_respects_teeup_skip
 run_test "run_optional warns but succeeds on failure" test_run_optional_warns_but_succeeds_on_failure
+run_test "hook eligible needs the marker or a running configure" test_hook_eligible_needs_the_marker_or_a_running_configure
+run_test "run_hooks skips capabilities that were never installed" test_run_hooks_skips_capabilities_that_were_never_installed
 print_summary

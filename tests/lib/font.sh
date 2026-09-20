@@ -82,6 +82,9 @@ EOF2
   chmod +x "$TEEUP_CAPS_DIR/demo/install" "$TEEUP_CAPS_DIR/demo/configure" "$TEEUP_CAPS_DIR/demo/font-apply"
   local out
   out="$(font_set Hack)"
+  assert_not_contains "$out" "font-applied" "a capability that was never installed gets no hook" || return 1
+  state_done mark cap-demo
+  out="$(font_set Hack)"
   assert_contains "$out" "font-applied:Hack Nerd Font" || return 1
   cleanup_test_env
 }
@@ -102,6 +105,7 @@ test_set_runs_every_hook_after_an_interactive_one() {
     printf 'summary="Fixture"\ngroup=system\ntier=lazy\nrequires=""\nprovides=""\ninteractive=%s\n' "$interactive" > "$TEEUP_CAPS_DIR/$name/capability"
     printf '#!/usr/bin/env bash\n%s\n' "$body" > "$TEEUP_CAPS_DIR/$name/font-apply"
     chmod +x "$TEEUP_CAPS_DIR/$name/font-apply"
+    state_done mark "cap-$name"
   done
   local out
   out="$(font_set Hack 2>&1 </dev/null)"
