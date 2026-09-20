@@ -82,17 +82,18 @@ write_config_region() {
   return "$rc"
 }
 
-# refresh_if_pristine <src> <dest>
+# refresh_if_pristine <src> <dest> [display_src]
 # The stock-checksum rule, as migrations use it: a <dest> that is still
 # pristine is replaced with the shipped <src> and its record follows; a
 # missing <dest> is installed with copy_config_once. A <dest> the user has
 # edited (or one teeup holds no record of) is left alone with a log line and
 # the function returns 1, so the migration can patch that file minimally
-# instead, after backup_copy.
+# instead, after backup_copy. <display_src> names the file in the DRY-RUN
+# message when it differs from <src> -- see copy_config_once.
 refresh_if_pristine() {
-  local src="$1" dest="$2"
+  local src="$1" dest="$2" display_src="${3:-$1}"
   if [[ ! -e "$dest" && ! -L "$dest" ]]; then
-    copy_config_once "$src" "$dest"
+    copy_config_once "$src" "$dest" "$display_src"
     return $?
   fi
   if ! config_is_pristine "$dest"; then
@@ -104,7 +105,7 @@ refresh_if_pristine() {
     return 0
   fi
   if [[ "$DRY_RUN" == "true" ]]; then
-    printf "%b %s\n" "🔍" "[DRY-RUN] Would refresh $dest from $src"
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would refresh $dest from $display_src"
     return 0
   fi
   cp "$src" "$dest"
@@ -268,6 +269,17 @@ backup_target() {
 # so every other caller's wording is unchanged.
 copy_config_once() {
   local src="$1" dest="$2" display_src="${3:-$1}" recorded current backup
+  # A migration refreshing this capability's files (migration_refresh sets
+  # TEEUP_REFRESH to its name) gets the stock-checksum rule instead: a file
+  # still pristine is replaced, an edited one is kept. The name must match
+  # TEEUP_CAP, so a configure that re-runs another capability's (ssh re-runs
+  # git's) leaves that capability's files to the normal rule. The prefix
+  # assignment clears the variable for the nested call, which may come back
+  # here for a missing file.
+  if [[ -n "${TEEUP_REFRESH:-}" && "$TEEUP_REFRESH" == "${TEEUP_CAP:-}" ]]; then
+    TEEUP_REFRESH="" refresh_if_pristine "$src" "$dest" "$display_src" || true
+    return 0
+  fi
   # `! -e` on its own is true for a *dangling* symlink, even though the
   # directory entry is very much there, so teeup used to treat one as absent
   # and hand it straight to `cp`: GNU cp refuses to write through a dangling

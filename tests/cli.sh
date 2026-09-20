@@ -634,6 +634,21 @@ EOF2
   cleanup_test_env
 }
 
+test_dev_add_migration_creates_a_named_scaffold() {
+  setup
+  export TEEUP_MIGRATIONS_DIR="$TEST_HOME/migrations"
+  mock_command git 0 "1788000000"
+  local out rc=0
+  out="$("$TEEUP" dev add-migration 2>/dev/null)"
+  assert_equals "$TEEUP_MIGRATIONS_DIR/1788000000.sh" "$out" || return 1
+  assert_file_exists "$TEEUP_MIGRATIONS_DIR/1788000000.sh" || return 1
+  out="$("$TEEUP" dev frobnicate 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Usage: teeup dev add-migration" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup dev add-migration" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
@@ -675,4 +690,5 @@ run_test "install dev-env rejects extra arguments" test_install_dev_env_rejects_
 run_test "install dev-env goes through mise" test_install_dev_env_goes_through_mise
 run_test "data verbs keep stdout clean with a shadowed machine file" test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file
 run_test "has stdout stays empty with a shadowed machine file" test_has_stdout_stays_empty_with_a_shadowed_machine_file
+run_test "dev add-migration creates a named scaffold" test_dev_add_migration_creates_a_named_scaffold
 print_summary

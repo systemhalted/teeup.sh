@@ -314,6 +314,16 @@ test_run_hooks_skips_capabilities_that_were_never_installed() {
   cleanup_test_env
 }
 
+test_run_restores_the_outer_capability_after_a_nested_run() {
+  setup
+  printf '#!/usr/bin/env bash\ncap_run alpha install\necho "after nested: $TEEUP_CAP $TEEUP_CAP_DIR"\n' > "$TEEUP_CAPS_DIR/beta/configure"
+  local out
+  out="$(cap_run beta configure 2>&1)"
+  assert_contains "$out" "install:alpha cap=alpha" || return 1
+  assert_contains "$out" "after nested: beta $TEEUP_CAPS_DIR/beta" || return 1
+  cleanup_test_env
+}
+
 echo "lib/capability.sh"
 run_test "list and exists" test_list_and_exists
 run_test "meta get with default" test_meta_get_with_default
@@ -339,5 +349,6 @@ run_test "run_optional skips a missing verb" test_run_optional_skips_a_missing_v
 run_test "run_optional respects TEEUP_SKIP" test_run_optional_respects_teeup_skip
 run_test "run_optional warns but succeeds on failure" test_run_optional_warns_but_succeeds_on_failure
 run_test "hook eligible needs the marker or a running configure" test_hook_eligible_needs_the_marker_or_a_running_configure
+run_test "run restores the outer capability after a nested run" test_run_restores_the_outer_capability_after_a_nested_run
 run_test "run_hooks skips capabilities that were never installed" test_run_hooks_skips_capabilities_that_were_never_installed
 print_summary

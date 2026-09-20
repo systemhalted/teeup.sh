@@ -36,6 +36,7 @@ teeup - your Mac, as a distribution
   teeup secret get|set|rm <name>  read, store or delete a Keychain secret
   teeup status                   package manager, answers, installed capabilities
   teeup commands --check         lint capability metadata
+  teeup dev add-migration        start migrations/<epoch>.sh for machines already set up
   teeup version
   teeup help
 USAGE
@@ -356,6 +357,17 @@ cmd_status() {
   return 0
 }
 
+# Developer verbs, for people changing teeup itself. Each subcommand is one
+# case arm; the scaffold writes into the checkout (TEEUP_MIGRATIONS_DIR).
+cmd_dev() {
+  local op="${1:-}"
+  [[ $# -gt 0 ]] && shift
+  case "$op" in
+    add-migration) migration_new ;;
+    *) die "Usage: teeup dev add-migration" ;;
+  esac
+}
+
 cmd_commands() {
   case "${1:-}" in
     --check) cap_check ;;
@@ -376,6 +388,7 @@ case "$verb" in
   secret) cmd_secret "$@" ;;
   status) cmd_status ;;
   commands) cmd_commands "$@" ;;
+  dev) cmd_dev "$@" ;;
   version) cat "$TEEUP_PATH/version" 2>/dev/null || echo dev ;;
   help|-h|--help) usage ;;
   *)
