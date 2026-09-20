@@ -24,11 +24,23 @@ _stock_record_path() {
   printf '%s/stock/%s\n' "$TEEUP_STATE_DIR" "$rel"
 }
 
+# Returns non-zero when the record cannot be written (a state directory that
+# is not writable, say). The caller's own write has usually succeeded by then,
+# so this warns rather than failing the write: what is lost is teeup's memory
+# of what it shipped, which makes the file read as edited from then on -- the
+# safe direction (teeup leaves it alone), but the user should hear why. The
+# raw shell error is swallowed so the warning is the only thing they see.
 stock_record() {
   local dest="$1" sha="$2" record
   record="$(_stock_record_path "$dest")"
-  mkdir -p "$(dirname "$record")"
-  printf '%s\n' "$sha" > "$record"
+  mkdir -p "$(dirname "$record")" 2>/dev/null || true
+  # 2>/dev/null comes BEFORE the output redirect: the shell applies
+  # redirections left to right, so a `> "$record"` that fails to open would
+  # otherwise print its raw "Permission denied" before stderr was silenced.
+  if ! printf '%s\n' "$sha" 2>/dev/null > "$record"; then
+    warn "Could not record the shipped checksum at $record; teeup will treat $dest as edited and leave it alone from now on."
+    return 1
+  fi
 }
 
 stock_sha() {
@@ -76,8 +88,10 @@ write_config_region() {
   cat > "$tmp"
   write_managed_file "$dest" "$label" < "$tmp" || rc=$?
   rm -f "$tmp"
+  # stock_record warns for itself; a failed record does not unwrite the file,
+  # so the caller is told the write succeeded.
   if [[ "$rc" -eq 0 && "$pristine" == "true" ]]; then
-    stock_record "$dest" "$(file_sha "$dest")"
+    stock_record "$dest" "$(file_sha "$dest")" || true
   fi
   return "$rc"
 }
@@ -109,7 +123,7 @@ refresh_if_pristine() {
     return 0
   fi
   cp "$src" "$dest"
-  stock_record "$dest" "$(file_sha "$src")"
+  stock_record "$dest" "$(file_sha "$src")" || true
   ok "Refreshed $dest (you had not edited it)"
 }
 
@@ -296,7 +310,7 @@ copy_config_once() {
     fi
     mkdir -p "$(dirname "$dest")"
     cp "$src" "$dest"
-    stock_record "$dest" "$(file_sha "$src")"
+    stock_record "$dest" "$(file_sha "$src")" || true
     ok "Installed $dest"
     return 0
   fi
@@ -323,7 +337,7 @@ copy_config_once() {
   fi
   backup="$(backup_target "$dest")"
   cp "$src" "$dest"
-  stock_record "$dest" "$(file_sha "$src")"
+  stock_record "$dest" "$(file_sha "$src")" || true
   ok "Installed $dest (your previous file is at $backup)"
   # A backed-up dangling symlink has nothing to diff; diff says so on stderr
   # and the `|| true` keeps that from failing the capability.
@@ -346,7 +360,7 @@ refresh_config() {
   fi
   backup="$(backup_target "$dest")"
   cp "$src" "$dest"
-  stock_record "$dest" "$(file_sha "$src")"
+  stock_record "$dest" "$(file_sha "$src")" || true
   if cmp -s "$dest" "$backup"; then
     rm -f "$backup"
     log "Already at the shipped version: $dest"
