@@ -128,6 +128,61 @@ teeup install colima              # explicit install form for a capability
   user-owned; teeup skips that copy when `~/.tmux.conf` exists. `teeup status`
   lists generated shims and installed development environments.
 
+### Keeping a Mac up to date
+
+```bash
+teeup update                  # the whole machine
+DRY_RUN=true teeup update      # ... as a preview that changes nothing
+teeup update wezterm          # one capability: its packages, then its configure
+teeup reset starship          # the shipped starship.toml back, your copy backed up
+teeup remove cursor           # undo what a capability installed
+```
+
+`teeup update` does spec section 9's list in order: `git pull --ff-only` in
+the checkout, any pending migrations, `brew update && brew upgrade && brew
+upgrade --cask` (or `port selfupdate && port upgrade outdated`), `mise
+upgrade`, `configure` again for every installed core capability (skipping
+one this Mac cannot have), the theme re-rendered, and your `post-update`
+hooks. A checkout with uncommitted changes stops it before anything else
+runs, and so does a migration that fails; every other problem, including one
+capability's `configure` failing, is a warning that lets the rest of the run
+continue, and the command exits non-zero when there was one. Offline, the
+pull and the package manager warn and the rest still runs, which makes
+`teeup update` the repair path for a bootstrap that stopped half way.
+
+- **Migrations** are `migrations/<epoch>.sh` in the checkout, each run once
+  per machine (`teeup dev add-migration` starts one, named from the last
+  commit). A fresh `./bootstrap` marks them all applied without running them.
+  A file in `migrations/` not named exactly `<epoch>.sh` is announced and
+  skipped rather than run. A migration that ships a changed config calls
+  `migration_refresh <cap>`, which replaces the copies nobody edited and
+  leaves an edited one alone.
+- **`teeup reset <cap>`** re-runs the capability's own `configure` with every
+  `copy_config_once` turned into "back up, replace, show the diff", so a file
+  teeup renders for this machine (the zsh home files, `~/.config/git/config`)
+  comes back rendered rather than as a raw template. It refuses a symlinked
+  or non-writable destination, and refuses outright when it cannot back the
+  file up first — a reset never overwrites a file whose backup did not
+  happen. A backup whose content matched the shipped file is deleted again,
+  and the theme and font hooks run afterwards, so a reset `starship.toml`
+  carries the current palette.
+- **`teeup remove <cap>`** runs the capability's own `remove` script when it
+  has one (five capabilities ship one today: `macos-defaults` puts every
+  preference back the way it found it, `emacs` and `keyboard` unload their
+  LaunchAgents, `colima` stops the VM before Homebrew can orphan it, `ai`
+  deletes only the wrappers it wrote), then uninstalls the casks and packages
+  its metadata names, then forgets it. Your configuration files stay where
+  they are. It refuses while another installed capability requires it, and it
+  refuses outright rather than claim success when a capability ships no
+  `remove` script and names no packages or casks — `xcode-clt` and
+  `package-manager` are the two cases today.
+- **Hooks** are your own scripts under
+  `~/.config/teeup/hooks/<event>.d/`, run with `bash` in file-name order.
+  The events are `post-bootstrap`, `post-update` (with the capability name
+  after `teeup update <cap>`) and `theme-set` (with the theme name). Each
+  directory holds an `example.sample` that documents it; `.sample` files
+  never run. A hook that fails prints a warning and nothing is aborted.
+
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
 Through an interactive wizard, teeup provisions a complete development environment, including: 

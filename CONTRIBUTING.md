@@ -572,3 +572,39 @@ Happy contributing! 🚀
     a runner that has `docker` in `/usr/bin` while still finding the copy made
     by the mocked install. `tests/capabilities/colima.sh` is the reference
     round trip.
+21. `configure` is re-run by `teeup update` on every machine, so it must be
+    quiet and cheap when nothing has changed: report "Already ..." instead of
+    rewriting, and never restart an application or print a multi-line manual
+    step unconditionally. `defaults_write` now leaves a key that already
+    holds the value alone and records the domains it did write, so a
+    `configure` restarts an app with
+    `if defaults_changed com.apple.dock; then run_cmd killall Dock || true; fi`.
+    A one-time notice uses `state_done ensure <name>`, which succeeds only the
+    first time.
+22. `teeup reset <cap>` and a migration's `migration_refresh <cap>` both
+    re-run your `configure` with `TEEUP_RESET` or `TEEUP_REFRESH` set to the
+    capability's name, which turns each `copy_config_once` in it into
+    `refresh_config` or `refresh_if_pristine`. Install every user-facing file
+    through `copy_config_once` (rendering into a temporary file first when the
+    content depends on the machine, and passing the shipped file as
+    `copy_config_once`'s third `display_src` argument so the messages name it
+    rather than the temp file — see `capabilities/zsh/configure`) and both
+    verbs work for free; a `cp` of your own is invisible to them. A capability
+    with no `config/` or `home/` directory is not resettable, and says so.
+23. `teeup remove <cap>` uninstalls the `casks` and `packages` your metadata
+    names and clears the done marker. Add a `remove` script only for machine
+    state teeup created that a package manager cannot undo: a LaunchAgent
+    (`launchagent_remove <label>`), recorded `defaults` (`defaults_restore`),
+    a `hidutil` mapping. It runs before the uninstall, while the tool is
+    still there, and never deletes the user's configuration files.
+24. A file teeup owns but the user may edit carries a stock record
+    (`stock_record`, written by `copy_config_once`). `config_is_pristine
+    <file>` asks whether it still matches; `write_config_region <file>
+    <label>` rewrites a managed region and keeps a pristine file reading as
+    pristine (and refuses a symlink); `refresh_if_pristine <src> <dest>` is
+    the stock-checksum rule a migration uses; `backup_copy <file>` takes a
+    copy and leaves the original in place for a minimal patch. Hook events
+    for the user's own scripts are `post-bootstrap`, `post-update` and
+    `theme-set` (`TEEUP_HOOK_EVENTS` in `lib/hooks.sh`); adding one means a
+    new `.sample` under `capabilities/teeup-runtime/default/hooks/` and a
+    `hook_run <event> [args]` call where it fires.
