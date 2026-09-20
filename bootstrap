@@ -300,7 +300,8 @@ if ! state_done check bootstrap; then
 fi
 state_done mark bootstrap
 
-# --- 8. summary ---------------------------------------------------------------
+# --- 8. hooks and summary -----------------------------------------------------
+hook_run post-bootstrap
 echo ""
 ok "Bootstrap finished in $(format_duration $(( $(date +%s) - started )))."
 if [[ "$DRY_RUN" == "true" ]]; then

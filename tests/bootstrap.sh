@@ -198,6 +198,20 @@ test_git_is_reconfigured_after_ssh_makes_the_keys() {
   cleanup_test_env
 }
 
+test_post_bootstrap_hooks_run_before_the_summary() {
+  setup
+  mkdir -p "$TEST_HOME/.config/teeup/hooks/post-bootstrap.d"
+  printf '#!/usr/bin/env bash\ntouch "$HOME/hook-ran"\n' > "$TEST_HOME/.config/teeup/hooks/post-bootstrap.d/10-mark.sh"
+  local out h s
+  out="$("$BOOT" --dry-run <<<"$WIZARD_INPUT")"
+  assert_contains "$out" "[DRY-RUN] Would run hook: $TEST_HOME/.config/teeup/hooks/post-bootstrap.d/10-mark.sh" || return 1
+  h="$(printf '%s\n' "$out" | grep -n 'Would run hook' | head -1 | cut -d: -f1)"
+  s="$(printf '%s\n' "$out" | grep -n 'Bootstrap finished' | head -1 | cut -d: -f1)"
+  [[ "$h" -lt "$s" ]] || { echo "the hook must come before the summary"; return 1; }
+  [[ ! -e "$TEST_HOME/hook-ran" ]] || { echo "a hook ran in dry run"; return 1; }
+  cleanup_test_env
+}
+
 test_dry_run_touches_nothing() {
   setup
   "$BOOT" --dry-run <<<"$WIZARD_INPUT" >/dev/null
@@ -569,6 +583,7 @@ run_test "the theme is rendered once" test_the_theme_is_rendered_once
 run_test "the package manager is asked before it is installed" test_the_package_manager_is_asked_before_it_is_installed
 run_test "choosing macports runs the MacPorts path" test_choosing_macports_runs_the_macports_path
 run_test "git is reconfigured after ssh makes the keys" test_git_is_reconfigured_after_ssh_makes_the_keys
+run_test "post-bootstrap hooks run before the summary" test_post_bootstrap_hooks_run_before_the_summary
 run_test "dry run touches nothing" test_dry_run_touches_nothing
 run_test "existing answers skip wizard" test_existing_answers_skip_wizard
 run_test "wizard runs when only backend recorded" test_wizard_runs_when_only_backend_recorded

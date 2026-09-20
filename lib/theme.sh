@@ -204,7 +204,8 @@ _theme_set_abort() {
 
 # theme_set <name>
 # Render both modes into a staging directory, swap it into place, record the
-# name, then let every capability pick the new files up. Rendering into a
+# name, then let every installed capability pick the new files up and run the
+# user's theme-set hooks (lib/hooks.sh). Rendering into a
 # staging dir means a failure half way through leaves the old theme intact:
 # a template that fails to render, or a rendered file that still holds a
 # `{{ key }}` token the palette did not define, fails the whole switch before
@@ -305,4 +306,5 @@ theme_set() {
   TEEUP_THEME_NAME="$name"
   export TEEUP_THEME_DIR TEEUP_THEME_NAME
   cap_run_hooks theme-apply
+  hook_run theme-set "$name"
 }

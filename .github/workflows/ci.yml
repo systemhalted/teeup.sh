@@ -70,6 +70,7 @@ jobs:
             $(find capabilities -type f \( -name install -o -name configure \
               -o -name remove -o -name doctor -o -name theme-apply \
               -o -name font-apply \)) \
+            capabilities/teeup-runtime/default/hooks/*.sample \
             tests/helper.sh tests/run.sh tests/cli.sh tests/bootstrap.sh \
             tests/lib/*.sh tests/capabilities/*.sh
 

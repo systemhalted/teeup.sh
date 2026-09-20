@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# post-bootstrap hook sample, installed by teeup and rewritten when teeup's
+# copy changes. It never runs: teeup skips every *.sample file.
+#
+# To add a hook, put a script of your own next to this file, for example
+# post-bootstrap.d/10-dock.sh. Every file in this directory that does not end
+# in .sample runs with bash, in name order, after ./bootstrap has installed
+# and configured everything and before it prints its summary. It gets no
+# arguments; TEEUP_PATH, TEEUP_CONFIG_DIR, TEEUP_STATE_DIR and
+# TEEUP_HOOK_EVENT=post-bootstrap are in its environment. Its stdin is
+# /dev/null, and a hook that fails prints a warning and bootstrap carries on.
+#
+# Example: a notification when a long bootstrap is done.
+# osascript -e 'display notification "Bootstrap finished" with title "teeup"'

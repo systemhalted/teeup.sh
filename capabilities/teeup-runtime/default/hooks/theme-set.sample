@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# theme-set hook sample, installed by teeup and rewritten when teeup's copy
+# changes. It never runs: teeup skips every *.sample file.
+#
+# To add a hook, put a script of your own next to this file, for example
+# theme-set.d/10-notify.sh. Every file in this directory that does not end in
+# .sample runs with bash, in name order, after `teeup theme set` (and every
+# configure of the theme capability) has rendered the theme and every
+# installed capability has picked it up. $1 is the theme name. The rendered
+# files are under $TEEUP_STATE_DIR/current/theme/dark and .../light;
+# TEEUP_PATH, TEEUP_CONFIG_DIR and TEEUP_HOOK_EVENT=theme-set are in the
+# environment too. Its stdin is /dev/null, and a hook that fails prints a
+# warning and the theme stays applied.
+#
+# Example: say which theme is now active.
+# osascript -e "display notification \"Theme: $1\" with title \"teeup\""
