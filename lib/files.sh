@@ -219,11 +219,22 @@ write_managed_file() {
     log "Already current: $file"
     return 0
   fi
-  # A file that exists but is not writable (mode 0444, say) usually signals
-  # intent the same way a symlink does (M11): `mv` onto the path would still
+  # A file that exists but is not writable (mode 0444, say) signals intent
+  # the way the symlink above does (M11): `mv` onto the path would still
   # succeed (only the directory's permissions govern a rename) and silently
   # rewrite it, so this is checked explicitly rather than left to `mv`.
-  if [[ -e "$file" && ! -L "$file" && ! -w "$file" ]]; then
+  # A symlink is left alone outright: `mv` onto the path would replace the
+  # link with a regular file, silently detaching a config someone keeps in a
+  # dotfiles repo (chezmoi, stow, a bare git checkout) and leaving teeup's
+  # copy where their managed file used to be. The caller is told, and decides.
+  if [[ -L "$file" ]]; then
+    rm -f "$tmp"
+    # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
+    WRITE_MANAGED_FILE_CHANGED=false
+    warn "$file is a symlink; teeup does not write through it. Point it elsewhere, or set it by hand: $label"
+    return 1
+  fi
+  if [[ -e "$file" && ! -w "$file" ]]; then
     rm -f "$tmp"
     # shellcheck disable=SC2034  # read by callers (capabilities/git/configure)
     WRITE_MANAGED_FILE_CHANGED=false
