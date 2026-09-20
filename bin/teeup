@@ -190,7 +190,13 @@ cmd_lazy_run() {
     err "Not installed. When you want it: teeup install $cap"
     exit 127
   fi
-  cmd_install "$cap"
+  # A real install failure must reach the shim contract's 127 ("the command
+  # still is not here"), not abort the process at this line under `set -e`
+  # with cap_run's generic failure text and nothing teeup-authored (M2).
+  if ! cmd_install "$cap"; then
+    err "$cap could not be installed, so $command is still not available. The output above says why."
+    exit 127
+  fi
   if state_na check "cap-$cap"; then
     err "$cap is not applicable on this machine; $command was not installed."
     exit 127

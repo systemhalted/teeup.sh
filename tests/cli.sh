@@ -364,6 +364,25 @@ test_lazy_run_declined_exits_127_without_installing() {
   cleanup_test_env
 }
 
+# An install that genuinely fails (not one that is not applicable): the shim
+# contract says 127 and a teeup-authored line saying the command is still not
+# there. Without the guard in cmd_lazy_run this aborts on `set -e` at the
+# install line, so the process exits 1 with only cap_run's generic text.
+test_lazy_run_exits_127_when_the_install_fails() {
+  setup
+  cat > "$TEEUP_CAPS_DIR/lazyone/install" <<'EOF2'
+#!/usr/bin/env bash
+echo "install:lazyone"
+exit 1
+EOF2
+  local rc=0 out
+  out="$(printf 'y\n' | TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob 2>&1)" || rc=$?
+  assert_equals "127" "$rc" || return 1
+  assert_contains "$out" "lazyone could not be installed, so frob is still not available." || return 1
+  "$TEEUP" has lazyone && { echo "a failed install must not be marked installed"; return 1; }
+  cleanup_test_env
+}
+
 test_lazy_run_respects_teeup_skip() {
   setup
   local rc=0 out
@@ -534,6 +553,7 @@ run_test "lazy-run execs a real binary when one exists" test_lazy_run_execs_a_re
 run_test "lazy-run without a tty hints and exits 127" test_lazy_run_without_a_tty_hints_and_exits_127
 run_test "lazy-run on a tty installs, configures and execs" test_lazy_run_on_a_tty_installs_configures_and_execs
 run_test "lazy-run declined exits 127 without installing" test_lazy_run_declined_exits_127_without_installing
+run_test "lazy-run exits 127 when the install fails" test_lazy_run_exits_127_when_the_install_fails
 run_test "lazy-run respects TEEUP_SKIP" test_lazy_run_respects_teeup_skip
 run_test "lazy-run reinstalls a capability whose command went missing" test_lazy_run_reinstalls_a_capability_whose_command_went_missing
 run_test "lazy-run finds a command under the package prefix" test_lazy_run_finds_a_command_under_the_package_prefix
