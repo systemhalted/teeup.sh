@@ -319,6 +319,18 @@ test_wrapper_installs_a_runtime_first_and_loads_it() {
   cleanup_test_env
 }
 
+# M3: a wrapper with more than one tool must preview every missing tool on
+# one line, not just the first it happens to check.
+test_wrapper_dry_run_previews_every_missing_tool() {
+  setup
+  mise_wrapper_write gemini gemini node >/dev/null
+  local out
+  out="$(DRY_RUN=true "$TEST_HOME/.local/bin/gemini" chat 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would install node gemini through mise, then run gemini." || return 1
+  [[ ! -e "$TEST_HOME/mise-tools" ]] || { echo "dry run must not install anything"; return 1; }
+  cleanup_test_env
+}
+
 test_wrapper_leaves_a_foreign_command_alone() {
   setup
   mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/.local/share/claude/versions"
@@ -415,6 +427,33 @@ test_dev_env_leaves_a_pinned_runtime_alone() {
   cleanup_test_env
 }
 
+# M4: "the next prompt in this shell has it (mise activate)" is only true
+# once the zsh capability has actually wired up `mise activate`; without it
+# dev_env_install must not claim that, and the java-specific hint must not
+# name `javav`, a zsh function that would not exist either.
+test_dev_env_messages_do_not_claim_zsh_without_it() {
+  setup
+  local out
+  out="$(dev_env_install go)"
+  assert_contains "$out" "go is ready through mise." || return 1
+  assert_not_contains "$out" "mise activate" || return 1
+  out="$(dev_env_install java)"
+  assert_contains "$out" "Switch Java per shell with: mise use java@<spec>" || return 1
+  assert_not_contains "$out" "javav 21" || return 1
+  cleanup_test_env
+}
+
+test_dev_env_messages_mention_javav_and_mise_activate_once_zsh_is_installed() {
+  setup
+  state_done mark "cap-zsh"
+  local out
+  out="$(dev_env_install go)"
+  assert_contains "$out" "go is ready: the next prompt in this shell has it (mise activate)" || return 1
+  out="$(dev_env_install java)"
+  assert_contains "$out" "Switch Java per shell with: javav 21 (Corretto 21)" || return 1
+  cleanup_test_env
+}
+
 echo "lib/mise.sh"
 run_test "global state distinguishes the three cases" test_global_state_distinguishes_the_three_cases
 run_test "global state is not fooled by a project config" test_global_state_is_not_fooled_by_a_project_config
@@ -430,6 +469,7 @@ run_test "wrapper fallback honours MISE_GLOBAL_CONFIG_FILE" test_wrapper_fallbac
 run_test "wrapper without mise exits 127 with a hint" test_wrapper_without_mise_exits_127_with_a_hint
 run_test "wrapper exports release age zero" test_wrapper_exports_release_age_zero
 run_test "wrapper installs a runtime first and loads it" test_wrapper_installs_a_runtime_first_and_loads_it
+run_test "wrapper dry run previews every missing tool" test_wrapper_dry_run_previews_every_missing_tool
 run_test "wrapper leaves a foreign command alone" test_wrapper_leaves_a_foreign_command_alone
 run_test "wrapper rejects a name that is not plain" test_wrapper_rejects_a_name_that_is_not_plain
 run_test "wrapper write is idempotent and dry-run safe" test_wrapper_write_is_idempotent_and_dry_run_safe
@@ -437,4 +477,6 @@ run_test "dev-env python brings uv" test_dev_env_python_brings_uv
 run_test "dev-env each language uses mise" test_dev_env_each_language_uses_mise
 run_test "dev-env rejects an unknown language and needs mise" test_dev_env_rejects_an_unknown_language_and_needs_mise
 run_test "dev-env leaves a pinned runtime alone" test_dev_env_leaves_a_pinned_runtime_alone
+run_test "dev-env messages do not claim zsh without it" test_dev_env_messages_do_not_claim_zsh_without_it
+run_test "dev-env messages mention javav and mise activate once zsh is installed" test_dev_env_messages_mention_javav_and_mise_activate_once_zsh_is_installed
 print_summary

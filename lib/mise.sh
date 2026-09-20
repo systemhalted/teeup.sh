@@ -120,12 +120,14 @@ mise_wrapper_write() {
     fi
   done
   file="$HOME/.local/bin/$command"
+  # shellcheck disable=SC2034  # read by callers (capabilities/ai/configure)
+  MISE_WRAPPER_WRITTEN=false
   if [[ -e "$file" || -L "$file" ]] && ! sed -n 2p "$file" 2>/dev/null | grep -qxF "$TEEUP_MISE_WRAPPER_MARKER"; then
     warn "Keeping $file: it was not written by teeup. Remove it and run teeup configure ai to use the mise wrapper."
     return 0
   fi
   [[ -d "$HOME/.local/bin" ]] || run_cmd mkdir -p "$HOME/.local/bin"
-  write_managed_file "$file" "mise wrapper for $command" <<WRAPPER
+  if write_managed_file "$file" "mise wrapper for $command" <<WRAPPER
 #!/bin/bash
 $TEEUP_MISE_WRAPPER_MARKER
 # Installs $tools through mise on the first call, then runs $command.
@@ -150,30 +152,47 @@ teeup_requested() {
   [ -f "\$teeup_cfg" ] || return 1
   grep -qE "^[[:space:]]*(\"\$1\"|\$1)[[:space:]]*=" "\$teeup_cfg"
 }
-for teeup_tool in $tools; do
-  if mise -C / where "\$teeup_tool" >/dev/null 2>&1; then
-    continue
-  fi
-  if [ "\${DRY_RUN:-false}" = "true" ]; then
-    printf '%s\\n' "[DRY-RUN] Would install \$teeup_tool through mise, then run $command." >&2
+# DRY_RUN previews every missing tool on one line rather than exiting inside
+# the loop on the first: a wrapper with more than one tool (gemini needs node
+# too) must not hide the rest of what it would install (M3).
+if [ "\${DRY_RUN:-false}" = "true" ]; then
+  teeup_missing=""
+  for teeup_tool in $tools; do
+    if ! mise -C / where "\$teeup_tool" >/dev/null 2>&1; then
+      teeup_missing="\$teeup_missing \$teeup_tool"
+    fi
+  done
+  teeup_missing="\${teeup_missing# }"
+  if [ -n "\$teeup_missing" ]; then
+    printf '%s\\n' "[DRY-RUN] Would install \$teeup_missing through mise, then run $command." >&2
     exit 0
   fi
-  # The same two questions mise_ensure_global asks, because the answers differ:
-  # a tool the global config already requests is installed with \`install\`, which
-  # honours the version pinned there, while a tool it does not mention gets
-  # \`use -g\`, which writes the request so \`teeup update\`'s mise upgrade keeps
-  # it current. A bare \`use -g\` for both would drop the pin.
-  if teeup_requested "\$teeup_tool"; then
-    mise -C / install "\$teeup_tool" || exit 1
-  else
-    mise -C / use -g --quiet "\$teeup_tool" || exit 1
-  fi
-done
+else
+  for teeup_tool in $tools; do
+    if mise -C / where "\$teeup_tool" >/dev/null 2>&1; then
+      continue
+    fi
+    # The same two questions mise_ensure_global asks, because the answers differ:
+    # a tool the global config already requests is installed with \`install\`, which
+    # honours the version pinned there, while a tool it does not mention gets
+    # \`use -g\`, which writes the request so \`teeup update\`'s mise upgrade keeps
+    # it current. A bare \`use -g\` for both would drop the pin.
+    if teeup_requested "\$teeup_tool"; then
+      mise -C / install "\$teeup_tool" || exit 1
+    else
+      mise -C / use -g --quiet "\$teeup_tool" || exit 1
+    fi
+  done
+fi
 # Nothing left to install, so there is no mutation to withhold: the command
 # runs even under DRY_RUN, which only ever blocks the install above.
 exec mise x $tools -- $command "\$@"
 WRAPPER
-  [[ "$DRY_RUN" == "true" ]] || chmod 755 "$file"
+  then
+    # shellcheck disable=SC2034  # read by callers (capabilities/ai/configure)
+    MISE_WRAPPER_WRITTEN=true
+    [[ "$DRY_RUN" == "true" ]] || chmod 755 "$file"
+  fi
 }
 
 # --- teeup install dev-env ---------------------------------------------------
@@ -208,14 +227,29 @@ dev_env_install() {
     node) mise_ensure_global node latest || return 1 ;;
     java)
       mise_ensure_global java latest || return 1
-      log "Switch Java per shell with: javav 21 (Corretto 21), javav zulu-17, javav (show)"
+      # javav (capabilities/zsh/default/functions) only exists once the zsh
+      # capability has installed it; naming it unconditionally would send a
+      # bash user, or anyone who skipped zsh, to a command that is not there
+      # (M4, same class as I4).
+      if state_done check "cap-zsh"; then
+        log "Switch Java per shell with: javav 21 (Corretto 21), javav zulu-17, javav (show)"
+      else
+        log "Switch Java per shell with: mise use java@<spec> (install teeup's zsh layer for the javav shortcut: teeup install zsh)"
+      fi
       ;;
     ruby) mise_ensure_global ruby latest || return 1 ;;
     rust) mise_ensure_global rust latest || return 1 ;;
     go) mise_ensure_global go latest || return 1 ;;
   esac
   state_done mark "dev-env-$lang"
-  ok_unless_dry "$lang is ready: the next prompt in this shell has it (mise activate); other shells after a new terminal."
+  # "the next prompt in this shell has it (mise activate)" is only true once
+  # the zsh capability's `mise activate` is actually loaded (M4): on a bash
+  # session, or a Mac that skipped zsh, nothing here reruns automatically.
+  if state_done check "cap-zsh"; then
+    ok_unless_dry "$lang is ready: the next prompt in this shell has it (mise activate); other shells after a new terminal."
+  else
+    ok_unless_dry "$lang is ready through mise. Install teeup's zsh layer (teeup install zsh) so new shells pick it up automatically; for now use: mise x $lang -- ..., or mise use $lang in this shell."
+  fi
 }
 
 # dev_env_installed -> the dev-envs this machine has marked, one per line.
