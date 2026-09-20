@@ -58,6 +58,21 @@ test_a_hook_filename_with_metacharacters_runs() {
   cleanup_test_env
 }
 
+# A hook directory teeup cannot read looks empty to the glob: without a word,
+# every hook in it silently stops running.
+test_an_unreadable_hook_directory_says_so() {
+  setup
+  make_hook theme-set 10-one.sh 'echo ran-one'
+  chmod 0000 "$HOOKS/theme-set.d"
+  local out rc=0
+  out="$(hook_run theme-set tokyo 2>&1)" || rc=$?
+  chmod 0755 "$HOOKS/theme-set.d"
+  assert_success "$rc" "an unreadable directory still must not abort the caller" || return 1
+  assert_contains "$out" "hooks did not run" || return 1
+  assert_not_contains "$out" "ran-one" || return 1
+  cleanup_test_env
+}
+
 test_a_failing_hook_warns_and_the_rest_still_run() {
   setup
   make_hook post-bootstrap 10-broken.sh 'echo "broken ran"; exit 3'
@@ -120,6 +135,7 @@ echo "lib/hooks.sh"
 run_test "run executes every hook in name order with its arguments" test_run_executes_every_hook_in_name_order_with_its_arguments
 run_test "run skips samples and runs a hook without the executable bit" test_run_skips_samples_and_runs_a_hook_without_the_executable_bit
 run_test "a hook filename with metacharacters runs" test_a_hook_filename_with_metacharacters_runs
+run_test "an unreadable hook directory says so" test_an_unreadable_hook_directory_says_so
 run_test "a failing hook warns and the rest still run" test_a_failing_hook_warns_and_the_rest_still_run
 run_test "a hook cannot read the terminal" test_a_hook_cannot_read_the_terminal
 run_test "no hook directory and unknown events are quiet" test_no_hook_directory_and_unknown_events_are_quiet

@@ -18,8 +18,14 @@ export TEEUP_MIGRATIONS_DIR
 migrations_list() {
   local f name
   for f in "$TEEUP_MIGRATIONS_DIR"/[0-9]*.sh; do
-    [[ -f "$f" ]] || continue
     name="${f##*/}"
+    # A directory (or anything else that is not a regular file) named like a
+    # migration is announced too: a silent skip is how a migration nobody runs
+    # goes unnoticed, which is the same reason the name check below speaks up.
+    if [[ ! -f "$f" ]]; then
+      [[ -e "$f" ]] && warn "Not a file, so it is skipped: $f"
+      continue
+    fi
     # <epoch>.sh exactly, which is the only name migration_new writes. The
     # glob alone would also accept "1700000000 copy.sh", and a name carrying a
     # space breaks every caller that reads this list a line at a time -- and
@@ -152,7 +158,13 @@ migration_new() {
     printf '%s\n' "$file"
     return 0
   fi
-  mkdir -p "$TEEUP_MIGRATIONS_DIR"
+  # A migrations directory that will not take the file would otherwise leak a
+  # raw "cannot create" from the redirection below, which is also processed
+  # before any 2>/dev/null could silence it.
+  if ! mkdir -p "$TEEUP_MIGRATIONS_DIR" 2>/dev/null || [[ ! -w "$TEEUP_MIGRATIONS_DIR" ]]; then
+    err "Cannot write $TEEUP_MIGRATIONS_DIR, so no migration was created."
+    return 1
+  fi
   cat > "$file" <<MIGRATION
 #!/usr/bin/env bash
 # Migration $stamp. Replace this line with what the migration changes and why.

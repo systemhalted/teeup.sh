@@ -184,6 +184,28 @@ EOF2
 # D-1/R-7.1: `teeup remove ai` used to report success while deleting nothing
 # -- packages= and casks= are both empty, so the generic uninstall loop had
 # nothing to do. capabilities/ai/remove now deletes the wrappers configure
+# A wrapper teeup wrote but cannot delete is still on PATH, so the removal did
+# not finish: the script has to fail, or cmd_remove prints "Removed ai." over
+# the top of the warning and the summary claims nothing was found.
+test_remove_fails_when_a_wrapper_will_not_delete() {
+  setup
+  DRY_RUN=false "$TEEUP" configure ai >/dev/null 2>&1
+  assert_file_exists "$BIN/claude" || return 1
+  source "$TEEUP_PATH/lib/all.sh"
+  chmod 0555 "$BIN"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ai remove 2>&1)" || rc=$?
+  chmod 0755 "$BIN"
+  assert_failure "$rc" "a wrapper left behind must fail the removal" || return 1
+  assert_contains "$out" "Still installed:" || return 1
+  if printf '%s\n' "$out" | grep -q 'No teeup-written wrappers were found'; then
+    echo "denied the wrappers it had just warned about"
+    return 1
+  fi
+  assert_file_exists "$BIN/claude" "the wrapper is still there" || return 1
+  cleanup_test_env
+}
+
 # wrote, and only those: a foreign claude symlink (Claude Code's own
 # installer, say) is left exactly as test_configure_keeps_a_native_claude
 # leaves it.
@@ -236,6 +258,7 @@ run_test "configure summary names only the wrappers it wrote" test_configure_sum
 run_test "configure is idempotent and dry-run safe" test_configure_is_idempotent_and_dry_run_safe
 run_test "wrappers survive a home with spaces" test_wrappers_survive_a_home_with_spaces
 run_test "the claude shim installs ai then execs through mise" test_the_claude_shim_installs_ai_then_execs_through_mise
+run_test "remove fails when a wrapper will not delete" test_remove_fails_when_a_wrapper_will_not_delete
 run_test "remove deletes only the wrappers teeup wrote" test_remove_deletes_only_the_wrappers_teeup_wrote
 run_test "remove dry run deletes no wrapper" test_remove_dry_run_deletes_no_wrapper
 run_test "remove without any wrapper is quiet" test_remove_without_any_wrapper_is_quiet

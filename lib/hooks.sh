@@ -33,6 +33,13 @@ hook_run() {
   esac
   dir="$(hooks_dir)/$event.d"
   [[ -d "$dir" ]] || return 0
+  # A directory teeup cannot read looks exactly like an empty one to the glob
+  # below, so every hook in it would be skipped without a word -- and a hook
+  # that silently stops running is worse than one that fails loudly.
+  if [[ ! -r "$dir" || ! -x "$dir" ]]; then
+    warn "Cannot read $dir, so its $event hooks did not run."
+    return 0
+  fi
   for f in "$dir"/*; do
     [[ -f "$f" ]] || continue
     case "$f" in *.sample) continue ;; esac

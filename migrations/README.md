@@ -7,8 +7,8 @@ One-off changes for machines that already run teeup. Each file is
 A migration runs as `bash -eu` with `lib/all.sh` loaded and the answers
 sourced, so `run_cmd`, `log`, `warn`, `answers_get` and the capability
 helpers are available. Every mutation goes through `run_cmd` or a
-primitive with its own dry-run guard, because `teeup update --dry-run`
-must change nothing.
+primitive with its own dry-run guard, because a dry run
+(`DRY_RUN=true teeup update`) must change nothing.
 
 A shipped config file changed? Call `migration_refresh <capability>`: it
 re-runs that capability's `configure` with the stock-checksum rule in

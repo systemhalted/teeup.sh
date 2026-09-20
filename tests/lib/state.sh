@@ -39,6 +39,25 @@ test_done_ensure_dry_run_previews_the_real_answer() {
   cleanup_test_env
 }
 
+# A state directory that will not take a deletion: the caller must hear
+# teeup's own line, not a raw `rm:` error, and must not be aborted under
+# `bash -eu` (for teeup remove that would be after the packages are gone).
+test_done_clear_reports_a_marker_it_cannot_remove() {
+  setup
+  state_done mark stuck
+  chmod 0555 "$TEEUP_STATE_DIR/done"
+  local rc=0 out
+  out="$(state_done clear stuck 2>&1)" || rc=$?
+  chmod 0755 "$TEEUP_STATE_DIR/done"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "teeup still has it on record" || return 1
+  if printf '%s\n' "$out" | grep -qi 'permission denied'; then
+    echo "a raw shell error reached the user"
+    return 1
+  fi
+  cleanup_test_env
+}
+
 test_na_check_mark_clear() {
   setup
   state_na check "cap-aerospace" && { echo "should not be na yet"; return 1; }
@@ -81,6 +100,7 @@ echo "lib/state.sh"
 run_test "done check/mark/clear" test_done_check_mark_clear
 run_test "done ensure succeeds only once" test_done_ensure_succeeds_only_first_time
 run_test "done ensure dry run previews the real answer" test_done_ensure_dry_run_previews_the_real_answer
+run_test "done clear reports a marker it cannot remove" test_done_clear_reports_a_marker_it_cannot_remove
 run_test "na check/mark/clear" test_na_check_mark_clear
 run_test "toggle round trip" test_toggle_round_trip
 run_test "migration markers" test_migration_markers
