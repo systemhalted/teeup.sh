@@ -174,8 +174,12 @@ pull and the package manager warn and the rest still runs, which makes
   its metadata names, then forgets it. Your configuration files stay where
   they are. It refuses while another installed capability requires it, and it
   refuses outright rather than claim success when a capability ships no
-  `remove` script and names no packages or casks — `xcode-clt` and
-  `package-manager` are the two cases today.
+  `remove` script and names no packages or casks: there is nothing for it to
+  undo. Seven capabilities are in that position today — `dev-dirs`,
+  `package-manager`, `secrets`, `ssh`, `teeup-runtime`, `theme` and
+  `xcode-clt` — so `teeup remove secrets` tells you so instead of quietly
+  marking it gone. A `remove` script that answers "not applicable on this
+  machine" is reported too, rather than passed off as a clean removal.
 - **Hooks** are your own scripts under
   `~/.config/teeup/hooks/<event>.d/`, run with `bash` in file-name order.
   The events are `post-bootstrap`, `post-update` (with the capability name
