@@ -4,8 +4,40 @@
 # rest of ~/.config. tmux loads every config file it finds, ~/.tmux.conf
 # first, so a copy next to an existing ~/.tmux.conf would silently override
 # it; in that case nothing is installed.
+# tmux_reads_xdg_config -> 0 confirmed 3.1+, 1 confirmed older, 2 unknown
+# (no tmux on PATH, or a build whose -V isn't a plain X.Y, like "next-3.4" or
+# "master"). pkg_install skips installing when any tmux is already on PATH
+# (M8), so a pre-existing 2.x tmux would otherwise get a config it can never
+# read while teeup claims success; only a confirmed-old answer says so, so an
+# unverifiable one is never turned into a claim either way.
+tmux_reads_xdg_config() {
+  local v major minor
+  v="$(tmux -V 2>/dev/null)" || return 2
+  v="${v#tmux }"
+  case "$v" in
+    [0-9]*) ;;
+    *) return 2 ;;
+  esac
+  major="${v%%.*}"
+  minor="${v#*.}"
+  minor="${minor%%[!0-9]*}"
+  [[ -n "$minor" ]] || minor=0
+  if [[ "$major" -gt 3 ]] || { [[ "$major" -eq 3 ]] && [[ "$minor" -ge 1 ]]; }; then
+    return 0
+  fi
+  return 1
+}
+
 if [[ -e "$HOME/.tmux.conf" || -L "$HOME/.tmux.conf" ]]; then
   log "Keeping your $HOME/.tmux.conf; not adding $(user_config_dir)/tmux/tmux.conf, which tmux would load after it."
 else
   copy_config_once "$TEEUP_CAP_DIR/config/tmux/tmux.conf" "$(user_config_dir)/tmux/tmux.conf"
+  if have tmux; then
+    tmux_version_rc=0
+    tmux_reads_xdg_config || tmux_version_rc=$?
+    if [[ "$tmux_version_rc" -eq 1 ]]; then
+      warn "$(tmux -V) does not read $(user_config_dir)/tmux/tmux.conf on its own (tmux 3.1 or newer does); upgrade tmux, or load it by hand: tmux -f $(user_config_dir)/tmux/tmux.conf"
+    fi
+    unset tmux_version_rc
+  fi
 fi
