@@ -134,6 +134,47 @@ test_set_real_run_wording_is_unchanged() {
   cleanup_test_env
 }
 
+# A font state file the user made read-only: write_managed_file refuses it
+# (M11), and font_set must warn and stop rather than abort the process under
+# `set -e` before any hook runs, or tell the editors a family it did not
+# record.
+test_set_refuses_a_read_only_state_file() {
+  setup
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  mkdir -p "$TEEUP_CAPS_DIR/demo"
+  cat > "$TEEUP_CAPS_DIR/demo/capability" <<'EOF2'
+summary="Fixture demo"
+group=system
+tier=lazy
+requires=""
+provides=""
+interactive=false
+EOF2
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/demo/install"
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/demo/configure"
+  cat > "$TEEUP_CAPS_DIR/demo/font-apply" <<'EOF2'
+#!/usr/bin/env bash
+echo "font-applied:$TEEUP_FONT_FAMILY"
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/demo/install" "$TEEUP_CAPS_DIR/demo/configure" "$TEEUP_CAPS_DIR/demo/font-apply"
+  local state rc=0 out
+  state="$(font_file)"
+  mkdir -p "$(dirname "$state")"
+  printf 'MesloLGS Nerd Font\n' > "$state"
+  chmod 0444 "$state"
+  out="$(font_set Hack 2>&1)" || rc=$?
+  chmod 0644 "$state"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "the editors were not told about it" || return 1
+  # The recorded family is untouched and no hook ran with the new one.
+  assert_equals "MesloLGS Nerd Font" "$(cat "$state")" || return 1
+  if printf '%s\n' "$out" | grep -q 'font-applied:'; then
+    echo "a font-apply hook ran even though the family was not recorded"
+    return 1
+  fi
+  cleanup_test_env
+}
+
 test_table_lists_every_family() {
   setup
   local out
@@ -154,5 +195,6 @@ run_test "set runs font-apply hooks" test_set_runs_font_apply_hooks
 run_test "set runs every hook after an interactive one" test_set_runs_every_hook_after_an_interactive_one
 run_test "set dry run writes nothing" test_set_dry_run_writes_nothing
 run_test "set real-run wording is unchanged" test_set_real_run_wording_is_unchanged
+run_test "set refuses a read-only state file" test_set_refuses_a_read_only_state_file
 run_test "table lists every family" test_table_lists_every_family
 print_summary

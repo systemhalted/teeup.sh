@@ -78,9 +78,19 @@ font_set() {
   family="$(font_family "$requested")" || return 1
   cask="$(font_cask "$requested")" || return 1
   cask_install "$cask" || return 1
-  write_managed_file "$(font_file)" "font family" <<FONT_STATE
+  # write_managed_file warns on its own refusal (M11: a state file that is not
+  # writable). Without this guard the refusal would abort `teeup install font`
+  # under `bash -eu` before a single font-apply hook ran. The hooks are skipped
+  # deliberately rather than run anyway: they would set a family that
+  # current/font does not record, and the next `teeup install font` or
+  # `theme set` would put the old one back.
+  if ! write_managed_file "$(font_file)" "font family" <<FONT_STATE
 $family
 FONT_STATE
+  then
+    warn "Could not record $family in $(font_file); the editors were not told about it."
+    return 1
+  fi
   TEEUP_FONT_FAMILY="$family"
   export TEEUP_FONT_FAMILY
   # A for loop, not `while read < <(cap_list)`: see theme_set's hook loop.
