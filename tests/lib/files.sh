@@ -266,6 +266,124 @@ test_replace_literal_is_literal_and_repeats() {
   cleanup_test_env
 }
 
+test_config_is_pristine_follows_the_stock_record() {
+  setup
+  config_is_pristine "$DEST" && { echo "a missing file is not pristine"; return 1; }
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  config_is_pristine "$DEST" || { echo "a fresh copy is pristine"; return 1; }
+  printf 'shipped=1\nmine=2\n' > "$DEST"
+  config_is_pristine "$DEST" && { echo "an edited file is not pristine"; return 1; }
+  printf 'unrecorded\n' > "$TEST_HOME/other"
+  config_is_pristine "$TEST_HOME/other" && { echo "a file with no record is not pristine"; return 1; }
+  ln -s "$SRC" "$TEST_HOME/link"
+  stock_record "$TEST_HOME/link" "$(file_sha "$SRC")"
+  config_is_pristine "$TEST_HOME/link" && { echo "a symlink is never pristine"; return 1; }
+  cleanup_test_env
+}
+
+test_write_config_region_keeps_a_pristine_file_pristine() {
+  setup
+  # A directory with a space, an ampersand, a quote and a dollar sign: the
+  # stock record path is derived from it.
+  DEST="$TEST_HOME/.config/it's a & \$dir/tool.conf"
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  printf 'shipped=1\n# managed region rewritten\n' | write_config_region "$DEST" "palette" >/dev/null
+  assert_equals "$(printf 'shipped=1\n# managed region rewritten')" "$(cat "$DEST")" || return 1
+  config_is_pristine "$DEST" || { echo "teeup's own rewrite must not read as a user edit"; return 1; }
+  assert_contains "$(copy_config_once "$SRC" "$DEST")" "Already installed: $DEST" || return 1
+  cleanup_test_env
+}
+
+test_write_config_region_leaves_an_edited_file_edited() {
+  setup
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  printf 'shipped=1\nmine=2\n' > "$DEST"
+  local before
+  before="$(stock_sha "$DEST")"
+  printf 'shipped=1\nmine=2\n# region\n' | write_config_region "$DEST" "palette" >/dev/null
+  assert_equals "$(printf 'shipped=1\nmine=2\n# region')" "$(cat "$DEST")" || return 1
+  assert_equals "$before" "$(stock_sha "$DEST")" "the record of an edited file is kept" || return 1
+  assert_contains "$(copy_config_once "$SRC" "$DEST")" "Keeping your edited $DEST" || return 1
+  cleanup_test_env
+}
+
+test_write_config_region_refuses_a_symlink_and_dry_run() {
+  setup
+  mkdir -p "$TEST_HOME/store"
+  printf 'managed elsewhere\n' > "$TEST_HOME/store/tool.conf"
+  mkdir -p "$(dirname "$DEST")"
+  ln -s "$TEST_HOME/store/tool.conf" "$DEST"
+  local rc=0 out
+  out="$(printf 'new\n' | write_config_region "$DEST" "palette" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$DEST is a symlink" || return 1
+  [[ -L "$DEST" ]] || { echo "the link was replaced"; return 1; }
+  assert_equals "managed elsewhere" "$(cat "$TEST_HOME/store/tool.conf")" || return 1
+  rm -f "$DEST"
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  out="$(printf 'new\n' | DRY_RUN=true write_config_region "$DEST" "palette")"
+  assert_contains "$out" "[DRY-RUN] Would write $DEST (palette)" || return 1
+  assert_equals "shipped=1" "$(cat "$DEST")" || return 1
+  assert_equals "$(file_sha "$SRC")" "$(stock_sha "$DEST")" || return 1
+  cleanup_test_env
+}
+
+test_refresh_if_pristine_replaces_only_an_unedited_file() {
+  setup
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  printf 'shipped=2\n' > "$TEST_HOME/src2"
+  local out rc=0
+  out="$(refresh_if_pristine "$TEST_HOME/src2" "$DEST")"
+  assert_contains "$out" "Refreshed $DEST" || return 1
+  assert_equals "shipped=2" "$(cat "$DEST")" || return 1
+  config_is_pristine "$DEST" || { echo "the record follows the refresh"; return 1; }
+  printf 'shipped=2\nmine=3\n' > "$DEST"
+  printf 'shipped=3\n' > "$TEST_HOME/src3"
+  out="$(refresh_if_pristine "$TEST_HOME/src3" "$DEST")" || rc=$?
+  assert_failure "$rc" "an edited file is reported, so the migration can patch it" || return 1
+  assert_contains "$out" "Keeping your edited $DEST" || return 1
+  assert_equals "$(printf 'shipped=2\nmine=3')" "$(cat "$DEST")" || return 1
+  rm -f "$DEST"
+  refresh_if_pristine "$TEST_HOME/src3" "$DEST" >/dev/null
+  assert_equals "shipped=3" "$(cat "$DEST")" "a missing file is installed" || return 1
+  cleanup_test_env
+}
+
+test_refresh_if_pristine_dry_run_changes_nothing() {
+  setup
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  printf 'shipped=2\n' > "$TEST_HOME/src2"
+  local out
+  out="$(DRY_RUN=true refresh_if_pristine "$TEST_HOME/src2" "$DEST")"
+  assert_contains "$out" "[DRY-RUN] Would refresh $DEST from $TEST_HOME/src2" || return 1
+  assert_equals "shipped=1" "$(cat "$DEST")" || return 1
+  cleanup_test_env
+}
+
+test_backup_copy_keeps_the_original_in_place() {
+  setup
+  printf 'mine\n' > "$TEST_HOME/file"
+  local backup
+  backup="$(backup_copy "$TEST_HOME/file" 2>/dev/null)"
+  [[ "$backup" == "$TEST_HOME/file.teeup_backup_"* ]] || { echo "bad backup name: $backup"; return 1; }
+  assert_equals "mine" "$(cat "$backup")" || return 1
+  assert_equals "mine" "$(cat "$TEST_HOME/file")" || return 1
+  cleanup_test_env
+}
+
+test_two_backups_of_the_same_file_within_one_second_both_survive() {
+  setup
+  printf 'first\n' > "$TEST_HOME/file"
+  local first second
+  first="$(backup_copy "$TEST_HOME/file" 2>/dev/null)"
+  printf 'second\n' > "$TEST_HOME/file"
+  second="$(backup_copy "$TEST_HOME/file" 2>/dev/null)"
+  [[ "$first" != "$second" ]] || { echo "the second call reused the first's name: $first"; return 1; }
+  assert_equals "first" "$(cat "$first")" "the first backup must not be overwritten by the second" || return 1
+  assert_equals "second" "$(cat "$second")" || return 1
+  cleanup_test_env
+}
+
 echo "lib/files.sh"
 run_test "append_once is idempotent" test_append_once_is_idempotent
 run_test "write_managed_file noops when identical" test_write_managed_file_noops_when_identical
@@ -286,5 +404,13 @@ run_test "copy_config_once display_src defaults to src" test_copy_config_once_di
 run_test "refresh_config backs up and diffs" test_refresh_config_backs_up_and_diffs
 run_test "refresh_config removes backup when unchanged" test_refresh_config_removes_backup_when_unchanged
 run_test "refresh prints the backup path" test_refresh_prints_the_backup_path
+run_test "config_is_pristine follows the stock record" test_config_is_pristine_follows_the_stock_record
+run_test "write_config_region keeps a pristine file pristine" test_write_config_region_keeps_a_pristine_file_pristine
+run_test "write_config_region leaves an edited file edited" test_write_config_region_leaves_an_edited_file_edited
+run_test "write_config_region refuses a symlink, and dry run" test_write_config_region_refuses_a_symlink_and_dry_run
+run_test "refresh_if_pristine replaces only an unedited file" test_refresh_if_pristine_replaces_only_an_unedited_file
+run_test "refresh_if_pristine dry run changes nothing" test_refresh_if_pristine_dry_run_changes_nothing
+run_test "backup_copy keeps the original in place" test_backup_copy_keeps_the_original_in_place
+run_test "two backups of the same file within one second both survive" test_two_backups_of_the_same_file_within_one_second_both_survive
 run_test "replace_literal is literal and repeats" test_replace_literal_is_literal_and_repeats
 print_summary

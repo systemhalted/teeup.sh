@@ -120,6 +120,40 @@ assert_starship_untouched() {
   assert_contains "$out" "$3" "$label: the warning names the problem" || return 1
 }
 
+test_a_palette_rewrite_leaves_starship_toml_unedited() {
+  setup
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null
+  assert_contains "$(cat "$TEEUP_PATH/capabilities/starship/config/starship.toml")" 'palette = "teeup-dark"' || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/starship.toml")" 'palette = "teeup-light"' "the palette was rewritten" || return 1
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure starship)"
+  assert_contains "$out" "Already installed: $TEST_HOME/.config/starship.toml" || return 1
+  assert_not_contains "$out" "Keeping your edited" || return 1
+  # A line of the user's own makes it theirs, and the next rewrite keeps it so.
+  printf '\n[directory]\ntruncation_length = 2\n' >> "$TEST_HOME/.config/starship.toml"
+  sed -i.bak 's/^palette = .*/palette = "teeup-dark"/' "$TEST_HOME/.config/starship.toml" && rm "$TEST_HOME/.config/starship.toml.bak"
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null
+  assert_contains "$(cat "$TEST_HOME/.config/starship.toml")" 'palette = "teeup-light"' "the edited file still gets its palette" || return 1
+  out="$(DRY_RUN=false "$TEEUP" configure starship)"
+  assert_contains "$out" "Keeping your edited $TEST_HOME/.config/starship.toml" || return 1
+  cleanup_test_env
+}
+
+test_theme_apply_leaves_a_symlinked_starship_toml_alone() {
+  setup
+  mkdir -p "$TEST_HOME/dotfiles" "$TEST_HOME/.config"
+  cp "$TEEUP_PATH/capabilities/starship/config/starship.toml" "$TEST_HOME/dotfiles/starship.toml"
+  ln -s "$TEST_HOME/dotfiles/starship.toml" "$TEST_HOME/.config/starship.toml"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure theme 2>&1)"
+  assert_contains "$out" "$TEST_HOME/.config/starship.toml is a symlink" || return 1
+  [[ -L "$TEST_HOME/.config/starship.toml" ]] || { echo "the link was replaced by a file"; return 1; }
+  cmp -s "$TEEUP_PATH/capabilities/starship/config/starship.toml" "$TEST_HOME/dotfiles/starship.toml" ||
+    { echo "the linked file was written through"; return 1; }
+  cleanup_test_env
+}
+
 test_theme_apply_refuses_malformed_markers() {
   setup
   assert_starship_untouched "end before start" 'palette = "teeup-dark"
@@ -407,6 +441,8 @@ run_test "theme-apply patches the starship block" test_theme_apply_patches_the_s
 run_test "theme-apply replaces a populated block" test_theme_apply_replaces_a_populated_block
 run_test "theme-apply refuses a block below a table" test_theme_apply_refuses_a_block_below_a_table
 run_test "theme-apply refuses malformed markers" test_theme_apply_refuses_malformed_markers
+run_test "a palette rewrite leaves starship.toml unedited" test_a_palette_rewrite_leaves_starship_toml_unedited
+run_test "theme-apply leaves a symlinked starship.toml alone" test_theme_apply_leaves_a_symlinked_starship_toml_alone
 run_test "theme-apply rewrites only the first palette line" test_theme_apply_rewrites_only_the_first_palette_line
 run_test "theme-apply inserts a missing root palette" test_theme_apply_inserts_a_missing_root_palette
 run_test "theme-apply inserts a root palette beside a table-scoped one" test_theme_apply_inserts_a_root_palette_beside_a_table_scoped_one
