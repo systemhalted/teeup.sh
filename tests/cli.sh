@@ -771,6 +771,33 @@ test_remove_refuses_a_not_applicable_capability() {
   cleanup_test_env
 }
 
+# A capability can carry a stale not-applicable marker beside its done marker
+# -- a machine that gained what it was missing, reinstalled, and had the NA
+# marker left behind by an older teeup. Removing it must clear both, or
+# `teeup status` goes on calling a removed capability "not applicable on this
+# machine" forever (R-7.3).
+# A `remove` script that answers not-applicable: cap_run turns that exit into
+# a success for every verb, so the script undid nothing of its own and teeup
+# must not report a clean "Removed".
+test_remove_is_honest_when_the_remove_script_answers_not_applicable() {
+  setup
+  "$TEEUP" install alpha >/dev/null
+  cat > "$TEEUP_CAPS_DIR/alpha/remove" <<'EOF2'
+#!/usr/bin/env bash
+not_applicable "nothing of alpha's own to undo here"
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/alpha/remove"
+  local out
+  out="$("$TEEUP" remove alpha 2>&1)"
+  assert_contains "$out" "reported it is not applicable on this machine, so it undid nothing of its own" || return 1
+  out="$("$TEEUP" status 2>&1)"
+  if printf '%s\n' "$out" | grep -q 'not applicable'; then
+    echo "status calls a removed capability not applicable"
+    return 1
+  fi
+  cleanup_test_env
+}
+
 # Everything `teeup update` reaches out to, mocked: the checkout is clean, the
 # package manager and mise do nothing, and the fixture core.list is alpha+beta.
 mock_update_world() {
@@ -1264,5 +1291,6 @@ run_test "remove refuses what something else requires" test_remove_refuses_what_
 run_test "remove keeps config files and previews a dry run" test_remove_keeps_config_files_and_previews_a_dry_run
 run_test "remove keeps the marker when an uninstall fails" test_remove_keeps_the_marker_when_an_uninstall_fails
 run_test "remove dies when nothing can be undone" test_remove_dies_when_nothing_can_be_undone
+run_test "remove is honest when the remove script answers not-applicable" test_remove_is_honest_when_the_remove_script_answers_not_applicable
 run_test "remove refuses a not-applicable capability" test_remove_refuses_a_not_applicable_capability
 print_summary

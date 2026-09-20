@@ -8,12 +8,18 @@
 # neither. Only the symlink teeup itself put there is touched: it is removed
 # only when it still points at this backend's Compose plugin, the same check
 # configure makes before deciding it is "Already linked".
+# A failed stop ends the removal: cmd_remove uninstalls the packages right
+# after this script returns, and `brew uninstall colima` under a VM that is
+# still running is the exact damage this script exists to prevent. Warning
+# and carrying on would do it anyway and then report "Removed".
 if have colima; then
   if colima status >/dev/null 2>&1; then
     if run_cmd colima stop; then
       ok_unless_dry "Colima stopped."
     else
-      warn "colima stop failed; stop it by hand before removing colima."
+      err "colima stop failed, so colima was not removed: uninstalling it now would orphan the running VM."
+      err "Stop it by hand (colima stop), then run: teeup remove colima"
+      exit 1
     fi
   fi
 else

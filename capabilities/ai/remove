@@ -15,8 +15,19 @@ for ai_cmd in claude codex gemini copilot opencode; do
     warn "Keeping $file: it was not written by teeup."
     continue
   fi
-  run_cmd rm -f "$file"
-  removed="$removed $ai_cmd"
+  # One wrapper that will not delete (a read-only ~/.local/bin) must not abort
+  # the loop under `bash -eu`, leaving the rest in place while the summary
+  # below names only the ones that came before it. The file is checked as well
+  # as the exit status, because `rm -f` on a file it cannot unlink in an
+  # unwritable directory can still exit 0 -- but only on a real run: under
+  # DRY_RUN nothing was deleted and nothing should be claimed.
+  if ! run_cmd rm -f "$file"; then
+    warn "Could not remove $file; remove it by hand."
+  elif [[ "$DRY_RUN" != "true" && -e "$file" ]]; then
+    warn "$file is still there; remove it by hand."
+  else
+    removed="$removed $ai_cmd"
+  fi
 done
 removed="${removed# }"
 if [[ -n "$removed" ]]; then
