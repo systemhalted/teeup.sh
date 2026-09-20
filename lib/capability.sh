@@ -121,6 +121,9 @@ cap_run() {
   TEEUP_CAP_NA_MARKER="$na_marker"
   export TEEUP_CAP TEEUP_CAP_DIR TEEUP_CAP_NA_MARKER
   TEEUP_CAP_NA=false
+  # Tells run_logged that this one exit code is an answer, not a failure, for
+  # the capability script it is about to run.
+  TEEUP_RUN_NA_EXIT="$TEEUP_CAP_NA_EXIT" \
   run_logged "$name $verb" "$interactive" \
     bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; answers_load; source "$1"' bash "$script" || rc=$?
   if [[ $rc -eq $TEEUP_CAP_NA_EXIT && -e "$na_marker" ]]; then
@@ -155,10 +158,10 @@ cap_install_verbs() {
   cap_run "$name" configure || return 1
   [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
   if [[ "$na" == "true" ]]; then
-    state_done clear "cap-$name"
+    state_done clear "cap-$name" || true
     state_na mark "cap-$name"
   else
-    state_na clear "cap-$name"
+    state_na clear "cap-$name" || true
     state_done mark "cap-$name"
   fi
   TEEUP_CAP_NA="$na"

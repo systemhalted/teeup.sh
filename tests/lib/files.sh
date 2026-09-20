@@ -506,6 +506,38 @@ test_two_backups_of_the_same_file_within_one_second_both_survive() {
 }
 
 echo "lib/files.sh"
+# A dangling symlink answers "does not exist" to `-e`, so an install path
+# that tests existence first would replace the LINK with a regular file --
+# silently detaching a config whose target has simply moved.
+test_refresh_config_leaves_a_dangling_symlink_alone() {
+  setup
+  local link="$TEST_HOME/.config/dangling.conf"
+  mkdir -p "$(dirname "$link")"
+  ln -s "$TEST_HOME/gone/never-here.conf" "$link"
+  local rc=0 out
+  out="$(refresh_config "$SRC" "$link" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "is a symlink" || return 1
+  [[ -L "$link" ]] || { echo "the dangling link was replaced by a regular file"; return 1; }
+  cleanup_test_env
+}
+
+# A directory where a config file belongs passes -e, -w and the directory
+# check, and would be renamed out of the way and called a backup.
+test_refresh_config_refuses_a_directory() {
+  setup
+  local dest="$TEST_HOME/.config/a dir.conf"
+  mkdir -p "$dest"
+  printf 'mine\n' > "$dest/inside.txt"
+  local rc=0 out
+  out="$(refresh_config "$SRC" "$dest" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "is a directory, not a config file" || return 1
+  [[ -d "$dest" ]] || { echo "the directory was moved"; return 1; }
+  assert_equals "mine" "$(cat "$dest/inside.txt")" || return 1
+  cleanup_test_env
+}
+
 # The worst case this file can produce: a backup that was claimed but never
 # made, followed by the overwrite of the file it claimed to have saved. A
 # read-only parent directory fails the rename (a rename needs the directory's
@@ -594,6 +626,8 @@ run_test "refresh prints the backup path" test_refresh_prints_the_backup_path
 run_test "refresh_config installs a missing file" test_refresh_config_installs_a_missing_file
 run_test "refresh_config names the display_src" test_refresh_config_names_the_display_src
 run_test "refresh_config refuses a symlink" test_refresh_config_refuses_a_symlink
+run_test "refresh_config leaves a dangling symlink alone" test_refresh_config_leaves_a_dangling_symlink_alone
+run_test "refresh_config refuses a directory" test_refresh_config_refuses_a_directory
 run_test "refresh_config refuses a non-writable file" test_refresh_config_refuses_a_non_writable_file
 run_test "refresh_config will not reset what it cannot back up" test_refresh_config_will_not_reset_what_it_cannot_back_up
 run_test "backup_target reports a failed move" test_backup_target_reports_a_failed_move

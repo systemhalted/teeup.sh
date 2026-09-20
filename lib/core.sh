@@ -139,6 +139,13 @@ run_logged() {
   fi
   if [[ $rc -eq 0 ]]; then
     _teeup_log_line "Completed: $name"
+  elif [[ -n "${TEEUP_RUN_NA_EXIT:-}" && $rc -eq "$TEEUP_RUN_NA_EXIT" ]]; then
+    # Only when the caller says this exit code means "not applicable" for the
+    # command it is running -- cap_run does, for a capability verb. Logging
+    # "Failed ... (exit code: 42)" next to the capability's own "not
+    # applicable on this machine" line reads like something broke. run_logged
+    # itself stays generic: 42 is an ordinary failure to anything else.
+    _teeup_log_line "Not applicable: $name"
   else
     _teeup_log_line "Failed: $name (exit code: $rc)"
   fi

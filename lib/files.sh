@@ -394,12 +394,24 @@ copy_config_once() {
 # write, checked here too because this function writes through `cp` instead.
 refresh_config() {
   local src="$1" dest="$2" display_src="${3:-$1}" backup
+  # The symlink test comes first because `-e` follows the link: a DANGLING
+  # symlink answers "does not exist", and the install path below would then
+  # replace the link itself with a regular file -- the very thing the guard
+  # exists to prevent (I1).
+  if [[ -L "$dest" ]]; then
+    warn "$dest is a symlink; teeup does not write through it, so it was not reset. Point it elsewhere, or reset it by hand: $display_src"
+    return 1
+  fi
   if [[ ! -e "$dest" ]]; then
     copy_config_once "$src" "$dest" "$display_src"
     return $?
   fi
-  if [[ -L "$dest" ]]; then
-    warn "$dest is a symlink; teeup does not write through it, so it was not reset. Point it elsewhere, or reset it by hand: $display_src"
+  # A directory where a config file belongs: every test below passes for one,
+  # and the user's whole directory would be renamed out of the way and called
+  # a backup (I2). Whatever put it there, teeup did not, and moving it is not
+  # this function's call to make.
+  if [[ -d "$dest" ]]; then
+    warn "$dest is a directory, not a config file; teeup left it alone. Move it aside yourself, then reset $display_src."
     return 1
   fi
   if [[ ! -w "$dest" ]]; then

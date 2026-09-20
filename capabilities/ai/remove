@@ -6,6 +6,7 @@
 # ~/.local/bin/claude as a symlink, say) is left alone -- I4's rule for
 # configure ("name only what teeup actually touched") applies to remove too.
 removed=""
+left=""
 for ai_cmd in claude codex gemini copilot opencode; do
   file="$HOME/.local/bin/$ai_cmd"
   if [[ ! -e "$file" && ! -L "$file" ]]; then
@@ -23,15 +24,25 @@ for ai_cmd in claude codex gemini copilot opencode; do
   # DRY_RUN nothing was deleted and nothing should be claimed.
   if ! run_cmd rm -f "$file"; then
     warn "Could not remove $file; remove it by hand."
+    left="$left $ai_cmd"
   elif [[ "$DRY_RUN" != "true" && -e "$file" ]]; then
     warn "$file is still there; remove it by hand."
+    left="$left $ai_cmd"
   else
     removed="$removed $ai_cmd"
   fi
 done
 removed="${removed# }"
+left="${left# }"
 if [[ -n "$removed" ]]; then
   ok_unless_dry "Removed the mise wrapper(s): $removed"
-else
+elif [[ -z "$left" ]]; then
   log "No teeup-written wrappers were found in ~/.local/bin."
+fi
+# A wrapper teeup wrote and could not delete is still on PATH, so the removal
+# did not finish: exit non-zero rather than let cmd_remove go on to print
+# "Removed ai." over the top of the warnings above (I3).
+if [[ -n "$left" ]]; then
+  err "Still installed: $left. Remove the file(s) by hand, then run: teeup remove ai"
+  exit 1
 fi

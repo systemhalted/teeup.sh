@@ -21,7 +21,15 @@ _state_remove() {
     printf "%b %s\n" "🔍" "[DRY-RUN] Would clear state: ${marker#"$TEEUP_STATE_DIR"/}"
     return 0
   fi
-  rm -f "$marker"
+  # A state directory the user (or a bad umask) made unwritable would leak a
+  # raw "rm: cannot remove ...: Permission denied" and, under `bash -eu`,
+  # abort the caller mid-way -- for `teeup remove` that is after the packages
+  # are already gone, with no teeup message at all (I4). Say what happened and
+  # let the caller decide, the way stock_record does.
+  if ! rm -f "$marker" 2>/dev/null; then
+    warn "Could not clear ${marker#"$TEEUP_STATE_DIR"/}; teeup still has it on record."
+    return 1
+  fi
 }
 
 # state_done check|mark|ensure|clear <name>
