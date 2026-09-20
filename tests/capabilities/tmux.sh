@@ -103,7 +103,27 @@ EOF2
 }
 
 echo "capabilities/tmux"
+# The reload key must point at the file tmux actually loaded. configure
+# installs under $XDG_CONFIG_HOME when one is set, so a literal
+# ~/.config/tmux/tmux.conf in the binding would reload the wrong file, or
+# none. run-shell expands the variable in the user's environment at press
+# time, which a source-file argument cannot do.
+test_the_reload_key_follows_xdg_config_home() {
+  setup
+  local conf="$TEEUP_PATH/capabilities/tmux/config/tmux/tmux.conf"
+  assert_file_exists "$conf" || return 1
+  local reload
+  reload="$(grep -n 'bind r' "$conf")"
+  assert_contains "$reload" 'XDG_CONFIG_HOME' || return 1
+  if printf '%s\n' "$reload" | grep -q 'source-file ~/.config'; then
+    echo "the reload key still names a literal ~/.config path"
+    return 1
+  fi
+  cleanup_test_env
+}
+
 run_test "install gets tmux" test_install_gets_tmux
+run_test "the reload key follows XDG_CONFIG_HOME" test_the_reload_key_follows_xdg_config_home
 run_test "configure installs the config once" test_configure_installs_the_config_once
 run_test "configure leaves an existing home config alone" test_configure_leaves_an_existing_home_config_alone
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
