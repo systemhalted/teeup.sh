@@ -59,6 +59,10 @@ cmd_install() {
   # no shims (spec section 6), so they have their own switch.
   if [[ "$target" == "dev-env" ]]; then
     shift
+    # dev_env_install takes exactly one language; a second, silently dropped
+    # argument (M5) would let `teeup install dev-env python node` look like
+    # it set up both when only python was ever installed.
+    [[ $# -le 1 ]] || die "Usage: teeup install dev-env <python|node|java|ruby|rust|go>"
     dev_env_install "${1:-}"
     return $?
   fi
@@ -133,6 +137,14 @@ cmd_list() {
       ;;
     *) die "Usage: teeup list [--tier core|daily|lazy]" ;;
   esac
+  # The catalogue below is machine-independent: `launch:` names the app a
+  # capability's apps= promises, not one this machine has been confirmed to
+  # be able to install (M7) -- on a MacPorts Mac several casks have no
+  # MacPorts equivalent at all (`teeup status` and `teeup launch` say so
+  # plainly once you act on one).
+  if ! casks_supported; then
+    log "This is a MacPorts machine: a lazy capability's 'launch:' route below assumes a Homebrew cask; teeup status and teeup launch say plainly when there is no MacPorts equivalent."
+  fi
   for name in $(cap_list); do
     tier="$(cap_meta_get "$name" tier)"
     [[ -z "$tier_filter" || "$tier" == "$tier_filter" ]] || continue
@@ -227,7 +239,11 @@ cmd_launch() {
   local target="$*" cap app
   [[ -n "$target" ]] || die "Usage: teeup launch <app|capability>"
   cap="$(launch_resolve "$target")" || exit 1
-  app="$(cap_apps "$cap" | head -1)"
+  # The app the user actually named, when they named one (M6): a capability
+  # with more than one apps= entry must not always open the first regardless
+  # of which one was asked for. Naming the capability itself falls back to
+  # the first app, same as before.
+  app="$(app_match_in_cap "$cap" "$target")" || app="$(cap_apps "$cap" | head -1)"
   if app_installed "$app"; then
     log "Opening $app"
   else
@@ -235,12 +251,18 @@ cmd_launch() {
       die "$cap is skipped on this machine (TEEUP_SKIP); install $app by hand."
     fi
     log "$app is not installed; installing $cap first."
-    cmd_install "$cap"
+    # A genuine install failure must reach a teeup-authored message, not
+    # `set -e` aborting here with cap_run's generic "Failed: X install" and
+    # nothing explaining what that means for `teeup launch` (M9, the same
+    # asymmetry I3/M2 removed from teeup lazy-run).
+    if ! cmd_install "$cap"; then
+      die "$cap could not be installed, so $app is still not available. The output above says why."
+    fi
     if state_na check "cap-$cap"; then
       die "$cap is not applicable on this machine; $app was not installed."
     fi
     if [[ "$DRY_RUN" != "true" ]] && ! app_installed "$app"; then
-      die "$app is still not in ${TEEUP_APPS_DIR:-/Applications} after installing $cap. On a MacPorts machine install it by hand, then run: teeup launch $target"
+      die "$app is still not in $(app_search_dirs) after installing $cap. Install it by hand, then run: teeup launch $target"
     fi
   fi
   run_cmd open -a "$app"

@@ -4,7 +4,8 @@
 # A shim is a four-line script in $TEEUP_STATE_DIR/shims that hands the call
 # to `teeup lazy-run <capability> <command>`. The zsh layer appends that
 # directory last on PATH, so a shim fires only when no real binary exists.
-# Requires core.sh, files.sh, state.sh and capability.sh.
+# Requires core.sh, files.sh, state.sh, capability.sh and pkg.sh (app_installed
+# and app_search_dirs consult pkg_backend and macports_apps_dir).
 
 shims_dir() { printf '%s/shims\n' "$TEEUP_STATE_DIR"; }
 
@@ -148,11 +149,50 @@ cap_apps() {
   return 0
 }
 
-# app_installed <app name> -> is <app>.app present where casks put it?
+# app_installed <app name> -> is <app>.app present where casks -- or, on a
+# MacPorts machine, an aqua port's Portfile -- put it?
 # TEEUP_APPS_DIR is the test hook aerospace already uses for /Applications;
 # ~/Applications is where a cask lands when HOMEBREW_CASK_OPTS points it there.
+# macports_apps_dir (lib/pkg.sh) is consulted on a MacPorts backend, because a
+# MacPorts aqua port (emacs-app, wezterm, ...) moves its .app into
+# applications_dir at destroot time and never touches /Applications (B1):
+# without this, `teeup launch` calls an installed app "not found" and
+# reinstalls it on every call.
 app_installed() {
-  [[ -d "${TEEUP_APPS_DIR:-/Applications}/$1.app" || -d "$HOME/Applications/$1.app" ]]
+  [[ -d "${TEEUP_APPS_DIR:-/Applications}/$1.app" || -d "$HOME/Applications/$1.app" ]] && return 0
+  [[ "$(pkg_backend)" == "macports" ]] && [[ -d "$(macports_apps_dir)/$1.app" ]]
+}
+
+# app_search_dirs -> every directory app_installed actually checked on this
+# machine, comma-separated, for an honest "still not found" message (B1).
+# MacPorts' applications_dir is named only on a MacPorts backend: naming it
+# unconditionally would claim teeup looked somewhere it never checks on a
+# Homebrew machine.
+app_search_dirs() {
+  local dirs="${TEEUP_APPS_DIR:-/Applications}, $HOME/Applications"
+  if [[ "$(pkg_backend)" == "macports" ]]; then
+    dirs="$dirs, $(macports_apps_dir)"
+  fi
+  printf '%s\n' "$dirs"
+}
+
+# app_match_in_cap <capability> <wanted> -> the entry from <capability>'s
+# apps= that <wanted> names, matched the same case-insensitive,
+# ".app"-suffix-optional way launch_resolve matches by app name. Exit 1 (M6)
+# when <wanted> is not one of them -- typically because it was the
+# capability's own name, not an app -- so the caller can fall back to the
+# capability's first app instead of always opening that one regardless of
+# which app the user actually asked for.
+app_match_in_cap() {
+  local cap="$1" wanted="${2%.app}" key app
+  key="$(printf '%s' "$wanted" | tr '[:upper:]' '[:lower:]')"
+  while IFS= read -r app; do
+    if [[ "$(printf '%s' "$app" | tr '[:upper:]' '[:lower:]')" == "$key" ]]; then
+      printf '%s\n' "$app"
+      return 0
+    fi
+  done < <(cap_apps "$cap")
+  return 1
 }
 
 # launch_resolve <app|capability> -> the capability to launch; exit 1 with a
@@ -166,7 +206,7 @@ app_installed() {
 # disk. Otherwise every capability's app names are compared
 # case-insensitively, with an optional ".app" suffix on the argument ignored.
 launch_resolve() {
-  local wanted="${1%.app}" key name app
+  local wanted="${1%.app}" name
   if cap_list | grep -qxF -- "$wanted"; then
     if [[ -z "$(cap_meta_get "$wanted" apps)" ]]; then
       err "$wanted has no apps= entry, so there is nothing to launch."
@@ -175,14 +215,11 @@ launch_resolve() {
     printf '%s\n' "$wanted"
     return 0
   fi
-  key="$(printf '%s' "$wanted" | tr '[:upper:]' '[:lower:]')"
   for name in $(cap_list); do
-    while IFS= read -r app; do
-      if [[ "$(printf '%s' "$app" | tr '[:upper:]' '[:lower:]')" == "$key" ]]; then
-        printf '%s\n' "$name"
-        return 0
-      fi
-    done < <(cap_apps "$name")
+    if app_match_in_cap "$name" "$wanted" >/dev/null; then
+      printf '%s\n' "$name"
+      return 0
+    fi
   done
   err "No capability provides an app named '$1' (try: teeup list)."
   return 1
