@@ -26,11 +26,20 @@ setup_test_env() {
   export MOCK_BIN
   export MOCK_LOG="$TEST_HOME/mock.log"
   : > "$MOCK_LOG"
+  # /bin is not decoration: macOS keeps cp, mv, ln, mkdir and friends there,
+  # not in /usr/bin as a merged-/usr Linux does. A test that narrows PATH
+  # further must keep /bin too, or it passes on Linux and fails on the macOS
+  # runners with "cp: command not found".
   export PATH="$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
   export DRY_RUN="${DRY_RUN:-false}"
   # Keeps tests away from the real /opt/homebrew on macOS CI runners.
   export TEEUP_PKG_PREFIX="$TEST_HOME/pkgprefix"
   unset TEEUP_CONFIG_DIR TEEUP_STATE_DIR TEEUP_ANSWERS_FILE TEEUP_LOG_FILE TEEUP_MACHINES_DIR
+  # The macOS CI runners export HOMEBREW_PREFIX, which pkg_prefix obeys: left
+  # in place it sends a test that never mentions Homebrew at the runner's own
+  # /opt/homebrew, past the TEEUP_PKG_PREFIX sandbox above. A test that wants
+  # one sets it itself.
+  unset HOMEBREW_PREFIX
 }
 
 cleanup_test_env() {
