@@ -6,7 +6,17 @@
 # is the fallback. MacPorts has only that CLI, as the port ollama.
 if casks_supported; then
   if ! cask_install ollama-app; then
-    warn "The ollama-app cask did not install (it needs macOS 14 or newer); installing the ollama formula instead."
+    # Only blame the macOS floor when this Mac is actually below it (I6): the
+    # cask can just as easily fail from a network problem, a tap issue or a
+    # quarantine prompt, and naming a version this code never checked would
+    # tell a perfectly current Mac that it is too old.
+    ollama_macos_major="$(macos_major)"
+    if [[ "${ollama_macos_major:-99}" -lt 14 ]] 2>/dev/null; then
+      warn "The ollama-app cask did not install (it needs macOS 14 or newer; this Mac is on macOS $ollama_macos_major); installing the ollama formula instead."
+    else
+      warn "The ollama-app cask did not install; installing the ollama formula instead."
+    fi
+    unset ollama_macos_major
     pkg_install ollama ollama
   fi
 else
