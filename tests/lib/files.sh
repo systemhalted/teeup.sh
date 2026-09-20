@@ -94,6 +94,26 @@ test_write_managed_file_leaves_a_non_writable_file_alone() {
   cleanup_test_env
 }
 
+# A destination that is a symlink: `mv` would replace the link itself with a
+# regular file, detaching a config the user keeps in a dotfiles repo and
+# leaving teeup's copy where their managed file used to be. Neither the link
+# nor its target may be touched.
+test_write_managed_file_leaves_a_symlink_alone() {
+  setup
+  mkdir -p "$TEST_HOME/dotfiles"
+  printf 'managed elsewhere\n' > "$TEST_HOME/dotfiles/tool.conf"
+  local link="$TEST_HOME/.config/tool.conf"
+  mkdir -p "$(dirname "$link")"
+  ln -s "$TEST_HOME/dotfiles/tool.conf" "$link"
+  local rc=0 out
+  out="$(echo new | write_managed_file "$link" "test" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "is a symlink; teeup does not write through it" || return 1
+  [[ -L "$link" ]] || { echo "the link was replaced by a regular file"; return 1; }
+  assert_equals "managed elsewhere" "$(cat "$TEST_HOME/dotfiles/tool.conf")" || return 1
+  cleanup_test_env
+}
+
 # M1: a read-only directory with no file there yet used to reach `mv`
 # directly (the file-not-writable guard above only fires when the file
 # exists), producing a raw `mv: cannot move ... Permission denied` with no
@@ -434,6 +454,7 @@ run_test "write_managed_file keeps an existing mode" test_write_managed_file_kee
 run_test "write_managed_file new file keeps today's behavior" test_write_managed_file_new_file_keeps_todays_behavior
 run_test "write_managed_file dry run changes no mode" test_write_managed_file_dry_run_changes_no_mode
 run_test "write_managed_file leaves a non-writable file alone" test_write_managed_file_leaves_a_non_writable_file_alone
+run_test "write_managed_file leaves a symlink alone" test_write_managed_file_leaves_a_symlink_alone
 run_test "write_managed_file leaves a non-writable directory alone" test_write_managed_file_leaves_a_non_writable_directory_alone
 run_test "backup_target moves and prints path" test_backup_target_moves_and_prints_path
 run_test "copy_config_once copies and records sha" test_copy_config_once_copies_and_records_sha

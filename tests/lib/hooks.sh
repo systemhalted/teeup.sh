@@ -45,6 +45,19 @@ test_run_skips_samples_and_runs_a_hook_without_the_executable_bit() {
   cleanup_test_env
 }
 
+# The hook FILE name, not just the directory: a name with spaces, a dollar
+# sign, a quote and an ampersand must run as one file, never be re-split or
+# evaluated.
+test_a_hook_filename_with_metacharacters_runs() {
+  setup
+  make_hook theme-set "my hook \$X 'q' & co.sh" 'echo "ran:$1"'
+  local out
+  out="$(hook_run theme-set tokyo 2>&1)"
+  assert_contains "$out" "ran:tokyo" || return 1
+  assert_not_contains "$out" "No such file" || return 1
+  cleanup_test_env
+}
+
 test_a_failing_hook_warns_and_the_rest_still_run() {
   setup
   make_hook post-bootstrap 10-broken.sh 'echo "broken ran"; exit 3'
@@ -106,6 +119,7 @@ test_theme_set_runs_the_theme_set_hooks_with_the_name() {
 echo "lib/hooks.sh"
 run_test "run executes every hook in name order with its arguments" test_run_executes_every_hook_in_name_order_with_its_arguments
 run_test "run skips samples and runs a hook without the executable bit" test_run_skips_samples_and_runs_a_hook_without_the_executable_bit
+run_test "a hook filename with metacharacters runs" test_a_hook_filename_with_metacharacters_runs
 run_test "a failing hook warns and the rest still run" test_a_failing_hook_warns_and_the_rest_still_run
 run_test "a hook cannot read the terminal" test_a_hook_cannot_read_the_terminal
 run_test "no hook directory and unknown events are quiet" test_no_hook_directory_and_unknown_events_are_quiet
