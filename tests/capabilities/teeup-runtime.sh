@@ -174,6 +174,30 @@ test_configure_dry_run_writes_no_shims() {
   cleanup_test_env
 }
 
+# A sample teeup cannot rewrite (the user made it read-only, or it is one of
+# their own files) must not take bootstrap down with it: write_managed_file
+# refuses and returns 1, and configure has to carry on under `bash -eu` and
+# still do everything below the loop.
+test_configure_survives_a_sample_it_cannot_write() {
+  setup
+  local samples="$TEST_HOME/.config/teeup/hooks/post-update.d/example.sample"
+  mkdir -p "$(dirname "$samples")"
+  printf 'mine\n' > "$samples"
+  chmod 0444 "$samples"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure teeup-runtime 2>&1)" || rc=$?
+  chmod 0644 "$samples"
+  assert_success "$rc" "a sample teeup cannot write must not abort configure" || return 1
+  assert_contains "$out" "is not writable" || return 1
+  assert_equals "mine" "$(cat "$samples")" || return 1
+  # Everything after the sample loop still ran.
+  [[ -d "$TEST_HOME/.config/teeup/machines" ]] || { echo "the machines dir was not created"; return 1; }
+  assert_file_exists "$TEST_HOME/.config/teeup/env" || return 1
+  assert_file_exists "$TEST_HOME/.local/state/teeup/shims/docker" || return 1
+  cleanup_test_env
+}
+
+
 echo "capabilities/teeup-runtime"
 run_test "install gets gum and jq" test_install_gets_gum_and_jq
 run_test "configure creates state, env and link" test_configure_creates_state_env_and_link
@@ -184,5 +208,6 @@ run_test "configure installs a sample for every hook event" test_configure_insta
 run_test "configure backs up a regular file at the link" test_configure_backs_up_a_regular_file_at_the_link
 run_test "configure writes the lazy shims" test_configure_writes_the_lazy_shims
 run_test "configure removes a shim its capability dropped" test_configure_removes_a_shim_its_capability_dropped
+run_test "configure survives a sample it cannot write" test_configure_survives_a_sample_it_cannot_write
 run_test "configure dry run writes no shims" test_configure_dry_run_writes_no_shims
 print_summary
