@@ -94,6 +94,26 @@ test_write_managed_file_leaves_a_non_writable_file_alone() {
   cleanup_test_env
 }
 
+# M1: a read-only directory with no file there yet used to reach `mv`
+# directly (the file-not-writable guard above only fires when the file
+# exists), producing a raw `mv: cannot move ... Permission denied` with no
+# teeup message.
+test_write_managed_file_leaves_a_non_writable_directory_alone() {
+  setup
+  local d="$TEST_HOME/readonly-dir" f
+  mkdir -p "$d"
+  f="$d/newfile"
+  chmod 555 "$d"
+  local rc=0 out
+  out="$(echo new | write_managed_file "$f" "test" 2>&1)" || rc=$?
+  chmod 755 "$d"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$d is not writable; teeup leaves $f alone." || return 1
+  assert_not_contains "$out" "mv:" "a raw mv error must not reach the user" || return 1
+  [[ ! -e "$f" ]] || { echo "must not have written the file"; return 1; }
+  cleanup_test_env
+}
+
 test_backup_target_moves_and_prints_path() {
   setup
   echo old > "$TEST_HOME/file"
@@ -253,6 +273,7 @@ run_test "write_managed_file keeps an existing mode" test_write_managed_file_kee
 run_test "write_managed_file new file keeps today's behavior" test_write_managed_file_new_file_keeps_todays_behavior
 run_test "write_managed_file dry run changes no mode" test_write_managed_file_dry_run_changes_no_mode
 run_test "write_managed_file leaves a non-writable file alone" test_write_managed_file_leaves_a_non_writable_file_alone
+run_test "write_managed_file leaves a non-writable directory alone" test_write_managed_file_leaves_a_non_writable_directory_alone
 run_test "backup_target moves and prints path" test_backup_target_moves_and_prints_path
 run_test "copy_config_once copies and records sha" test_copy_config_once_copies_and_records_sha
 run_test "copy_config_once skips user-edited file" test_copy_config_once_skips_user_edited_file
