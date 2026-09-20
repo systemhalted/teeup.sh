@@ -26,6 +26,19 @@ test_done_ensure_succeeds_only_first_time() {
   cleanup_test_env
 }
 
+# A dry run previews the answer the real run would give: 0 the first time,
+# non-zero once the marker is there. Always answering "first time" would make
+# a caller that prints a long one-off notice print it on every preview, on a
+# machine that would really see the short line.
+test_done_ensure_dry_run_previews_the_real_answer() {
+  setup
+  DRY_RUN=true state_done ensure invite >/dev/null || { echo "dry run on a fresh marker should succeed"; return 1; }
+  [[ ! -e "$TEEUP_STATE_DIR/done/invite" ]] || { echo "a dry run must not write the marker"; return 1; }
+  state_done ensure invite >/dev/null || { echo "fixture: the real ensure should succeed"; return 1; }
+  DRY_RUN=true state_done ensure invite >/dev/null && { echo "dry run must report the marker that is already there"; return 1; }
+  cleanup_test_env
+}
+
 test_na_check_mark_clear() {
   setup
   state_na check "cap-aerospace" && { echo "should not be na yet"; return 1; }
@@ -67,6 +80,7 @@ test_dry_run_records_nothing() {
 echo "lib/state.sh"
 run_test "done check/mark/clear" test_done_check_mark_clear
 run_test "done ensure succeeds only once" test_done_ensure_succeeds_only_first_time
+run_test "done ensure dry run previews the real answer" test_done_ensure_dry_run_previews_the_real_answer
 run_test "na check/mark/clear" test_na_check_mark_clear
 run_test "toggle round trip" test_toggle_round_trip
 run_test "migration markers" test_migration_markers
