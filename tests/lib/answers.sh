@@ -721,6 +721,7 @@ run_test "set rejects a key with regex characters" test_set_rejects_a_key_with_r
 run_test "set rejects a bare prefix" test_set_rejects_a_bare_prefix
 run_test "set replaces only the exact key" test_set_replaces_only_the_exact_key
 run_test "set preserves a final line with no trailing newline" test_set_preserves_a_final_line_with_no_trailing_newline
+run_test "set rejects a value with a newline" test_set_rejects_a_value_with_a_newline
 run_test "identity helpers without work email" test_identity_helpers_without_work_email
 run_test "identity helpers with a work machine file" test_identity_helpers_with_a_work_machine_file
 run_test "a malformed work email fails loudly" test_a_malformed_work_email_fails_loudly
