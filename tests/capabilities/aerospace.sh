@@ -167,6 +167,16 @@ test_configure_tells_the_truth_on_macports_in_dry_run_too() {
   cleanup_test_env
 }
 
+test_the_manual_step_is_printed_in_full_once() {
+  setup
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace)"
+  assert_not_contains "$out" "One manual step, once per machine" || return 1
+  assert_contains "$out" "If AeroSpace cannot move windows, turn it on under System Settings > Privacy & Security > Accessibility." || return 1
+  cleanup_test_env
+}
+
 test_configure_keeps_an_existing_home_config() {
   setup
   # AeroSpace reads ~/.aerospace.toml and ~/.config/aerospace/aerospace.toml
@@ -296,6 +306,7 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "configure dry run still prints the cask message" test_configure_dry_run_still_prints_the_cask_message
 run_test "configure tells the truth on macports" test_configure_tells_the_truth_on_macports
 run_test "configure tells the truth on macports in dry run too" test_configure_tells_the_truth_on_macports_in_dry_run_too
+run_test "the manual step is printed in full once" test_the_manual_step_is_printed_in_full_once
 run_test "configure keeps an existing ~/.aerospace.toml" test_configure_keeps_an_existing_home_config
 run_test "doctor fails when both configs exist" test_doctor_fails_when_both_configs_exist
 run_test "doctor accepts ~/.aerospace.toml" test_doctor_accepts_the_home_config

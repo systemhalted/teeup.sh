@@ -29,10 +29,17 @@ else
 fi
 
 # No script can grant Accessibility: macOS requires a human in System Settings,
-# and doctor re-checks the part of this that is checkable.
-cat <<'STEP'
+# and doctor re-checks the part of this that is checkable. The step is printed
+# in full the first time only (state_done ensure succeeds once per machine):
+# teeup update re-runs every core configure, and the block on every update
+# would train people to skip it. Later runs print one line.
+if state_done ensure aerospace-accessibility-notice; then
+  cat <<'STEP'
 One manual step, once per machine:
   System Settings > Privacy & Security > Accessibility > turn AeroSpace on
 Until you do, AeroSpace cannot move a single window. Then start it with:
   open -a AeroSpace
 STEP
+else
+  log "If AeroSpace cannot move windows, turn it on under System Settings > Privacy & Security > Accessibility."
+fi

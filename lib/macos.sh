@@ -3,6 +3,10 @@
 # LaunchAgents, and the light/dark appearance.
 # Requires core.sh and files.sh.
 
+# The domains defaults_write has written a key of in this process, each
+# surrounded by spaces (bash 3.2 has no associative arrays).
+TEEUP_DEFAULTS_CHANGED=" "
+
 _defaults_record_path() { printf '%s/defaults/%s.%s\n' "$TEEUP_STATE_DIR" "$1" "$2"; }
 
 # Writing the record is a mutation of the machine's state dir, so it gets the
@@ -50,19 +54,28 @@ _defaults_bool() {
 # `-bool true`). A type with no flag is recorded as `<type>:<first line>` so
 # defaults_restore can say what it is leaving alone. Only the first line of a
 # prior value is kept.
+#
+# A key that already holds <value> as <type> is left alone ("Already set"), so
+# a second configure writes nothing. Each key that is written adds its domain
+# to TEEUP_DEFAULTS_CHANGED, which defaults_changed reads: a caller restarts
+# Finder or the Dock only when one of their keys changed in this run.
 # real-Mac check: `defaults read-type <domain> <key>` prints "Type is boolean"
 # (integer, float, string, array, dictionary, data, date), and `write -bool`
 # accepts true/false.
 defaults_write() {
-  local domain="$1" key="$2" type="$3" value="$4" record prior ptype flag
+  local domain="$1" key="$2" type="$3" value="$4" record prior="" ptype="" flag present=false recorded
   record="$(_defaults_record_path "$domain" "$key")"
+  if prior="$(defaults read "$domain" "$key" 2>/dev/null)"; then
+    present=true
+    prior="$(printf '%s\n' "$prior" | head -1)"
+    ptype="$(defaults read-type "$domain" "$key" 2>/dev/null | sed -n 's/^Type is //p' | head -1)"
+  fi
   if [[ ! -f "$record" ]]; then
-    if defaults read "$domain" "$key" >/dev/null 2>&1; then
-      prior="$(defaults read "$domain" "$key" 2>/dev/null | head -1)"
-      ptype="$(defaults read-type "$domain" "$key" 2>/dev/null | sed -n 's/^Type is //p' | head -1)"
+    if [[ "$present" == "true" ]]; then
       if flag="$(_defaults_flag "$ptype")"; then
-        if [[ "$flag" == "-bool" ]]; then prior="$(_defaults_bool "$prior")"; fi
-        _defaults_record "$record" "$flag:$prior"
+        recorded="$prior"
+        if [[ "$flag" == "-bool" ]]; then recorded="$(_defaults_bool "$prior")"; fi
+        _defaults_record "$record" "$flag:$recorded"
       else
         _defaults_record "$record" "${ptype:-unknown}:$prior"
       fi
@@ -70,7 +83,39 @@ defaults_write() {
       _defaults_record "$record" "absent"
     fi
   fi
-  run_cmd defaults write "$domain" "$key" "$type" "$value"
+  if [[ "$present" == "true" ]] && _defaults_same "$type" "$value" "$ptype" "$prior"; then
+    log "Already set: $domain $key"
+    return 0
+  fi
+  run_cmd defaults write "$domain" "$key" "$type" "$value" || return $?
+  case "$TEEUP_DEFAULTS_CHANGED" in
+    *" $domain "*) ;;
+    *) TEEUP_DEFAULTS_CHANGED="$TEEUP_DEFAULTS_CHANGED$domain " ;;
+  esac
+}
+
+# _defaults_same <flag> <value> <read-type name> <value as defaults read printed it>
+# True only when the stored type is the one <flag> writes and the values
+# agree; a hand-set `-string YES` where teeup writes `-bool true` is a change.
+# Booleans compare through _defaults_bool (read prints 1, teeup writes true).
+_defaults_same() {
+  local flag="$1" value="$2" ptype="$3" prior="$4"
+  case "$flag" in
+    -bool) [[ "$ptype" == "boolean" && "$(_defaults_bool "$prior")" == "$(_defaults_bool "$value")" ]] ;;
+    -int) [[ "$ptype" == "integer" && "$prior" == "$value" ]] ;;
+    -float) [[ "$ptype" == "float" && "$prior" == "$value" ]] ;;
+    -string) [[ "$ptype" == "string" && "$prior" == "$value" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+# defaults_changed <domain> -> exit 0 when defaults_write wrote a key of
+# <domain> in this process.
+defaults_changed() {
+  case "$TEEUP_DEFAULTS_CHANGED" in
+    *" $1 "*) return 0 ;;
+  esac
+  return 1
 }
 
 # defaults_restore <domain> <key>

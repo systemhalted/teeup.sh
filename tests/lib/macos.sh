@@ -114,6 +114,53 @@ EOF2
   cleanup_test_env
 }
 
+test_defaults_write_leaves_a_value_already_set_alone() {
+  setup
+  mock_defaults_db
+  seed_default com.apple.dock autohide boolean 1
+  seed_default NSGlobalDomain KeyRepeat integer 2
+  seed_default com.apple.screencapture location string "/Users/ada/My Shots & more"
+  local out
+  out="$(
+    defaults_write com.apple.dock autohide -bool true
+    defaults_write NSGlobalDomain KeyRepeat -int 2
+    defaults_write com.apple.screencapture location -string "/Users/ada/My Shots & more"
+    defaults_changed com.apple.dock && echo "dock changed"
+    echo "changed:[$TEEUP_DEFAULTS_CHANGED]"
+  )"
+  assert_contains "$out" "Already set: com.apple.dock autohide" || return 1
+  assert_contains "$out" "Already set: NSGlobalDomain KeyRepeat" || return 1
+  assert_contains "$out" "Already set: com.apple.screencapture location" || return 1
+  assert_not_contains "$out" "dock changed" || return 1
+  assert_contains "$out" "changed:[ ]" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "defaults write" "nothing was written" || return 1
+  assert_equals "-bool:true" "$(cat "$TEST_HOME/.local/state/teeup/defaults/com.apple.dock.autohide")" "the prior value is still recorded" || return 1
+  cleanup_test_env
+}
+
+test_defaults_write_writes_a_different_value_or_type_and_names_the_domain() {
+  setup
+  mock_defaults_db
+  seed_default com.apple.dock autohide boolean 0
+  # The same text under another type is a change: teeup writes a real boolean.
+  seed_default com.apple.finder AppleShowAllFiles string true
+  local out d
+  out="$(
+    defaults_write com.apple.dock autohide -bool true
+    defaults_write com.apple.finder AppleShowAllFiles -bool true
+    defaults_write NSGlobalDomain KeyRepeat -int 2
+    for d in com.apple.dock com.apple.finder NSGlobalDomain com.apple.screencapture; do
+      if defaults_changed "$d"; then echo "changed:$d"; fi
+    done
+  )"
+  assert_contains "$out" "changed:com.apple.dock" || return 1
+  assert_contains "$out" "changed:com.apple.finder" || return 1
+  assert_contains "$out" "changed:NSGlobalDomain" "an absent key is written" || return 1
+  assert_not_contains "$out" "changed:com.apple.screencapture" || return 1
+  assert_equals "$(printf 'boolean\ntrue')" "$(cat "$DDB/com.apple.finder.AppleShowAllFiles")" || return 1
+  cleanup_test_env
+}
+
 test_defaults_write_dry_run_records_nothing() {
   setup
   mock_defaults_absent
@@ -299,6 +346,8 @@ echo "lib/macos.sh"
 run_test "defaults_write records absent and writes" test_defaults_write_records_absent_and_writes
 run_test "defaults_write records the prior value and its own type" test_defaults_write_records_the_prior_value_and_its_own_type
 run_test "defaults_write never overwrites a record" test_defaults_write_never_overwrites_an_existing_record
+run_test "defaults_write leaves a value already set alone" test_defaults_write_leaves_a_value_already_set_alone
+run_test "defaults_write writes a different value or type and names the domain" test_defaults_write_writes_a_different_value_or_type_and_names_the_domain
 run_test "defaults_write dry run records nothing" test_defaults_write_dry_run_records_nothing
 run_test "defaults_restore deletes when absent" test_defaults_restore_deletes_when_absent
 run_test "defaults_restore replays the recorded type" test_defaults_restore_replays_the_recorded_type

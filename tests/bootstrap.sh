@@ -227,6 +227,136 @@ test_a_fresh_bootstrap_marks_every_migration_without_running_it() {
   cleanup_test_env
 }
 
+# The spec's Verification gate asks for two real (DRY_RUN=false) bootstraps,
+# which needs more of the machine than the dry-run walk above: a package
+# manager that remembers what it installed, keys that really appear, a
+# defaults database that keeps what was written, and the macOS-only commands
+# the capabilities call. Everything still lands inside $TEST_HOME.
+mock_a_real_machine() {
+  # brew is hidden in setup so the dry-run walk sees a fresh Mac. Here it has
+  # to be visible: `have brew` gates pkg_installed and cask_installed, and
+  # with it missing every check is false and the second bootstrap reinstalls
+  # the lot.
+  export TEEUP_TEST_MISSING="gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit emacs emacsclient"
+  export BREWDB="$TEST_HOME/brewdb"
+  mkdir -p "$BREWDB"
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-}" in
+  "list --formula") [ -f "$BREWDB/f-$3" ] ;;
+  "list --cask") [ -f "$BREWDB/c-${3##*/}" ] ;;
+  "install --cask") shift 2; for c in "$@"; do touch "$BREWDB/c-${c##*/}"; done ;;
+  "install "*) shift; for p in "$@"; do touch "$BREWDB/f-$p"; done ;;
+  *) : ;;
+esac
+EOF2
+  # pkg_backend_prepare looks for brew at the prefix, not on PATH; with it
+  # there the Homebrew installer (a curl | bash) never runs. curl fails for
+  # the same reason: nothing in a test may reach the network.
+  mkdir -p "$TEEUP_PKG_PREFIX/bin"
+  cp "$MOCK_BIN/brew" "$TEEUP_PKG_PREFIX/bin/brew"
+  mock_command curl 1 ""
+  mock_command launchctl 0 ""
+  mock_command hidutil 0 ""
+  mock_command killall 0 ""
+  mock_command open 0 ""
+  mock_command osascript 0 ""
+  mock_command mas 0 ""
+  # ssh-keygen writes the pair it is asked for, so the second run finds it.
+  mock_command_script ssh-keygen <<'EOF2'
+prev=""
+for a in "$@"; do
+  [ "$prev" = "-f" ] && { printf 'key\n' > "$a"; printf 'ssh-ed25519 AAAA test\n' > "$a.pub"; }
+  prev="$a"
+done
+exit 0
+EOF2
+  # A gh that is already signed in with the scopes the github capability wants.
+  printf 'admin:public_key\n' > "$TEST_HOME/gh-session"
+  # A stateful defaults(1): what configure writes, the next read returns, so
+  # the second run finds every preference already set. Same shape as the one
+  # in tests/lib/macos.sh, without the write validation that suite needs.
+  export DDB="$TEST_HOME/defaults-db"
+  mkdir -p "$DDB"
+  mock_command_script defaults <<'EOF2'
+op="$1"; shift
+f="$DDB/$1.$2"
+case "$op" in
+  read)
+    [ -f "$f" ] || exit 1
+    t="$(head -1 "$f")"; v="$(tail -n +2 "$f")"
+    if [ "$t" = boolean ]; then
+      case "$v" in [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1) echo 1 ;; *) echo 0 ;; esac
+    else
+      printf '%s\n' "$v"
+    fi
+    ;;
+  read-type) [ -f "$f" ] || exit 1; echo "Type is $(head -1 "$f")" ;;
+  write)
+    case "$3" in
+      -bool) t=boolean ;;
+      -int) t=integer ;;
+      -float) t=float ;;
+      -string) t=string ;;
+      *) exit 1 ;;
+    esac
+    printf '%s\n%s\n' "$t" "$4" > "$f"
+    ;;
+  delete) rm -f "$f" ;;
+esac
+EOF2
+}
+
+# home_state -> every file under $HOME with a checksum of its contents, one
+# per line, sorted. The harness's own scratch (the mock log, the marker, the
+# bootstrap log) is left out; everything else, including symlink targets, is
+# in. Two identical listings mean the second run changed nothing at all.
+home_state() {
+  ( cd "$TEST_HOME" && find . \( -type f -o -type l \) \
+      ! -name 'mock.log' ! -name '.idempotency-marker' \
+      ! -path './.local/state/teeup/logs/*' -print0 \
+    | LC_ALL=C sort -z \
+    | while IFS= read -r -d '' f; do
+        if [[ -L "$f" ]]; then printf '%s link:%s\n' "$f" "$(readlink "$f")"
+        else printf '%s %s\n' "$f" "$(cksum < "$f")"
+        fi
+      done )
+}
+
+test_a_second_bootstrap_changes_nothing() {
+  setup
+  mock_a_real_machine
+  export DRY_RUN=false
+  "$BOOT" <<<"$WIZARD_INPUT" >/dev/null 2>&1 || { echo "the first bootstrap failed"; return 1; }
+  local marker="$TEST_HOME/.idempotency-marker"
+  : > "$marker"
+  local before after out
+  before="$(home_state)"
+  out="$("$BOOT" </dev/null 2>&1)" || { echo "the second bootstrap failed"; return 1; }
+  after="$(home_state)"
+  assert_equals "$before" "$after" "the second bootstrap changed a file under \$HOME" || return 1
+  # Nothing outside teeup's own state directory may even be rewritten.
+  # wezterm.lua is the one exception and it is deliberate: theme-apply touches
+  # it so a running WezTerm reloads (its contents are in the comparison above).
+  local written
+  written="$(find "$TEST_HOME" -newer "$marker" \( -type f -o -type l \) \
+    ! -name 'mock.log' ! -name '.idempotency-marker' \
+    ! -path "$TEST_HOME/.local/state/teeup/*" \
+    ! -path "$TEST_HOME/.config/wezterm/wezterm.lua" 2>/dev/null)"
+  assert_equals "" "$written" "the second bootstrap wrote outside the state directory" || return 1
+  # And it says so: every step reports what is already there.
+  assert_contains "$out" "Homebrew already installed." || return 1
+  assert_contains "$out" "Already installed: gum" || return 1
+  assert_contains "$out" "Already current: $TEST_HOME/.config/teeup/env" || return 1
+  assert_contains "$out" "Already installed: $TEST_HOME/.zshrc" || return 1
+  assert_contains "$out" "Already present: $TEST_HOME/Work" || return 1
+  assert_contains "$out" "Already signed in to GitHub (" || return 1
+  assert_contains "$out" "macOS preferences already set; nothing to restart." || return 1
+  assert_not_contains "$out" "Installed ripgrep (Homebrew)" "nothing was installed again" || return 1
+  assert_not_contains "$out" "Installed wezterm (cask)" "no cask was installed again" || return 1
+  assert_not_contains "$out" "Generating the" "the keys were left alone" || return 1
+  assert_not_contains "$out" "One manual step" "the AeroSpace block is printed once" || return 1
+  cleanup_test_env
+}
 test_dry_run_touches_nothing() {
   setup
   "$BOOT" --dry-run <<<"$WIZARD_INPUT" >/dev/null
@@ -600,6 +730,7 @@ run_test "choosing macports runs the MacPorts path" test_choosing_macports_runs_
 run_test "git is reconfigured after ssh makes the keys" test_git_is_reconfigured_after_ssh_makes_the_keys
 run_test "post-bootstrap hooks run before the summary" test_post_bootstrap_hooks_run_before_the_summary
 run_test "a fresh bootstrap marks every migration without running it" test_a_fresh_bootstrap_marks_every_migration_without_running_it
+run_test "a second bootstrap changes nothing" test_a_second_bootstrap_changes_nothing
 run_test "dry run touches nothing" test_dry_run_touches_nothing
 run_test "existing answers skip wizard" test_existing_answers_skip_wizard
 run_test "wizard runs when only backend recorded" test_wizard_runs_when_only_backend_recorded
