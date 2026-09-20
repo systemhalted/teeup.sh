@@ -28,6 +28,7 @@ teeup - your Mac, as a distribution
   teeup install font <name>      install a Nerd Font and point every tool at it
   teeup install font list        list the fonts teeup knows by name
   teeup configure <capability>   re-run only its configuration
+  teeup reset <capability>       put its config files back to the shipped version (backups kept)
   teeup list [--tier core|daily|lazy]
   teeup theme set|list|current   apply, list or print the cross-tool theme
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
@@ -95,6 +96,48 @@ cmd_configure() {
     die "$target is skipped on this machine (TEEUP_SKIP)"
   fi
   cap_run "$target" configure
+}
+
+# Every file a capability installs with copy_config_once goes back to what
+# teeup ships. The capability's own configure does the work, with TEEUP_RESET
+# naming it (lib/files.sh), so a file configure renders for this machine (zsh's
+# home files, git's config) is rendered again rather than copied raw. Each
+# replaced file is backed up and its diff printed; a backup of a file that was
+# already the shipped version is dropped. A reset file carries the shipped
+# colours, so the theme hooks run again afterwards, and the font hooks too.
+cmd_reset() {
+  local target="${1:-}" dir rc=0
+  [[ -n "$target" ]] || die "Usage: teeup reset <capability>"
+  cap_exists "$target" || die "Unknown capability: $target"
+  if cap_skipped "$target"; then
+    die "$target is skipped on this machine (TEEUP_SKIP)"
+  fi
+  dir="$(cap_dir "$target")"
+  if [[ ! -d "$dir/config" && ! -d "$dir/home" ]]; then
+    die "$target ships no config files to reset."
+  fi
+  if state_na check "cap-$target"; then
+    die "$target is not applicable on this machine."
+  fi
+  state_done check "cap-$target" || die "$target is not installed. Install it with: teeup install $target"
+  export TEEUP_RESET="$target"
+  cap_run "$target" configure || rc=$?
+  unset TEEUP_RESET
+  if [[ $rc -ne 0 ]]; then
+    die "Resetting $target failed; the backups made so far are next to their files."
+  fi
+  if [[ "$(theme_current)" != "none" ]]; then
+    TEEUP_THEME_DIR="$TEEUP_STATE_DIR/current/theme"
+    TEEUP_THEME_NAME="$(theme_current)"
+    export TEEUP_THEME_DIR TEEUP_THEME_NAME
+    cap_run_hooks theme-apply
+  fi
+  if [[ -s "$(font_file)" ]]; then
+    TEEUP_FONT_FAMILY="$(font_current)"
+    export TEEUP_FONT_FAMILY
+    cap_run_hooks font-apply
+  fi
+  ok_unless_dry "Reset $target."
 }
 
 cmd_theme() {
@@ -380,6 +423,7 @@ verb="${1:-help}"
 case "$verb" in
   install) cmd_install "$@" ;;
   configure) cmd_configure "$@" ;;
+  reset) cmd_reset "$@" ;;
   theme) cmd_theme "$@" ;;
   list) cmd_list "$@" ;;
   launch) cmd_launch "$@" ;;

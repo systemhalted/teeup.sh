@@ -305,6 +305,15 @@ copy_config_once() {
     TEEUP_REFRESH="" refresh_if_pristine "$src" "$dest" "$display_src" || true
     return 0
   fi
+  # `teeup reset <capability>` sets TEEUP_RESET to its name the same way: each
+  # file goes back to the shipped version through refresh_config (backup,
+  # replace, diff, the backup dropped when nothing changed). Because this
+  # happens inside the capability's own configure, a file configure renders
+  # is reset to the rendered version, never to the raw template.
+  if [[ -n "${TEEUP_RESET:-}" && "$TEEUP_RESET" == "${TEEUP_CAP:-}" ]]; then
+    TEEUP_RESET="" refresh_config "$src" "$dest" "$display_src"
+    return $?
+  fi
   # `! -e` on its own is true for a *dangling* symlink, even though the
   # directory entry is very much there, so teeup used to treat one as absent
   # and hand it straight to `cp`: GNU cp refuses to write through a dangling
@@ -356,17 +365,32 @@ copy_config_once() {
   diff "$backup" "$dest" || true
 }
 
-# refresh_config <src> <dest>
+# refresh_config <src> <dest> [display_src]
 # Backup, replace with the shipped file, print the diff, drop the backup if
-# nothing changed. Omarchy's refresh-config.
+# nothing changed. Omarchy's refresh-config. <display_src> names the file in
+# the DRY-RUN message when it differs from <src> -- a capability that renders
+# before copying (zsh, git, ssh) passes a temp file as <src>, which the
+# message would otherwise name instead of the shipped file the user asked
+# `teeup reset` to restore -- see copy_config_once. A symlinked or
+# non-writable <dest> is refused outright (warns, returns 1, touches
+# nothing): the same protection write_managed_file gives every other managed
+# write, checked here too because this function writes through `cp` instead.
 refresh_config() {
-  local src="$1" dest="$2" backup
+  local src="$1" dest="$2" display_src="${3:-$1}" backup
   if [[ ! -e "$dest" ]]; then
-    copy_config_once "$src" "$dest"
+    copy_config_once "$src" "$dest" "$display_src"
     return $?
   fi
+  if [[ -L "$dest" ]]; then
+    warn "$dest is a symlink; teeup does not write through it, so it was not reset. Point it elsewhere, or reset it by hand: $display_src"
+    return 1
+  fi
+  if [[ ! -w "$dest" ]]; then
+    warn "$dest is not writable; teeup leaves it alone, so it was not reset. Set it by hand: $display_src"
+    return 1
+  fi
   if [[ "$DRY_RUN" == "true" ]]; then
-    printf "%b %s\n" "🔍" "[DRY-RUN] Would reset $dest to $src"
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would reset $dest to $display_src"
     return 0
   fi
   backup="$(backup_target "$dest")"
