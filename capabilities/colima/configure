@@ -8,12 +8,10 @@
 # nothing here: its docker port rewrites the system plugin paths to
 # /opt/local, where the docker-compose-plugin port installs.
 if [[ "$(pkg_backend)" == "homebrew" ]]; then
-  # pkg_prefix guesses the prefix from the architecture (/opt/homebrew on
-  # Apple Silicon); a custom HOMEBREW_PREFIX overrides that guess in Homebrew
-  # itself, and teeup has to look in the same place or it reports a plugin
-  # missing when it is installed right there (I5).
-  colima_brew_prefix="${HOMEBREW_PREFIX:-$(pkg_prefix)}"
-  plugin="$colima_brew_prefix/lib/docker/cli-plugins/docker-compose"
+  # pkg_prefix is where Homebrew actually is: HOMEBREW_PREFIX when the user
+  # set one, else the prefix for this architecture. Looking anywhere else
+  # reports a plugin missing when it is installed right there (I5).
+  plugin="$(pkg_prefix)/lib/docker/cli-plugins/docker-compose"
   plugins_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
   link="$plugins_dir/docker-compose"
   if [[ ! -e "$plugin" ]]; then

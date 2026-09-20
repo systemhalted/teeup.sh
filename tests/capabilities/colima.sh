@@ -126,6 +126,10 @@ test_configure_honours_docker_config() {
 test_configure_honours_homebrew_prefix() {
   setup
   mock_colima_stopped
+  # TEEUP_PKG_PREFIX (set by setup_test_env) outranks HOMEBREW_PREFIX in
+  # pkg_prefix, so drop it: this test is about what a user's own Homebrew
+  # prefix does.
+  unset TEEUP_PKG_PREFIX
   export HOMEBREW_PREFIX="$TEST_HOME/custombrew"
   local plugin="$HOMEBREW_PREFIX/lib/docker/cli-plugins/docker-compose"
   mkdir -p "$(dirname "$plugin")"
@@ -135,6 +139,7 @@ test_configure_honours_homebrew_prefix() {
   assert_not_contains "$out" "No Compose plugin" || return 1
   assert_equals "$plugin" "$(readlink "$TEST_HOME/.docker/cli-plugins/docker-compose")" || return 1
   unset HOMEBREW_PREFIX
+  export TEEUP_PKG_PREFIX="$TEST_HOME/pkgprefix"
   cleanup_test_env
 }
 

@@ -65,7 +65,14 @@ pkg_prefix() {
   case "$TEEUP_PKG_BACKEND" in
     macports) echo "/opt/local" ;;
     homebrew)
-      if [[ "$(arch)" == "arm64" ]]; then echo "/opt/homebrew"; else echo "/usr/local"; fi
+      # HOMEBREW_PREFIX is what brew itself obeys (brew shellenv exports it),
+      # so a Homebrew installed anywhere other than the two standard prefixes
+      # is found here rather than guessed at from the architecture. Every
+      # caller that looks for a file Homebrew installed needs this, not just
+      # the one that first noticed.
+      if [[ -n "${HOMEBREW_PREFIX:-}" ]]; then
+        printf '%s\n' "$HOMEBREW_PREFIX"
+      elif [[ "$(arch)" == "arm64" ]]; then echo "/opt/homebrew"; else echo "/usr/local"; fi
       ;;
   esac
 }

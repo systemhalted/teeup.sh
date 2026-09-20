@@ -140,7 +140,9 @@ test_real_command_ignores_the_shims_dir() {
   assert_equals "$MOCK_BIN/boxd" "$(lazy_real_command boxd)" || return 1
   # An empty PATH entry (a leading or doubled colon) means the current
   # directory; it is skipped rather than searched.
-  export PATH=":$MOCK_BIN::/usr/bin:$SHIMS/"
+  # /bin stays on PATH: macOS keeps cp there, not in /usr/bin, and this test
+  # copies a binary below.
+  export PATH=":$MOCK_BIN::/usr/bin:/bin:$SHIMS/"
   assert_equals "$MOCK_BIN/boxd" "$(lazy_real_command boxd)" || return 1
   export TEEUP_TEST_MISSING="boxd"
   lazy_real_command boxd && { echo "TEEUP_TEST_MISSING must hide it"; return 1; }
@@ -149,7 +151,7 @@ test_real_command_ignores_the_shims_dir() {
   other="$(mktemp -d)"
   cp "$MOCK_BIN/boxd" "$other/boxd"
   export TEEUP_TEST_MISSING="$MOCK_BIN/boxd"
-  export PATH="$MOCK_BIN:$other:/usr/bin:$SHIMS"
+  export PATH="$MOCK_BIN:$other:/usr/bin:/bin:$SHIMS"
   assert_equals "$other/boxd" "$(lazy_real_command boxd)" || return 1
   unset TEEUP_TEST_MISSING
   rm -rf "$other"
