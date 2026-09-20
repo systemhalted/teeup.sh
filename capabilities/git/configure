@@ -292,8 +292,11 @@ git_repair_old_identity_model() {
     # was the pristine one it had installed; a config the user had already
     # edited keeps its old record and goes on being reported as edited, which
     # is what it is.
+    # `|| true`: stock_record warns for itself when the state directory will
+    # not take the record, and the config it just repaired is written either
+    # way, so this script carries on under `bash -eu`.
     if [[ "$was_pristine" == "true" ]]; then
-      stock_record "$config" "$(file_sha "$config")"
+      stock_record "$config" "$(file_sha "$config")" || true
     fi
   fi
   for line in "$personal_file" "$work_file"; do

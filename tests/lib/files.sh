@@ -307,6 +307,49 @@ test_write_config_region_leaves_an_edited_file_edited() {
   cleanup_test_env
 }
 
+# A dest the user made read-only: write_managed_file refuses it, and the
+# recorded checksum must NOT move. Re-recording there would hash the OLD
+# contents as "what teeup shipped", so the next run would read a file the
+# user edited as pristine and overwrite it.
+test_write_config_region_keeps_the_record_when_the_write_is_refused() {
+  setup
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  local before rc=0 out
+  before="$(stock_sha "$DEST")"
+  chmod 0444 "$DEST"
+  out="$(printf 'shipped=1\n# region\n' | write_config_region "$DEST" "palette" 2>&1)" || rc=$?
+  chmod 0644 "$DEST"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "is not writable" || return 1
+  assert_equals "$before" "$(stock_sha "$DEST")" "a refused write must not re-record" || return 1
+  assert_equals "$(printf 'shipped=1')" "$(cat "$DEST")" || return 1
+  cleanup_test_env
+}
+
+# The write succeeds but the state directory will not take the record: the
+# user gets teeup's warning, not a raw shell error, and the file is still
+# written. The record stays stale, so the file reads as edited from then on --
+# the safe direction, and the warning says so.
+test_write_config_region_warns_when_the_record_cannot_be_written() {
+  setup
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  local record rc=0 out
+  # The record file itself, not its directory: truncating a file that already
+  # exists needs the file's own permission, not the directory's.
+  record="$(_stock_record_path "$DEST")"
+  chmod 0444 "$record"
+  out="$(printf 'shipped=1\n# region\n' | write_config_region "$DEST" "palette" 2>&1)" || rc=$?
+  chmod 0644 "$record"
+  assert_success "$rc" "the file was written, so the caller is told so" || return 1
+  assert_contains "$out" "Could not record the shipped checksum" || return 1
+  if printf '%s\n' "$out" | grep -qi 'permission denied'; then
+    echo "a raw shell error reached the user"
+    return 1
+  fi
+  assert_equals "$(printf 'shipped=1\n# region')" "$(cat "$DEST")" || return 1
+  cleanup_test_env
+}
+
 test_write_config_region_refuses_a_symlink_and_dry_run() {
   setup
   mkdir -p "$TEST_HOME/store"
@@ -407,6 +450,8 @@ run_test "refresh prints the backup path" test_refresh_prints_the_backup_path
 run_test "config_is_pristine follows the stock record" test_config_is_pristine_follows_the_stock_record
 run_test "write_config_region keeps a pristine file pristine" test_write_config_region_keeps_a_pristine_file_pristine
 run_test "write_config_region leaves an edited file edited" test_write_config_region_leaves_an_edited_file_edited
+run_test "write_config_region keeps the record when the write is refused" test_write_config_region_keeps_the_record_when_the_write_is_refused
+run_test "write_config_region warns when the record cannot be written" test_write_config_region_warns_when_the_record_cannot_be_written
 run_test "write_config_region refuses a symlink, and dry run" test_write_config_region_refuses_a_symlink_and_dry_run
 run_test "refresh_if_pristine replaces only an unedited file" test_refresh_if_pristine_replaces_only_an_unedited_file
 run_test "refresh_if_pristine dry run changes nothing" test_refresh_if_pristine_dry_run_changes_nothing
