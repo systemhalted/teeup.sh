@@ -964,6 +964,110 @@ test_an_update_script_is_dry_run_and_its_failure_is_reported() {
   cleanup_test_env
 }
 
+# A capability the machine cannot have: update must skip it and say so, in
+# both paths, rather than telling the user to install something impossible or
+# reporting it as updated.
+test_update_skips_a_not_applicable_capability() {
+  setup
+  mock_update_world
+  cat > "$TEEUP_CAPS_DIR/alpha/install" <<'EOF2'
+#!/usr/bin/env bash
+not_applicable "alpha cannot be installed on this machine"
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/alpha/install"
+  "$TEEUP" install alpha >/dev/null 2>&1 || true
+  "$TEEUP" has alpha && { echo "a not-applicable capability must not read as installed"; return 1; }
+  local out rc=0
+  out="$("$TEEUP" update alpha 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "alpha is not applicable on this machine; skipping." || return 1
+  assert_not_contains "$out" "Updated alpha." || return 1
+  assert_not_contains "$out" "teeup install alpha" "it is not a missing install" || return 1
+  # The whole-machine path says the same thing and never configures it.
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "alpha is not applicable on this machine; skipping." || return 1
+  assert_not_contains "$out" "configure:alpha" || return 1
+  cleanup_test_env
+}
+
+# A configure that answers not-applicable returns 0 and sets TEEUP_CAP_NA, so
+# "did it succeed" is not the same question as "is it applicable". The theme
+# capability is the one that matters: when its configure answers
+# not-applicable it has rendered nothing, so the theme_set fallback still has
+# to run.
+test_update_does_not_treat_a_not_applicable_configure_as_done() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  cat > "$TEEUP_CAPS_DIR/alpha/configure" <<'EOF2'
+#!/usr/bin/env bash
+echo "configure:alpha"
+not_applicable "alpha turned out not to apply here"
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/alpha/configure"
+  local out rc=0
+  out="$("$TEEUP" update alpha 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "alpha is not applicable on this machine; skipping." || return 1
+  assert_not_contains "$out" "Updated alpha." "a not-applicable configure is not an update" || return 1
+  cleanup_test_env
+}
+
+# One capability failing must not stop the others, and must not be reported as
+# an overall success.
+test_update_carries_on_after_a_failed_configure_and_still_fails() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  "$TEEUP" install beta >/dev/null
+  cat > "$TEEUP_CAPS_DIR/alpha/configure" <<'EOF2'
+#!/usr/bin/env bash
+echo "configure:alpha"
+exit 1
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/alpha/configure"
+  local out rc=0
+  out="$("$TEEUP" update 2>&1)" || rc=$?
+  assert_failure "$rc" "one failed capability fails the run" || return 1
+  assert_contains "$out" "alpha configure failed; continuing." || return 1
+  assert_contains "$out" "configure:beta" "the capabilities after it still run" || return 1
+  if printf '%s\n' "$out" | grep -q 'teeup is up to date'; then
+    echo "claimed success after a capability failed"
+    return 1
+  fi
+  cleanup_test_env
+}
+
+# The theme capability's own configure renders every template, so update
+# skips the theme_set fallback when it ran. But a configure that answers
+# not-applicable rendered nothing while still returning 0, so the fallback has
+# to run anyway -- otherwise `teeup update` quietly stops regenerating the
+# theme on exactly the machines that cannot configure it.
+test_update_runs_the_theme_fallback_when_theme_is_not_applicable() {
+  setup
+  mock_update_world
+  make_cap theme core
+  cat > "$TEEUP_CAPS_DIR/theme/configure" <<'EOF2'
+#!/usr/bin/env bash
+echo "configure:theme"
+not_applicable "no theme support on this machine"
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/theme/configure"
+  printf 'alpha\nbeta\ntheme\n' > "$TEEUP_CAPS_DIR/core.list"
+  "$TEEUP" install alpha >/dev/null
+  "$TEEUP" install beta >/dev/null
+  # Marked installed by hand: its own install would answer not-applicable too,
+  # and this test is about the configure that runs during an update.
+  : > "$TEST_HOME/.local/state/teeup/done/cap-theme"
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "configure:theme" || return 1
+  # The fallback speaks: with no theme recorded it says so, which only happens
+  # when theme_done stayed false.
+  assert_contains "$out" "No theme recorded yet" || return 1
+  cleanup_test_env
+}
+
 test_update_dry_run_changes_nothing() {
   setup
   mock_update_world
@@ -1149,6 +1253,10 @@ run_test "update one capability upgrades its packages and configures" test_updat
 run_test "update one capability refuses what it cannot update" test_update_one_capability_refuses_what_it_cannot_update
 run_test "update runs a capability's own update script" test_update_runs_a_capabilitys_own_update_script
 run_test "an update script is dry run and its failure is reported" test_an_update_script_is_dry_run_and_its_failure_is_reported
+run_test "update skips a not-applicable capability" test_update_skips_a_not_applicable_capability
+run_test "update does not treat a not-applicable configure as done" test_update_does_not_treat_a_not_applicable_configure_as_done
+run_test "update carries on after a failed configure and still fails" test_update_carries_on_after_a_failed_configure_and_still_fails
+run_test "update runs the theme fallback when theme is not applicable" test_update_runs_the_theme_fallback_when_theme_is_not_applicable
 run_test "update dry run changes nothing" test_update_dry_run_changes_nothing
 run_test "remove runs the script then uninstalls from metadata" test_remove_runs_the_script_then_uninstalls_from_metadata
 run_test "remove without a script uses metadata alone" test_remove_without_a_script_uses_metadata_alone
