@@ -66,7 +66,7 @@ font_table() {
 # font_set <name>
 # The same three steps as a theme switch: install, record, tell everyone.
 font_set() {
-  local requested="${1:-}" family cask cap
+  local requested="${1:-}" family cask
   if [[ -z "$requested" ]]; then
     err "Usage: teeup install font <name>   (teeup install font list shows the names)"
     return 1
@@ -93,9 +93,6 @@ FONT_STATE
   fi
   TEEUP_FONT_FAMILY="$family"
   export TEEUP_FONT_FAMILY
-  # A for loop, not `while read < <(cap_list)`: see theme_set's hook loop.
-  for cap in $(cap_list); do
-    cap_run_optional "$cap" font-apply
-  done
+  cap_run_hooks font-apply
   ok_unless_dry "Font set to $family"
 }

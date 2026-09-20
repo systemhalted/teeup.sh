@@ -146,6 +146,7 @@ test_set_renders_both_modes_and_runs_hooks() {
   setup
   make_fixture_theme
   make_fixture_caps
+  state_done mark cap-demo
   local out state
   state="$TEST_HOME/.local/state/teeup"
   out="$(theme_set fixture)"
@@ -220,10 +221,31 @@ test_set_runs_every_hook_after_an_interactive_one() {
   # must not eat the list of capabilities still waiting for their hooks.
   make_hook_cap aaa true theme-apply 'read -r line || true; echo "aaa read:[$line]"'
   make_hook_cap bbb false theme-apply 'echo "bbb applied"'
+  state_done mark cap-aaa
+  state_done mark cap-bbb
   local out
   out="$(theme_set fixture 2>&1 </dev/null)"
   assert_contains "$out" "aaa read:[]" || return 1
   assert_contains "$out" "bbb applied" || return 1
+  cleanup_test_env
+}
+
+test_set_runs_hooks_only_for_installed_capabilities() {
+  setup
+  make_fixture_theme
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  # Three capabilities ship a hook; only the one teeup installed, and the one
+  # whose own configure is running, may be told about the new theme.
+  make_hook_cap installed false theme-apply 'echo "hook:installed"'
+  make_hook_cap never false theme-apply 'echo "hook:never"'
+  make_hook_cap configuring false theme-apply 'echo "hook:configuring"'
+  state_done mark cap-installed
+  local out
+  out="$(TEEUP_CONFIGURING=configuring theme_set fixture 2>&1)"
+  assert_contains "$out" "hook:installed" || return 1
+  assert_contains "$out" "hook:configuring" || return 1
+  assert_not_contains "$out" "hook:never" "a capability that was never installed gets no hook" || return 1
+  assert_not_contains "$out" "Starting: never theme-apply" "its hook is not even started" || return 1
   cleanup_test_env
 }
 
@@ -431,6 +453,7 @@ run_test "set is content idempotent" test_set_is_content_idempotent
 run_test "user template wins over the capability one" test_user_template_wins_over_the_capability_one
 run_test "set warns when a capability template is shadowed" test_set_warns_when_a_capability_template_is_shadowed
 run_test "set runs every hook after an interactive one" test_set_runs_every_hook_after_an_interactive_one
+run_test "set runs hooks only for installed capabilities" test_set_runs_hooks_only_for_installed_capabilities
 run_test "set dry run writes nothing" test_set_dry_run_writes_nothing
 run_test "set unknown theme falls back to catppuccin" test_set_unknown_theme_falls_back_to_catppuccin
 run_test "set fails when the fallback itself is missing" test_set_fails_when_the_fallback_itself_is_missing

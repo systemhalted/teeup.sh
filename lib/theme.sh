@@ -216,7 +216,7 @@ TEEUP_THEME_FALLBACK="catppuccin"
 export TEEUP_THEME_FALLBACK
 
 theme_set() {
-  local name="$1" dir mode tpl base out current next cap failed=0 missing user_bases cap_bases
+  local name="$1" dir mode tpl base out current next failed=0 missing user_bases cap_bases
   if ! dir="$(theme_dir "$name")"; then
     if [[ "$name" == "$TEEUP_THEME_FALLBACK" ]]; then
       if [[ -n "${TEEUP_COLOR_SED:-}" ]]; then rm -f "$TEEUP_COLOR_SED"; fi
@@ -304,10 +304,5 @@ theme_set() {
   TEEUP_THEME_DIR="$current"
   TEEUP_THEME_NAME="$name"
   export TEEUP_THEME_DIR TEEUP_THEME_NAME
-  # A for loop over a captured list, not `while read ... < <(cap_list)`: an
-  # interactive=true capability's hook inherits stdin, and reading it would
-  # swallow the names of the capabilities still waiting for their hooks.
-  for cap in $(cap_list); do
-    cap_run_optional "$cap" theme-apply
-  done
+  cap_run_hooks theme-apply
 }

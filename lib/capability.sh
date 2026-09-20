@@ -263,3 +263,32 @@ cap_run_optional() {
   cap_run "$name" "$verb" || warn "$name $verb failed; continuing."
   return 0
 }
+
+# cap_hook_eligible <name>
+# A theme-apply or font-apply hook pushes the current theme or font into a tool
+# teeup set up. A capability that was never installed has set nothing up, and
+# a tool of the same name on the machine is not teeup's to drive, so its hooks
+# wait until `teeup install` (or bootstrap) has marked it installed. The one
+# exception is the capability whose own configure is running, before that
+# marker exists: its configure exports TEEUP_CONFIGURING with its name, the
+# same variable plan 3a's editor hooks check.
+cap_hook_eligible() {
+  if state_done check "cap-$1"; then return 0; fi
+  [[ "${TEEUP_CONFIGURING:-}" == "$1" ]]
+}
+
+# cap_run_hooks <verb>
+# Runs <verb> for every eligible capability that ships it, through
+# cap_run_optional (so a skipped capability is left out and a failing hook
+# warns). A for loop over a captured list, not `while read ... < <(cap_list)`:
+# an interactive=true capability's hook inherits stdin, and reading it would
+# swallow the names of the capabilities still waiting for their hooks.
+cap_run_hooks() {
+  local verb="$1" cap
+  for cap in $(cap_list); do
+    if cap_hook_eligible "$cap"; then
+      cap_run_optional "$cap" "$verb"
+    fi
+  done
+  return 0
+}

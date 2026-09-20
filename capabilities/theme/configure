@@ -2,4 +2,10 @@
 # The theme is an answer, so configure means "render what the wizard chose".
 # Re-running it is also how `teeup update` picks up new or changed templates,
 # which is why theme_set always re-renders instead of skipping.
+#
+# theme_set runs theme-apply only for installed capabilities, and on a first
+# bootstrap this one is marked installed after this script returns. Its own
+# theme-apply writes the starship palette, so it is named as the capability
+# being configured.
+export TEEUP_CONFIGURING="$TEEUP_CAP"
 theme_set "$(answers_get TEEUP_THEME catppuccin)"

@@ -171,7 +171,8 @@ test_configure_says_nothing_about_macports_on_homebrew() {
 
 test_theme_apply_reloads_the_config() {
   setup
-  DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
+  # install, not configure: theme set runs hooks only for installed capabilities.
+  DRY_RUN=false "$TEEUP" install wezterm >/dev/null
   local out
   out="$(DRY_RUN=true "$TEEUP" theme set catppuccin 2>&1)"
   assert_contains "$out" "[DRY-RUN] Would execute: touch $WEZ/wezterm.lua" || return 1
@@ -180,7 +181,8 @@ test_theme_apply_reloads_the_config() {
 
 test_font_apply_reloads_the_config() {
   setup
-  DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
+  # install, not configure: font set runs hooks only for installed capabilities.
+  DRY_RUN=false "$TEEUP" install wezterm >/dev/null
   local out
   out="$(DRY_RUN=true "$TEEUP" install font Hack 2>&1)"
   assert_contains "$out" "[DRY-RUN] Would execute: touch $WEZ/wezterm.lua" || return 1
