@@ -277,7 +277,17 @@ backup_target() {
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would back up $target to $backup" >&2
   else
-    mv "$target" "$backup"
+    # The `mv` is checked, and "Backed up" is only said when it worked. A
+    # read-only parent directory fails the rename, and every caller here goes
+    # on to overwrite <target> in place: the claim of a backup, followed by
+    # the destruction of the file it claimed to have saved, is the worst
+    # outcome this file can produce. `set -e` does not catch it either --
+    # backup_target is always called inside `$(...)`, where a non-zero status
+    # is the assignment's, not the shell's.
+    if ! mv "$target" "$backup" 2>/dev/null; then
+      warn "Could not back up $target to $backup; leaving it alone." >&2
+      return 1
+    fi
     ok "Backed up $target to $backup" >&2
   fi
   printf '%s\n' "$backup"
@@ -355,8 +365,15 @@ copy_config_once() {
     printf "%b %s\n" "🔍" "[DRY-RUN] Would back up foreign $dest and install $display_src"
     return 0
   fi
-  backup="$(backup_target "$dest")"
-  cp "$src" "$dest"
+  # No backup, no overwrite: the user's file is what is being protected.
+  if ! backup="$(backup_target "$dest")"; then
+    warn "$dest was left as it is, so $display_src was not installed."
+    return 1
+  fi
+  if ! cp "$src" "$dest"; then
+    warn "Could not write $dest; your previous file is at $backup."
+    return 1
+  fi
   stock_record "$dest" "$(file_sha "$src")" || true
   ok "Installed $dest (your previous file is at $backup)"
   # A backed-up dangling symlink has nothing to diff; diff says so on stderr
@@ -389,12 +406,26 @@ refresh_config() {
     warn "$dest is not writable; teeup leaves it alone, so it was not reset. Set it by hand: $display_src"
     return 1
   fi
+  # The directory, not just the file: a rename needs the directory's
+  # permission, so a writable file in a read-only directory cannot be backed
+  # up -- and overwriting it in place without a backup is exactly what must
+  # not happen here.
+  if [[ ! -w "$(dirname "$dest")" ]]; then
+    warn "$(dirname "$dest") is not writable, so $dest cannot be backed up and was not reset. Reset it by hand: $display_src"
+    return 1
+  fi
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would reset $dest to $display_src"
     return 0
   fi
-  backup="$(backup_target "$dest")"
-  cp "$src" "$dest"
+  if ! backup="$(backup_target "$dest")"; then
+    warn "$dest was not reset, so your version is still there."
+    return 1
+  fi
+  if ! cp "$src" "$dest"; then
+    warn "Could not write $dest; your version is at $backup."
+    return 1
+  fi
   stock_record "$dest" "$(file_sha "$src")" || true
   if cmp -s "$dest" "$backup"; then
     rm -f "$backup"

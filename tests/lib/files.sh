@@ -506,6 +506,71 @@ test_two_backups_of_the_same_file_within_one_second_both_survive() {
 }
 
 echo "lib/files.sh"
+# The worst case this file can produce: a backup that was claimed but never
+# made, followed by the overwrite of the file it claimed to have saved. A
+# read-only parent directory fails the rename (a rename needs the directory's
+# permission, not the file's) while the file itself stays writable, so `cp`
+# would happily destroy the user's edit in place.
+test_refresh_config_will_not_reset_what_it_cannot_back_up() {
+  setup
+  local dir="$TEST_HOME/ro dir" dest
+  mkdir -p "$dir"
+  dest="$dir/tool.conf"
+  printf 'the user edit\n' > "$dest"
+  chmod 0555 "$dir"
+  local rc=0 out
+  out="$(refresh_config "$SRC" "$dest" 2>&1)" || rc=$?
+  chmod 0755 "$dir"
+  assert_failure "$rc" || return 1
+  assert_equals "the user edit" "$(cat "$dest")" "the user's file must survive" || return 1
+  assert_contains "$out" "cannot be backed up and was not reset" || return 1
+  # No success marker at all: the refusal names the shipped file ("Reset it by
+  # hand: ..."), so matching on the word would match the refusal itself.
+  if printf '%s\n' "$out" | grep -q '✅'; then
+    echo "claimed a backup or a reset that did not happen"
+    return 1
+  fi
+  cleanup_test_env
+}
+
+# backup_target is always called inside $(...), where a non-zero status is the
+# assignment's and `set -e` never fires, so it has to report failure itself
+# and say nothing about a backup it did not make.
+test_backup_target_reports_a_failed_move() {
+  setup
+  local dir="$TEST_HOME/ro" target
+  mkdir -p "$dir"
+  target="$dir/keep.conf"
+  printf 'keep me\n' > "$target"
+  chmod 0555 "$dir"
+  local rc=0 out
+  out="$(backup_target "$target" 2>&1)" || rc=$?
+  chmod 0755 "$dir"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Could not back up" || return 1
+  assert_not_contains "$out" "Backed up $target" || return 1
+  assert_equals "keep me" "$(cat "$target")" || return 1
+  cleanup_test_env
+}
+
+# copy_config_once's foreign-file path has the same shape: back up, then
+# overwrite. It must not overwrite when the backup did not happen.
+test_copy_config_once_will_not_replace_a_foreign_file_it_cannot_back_up() {
+  setup
+  local dir="$TEST_HOME/ro cfg" dest
+  mkdir -p "$dir"
+  dest="$dir/tool.conf"
+  printf 'someone elses file\n' > "$dest"
+  chmod 0555 "$dir"
+  local rc=0 out
+  out="$(copy_config_once "$SRC" "$dest" 2>&1)" || rc=$?
+  chmod 0755 "$dir"
+  assert_failure "$rc" || return 1
+  assert_equals "someone elses file" "$(cat "$dest")" || return 1
+  assert_not_contains "$out" "Installed $dest" || return 1
+  cleanup_test_env
+}
+
 run_test "append_once is idempotent" test_append_once_is_idempotent
 run_test "write_managed_file noops when identical" test_write_managed_file_noops_when_identical
 run_test "write_managed_file keeps an existing mode" test_write_managed_file_keeps_an_existing_mode
@@ -530,6 +595,9 @@ run_test "refresh_config installs a missing file" test_refresh_config_installs_a
 run_test "refresh_config names the display_src" test_refresh_config_names_the_display_src
 run_test "refresh_config refuses a symlink" test_refresh_config_refuses_a_symlink
 run_test "refresh_config refuses a non-writable file" test_refresh_config_refuses_a_non_writable_file
+run_test "refresh_config will not reset what it cannot back up" test_refresh_config_will_not_reset_what_it_cannot_back_up
+run_test "backup_target reports a failed move" test_backup_target_reports_a_failed_move
+run_test "copy_config_once will not replace a foreign file it cannot back up" test_copy_config_once_will_not_replace_a_foreign_file_it_cannot_back_up
 run_test "config_is_pristine follows the stock record" test_config_is_pristine_follows_the_stock_record
 run_test "write_config_region keeps a pristine file pristine" test_write_config_region_keeps_a_pristine_file_pristine
 run_test "write_config_region leaves an edited file edited" test_write_config_region_leaves_an_edited_file_edited
