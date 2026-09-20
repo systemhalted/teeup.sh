@@ -36,7 +36,7 @@ jobs_wanted="$(detect_jobs)"
 # loops below expand it. bash 3.2 has indexed arrays; only associative ones
 # arrived in bash 4.
 suites=()
-for suite in "$TESTS_DIR"/lib/*.sh "$TESTS_DIR"/capabilities/*.sh "$TESTS_DIR"/cli.sh "$TESTS_DIR"/bootstrap.sh; do
+for suite in "$TESTS_DIR"/lib/*.sh "$TESTS_DIR"/capabilities/*.sh "$TESTS_DIR"/cli.sh "$TESTS_DIR"/bootstrap.sh "$TESTS_DIR"/docs.sh; do
   [[ -f "$suite" ]] || continue
   suites[${#suites[@]}]="$suite"
 done
