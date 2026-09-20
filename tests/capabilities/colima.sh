@@ -120,6 +120,24 @@ test_configure_honours_docker_config() {
   cleanup_test_env
 }
 
+# I5: HOMEBREW_PREFIX, not just the arch guess pkg_prefix makes, is where
+# Homebrew itself resolves formula paths -- a custom prefix must be honoured,
+# or a real Compose plugin there reads as absent.
+test_configure_honours_homebrew_prefix() {
+  setup
+  mock_colima_stopped
+  export HOMEBREW_PREFIX="$TEST_HOME/custombrew"
+  local plugin="$HOMEBREW_PREFIX/lib/docker/cli-plugins/docker-compose"
+  mkdir -p "$(dirname "$plugin")"
+  printf '#!/bin/sh\n' > "$plugin"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure colima)"
+  assert_not_contains "$out" "No Compose plugin" || return 1
+  assert_equals "$plugin" "$(readlink "$TEST_HOME/.docker/cli-plugins/docker-compose")" || return 1
+  unset HOMEBREW_PREFIX
+  cleanup_test_env
+}
+
 test_configure_dry_run_writes_nothing() {
   setup
   mock_colima_stopped
@@ -200,6 +218,7 @@ run_test "install on macports gets the compose plugin port" test_install_on_macp
 run_test "configure links the compose plugin once" test_configure_links_the_compose_plugin_once
 run_test "configure starts colima only when stopped" test_configure_starts_colima_only_when_stopped
 run_test "configure honours DOCKER_CONFIG" test_configure_honours_docker_config
+run_test "configure honours HOMEBREW_PREFIX" test_configure_honours_homebrew_prefix
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "shims exist after runtime configure" test_shims_exist_after_runtime_configure
 run_test "round trip: shim installs, configures and execs docker" test_round_trip_shim_installs_configures_and_execs_docker
