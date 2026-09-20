@@ -507,8 +507,31 @@ test_launch_fails_clearly_when_the_app_never_appears() {
   local rc=0 out
   out="$("$TEEUP" launch sketch 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "Sketch Pad is still not in $TEEUP_APPS_DIR after installing sketch" || return 1
+  assert_contains "$out" "Sketch Pad is still not in $TEEUP_APPS_DIR, $HOME/Applications after installing sketch" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "open -a" || return 1
+  cleanup_test_env
+}
+
+# B1: a MacPorts machine's message must name the directory it actually looks
+# in (macports_apps_dir), not just /Applications -- and the app that really
+# is installed there must not be reinstalled by a second `teeup launch`.
+test_launch_on_macports_consults_the_macports_apps_dir() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  mock_command open 0 ""
+  local out
+  out="$("$TEEUP" launch sketch 2>&1)" || true
+  assert_contains "$out" "Sketch Pad is still not in $TEEUP_APPS_DIR, $HOME/Applications, /Applications/MacPorts after installing sketch" || return 1
+  # Now the app really is there, the way a MacPorts aqua port would put it:
+  # a second launch must open it, not reinstall the capability.
+  local macports_dir="$TEST_HOME/pkgprefix/etc/macports"
+  mkdir -p "$macports_dir"
+  printf 'applications_dir\t%s/MacPortsApps\n' "$TEST_HOME" > "$macports_dir/macports.conf"
+  mkdir -p "$TEST_HOME/MacPortsApps/Sketch Pad.app"
+  out="$("$TEEUP" launch sketch 2>&1)"
+  assert_contains "$out" "Opening Sketch Pad" || return 1
+  assert_not_contains "$out" "install:sketch" || return 1
   cleanup_test_env
 }
 
@@ -530,6 +553,62 @@ test_launch_unknown_app_and_skipped_capability() {
   out="$(TEEUP_SKIP=sketch "$TEEUP" launch sketch 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "sketch is skipped on this machine (TEEUP_SKIP); install Sketch Pad by hand." || return 1
+  cleanup_test_env
+}
+
+# M6: a capability with more than one apps= entry must open the one the user
+# actually named, not always the first.
+test_launch_opens_the_named_app_not_just_the_first() {
+  setup
+  make_cap paint lazy "" "" "Paint Shop; Paint Viewer"
+  mock_command open 0 ""
+  mkdir -p "$TEEUP_APPS_DIR/Paint Viewer.app"
+  local out
+  out="$("$TEEUP" launch "Paint Viewer")"
+  assert_contains "$out" "Opening Paint Viewer" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "open -a Paint Viewer" || return 1
+  # Naming the capability itself (no specific app requested) still falls
+  # back to the first app.
+  out="$("$TEEUP" launch paint 2>&1)" || true
+  assert_contains "$out" "Paint Shop is not installed; installing paint first." || return 1
+  cleanup_test_env
+}
+
+# M9: a genuine install failure during `teeup launch` must reach a
+# teeup-authored message, not abort under `set -e` on the bare `cmd_install`
+# call with only cap_run's generic "Failed: X install" line.
+test_launch_reports_a_real_install_failure_instead_of_aborting() {
+  setup
+  printf '#!/usr/bin/env bash\necho "install:sketch about to fail"\nfalse\n' > "$TEEUP_CAPS_DIR/sketch/install"
+  local rc=0 out
+  out="$("$TEEUP" launch sketch 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "sketch could not be installed, so Sketch Pad is still not available. The output above says why." || return 1
+  cleanup_test_env
+}
+
+# M7: teeup list is a machine-independent catalogue; on a MacPorts machine it
+# must say so rather than let a launch: route it cannot verify pass as fact.
+test_list_notes_the_macports_launch_caveat() {
+  setup
+  local out
+  out="$("$TEEUP" list --tier lazy)"
+  assert_not_contains "$out" "MacPorts machine" || return 1
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  out="$("$TEEUP" list --tier lazy)"
+  assert_contains "$out" "This is a MacPorts machine" || return 1
+  cleanup_test_env
+}
+
+# M5: extra arguments must not be silently dropped -- `teeup install dev-env
+# python node` must not look like it set both up when only python was.
+test_install_dev_env_rejects_extra_arguments() {
+  setup
+  local rc=0 out
+  out="$("$TEEUP" install dev-env python node 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Usage: teeup install dev-env <python|node|java|ruby|rust|go>" || return 1
   cleanup_test_env
 }
 
@@ -586,8 +665,13 @@ run_test "lazy-run rejects a command the capability does not provide" test_lazy_
 run_test "launch opens an installed app without installing" test_launch_opens_an_installed_app_without_installing
 run_test "launch installs the capability then opens" test_launch_installs_the_capability_then_opens
 run_test "launch fails clearly when the app never appears" test_launch_fails_clearly_when_the_app_never_appears
+run_test "launch on macports consults the macports apps dir" test_launch_on_macports_consults_the_macports_apps_dir
 run_test "launch dry run previews the open" test_launch_dry_run_previews_the_open
 run_test "launch unknown app and skipped capability" test_launch_unknown_app_and_skipped_capability
+run_test "launch opens the named app, not just the first" test_launch_opens_the_named_app_not_just_the_first
+run_test "launch reports a real install failure instead of aborting" test_launch_reports_a_real_install_failure_instead_of_aborting
+run_test "list notes the macports launch caveat" test_list_notes_the_macports_launch_caveat
+run_test "install dev-env rejects extra arguments" test_install_dev_env_rejects_extra_arguments
 run_test "install dev-env goes through mise" test_install_dev_env_goes_through_mise
 run_test "data verbs keep stdout clean with a shadowed machine file" test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file
 run_test "has stdout stays empty with a shadowed machine file" test_has_stdout_stays_empty_with_a_shadowed_machine_file

@@ -237,6 +237,46 @@ test_app_installed_checks_both_application_folders() {
   cleanup_test_env
 }
 
+# B1: a MacPorts aqua port moves its .app into applications_dir, never
+# /Applications -- app_installed must consult macports_apps_dir on that
+# backend, or an already-installed app reads as missing forever.
+test_app_installed_checks_macports_apps_dir_on_macports() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  local apps_dir="$TEST_HOME/MacPortsApps"
+  mkdir -p "$TEEUP_PKG_PREFIX/etc/macports"
+  printf 'applications_dir\t%s\n' "$apps_dir" > "$TEEUP_PKG_PREFIX/etc/macports/macports.conf"
+  app_installed "Emacs" && { echo "nothing installed yet"; return 1; }
+  mkdir -p "$apps_dir/Emacs.app"
+  app_installed "Emacs" || { echo "must be found under macports_apps_dir"; return 1; }
+  unset TEEUP_PACKAGE_MANAGER
+  cleanup_test_env
+}
+
+# B1: the "still not found" message must name every directory actually
+# looked in, and only add MacPorts' applications_dir when the backend is
+# MacPorts -- naming it on a Homebrew machine would claim a lookup that
+# never happens.
+test_app_search_dirs_lists_macports_only_on_macports() {
+  setup
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  assert_equals "$TEEUP_APPS_DIR, $HOME/Applications" "$(app_search_dirs)" || return 1
+  export TEEUP_PACKAGE_MANAGER=macports
+  assert_equals "$TEEUP_APPS_DIR, $HOME/Applications, /Applications/MacPorts" "$(app_search_dirs)" || return 1
+  unset TEEUP_PACKAGE_MANAGER
+  cleanup_test_env
+}
+
+# M6: matching one specific app out of a capability's apps= list, the same
+# case-insensitive, ".app"-optional way launch_resolve matches by app name.
+test_app_match_in_cap_finds_the_named_app() {
+  setup
+  assert_equals "Paint Viewer" "$(app_match_in_cap paint "paint viewer")" || return 1
+  assert_equals "Paint Shop" "$(app_match_in_cap paint "Paint Shop.app")" || return 1
+  app_match_in_cap paint "nonexistent" && { echo "must fail when nothing matches"; return 1; }
+  cleanup_test_env
+}
+
 echo "lib/lazy.sh"
 run_test "provider finds the lazy capability" test_provider_finds_the_lazy_capability
 run_test "generate writes one executable shim per command" test_generate_writes_one_executable_shim_per_command
@@ -252,4 +292,7 @@ run_test "cap_apps splits on semicolons" test_cap_apps_splits_on_semicolons
 run_test "launch_resolve by capability and by app name" test_launch_resolve_by_capability_and_by_app_name
 run_test "launch_resolve matches capability names case-sensitively" test_launch_resolve_matches_capability_names_case_sensitively
 run_test "app_installed checks both application folders" test_app_installed_checks_both_application_folders
+run_test "app_installed checks macports_apps_dir on macports" test_app_installed_checks_macports_apps_dir_on_macports
+run_test "app_search_dirs lists macports only on macports" test_app_search_dirs_lists_macports_only_on_macports
+run_test "app_match_in_cap finds the named app" test_app_match_in_cap_finds_the_named_app
 print_summary
