@@ -158,6 +158,7 @@ assert_failure() {
 run_test() {
   local test_name="$1" test_func="$2"
   TESTS_RUN=$((TESTS_RUN + 1))
+  RUN_TEST_FUNCS="${RUN_TEST_FUNCS:-} $test_func"
   echo -n "  $test_name... "
   set +e
   local output
@@ -175,7 +176,32 @@ run_test() {
   fi
 }
 
+# A test function that is defined but never passed to run_test is a test that
+# does not exist: it goes green by never running, which is worse than a
+# failing one because nothing says so. Comparing the test_* functions the file
+# defines against the ones run_test was given catches the case where a new
+# test is written and its run_test line is forgotten or misspelled.
+_unregistered_tests() {
+  local func
+  for func in $(declare -F | awk '{print $3}' | grep '^test_' || true); do
+    case " ${RUN_TEST_FUNCS:-} " in
+      *" $func "*) ;;
+      *) echo "$func" ;;
+    esac
+  done
+}
+
 print_summary() {
+  local orphan orphans=""
+  for orphan in $(_unregistered_tests); do
+    orphans="${orphans:+$orphans }$orphan"
+  done
+  if [[ -n "$orphans" ]]; then
+    echo ""
+    echo -e "${RED}Defined but never run (add a run_test line): $orphans${RESET}"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILED_TESTS+=("unregistered: $orphans")
+  fi
   echo ""
   echo "Summary: $TESTS_PASSED/$TESTS_RUN passed"
   if [[ $TESTS_FAILED -gt 0 ]]; then
