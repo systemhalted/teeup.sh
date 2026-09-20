@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# post-update hook sample, installed by teeup and rewritten when teeup's copy
+# changes. It never runs: teeup skips every *.sample file.
+#
+# To add a hook, put a script of your own next to this file, for example
+# post-update.d/10-brew-cleanup.sh. Every file in this directory that does not
+# end in .sample runs with bash, in name order, at the end of `teeup update`.
+# After a full `teeup update` it gets no arguments; after `teeup update <cap>`
+# it gets the capability name as $1. TEEUP_PATH, TEEUP_CONFIG_DIR,
+# TEEUP_STATE_DIR and TEEUP_HOOK_EVENT=post-update are in its environment. Its
+# stdin is /dev/null, and a hook that fails prints a warning and the update
+# still finishes.
+#
+# Example: clear Homebrew's download cache after a full update.
+# if [ -z "${1:-}" ] && command -v brew >/dev/null 2>&1; then brew cleanup; fi

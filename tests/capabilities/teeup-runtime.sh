@@ -83,8 +83,28 @@ test_configure_dry_run_writes_nothing() {
   out="$(DRY_RUN=true "$TEEUP" configure teeup-runtime)"
   [[ ! -e "$TEST_HOME/.config/teeup/env" ]] || { echo "env written in dry run"; return 1; }
   [[ ! -e "$TEST_HOME/.local/bin/teeup" ]] || { echo "link made in dry run"; return 1; }
+  [[ ! -e "$TEST_HOME/.config/teeup/hooks" ]] || { echo "hook directories made in dry run"; return 1; }
   # F1: a dry run must never claim the link was made.
   assert_not_contains "$out" "Linked $TEST_HOME/.local/bin/teeup" || return 1
+  cleanup_test_env
+}
+
+test_configure_installs_a_sample_for_every_hook_event() {
+  setup
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  local event hooks="$TEST_HOME/.config/teeup/hooks"
+  for event in post-bootstrap post-update theme-set; do
+    assert_file_exists "$hooks/$event.d/example.sample" || return 1
+    assert_equals "$(cat "$TEEUP_PATH/capabilities/teeup-runtime/default/hooks/$event.sample")" "$(cat "$hooks/$event.d/example.sample")" || return 1
+  done
+  # The user's own hooks sit beside the samples and survive every configure.
+  printf '#!/usr/bin/env bash\necho mine\n' > "$hooks/theme-set.d/10-mine.sh"
+  printf 'stale\n' > "$hooks/theme-set.d/example.sample"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure teeup-runtime)"
+  assert_equals "$(printf '#!/usr/bin/env bash\necho mine')" "$(cat "$hooks/theme-set.d/10-mine.sh")" || return 1
+  assert_contains "$out" "Wrote $hooks/theme-set.d/example.sample" "a changed sample is rewritten" || return 1
+  assert_contains "$out" "Already current: $hooks/post-update.d/example.sample" || return 1
   cleanup_test_env
 }
 
@@ -160,6 +180,7 @@ run_test "configure creates state, env and link" test_configure_creates_state_en
 run_test "configure quotes a path with shell metacharacters" test_configure_quotes_a_path_with_shell_metacharacters
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "configure installs a sample for every hook event" test_configure_installs_a_sample_for_every_hook_event
 run_test "configure backs up a regular file at the link" test_configure_backs_up_a_regular_file_at_the_link
 run_test "configure writes the lazy shims" test_configure_writes_the_lazy_shims
 run_test "configure removes a shim its capability dropped" test_configure_removes_a_shim_its_capability_dropped
