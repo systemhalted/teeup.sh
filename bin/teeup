@@ -181,6 +181,14 @@ cmd_remove() {
   fi
   if [[ "$has_remove" == "true" ]]; then
     cap_run "$target" remove || die "$target's remove script failed; nothing was uninstalled."
+    # cap_run turns the not-applicable exit into a success for every verb, so
+    # a remove script that answered "this machine cannot have it" gets here
+    # having undone nothing. Saying "Removed $target." after that would be a
+    # claim about work that did not happen; the packages below are still
+    # taken off, since metadata is the other half of a removal.
+    if [[ "$TEEUP_CAP_NA" == "true" ]]; then
+      warn "$target's remove script reported it is not applicable on this machine, so it undid nothing of its own."
+    fi
   fi
   for cask in $casks_meta; do
     cask_uninstall "$cask" || failed=1
@@ -195,6 +203,14 @@ cmd_remove() {
   # cmd_remove itself would refuse with "not installed here".
   if [[ $failed -eq 0 ]]; then
     state_done clear "cap-$target"
+    # Defensive, and unreachable today: cmd_remove refuses a capability that
+    # is marked not-applicable before it gets here, and a `remove` script that
+    # answers not_applicable only trips cap_run's own temp sentinel -- the
+    # state_na marker is written by cap_install_verbs, which removal does not
+    # call. It stays so that a future path that can set the marker cannot
+    # leave `teeup status` calling a removed capability "not applicable on
+    # this machine" (R-7.3). Do not write a test for it: there is nothing it
+    # could assert that would not be vacuous.
     state_na clear "cap-$target"
   else
     warn "Leaving $target marked installed since something above failed; fix it and run teeup remove $target again."

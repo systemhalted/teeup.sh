@@ -242,6 +242,31 @@ test_remove_stops_colima_and_drops_the_compose_link() {
   cleanup_test_env
 }
 
+# The whole point of stopping first: cmd_remove uninstalls the packages as
+# soon as this script returns, so a stop that failed must end the removal
+# rather than let `brew uninstall colima` run against a live VM.
+test_remove_stops_when_colima_will_not_stop() {
+  setup
+  mock_command_script colima <<'EOF2'
+case "$1" in
+  status) exit 0 ;;
+  stop) echo "colima: cannot stop" >&2; exit 1 ;;
+esac
+exit 0
+EOF2
+  touch "$TEST_HOME/colima-running"
+  source "$TEEUP_PATH/lib/all.sh"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run colima remove 2>&1)" || rc=$?
+  assert_failure "$rc" "a failed stop must fail the removal" || return 1
+  assert_contains "$out" "colima was not removed" || return 1
+  if printf '%s\n' "$out" | grep -q 'Removed'; then
+    echo "claimed a removal after the stop failed"
+    return 1
+  fi
+  cleanup_test_env
+}
+
 test_remove_dry_run_stops_and_removes_nothing() {
   setup
   mock_colima_stopped
@@ -282,6 +307,7 @@ run_test "shims exist after runtime configure" test_shims_exist_after_runtime_co
 run_test "round trip: shim installs, configures and execs docker" test_round_trip_shim_installs_configures_and_execs_docker
 run_test "round trip: without a tty exits 127 with the hint" test_round_trip_without_a_tty_exits_127_with_the_hint
 run_test "remove stops colima and drops the compose link" test_remove_stops_colima_and_drops_the_compose_link
+run_test "remove stops when colima will not stop" test_remove_stops_when_colima_will_not_stop
 run_test "remove dry run stops and removes nothing" test_remove_dry_run_stops_and_removes_nothing
 run_test "remove when colima is not installed is quiet" test_remove_when_colima_is_not_installed_is_quiet
 print_summary
