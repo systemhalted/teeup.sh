@@ -488,6 +488,19 @@ test_dev_env_messages_mention_javav_and_mise_activate_once_zsh_is_installed() {
   cleanup_test_env
 }
 
+test_upgrade_covers_the_global_config_and_tolerates_no_mise() {
+  setup
+  mock_command mise 0 ""
+  mise_upgrade
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / upgrade" || return 1
+  local out
+  out="$(DRY_RUN=true mise_upgrade)"
+  assert_contains "$out" "[DRY-RUN] Would execute: mise -C / upgrade" || return 1
+  out="$(TEEUP_TEST_MISSING="mise" mise_upgrade)"
+  assert_contains "$out" "mise is not installed here; skipping the mise upgrade." || return 1
+  cleanup_test_env
+}
+
 echo "lib/mise.sh"
 run_test "global state distinguishes the three cases" test_global_state_distinguishes_the_three_cases
 run_test "global state is not fooled by a project config" test_global_state_is_not_fooled_by_a_project_config
@@ -514,4 +527,5 @@ run_test "dev-env rejects an unknown language and needs mise" test_dev_env_rejec
 run_test "dev-env leaves a pinned runtime alone" test_dev_env_leaves_a_pinned_runtime_alone
 run_test "dev-env messages do not claim zsh without it" test_dev_env_messages_do_not_claim_zsh_without_it
 run_test "dev-env messages mention javav and mise activate once zsh is installed" test_dev_env_messages_mention_javav_and_mise_activate_once_zsh_is_installed
+run_test "upgrade covers the global config and tolerates no mise" test_upgrade_covers_the_global_config_and_tolerates_no_mise
 print_summary

@@ -29,6 +29,8 @@ teeup - your Mac, as a distribution
   teeup install font list        list the fonts teeup knows by name
   teeup configure <capability>   re-run only its configuration
   teeup reset <capability>       put its config files back to the shipped version (backups kept)
+  teeup update [<capability>]    pull, migrate, upgrade packages, re-configure, re-theme
+  teeup remove <capability>      undo what a capability installed
   teeup list [--tier core|daily|lazy]
   teeup theme set|list|current   apply, list or print the cross-tool theme
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
@@ -138,6 +140,157 @@ cmd_reset() {
     cap_run_hooks font-apply
   fi
   ok_unless_dry "Reset $target."
+}
+
+# _update_checkout -> 0 updated, 1 could not update, 2 must not update.
+# Spec section 9's first line. A checkout with local changes is the one case
+# that stops the whole update: running migrations and seventeen configures
+# from a half-edited tree is how a debugging session becomes a broken Mac.
+# Every other failure (offline, no upstream, a diverged branch) is a warning,
+# because everything after this step works from the checkout already here.
+_update_checkout() {
+  # -e, not -d: a linked worktree's .git is a file (it points at the real
+  # repository's .git/worktrees/<name>), not a directory. TEEUP_PATH is
+  # whatever checkout is running teeup, worktree or plain clone either way,
+  # and the tests below run this against that same checkout, so treating a
+  # worktree as "not a git checkout" would both be wrong on a real machine
+  # and make the tests depend on which kind of checkout happens to be on
+  # disk.
+  if [[ ! -e "$TEEUP_PATH/.git" ]]; then
+    log "$TEEUP_PATH is not a git checkout; nothing to pull."
+    return 0
+  fi
+  if ! have git; then
+    warn "git is not installed, so $TEEUP_PATH was not updated."
+    return 1
+  fi
+  if [[ -n "$(git -C "$TEEUP_PATH" status --porcelain 2>/dev/null)" ]]; then
+    err "$TEEUP_PATH has uncommitted changes, so teeup update will not pull."
+    err "Commit, stash or discard them, then run: teeup update"
+    return 2
+  fi
+  if ! run_cmd git -C "$TEEUP_PATH" pull --ff-only; then
+    warn "git pull --ff-only failed; continuing with the checkout as it is."
+    return 1
+  fi
+  return 0
+}
+
+# teeup update [<capability>]
+# Spec section 9. Every step is idempotent, so this is also the repair path
+# for a bootstrap that stopped half way. Failures are collected rather than
+# fatal and the exit status reports them, so one formula that will not build
+# cannot cancel the theme or the configures. A capability marked state_na
+# (not_applicable) is skipped rather than told to install something the
+# machine cannot have (R-A2), and cap_run's TEEUP_CAP_NA is read after every
+# configure, because a script can decide "not applicable" during this very
+# run, not only at install time.
+cmd_update() {
+  local target="${1:-}" failed=0 name pkg cask rc=0 theme_done=false current_theme
+  if [[ -n "$target" ]]; then
+    cap_exists "$target" || die "Unknown capability: $target"
+    if cap_skipped "$target"; then
+      die "$target is skipped on this machine (TEEUP_SKIP)"
+    fi
+    if state_na check "cap-$target"; then
+      log "$target is not applicable on this machine; skipping."
+      exit 0
+    fi
+    state_done check "cap-$target" || die "$target is not installed. Install it with: teeup install $target"
+    # Spec section 4: `update` is an optional member of the capability
+    # contract and the metadata upgrade is its default. A capability that
+    # ships one owns its upgrade completely, so the packages its metadata
+    # names are left alone; `configure` runs either way, because the point of
+    # both paths is a capability that works after a new version lands.
+    if [[ -f "$(cap_dir "$target")/update" ]]; then
+      cap_run "$target" update || { warn "$target's update script failed."; failed=1; }
+    else
+      for cask in $(cap_meta_get "$target" casks); do
+        cask_upgrade "$cask" || failed=1
+      done
+      for pkg in $(cap_meta_get "$target" packages); do
+        pkg_upgrade "$pkg" || failed=1
+      done
+    fi
+    local na=false
+    if cap_run "$target" configure; then
+      [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
+    else
+      warn "$target configure failed."
+      failed=1
+    fi
+    hook_run post-update "$target"
+    if [[ "$na" == "true" ]]; then
+      log "$target is not applicable on this machine; skipping."
+      return 0
+    fi
+    if [[ $failed -ne 0 ]]; then
+      err "teeup update $target finished, with the problems above."
+      exit 1
+    fi
+    ok_unless_dry "Updated $target."
+    return 0
+  fi
+
+  _update_checkout || rc=$?
+  if [[ $rc -eq 2 ]]; then exit 1; fi
+  if [[ $rc -ne 0 ]]; then failed=1; fi
+
+  # A later migration is written against the state an earlier one leaves, so
+  # a failure stops here rather than configuring on top of it.
+  migrations_run_pending || exit 1
+
+  pkg_update || { warn "$(pkg_backend_label) could not refresh its index."; failed=1; }
+  pkg_upgrade_all || { warn "$(pkg_backend_label) could not upgrade everything."; failed=1; }
+  mise_upgrade || failed=1
+
+  # core.list only (spec section 9). A capability this machine never installed
+  # has no configuration to re-run, and a lazy capability's configure can
+  # start a VM.
+  for name in $(cap_tier_list core); do
+    if ! cap_exists "$name"; then
+      warn "$name is listed in core.list but not implemented yet; skipping."
+      continue
+    fi
+    if cap_skipped "$name"; then
+      log "Skipping $name (TEEUP_SKIP)"
+      continue
+    fi
+    if state_na check "cap-$name"; then
+      log "$name is not applicable on this machine; skipping."
+      continue
+    fi
+    if ! state_done check "cap-$name"; then
+      log "$name has never been installed here; run: teeup install $name"
+      continue
+    fi
+    if cap_run "$name" configure; then
+      if [[ "$name" == "theme" && "$TEEUP_CAP_NA" != "true" ]]; then theme_done=true; fi
+    else
+      warn "$name configure failed; continuing."
+      failed=1
+    fi
+  done
+
+  # The theme capability's configure already renders every template, so this
+  # only covers a run where it did not happen (skipped, not installed, or the
+  # theme capability's own configure answered not-applicable).
+  if [[ "$theme_done" != "true" ]]; then
+    current_theme="$(theme_current)"
+    if [[ "$current_theme" == "none" ]]; then
+      log "No theme recorded yet; pick one with: teeup theme set <name>"
+    elif ! theme_set "$current_theme"; then
+      warn "Could not regenerate the $current_theme theme."
+      failed=1
+    fi
+  fi
+
+  hook_run post-update
+  if [[ $failed -ne 0 ]]; then
+    err "teeup update finished, with the problems above."
+    exit 1
+  fi
+  ok_unless_dry "teeup is up to date."
 }
 
 cmd_theme() {
@@ -424,6 +577,7 @@ case "$verb" in
   install) cmd_install "$@" ;;
   configure) cmd_configure "$@" ;;
   reset) cmd_reset "$@" ;;
+  update) cmd_update "$@" ;;
   theme) cmd_theme "$@" ;;
   list) cmd_list "$@" ;;
   launch) cmd_launch "$@" ;;
