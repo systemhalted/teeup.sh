@@ -73,7 +73,12 @@ cmd_install() {
       warn "Skipping $c (TEEUP_SKIP)"
       continue
     fi
-    cap_install_verbs "$c"
+    # Explicit, not left to `set -e`: cmd_lazy_run calls cmd_install inside an
+    # `if`, which disables `set -e` for everything it runs, so a failure that
+    # used to abort the process would otherwise let the loop carry on and mark
+    # the target installed (I3). Returning here keeps both entry points on the
+    # same rule -- a dependency that fails stops the install.
+    cap_install_verbs "$c" || return 1
   done
 }
 

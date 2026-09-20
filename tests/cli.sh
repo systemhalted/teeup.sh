@@ -383,6 +383,29 @@ EOF2
   cleanup_test_env
 }
 
+# A dependency that fails must stop the install, through lazy-run exactly as
+# through `teeup install`. cmd_lazy_run calls cmd_install inside an `if`,
+# which disables `set -e` for everything it runs, so without an explicit
+# return the loop would carry on and mark the target installed (I3).
+test_lazy_run_does_not_mark_installed_when_a_dependency_fails() {
+  setup
+  # lazyone's own fixture has no requires, so give it one that fails.
+  make_cap lazyone lazy alpha frob ""
+  make_frob_installable
+  cat > "$TEEUP_CAPS_DIR/alpha/install" <<'EOF2'
+#!/usr/bin/env bash
+echo "install:alpha"
+exit 1
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/alpha/install"
+  local rc=0 out
+  out="$(printf 'y\n' | TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob 2>&1)" || rc=$?
+  assert_equals "127" "$rc" || return 1
+  "$TEEUP" has lazyone && { echo "lazyone must not be marked installed when alpha failed"; return 1; }
+  "$TEEUP" has alpha && { echo "alpha must not be marked installed"; return 1; }
+  cleanup_test_env
+}
+
 test_lazy_run_respects_teeup_skip() {
   setup
   local rc=0 out
@@ -554,6 +577,7 @@ run_test "lazy-run without a tty hints and exits 127" test_lazy_run_without_a_tt
 run_test "lazy-run on a tty installs, configures and execs" test_lazy_run_on_a_tty_installs_configures_and_execs
 run_test "lazy-run declined exits 127 without installing" test_lazy_run_declined_exits_127_without_installing
 run_test "lazy-run exits 127 when the install fails" test_lazy_run_exits_127_when_the_install_fails
+run_test "lazy-run does not mark installed when a dependency fails" test_lazy_run_does_not_mark_installed_when_a_dependency_fails
 run_test "lazy-run respects TEEUP_SKIP" test_lazy_run_respects_teeup_skip
 run_test "lazy-run reinstalls a capability whose command went missing" test_lazy_run_reinstalls_a_capability_whose_command_went_missing
 run_test "lazy-run finds a command under the package prefix" test_lazy_run_finds_a_command_under_the_package_prefix
