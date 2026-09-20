@@ -114,6 +114,40 @@ EOF2
   cleanup_test_env
 }
 
+# MISE_GLOBAL_CONFIG_FILE names the global config outright and wins over
+# MISE_CONFIG_DIR in mise itself, so mise_global_state's own fallback has to
+# read that file: reading the wrong one answers "absent" for a tool that is
+# requested, and mise_ensure_global then sends a pinned version through
+# `use -g`, which rewrites it.
+test_global_state_fallback_honours_mise_global_config_file() {
+  setup
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+case "$*" in
+  "ls --global"*) exit 1 ;;
+  "where "*) grep -qx "$2" "$HOME/mise-installed" 2>/dev/null || exit 1 ;;
+  *) : ;;
+esac
+exit 0
+EOF2
+  # The config dir mise would use without the variable says nothing about uv.
+  mkdir -p "$TEST_HOME/.config/mise" "$TEST_HOME/elsewhere"
+  : > "$TEST_HOME/.config/mise/config.toml"
+  printf '[tools]\nuv = "1.2.3"\n' > "$TEST_HOME/elsewhere/mise.toml"
+  assert_equals "absent" "$(mise_global_state uv)" || return 1
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/elsewhere/mise.toml"
+  assert_equals "requested" "$(mise_global_state uv)" || return 1
+  # It also wins over MISE_CONFIG_DIR, as it does in mise.
+  mkdir -p "$TEST_HOME/other-config"
+  : > "$TEST_HOME/other-config/config.toml"
+  export MISE_CONFIG_DIR="$TEST_HOME/other-config"
+  assert_equals "requested" "$(mise_global_state uv)" || return 1
+  printf 'uv\n' > "$TEST_HOME/mise-installed"
+  assert_equals "installed" "$(mise_global_state uv)" || return 1
+  unset MISE_GLOBAL_CONFIG_FILE MISE_CONFIG_DIR
+  cleanup_test_env
+}
+
 test_ensure_global_installs_reinstalls_or_skips() {
   setup
   local out
@@ -458,6 +492,7 @@ echo "lib/mise.sh"
 run_test "global state distinguishes the three cases" test_global_state_distinguishes_the_three_cases
 run_test "global state is not fooled by a project config" test_global_state_is_not_fooled_by_a_project_config
 run_test "global state falls back to the config file" test_global_state_falls_back_to_the_config_file
+run_test "global state fallback honours MISE_GLOBAL_CONFIG_FILE" test_global_state_fallback_honours_mise_global_config_file
 run_test "ensure_global installs, reinstalls or skips" test_ensure_global_installs_reinstalls_or_skips
 run_test "dev env dry run only previews" test_ensure_global_dry_run_only_prints
 run_test "ensure_global warns and fails when mise cannot install" test_ensure_global_warns_and_fails_when_mise_cannot_install
