@@ -237,3 +237,67 @@ cask_install() {
   fi
   run_cmd brew install --cask "$cask" && ok_unless_dry "Installed $cask (cask)"
 }
+
+# pkg_update -> refresh the package manager's own index (spec section 9).
+pkg_update() {
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
+    homebrew) run_cmd brew update ;;
+    macports) run_privileged port selfupdate ;;
+  esac
+}
+
+# pkg_upgrade_all -> upgrade everything the package manager installed.
+# Homebrew keeps formulae and casks apart, so both lines are needed; MacPorts
+# has no casks, so `port upgrade outdated` covers it. A non-zero exit is
+# reported to the caller, which turns it into a warning: `teeup update` must
+# not stop because one formula will not build, and MacPorts does not document
+# the status `port upgrade outdated` returns with nothing to upgrade.
+pkg_upgrade_all() {
+  _pkg_backend_resolve
+  local rc=0
+  case "$TEEUP_PKG_BACKEND" in
+    homebrew)
+      run_cmd brew upgrade || rc=1
+      run_cmd brew upgrade --cask || rc=1
+      ;;
+    macports)
+      run_privileged port upgrade outdated || rc=1
+      ;;
+  esac
+  return $rc
+}
+
+# pkg_upgrade <pkg>
+# One formula or port, the candidate list the same way pkg_install reads it.
+# A package this machine does not have is a log line, not an install: the
+# verb that installs is `teeup install`.
+pkg_upgrade() {
+  _pkg_backend_resolve
+  local pkg="$1" candidate
+  for candidate in $(package_candidates "$pkg"); do
+    if pkg_installed "$candidate"; then
+      case "$TEEUP_PKG_BACKEND" in
+        homebrew) run_cmd brew upgrade "$candidate" || { warn "Could not upgrade $candidate."; return 1; } ;;
+        macports) run_privileged port upgrade "$candidate" || { warn "Could not upgrade $candidate."; return 1; } ;;
+      esac
+      return 0
+    fi
+  done
+  log "Not installed here, so nothing to upgrade: $pkg"
+  return 0
+}
+
+# cask_upgrade <cask>
+cask_upgrade() {
+  local cask="$1"
+  if ! casks_supported; then
+    log "Casks are not available with MacPorts; nothing to upgrade for $cask."
+    return 0
+  fi
+  if ! cask_installed "$cask"; then
+    log "Not installed here, so nothing to upgrade: $cask (cask)"
+    return 0
+  fi
+  run_cmd brew upgrade --cask "$cask" || { warn "Could not upgrade the $cask cask."; return 1; }
+}

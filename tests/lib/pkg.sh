@@ -291,6 +291,96 @@ test_cask_install_dies_on_invalid_backend() {
   cleanup_test_env
 }
 
+test_update_and_upgrade_all_on_both_backends() {
+  setup
+  mock_command brew 0 ""
+  mock_command port 0 ""
+  mock_command sudo 0 ""
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  unset TEEUP_PKG_BACKEND
+  pkg_update
+  pkg_upgrade_all
+  assert_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask" || return 1
+  : > "$MOCK_LOG"
+  export TEEUP_PACKAGE_MANAGER=macports
+  unset TEEUP_PKG_BACKEND
+  pkg_update
+  pkg_upgrade_all
+  assert_contains "$(cat "$MOCK_LOG")" "sudo port selfupdate" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "sudo port upgrade outdated" || return 1
+  cleanup_test_env
+}
+
+test_upgrade_one_package_or_cask_only_when_it_is_installed() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula") [ "$3" = "ripgrep" ] && exit 0 || exit 1 ;;
+  "list --cask") [ "$3" = "wezterm" ] && exit 0 || exit 1 ;;
+esac
+exit 0
+EOF2
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  unset TEEUP_PKG_BACKEND
+  local out
+  out="$(pkg_upgrade ripgrep; pkg_upgrade nowhere; cask_upgrade wezterm; cask_upgrade absent)"
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade ripgrep" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade nowhere" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask wezterm" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask absent" || return 1
+  assert_contains "$out" "Not installed here, so nothing to upgrade: nowhere" || return 1
+  assert_contains "$out" "Not installed here, so nothing to upgrade: absent (cask)" || return 1
+  cleanup_test_env
+}
+
+test_cask_upgrade_is_a_note_on_macports() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  unset TEEUP_PKG_BACKEND
+  local out rc=0
+  out="$(cask_upgrade wezterm)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Casks are not available with MacPorts" || return 1
+  cleanup_test_env
+}
+
+test_upgrade_failures_are_reported() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula") exit 0 ;;
+esac
+exit 1
+EOF2
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  unset TEEUP_PKG_BACKEND
+  local rc=0 out
+  out="$(pkg_upgrade ripgrep 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Could not upgrade ripgrep." || return 1
+  rc=0
+  out="$(pkg_upgrade_all 2>&1)" || rc=$?
+  assert_failure "$rc" "a failed upgrade is reported to the caller" || return 1
+  cleanup_test_env
+}
+
+test_update_and_upgrade_dry_run_change_nothing() {
+  setup
+  mock_command brew 0 ""
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  unset TEEUP_PKG_BACKEND
+  local out
+  out="$(DRY_RUN=true pkg_update; DRY_RUN=true pkg_upgrade_all)"
+  assert_contains "$out" "[DRY-RUN] Would execute: brew update" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: brew upgrade --cask" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
+  cleanup_test_env
+}
+
 echo "lib/pkg.sh"
 run_test "backend defaults to homebrew on modern macOS" test_backend_defaults_to_homebrew_on_modern_macos
 run_test "backend is macports on macOS 12" test_backend_is_macports_on_macos_12
@@ -318,4 +408,9 @@ run_test "backend prepare installs homebrew" test_backend_prepare_installs_homeb
 run_test "backend prepare fails when installer fails" test_backend_prepare_fails_when_installer_fails
 run_test "run_privileged prefixes sudo" test_run_privileged_prefixes_sudo
 run_test "cask_install dies on invalid backend" test_cask_install_dies_on_invalid_backend
+run_test "update and upgrade_all on both backends" test_update_and_upgrade_all_on_both_backends
+run_test "upgrade one package or cask only when it is installed" test_upgrade_one_package_or_cask_only_when_it_is_installed
+run_test "cask_upgrade is a note on MacPorts" test_cask_upgrade_is_a_note_on_macports
+run_test "upgrade failures are reported" test_upgrade_failures_are_reported
+run_test "update and upgrade dry run change nothing" test_update_and_upgrade_dry_run_change_nothing
 print_summary

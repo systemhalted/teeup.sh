@@ -634,6 +634,220 @@ EOF2
   cleanup_test_env
 }
 
+# Everything `teeup update` reaches out to, mocked: the checkout is clean, the
+# package manager and mise do nothing, and the fixture core.list is alpha+beta.
+mock_update_world() {
+  mock_command_script git <<'EOF2'
+echo "git $*" >> "$MOCK_LOG"
+case "$*" in
+  *status*) exit 0 ;;
+esac
+exit 0
+EOF2
+  mock_command brew 0 ""
+  mock_command mise 0 ""
+}
+
+test_update_walks_every_step_in_order() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  "$TEEUP" install beta >/dev/null
+  mkdir -p "$TEST_HOME/.config/teeup/hooks/post-update.d"
+  printf '#!/usr/bin/env bash\necho "post-update hook:[$*]"\n' > "$TEST_HOME/.config/teeup/hooks/post-update.d/10-mark.sh"
+  export TEEUP_MIGRATIONS_DIR="$TEST_HOME/migrations"
+  mkdir -p "$TEEUP_MIGRATIONS_DIR"
+  printf '#!/usr/bin/env bash\necho "migration ran"\n' > "$TEEUP_MIGRATIONS_DIR/1780000000.sh"
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH pull --ff-only" || return 1
+  assert_contains "$out" "migration ran" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / upgrade" || return 1
+  assert_contains "$out" "configure:alpha" || return 1
+  assert_contains "$out" "configure:beta" || return 1
+  assert_not_contains "$out" "install:alpha" "update never installs" || return 1
+  assert_contains "$out" "post-update hook:[]" || return 1
+  assert_contains "$out" "teeup is up to date." || return 1
+  assert_file_exists "$TEST_HOME/.local/state/teeup/migrations/1780000000.sh" || return 1
+  cleanup_test_env
+}
+
+test_update_skips_core_capabilities_it_never_installed() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  local out
+  out="$(TEEUP_SKIP=alpha "$TEEUP" update 2>&1)"
+  assert_contains "$out" "Skipping alpha (TEEUP_SKIP)" || return 1
+  assert_contains "$out" "beta has never been installed here; run: teeup install beta" || return 1
+  assert_not_contains "$out" "configure:beta" || return 1
+  cleanup_test_env
+}
+
+test_update_refuses_a_dirty_checkout() {
+  setup
+  mock_command_script git <<'EOF2'
+echo "git $*" >> "$MOCK_LOG"
+case "$*" in
+  *status*) echo " M lib/core.sh" ;;
+esac
+exit 0
+EOF2
+  mock_command brew 0 ""
+  mock_command mise 0 ""
+  local rc=0 out
+  out="$("$TEEUP" update 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TEEUP_PATH has uncommitted changes" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH pull" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew update" "nothing after the checkout runs" || return 1
+  cleanup_test_env
+}
+
+test_update_carries_on_when_the_pull_fails() {
+  setup
+  mock_command_script git <<'EOF2'
+echo "git $*" >> "$MOCK_LOG"
+case "$*" in
+  *status*) exit 0 ;;
+  *pull*) echo "fatal: unable to access github.com" >&2; exit 128 ;;
+esac
+exit 0
+EOF2
+  mock_command brew 0 ""
+  mock_command mise 0 ""
+  "$TEEUP" install alpha >/dev/null
+  local rc=0 out
+  out="$("$TEEUP" update 2>&1)" || rc=$?
+  assert_failure "$rc" "an update with a failed step exits non-zero" || return 1
+  assert_contains "$out" "git pull --ff-only failed" || return 1
+  assert_contains "$out" "configure:alpha" "the rest of the update still ran" || return 1
+  assert_contains "$out" "teeup update finished, with the problems above." || return 1
+  cleanup_test_env
+}
+
+test_update_one_capability_upgrades_its_packages_and_configures() {
+  setup
+  mock_update_world
+  printf 'summary="Fixture alpha"\ngroup=system\ntier=core\nrequires=""\nprovides=""\npackages="ripgrep"\ncasks="wezterm"\ninteractive=false\n' > "$TEEUP_CAPS_DIR/alpha/capability"
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula"|"list --cask") exit 0 ;;
+esac
+exit 0
+EOF2
+  "$TEEUP" install alpha >/dev/null
+  : > "$MOCK_LOG"
+  local out
+  out="$("$TEEUP" update alpha 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask wezterm" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade ripgrep" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew update" "one capability does not update the whole machine" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "git -C" || return 1
+  assert_contains "$out" "configure:alpha" || return 1
+  assert_contains "$out" "Updated alpha." || return 1
+  cleanup_test_env
+}
+
+test_update_one_capability_refuses_what_it_cannot_update() {
+  setup
+  mock_update_world
+  local rc=0 out
+  out="$("$TEEUP" update nope 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Unknown capability: nope" || return 1
+  rc=0
+  out="$("$TEEUP" update alpha 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "alpha is not installed. Install it with: teeup install alpha" || return 1
+  "$TEEUP" install alpha >/dev/null
+  rc=0
+  out="$(TEEUP_SKIP=alpha "$TEEUP" update alpha 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "alpha is skipped on this machine (TEEUP_SKIP)" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup update [<capability>]" || return 1
+  cleanup_test_env
+}
+
+# Spec section 4's optional `update` script, and the metadata fallback for a
+# capability that ships none (the test above this one). The script owns the
+# upgrade: a capability that manages its own tool (a runtime installed from a
+# tarball, an editor that updates itself) must not also have its metadata
+# packages upgraded underneath it.
+test_update_runs_a_capabilitys_own_update_script() {
+  setup
+  mock_update_world
+  printf 'summary="Fixture alpha"\ngroup=system\ntier=core\nrequires=""\nprovides=""\npackages="ripgrep"\ncasks="wezterm"\ninteractive=false\n' > "$TEEUP_CAPS_DIR/alpha/capability"
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula"|"list --cask") exit 0 ;;
+esac
+exit 0
+EOF2
+  printf '#!/usr/bin/env bash\necho "update:alpha"\nrun_cmd touch "$HOME/updated"\n' > "$TEEUP_CAPS_DIR/alpha/update"
+  chmod +x "$TEEUP_CAPS_DIR/alpha/update"
+  "$TEEUP" install alpha >/dev/null
+  : > "$MOCK_LOG"
+  local out
+  out="$("$TEEUP" update alpha 2>&1)"
+  assert_contains "$out" "update:alpha" || return 1
+  assert_file_exists "$TEST_HOME/updated" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade" "the script replaces the metadata upgrade" || return 1
+  assert_contains "$out" "configure:alpha" "configure still runs after the script" || return 1
+  assert_contains "$out" "Updated alpha." || return 1
+  # The same capability without the script takes the metadata path again.
+  rm -f "$TEEUP_CAPS_DIR/alpha/update"
+  : > "$MOCK_LOG"
+  out="$("$TEEUP" update alpha 2>&1)"
+  assert_not_contains "$out" "update:alpha" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade ripgrep" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask wezterm" || return 1
+  cleanup_test_env
+}
+
+test_an_update_script_is_dry_run_and_its_failure_is_reported() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  printf '#!/usr/bin/env bash\nrun_cmd touch "$HOME/updated"\n' > "$TEEUP_CAPS_DIR/alpha/update"
+  chmod +x "$TEEUP_CAPS_DIR/alpha/update"
+  local out rc=0
+  out="$(DRY_RUN=true "$TEEUP" update alpha 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: touch $TEST_HOME/updated" || return 1
+  [[ ! -e "$TEST_HOME/updated" ]] || { echo "the update script mutated in dry run"; return 1; }
+  printf '#!/usr/bin/env bash\necho "the tool refused to update" >&2\nexit 1\n' > "$TEEUP_CAPS_DIR/alpha/update"
+  out="$("$TEEUP" update alpha 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "alpha's update script failed." || return 1
+  assert_contains "$out" "teeup update alpha finished, with the problems above." || return 1
+  cleanup_test_env
+}
+
+test_update_dry_run_changes_nothing() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  export TEEUP_MIGRATIONS_DIR="$TEST_HOME/migrations"
+  mkdir -p "$TEEUP_MIGRATIONS_DIR"
+  printf '#!/usr/bin/env bash\nrun_cmd touch "$HOME/made"\n' > "$TEEUP_MIGRATIONS_DIR/1780000000.sh"
+  : > "$MOCK_LOG"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" update 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH pull --ff-only" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: touch $TEST_HOME/made" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: brew update" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: mise -C / upgrade" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "pull --ff-only" "nothing was pulled" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew update" "nothing was upgraded" || return 1
+  [[ ! -e "$TEST_HOME/made" ]] || { echo "a migration mutated in dry run"; return 1; }
+  [[ ! -e "$TEST_HOME/.local/state/teeup/migrations/1780000000.sh" ]] || { echo "marker written in dry run"; return 1; }
+  cleanup_test_env
+}
+
 # A capability with two shipped files under config/, the second rendered by
 # configure, installed the way `teeup install` leaves it.
 make_config_cap() {
@@ -790,4 +1004,13 @@ run_test "reset dry run changes nothing" test_reset_dry_run_changes_nothing
 run_test "reset refuses what it cannot reset" test_reset_refuses_what_it_cannot_reset
 run_test "reset reports a refused write plainly" test_reset_reports_a_refused_write_plainly
 run_test "dev add-migration creates a named scaffold" test_dev_add_migration_creates_a_named_scaffold
+run_test "update walks every step in order" test_update_walks_every_step_in_order
+run_test "update skips core capabilities it never installed" test_update_skips_core_capabilities_it_never_installed
+run_test "update refuses a dirty checkout" test_update_refuses_a_dirty_checkout
+run_test "update carries on when the pull fails" test_update_carries_on_when_the_pull_fails
+run_test "update one capability upgrades its packages and configures" test_update_one_capability_upgrades_its_packages_and_configures
+run_test "update one capability refuses what it cannot update" test_update_one_capability_refuses_what_it_cannot_update
+run_test "update runs a capability's own update script" test_update_runs_a_capabilitys_own_update_script
+run_test "an update script is dry run and its failure is reported" test_an_update_script_is_dry_run_and_its_failure_is_reported
+run_test "update dry run changes nothing" test_update_dry_run_changes_nothing
 print_summary

@@ -260,3 +260,18 @@ dev_env_installed() {
   done
   return 0
 }
+
+# mise_upgrade
+# `teeup update`'s mise step (spec section 9): upgrade every tool the global
+# config holds, which is the AI CLIs' tools, the dev-env runtimes and anything
+# else installed with `mise use -g`. `-C /` keeps it to that config, the rule
+# every mise call outside a wrapper follows. A machine without mise is not an
+# error: mise is a core capability, but `teeup update` also runs on a machine
+# where it is in TEEUP_SKIP.
+mise_upgrade() {
+  if ! have mise; then
+    log "mise is not installed here; skipping the mise upgrade."
+    return 0
+  fi
+  run_cmd mise -C / upgrade || { warn "mise upgrade returned non-zero."; return 1; }
+}
