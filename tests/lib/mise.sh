@@ -23,8 +23,10 @@ case "$*" in
     done < "$HOME/mise-tools"
     ;;
   "ls --global"*)
+    tool="${3:-}"
     [ -f "$HOME/mise-tools" ] || exit 0
     while read -r name; do
+      [ -z "$tool" ] || [ "$name" = "$tool" ] || continue
       shadowed "$name" && continue
       if grep -qx "$name" "$HOME/mise-installed" 2>/dev/null; then
         printf '%s latest ~/.config/mise/config.toml latest\n' "$name"
@@ -172,6 +174,46 @@ test_wrapper_installs_on_first_call_and_execs_after() {
   cleanup_test_env
 }
 
+# A tool the global config already requests, but that is not on disk (a wiped
+# MISE_DATA_DIR, an interrupted install): the wrapper must install it with
+# `mise install`, which honours the version pinned there, and must not call
+# `use -g`, which would rewrite the request and drop the pin.
+test_wrapper_installs_a_requested_tool_without_rewriting_the_pin() {
+  setup
+  printf 'claude\n' > "$TEST_HOME/mise-tools"
+  : > "$TEST_HOME/mise-installed"
+  mise_wrapper_write claude claude >/dev/null
+  local out
+  out="$("$TEST_HOME/.local/bin/claude" --version)"
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install claude" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "use -g" || return 1
+  assert_equals "mise-x:claude:claude --version" "$out" || return 1
+  # The request is still the single line it was: nothing rewrote it.
+  assert_equals "claude" "$(cat "$TEST_HOME/mise-tools")" || return 1
+  cleanup_test_env
+}
+
+# The wrapper is teeup's own "install on first call", so a dry run previews
+# the install and downloads nothing -- the same contract teeup lazy-run has.
+test_wrapper_run_under_dry_run_installs_nothing() {
+  setup
+  mise_wrapper_write claude claude >/dev/null
+  : > "$MOCK_LOG"
+  local rc=0 out
+  out="$(DRY_RUN=true "$TEST_HOME/.local/bin/claude" --version 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "[DRY-RUN] Would install claude through mise" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "use -g" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "install claude" || return 1
+  [[ ! -e "$TEST_HOME/mise-tools" ]] || { echo "dry run must not record a request"; return 1; }
+  # Once the tool is really installed there is no mutation left to withhold,
+  # so the command itself still runs under DRY_RUN.
+  printf 'claude\n' > "$TEST_HOME/mise-installed"
+  out="$(DRY_RUN=true "$TEST_HOME/.local/bin/claude" --version)"
+  assert_equals "mise-x:claude:claude --version" "$out" || return 1
+  cleanup_test_env
+}
+
 test_wrapper_exports_release_age_zero() {
   setup
   mock_command_script mise <<'EOF2'
@@ -304,6 +346,8 @@ run_test "ensure_global installs, reinstalls or skips" test_ensure_global_instal
 run_test "dev env dry run only previews" test_ensure_global_dry_run_only_prints
 run_test "ensure_global warns and fails when mise cannot install" test_ensure_global_warns_and_fails_when_mise_cannot_install
 run_test "wrapper installs on first call and execs after" test_wrapper_installs_on_first_call_and_execs_after
+run_test "wrapper installs a requested tool without rewriting the pin" test_wrapper_installs_a_requested_tool_without_rewriting_the_pin
+run_test "wrapper run under dry run installs nothing" test_wrapper_run_under_dry_run_installs_nothing
 run_test "wrapper exports release age zero" test_wrapper_exports_release_age_zero
 run_test "wrapper installs a runtime first and loads it" test_wrapper_installs_a_runtime_first_and_loads_it
 run_test "wrapper leaves a foreign command alone" test_wrapper_leaves_a_foreign_command_alone
