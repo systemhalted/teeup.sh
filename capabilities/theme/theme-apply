@@ -114,7 +114,11 @@ TEEUP_AWK_BLOCK="$block" TEEUP_AWK_PALETTE="$active" TEEUP_AWK_START="$START" TE
   { print }
 ' "$STARSHIP" > "$rewritten"
 
-# write_managed_file already warns on its own refusal (M11); `|| true` keeps
-# that a warning instead of skipping the cleanup below under `bash -eu`.
-write_managed_file "$STARSHIP" "starship palette ($active)" < "$rewritten" || true
+# write_config_region, not write_managed_file: starship.toml is the user's
+# file with a stock record, and a palette rewrite of a file the user never
+# edited must leave it reading as unedited (lib/files.sh). It also refuses a
+# symlinked starship.toml rather than replacing the link with a copy, and
+# already warns on its own refusal (M11); `|| true` keeps that a warning
+# instead of skipping the cleanup below under `bash -eu`.
+write_config_region "$STARSHIP" "starship palette ($active)" < "$rewritten" || true
 rm -f "$block" "$rewritten"

@@ -37,6 +37,118 @@ stock_sha() {
   [[ -f "$record" ]] && cat "$record"
 }
 
+# config_is_pristine <dest>
+# True when <dest> is a regular file with a stock record and still hashes to
+# it: every byte is what teeup last wrote there (a copy, a reset, a refresh or
+# a managed-region rewrite) and nobody has edited it since. This is the test
+# behind the stock-checksum rule (spec section 9). A symlink is never
+# pristine: no stock record can belong to one.
+config_is_pristine() {
+  local dest="$1" recorded
+  [[ -f "$dest" && ! -L "$dest" ]] || return 1
+  recorded="$(stock_sha "$dest" || true)"
+  [[ -n "$recorded" && "$recorded" == "$(file_sha "$dest")" ]]
+}
+
+# write_config_region <dest> <label>   (the whole new file on stdin)
+# Rewrites a user-owned config file whose teeup-managed region changed (the
+# starship palette block). The write goes through write_managed_file. When the
+# file was pristine before the write, the new content becomes its stock
+# record, so teeup's own rewrite never makes the file read as edited: the next
+# configure still says "Already installed" and a later migration may still
+# refresh it. A file the user has edited keeps its old record and keeps
+# reading as edited. A symlink is refused (warns, returns 1, writes nothing):
+# the rename inside write_managed_file would replace a dotfile manager's link
+# with a copy it no longer tracks.
+write_config_region() {
+  local dest="$1" label="$2" pristine=false tmp rc=0
+  if [[ -L "$dest" ]]; then
+    warn "$dest is a symlink; teeup does not write through it, so its $label was not updated."
+    cat >/dev/null
+    return 1
+  fi
+  if config_is_pristine "$dest"; then pristine=true; fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    write_managed_file "$dest" "$label"
+    return 0
+  fi
+  tmp="$(mktemp)"
+  cat > "$tmp"
+  write_managed_file "$dest" "$label" < "$tmp" || rc=$?
+  rm -f "$tmp"
+  if [[ "$rc" -eq 0 && "$pristine" == "true" ]]; then
+    stock_record "$dest" "$(file_sha "$dest")"
+  fi
+  return "$rc"
+}
+
+# refresh_if_pristine <src> <dest>
+# The stock-checksum rule, as migrations use it: a <dest> that is still
+# pristine is replaced with the shipped <src> and its record follows; a
+# missing <dest> is installed with copy_config_once. A <dest> the user has
+# edited (or one teeup holds no record of) is left alone with a log line and
+# the function returns 1, so the migration can patch that file minimally
+# instead, after backup_copy.
+refresh_if_pristine() {
+  local src="$1" dest="$2"
+  if [[ ! -e "$dest" && ! -L "$dest" ]]; then
+    copy_config_once "$src" "$dest"
+    return $?
+  fi
+  if ! config_is_pristine "$dest"; then
+    log "Keeping your edited $dest; it was not refreshed."
+    return 1
+  fi
+  if cmp -s "$src" "$dest"; then
+    log "Already at the shipped version: $dest"
+    return 0
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would refresh $dest from $src"
+    return 0
+  fi
+  cp "$src" "$dest"
+  stock_record "$dest" "$(file_sha "$src")"
+  ok "Refreshed $dest (you had not edited it)"
+}
+
+# _backup_name <path>  -> prints a backup path nothing holds yet
+# Both backup_copy and backup_target name a backup <path>.teeup_backup_<ts>,
+# to the second. A single `teeup migrate legacy` run can back the same file
+# up several times inside one second (legacy wiring, then prompt wiring, then
+# chezmoi), and a second call landing on the name the first just used would
+# silently overwrite it. When that name is already taken, this appends -1,
+# -2, ... until it finds one nothing holds, so every backup from the same run
+# survives. Bash-3.2-safe: a counter and plain concatenation, no ${var//}.
+_backup_name() {
+  local target="$1" base n
+  base="${target}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+  if [[ ! -e "$base" ]]; then
+    printf '%s\n' "$base"
+    return 0
+  fi
+  n=1
+  while [[ -e "${base}-${n}" ]]; do
+    n=$((n + 1))
+  done
+  printf '%s\n' "${base}-${n}"
+}
+
+# backup_copy <path>  -> prints the backup path on stdout
+# Like backup_target, but copies: the file stays in place for a migration to
+# patch, and the copy keeps what it held before.
+backup_copy() {
+  local target="$1" backup
+  backup="$(_backup_name "$target")"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would copy $target to $backup" >&2
+  else
+    cp -p "$target" "$backup"
+    ok "Copied $target to $backup" >&2
+  fi
+  printf '%s\n' "$backup"
+}
+
 # append_once <file> <marker>   (block on stdin)
 append_once() {
   local file="$1" marker="$2" tmp
@@ -135,7 +247,7 @@ write_managed_file() {
 # backup_target <path>  -> prints the backup path on stdout
 backup_target() {
   local target="$1" backup
-  backup="${target}.teeup_backup_$(date +%Y%m%d%H%M%S)"
+  backup="$(_backup_name "$target")"
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would back up $target to $backup" >&2
   else
