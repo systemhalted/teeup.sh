@@ -29,7 +29,11 @@
 # question and `mise where` the second.
 mise_global_state() {
   local tool="$1" config_file rows
-  config_file="${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml"
+  # MISE_GLOBAL_CONFIG_FILE names the file outright and wins over
+  # MISE_CONFIG_DIR in mise itself, so the fallback has to read the same file
+  # mise would (I2: reading the wrong one reports "absent" for a tool that is
+  # requested, and `use -g` then rewrites a pinned version).
+  config_file="${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml}"
   if rows="$(mise -C / ls --global 2>/dev/null)"; then
     if printf '%s\n' "$rows" | awk '{print $1}' | grep -qx "$tool"; then
       if rows="$(mise -C / ls --global --installed "$tool" 2>/dev/null)"; then
@@ -126,6 +130,26 @@ mise_wrapper_write() {
 $TEEUP_MISE_WRAPPER_MARKER
 # Installs $tools through mise on the first call, then runs $command.
 export MISE_MINIMUM_RELEASE_AGE=0
+if ! command -v mise >/dev/null 2>&1; then
+  printf '%s\\n' "$command is installed through mise, which is not on PATH. Run: teeup install mise" >&2
+  exit 127
+fi
+# Does the global config request this tool? \`ls --global\` answers it, but a
+# mise too old for the flag exits non-zero, and so does a broken config: read
+# the global config file itself rather than treat either as "not requested",
+# which would send a pinned version through \`use -g\` and rewrite it. The
+# whole list is asked for and matched exactly, because an old mise rejects a
+# tool argument and a prefix must not count as a match.
+teeup_requested() {
+  teeup_rows=""
+  if teeup_rows="\$(mise -C / ls --global 2>/dev/null)"; then
+    printf '%s\\n' "\$teeup_rows" | awk '{print \$1}' | grep -qx "\$1"
+    return \$?
+  fi
+  teeup_cfg="\${MISE_GLOBAL_CONFIG_FILE:-\${MISE_CONFIG_DIR:-\${XDG_CONFIG_HOME:-\$HOME/.config}/mise}/config.toml}"
+  [ -f "\$teeup_cfg" ] || return 1
+  grep -qE "^[[:space:]]*(\"\$1\"|\$1)[[:space:]]*=" "\$teeup_cfg"
+}
 for teeup_tool in $tools; do
   if mise -C / where "\$teeup_tool" >/dev/null 2>&1; then
     continue
@@ -139,7 +163,7 @@ for teeup_tool in $tools; do
   # honours the version pinned there, while a tool it does not mention gets
   # \`use -g\`, which writes the request so \`teeup update\`'s mise upgrade keeps
   # it current. A bare \`use -g\` for both would drop the pin.
-  if mise -C / ls --global "\$teeup_tool" 2>/dev/null | grep -q .; then
+  if teeup_requested "\$teeup_tool"; then
     mise -C / install "\$teeup_tool" || exit 1
   else
     mise -C / use -g --quiet "\$teeup_tool" || exit 1

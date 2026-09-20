@@ -214,6 +214,83 @@ test_wrapper_run_under_dry_run_installs_nothing() {
   cleanup_test_env
 }
 
+# A mise too old for `ls --global` (it exits non-zero) must not make the
+# wrapper read "not requested": the global config file answers instead, so a
+# version the user pinned by hand is installed with `install` and survives.
+test_wrapper_reads_the_config_when_ls_global_fails() {
+  setup
+  mkdir -p "$TEST_HOME/.config/mise"
+  printf 'claude = "1.2.3"\n' > "$TEST_HOME/.config/mise/config.toml"
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+case "$*" in
+  "ls --global"*) exit 2 ;;
+  "where "*) exit 1 ;;
+  "install "*) printf '%s\n' "$2" >> "$HOME/mise-installed" ;;
+  "x "*)
+    shift
+    tools=""
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do tools="$tools${tools:+,}$1"; shift; done
+    shift
+    echo "mise-x:$tools:$*"
+    ;;
+  *) : ;;
+esac
+exit 0
+EOF2
+  mise_wrapper_write claude claude >/dev/null
+  local out
+  out="$("$TEST_HOME/.local/bin/claude" --version)"
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install claude" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "use -g" || return 1
+  assert_equals "mise-x:claude:claude --version" "$out" || return 1
+  assert_equals 'claude = "1.2.3"' "$(cat "$TEST_HOME/.config/mise/config.toml")" || return 1
+  cleanup_test_env
+}
+
+# MISE_GLOBAL_CONFIG_FILE names the global config outright and wins over
+# MISE_CONFIG_DIR in mise itself, so the same fallback must read that file.
+test_wrapper_fallback_honours_mise_global_config_file() {
+  setup
+  mkdir -p "$TEST_HOME/elsewhere"
+  printf 'claude = "1.2.3"\n' > "$TEST_HOME/elsewhere/mise.toml"
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/elsewhere/mise.toml"
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+case "$*" in
+  "ls --global"*) exit 2 ;;
+  "where "*) exit 1 ;;
+  "x "*) echo "mise-x-ran" ;;
+  *) : ;;
+esac
+exit 0
+EOF2
+  mise_wrapper_write claude claude >/dev/null
+  "$TEST_HOME/.local/bin/claude" --version >/dev/null
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install claude" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "use -g" || return 1
+  unset MISE_GLOBAL_CONFIG_FILE
+  cleanup_test_env
+}
+
+# The wrapper's own dependency: mise itself. A missing mise is the shim
+# contract's 127 with a command to run, not a raw "mise: command not found".
+test_wrapper_without_mise_exits_127_with_a_hint() {
+  setup
+  mise_wrapper_write claude claude >/dev/null
+  local rc=0 out
+  # The wrapper is a standalone script, so it does not consult
+  # TEEUP_TEST_MISSING the way teeup's own `have` does. An empty PATH is what
+  # a machine without mise looks like to it -- and it has to be empty, not
+  # just missing the mock: the host running these tests may well have a real
+  # mise of its own, which is exactly what this wrapper would find.
+  mkdir -p "$TEST_HOME/empty-bin"
+  out="$(PATH="$TEST_HOME/empty-bin" "$TEST_HOME/.local/bin/claude" --version 2>&1)" || rc=$?
+  assert_equals "127" "$rc" || return 1
+  assert_contains "$out" "Run: teeup install mise" || return 1
+  cleanup_test_env
+}
+
 test_wrapper_exports_release_age_zero() {
   setup
   mock_command_script mise <<'EOF2'
@@ -348,6 +425,9 @@ run_test "ensure_global warns and fails when mise cannot install" test_ensure_gl
 run_test "wrapper installs on first call and execs after" test_wrapper_installs_on_first_call_and_execs_after
 run_test "wrapper installs a requested tool without rewriting the pin" test_wrapper_installs_a_requested_tool_without_rewriting_the_pin
 run_test "wrapper run under dry run installs nothing" test_wrapper_run_under_dry_run_installs_nothing
+run_test "wrapper reads the config when ls --global fails" test_wrapper_reads_the_config_when_ls_global_fails
+run_test "wrapper fallback honours MISE_GLOBAL_CONFIG_FILE" test_wrapper_fallback_honours_mise_global_config_file
+run_test "wrapper without mise exits 127 with a hint" test_wrapper_without_mise_exits_127_with_a_hint
 run_test "wrapper exports release age zero" test_wrapper_exports_release_age_zero
 run_test "wrapper installs a runtime first and loads it" test_wrapper_installs_a_runtime_first_and_loads_it
 run_test "wrapper leaves a foreign command alone" test_wrapper_leaves_a_foreign_command_alone
