@@ -634,6 +634,101 @@ EOF2
   cleanup_test_env
 }
 
+# A capability with two shipped files under config/, the second rendered by
+# configure, installed the way `teeup install` leaves it.
+make_config_cap() {
+  make_cap tool lazy
+  mkdir -p "$TEEUP_CAPS_DIR/tool/config"
+  printf 'shipped=1\n' > "$TEEUP_CAPS_DIR/tool/config/plain.conf"
+  printf 'home=@HOME@\n' > "$TEEUP_CAPS_DIR/tool/config/rendered.conf"
+  cat > "$TEEUP_CAPS_DIR/tool/configure" <<'EOF2'
+#!/usr/bin/env bash
+copy_config_once "$TEEUP_CAP_DIR/config/plain.conf" "$(user_config_dir)/tool/plain.conf"
+rendered="$(mktemp)"
+sed "s|@HOME@|$HOME|" "$TEEUP_CAP_DIR/config/rendered.conf" > "$rendered"
+copy_config_once "$rendered" "$(user_config_dir)/tool/rendered.conf"
+rm -f "$rendered"
+echo "configure:tool"
+EOF2
+  "$TEEUP" install tool >/dev/null
+  TOOL="$TEST_HOME/.config/tool"
+}
+
+test_reset_replaces_edited_files_through_configure() {
+  setup
+  make_config_cap
+  printf 'shipped=1\nmine=1\n' > "$TOOL/plain.conf"
+  local out backups
+  out="$("$TEEUP" reset tool 2>&1)"
+  assert_equals "shipped=1" "$(cat "$TOOL/plain.conf")" || return 1
+  assert_equals "home=$TEST_HOME" "$(cat "$TOOL/rendered.conf")" "the rendered file stays rendered" || return 1
+  assert_contains "$out" "Reset $TOOL/plain.conf (backup at $TOOL/plain.conf.teeup_backup_" || return 1
+  assert_contains "$out" "> mine=1" "the diff shows what the backup holds" || return 1
+  assert_contains "$out" "Already at the shipped version: $TOOL/rendered.conf" || return 1
+  assert_contains "$out" "Reset tool." || return 1
+  backups="$(find "$TOOL" -name '*.teeup_backup_*' | wc -l | tr -d ' ')"
+  assert_equals "1" "$backups" "a backup only where something changed" || return 1
+  assert_contains "$("$TEEUP" configure tool)" "Already installed: $TOOL/plain.conf" "the reset file is pristine again" || return 1
+  cleanup_test_env
+}
+
+test_reset_dry_run_changes_nothing() {
+  setup
+  make_config_cap
+  printf 'mine\n' > "$TOOL/plain.conf"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" reset tool 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would reset $TOOL/plain.conf" || return 1
+  assert_equals "mine" "$(cat "$TOOL/plain.conf")" || return 1
+  [[ -z "$(find "$TOOL" -name '*.teeup_backup_*')" ]] || { echo "backup made in dry run"; return 1; }
+  cleanup_test_env
+}
+
+test_reset_refuses_what_it_cannot_reset() {
+  setup
+  make_config_cap
+  local out rc=0
+  out="$("$TEEUP" reset nope 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Unknown capability: nope" || return 1
+  rc=0
+  out="$("$TEEUP" reset alpha 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "alpha ships no config files to reset." || return 1
+  rc=0
+  out="$(TEEUP_SKIP=tool "$TEEUP" reset tool 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "tool is skipped on this machine (TEEUP_SKIP)" || return 1
+  rm -f "$TEST_HOME/.local/state/teeup/done/cap-tool"
+  rc=0
+  out="$("$TEEUP" reset tool 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "tool is not installed. Install it with: teeup install tool" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup reset <capability>" || return 1
+  cleanup_test_env
+}
+
+# write_managed_file (through refresh_config) refuses a symlinked
+# destination: the reset must say plainly that this one file did not happen
+# and why, not claim success and not leave the link replaced.
+test_reset_reports_a_refused_write_plainly() {
+  setup
+  make_config_cap
+  mkdir -p "$TEST_HOME/dotfiles"
+  printf 'managed elsewhere\n' > "$TEST_HOME/dotfiles/plain.conf"
+  rm -f "$TOOL/plain.conf"
+  ln -s "$TEST_HOME/dotfiles/plain.conf" "$TOOL/plain.conf"
+  local out rc=0
+  out="$("$TEEUP" reset tool 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TOOL/plain.conf is a symlink; teeup does not write through it, so it was not reset." || return 1
+  assert_contains "$out" "Resetting tool failed; the backups made so far are next to their files." || return 1
+  assert_not_contains "$out" "Reset tool." "a refused write must not be reported as success" || return 1
+  [[ -L "$TOOL/plain.conf" ]] || { echo "the symlink was replaced"; return 1; }
+  assert_equals "managed elsewhere" "$(cat "$TEST_HOME/dotfiles/plain.conf")" || return 1
+  cleanup_test_env
+}
+
 test_dev_add_migration_creates_a_named_scaffold() {
   setup
   export TEEUP_MIGRATIONS_DIR="$TEST_HOME/migrations"
@@ -690,5 +785,9 @@ run_test "install dev-env rejects extra arguments" test_install_dev_env_rejects_
 run_test "install dev-env goes through mise" test_install_dev_env_goes_through_mise
 run_test "data verbs keep stdout clean with a shadowed machine file" test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file
 run_test "has stdout stays empty with a shadowed machine file" test_has_stdout_stays_empty_with_a_shadowed_machine_file
+run_test "reset replaces edited files through configure" test_reset_replaces_edited_files_through_configure
+run_test "reset dry run changes nothing" test_reset_dry_run_changes_nothing
+run_test "reset refuses what it cannot reset" test_reset_refuses_what_it_cannot_reset
+run_test "reset reports a refused write plainly" test_reset_reports_a_refused_write_plainly
 run_test "dev add-migration creates a named scaffold" test_dev_add_migration_creates_a_named_scaffold
 print_summary

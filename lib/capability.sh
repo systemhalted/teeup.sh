@@ -130,8 +130,8 @@ cap_run() {
   rm -f "$na_marker"
   unset TEEUP_CAP_NA_MARKER
   # A capability script that runs another one (ssh re-runs git's configure)
-  # is still itself afterwards: copy_config_once reads TEEUP_CAP to scope a
-  # migration's TEEUP_REFRESH to the capability it names.
+  # is still itself afterwards: copy_config_once reads TEEUP_CAP to scope
+  # TEEUP_REFRESH and TEEUP_RESET to the capability they name.
   TEEUP_CAP="$outer_cap"
   TEEUP_CAP_DIR="$outer_dir"
   return $rc

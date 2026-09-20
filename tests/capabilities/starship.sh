@@ -73,10 +73,35 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+test_reset_restores_the_file_and_the_current_palette() {
+  setup
+  # appearance reads the interface style; exit 1 is light mode. starship
+  # requires zsh, whose configure calls chsh, so that is mocked too.
+  mock_command defaults 1 ""
+  mock_command chsh 0 ""
+  export TEEUP_NO_GUM=1
+  DRY_RUN=false "$TEEUP" install starship >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" install theme >/dev/null
+  local file="$TEST_HOME/.config/starship.toml" out
+  assert_contains "$(cat "$file")" 'palette = "teeup-light"' || return 1
+  # The shipped file has a [directory] table of its own, so the line the user
+  # adds has to be one the shipped version does not carry.
+  printf '\n[custom.mine]\ncommand = "echo mine"\n' >> "$file"
+  out="$(DRY_RUN=false "$TEEUP" reset starship 2>&1)"
+  assert_not_contains "$(cat "$file")" "custom.mine" || return 1
+  assert_contains "$out" 'command = "echo mine"' "the diff shows the removed table" || return 1
+  assert_contains "$(cat "$file")" 'palette = "teeup-light"' "the theme hook put the current palette back" || return 1
+  assert_contains "$(cat "$file")" 'accent = "#' || return 1
+  out="$(DRY_RUN=false "$TEEUP" configure starship)"
+  assert_contains "$out" "Already installed: $file" "the reset and re-themed file reads as unedited" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/starship"
 run_test "install gets starship" test_install_gets_starship
 run_test "configure copies the config once" test_configure_copies_the_config_once
 run_test "shipped config carries the theme markers" test_shipped_config_carries_the_theme_markers
 run_test "palette is selected at the root" test_palette_is_selected_at_the_root
+run_test "reset restores the file and the current palette" test_reset_restores_the_file_and_the_current_palette
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 print_summary

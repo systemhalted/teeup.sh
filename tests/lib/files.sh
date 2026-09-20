@@ -276,6 +276,64 @@ test_refresh_prints_the_backup_path() {
   cleanup_test_env
 }
 
+# `teeup reset` reaches a missing file through refresh_config too (a
+# capability's config/ can ship a file the user never installed).
+test_refresh_config_installs_a_missing_file() {
+  setup
+  local out
+  out="$(refresh_config "$SRC" "$DEST" 2>&1)"
+  assert_equals "shipped=1" "$(cat "$DEST")" || return 1
+  assert_contains "$out" "Installed $DEST" "a missing dest is installed through copy_config_once" || return 1
+  cleanup_test_env
+}
+
+# F4/R-5.2: a capability that renders before copying (zsh, git, ssh) passes a
+# temp file as <src>; the message must name the shipped source it stands in
+# for, not the temp path the user cannot make sense of.
+test_refresh_config_names_the_display_src() {
+  setup
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  printf 'shipped=1\nmine=1\n' > "$DEST"
+  local out
+  out="$(DRY_RUN=true refresh_config "$SRC" "$DEST" "$TEEUP_PATH/capabilities/zsh/home/.zshenv")"
+  assert_contains "$out" "Would reset $DEST to $TEEUP_PATH/capabilities/zsh/home/.zshenv" || return 1
+  assert_not_contains "$out" "$SRC" "the temp source path must not appear" || return 1
+  cleanup_test_env
+}
+
+# `teeup reset` re-runs a capability's own configure with TEEUP_RESET set, and
+# copy_config_once routes that through refresh_config, which writes with a
+# plain `cp` -- write_managed_file's rename-onto-a-symlink protection does not
+# cover it, so refresh_config needs the same guard of its own.
+test_refresh_config_refuses_a_symlink() {
+  setup
+  mkdir -p "$TEST_HOME/dotfiles"
+  printf 'managed elsewhere\n' > "$TEST_HOME/dotfiles/tool.conf"
+  mkdir -p "$(dirname "$DEST")"
+  ln -s "$TEST_HOME/dotfiles/tool.conf" "$DEST"
+  local rc=0 out
+  out="$(refresh_config "$SRC" "$DEST" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$DEST is a symlink; teeup does not write through it, so it was not reset." || return 1
+  [[ -L "$DEST" ]] || { echo "the link was replaced"; return 1; }
+  assert_equals "managed elsewhere" "$(cat "$TEST_HOME/dotfiles/tool.conf")" || return 1
+  cleanup_test_env
+}
+
+test_refresh_config_refuses_a_non_writable_file() {
+  setup
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  printf 'shipped=1\nmine=1\n' > "$DEST"
+  chmod 0444 "$DEST"
+  local rc=0 out
+  out="$(refresh_config "$SRC" "$DEST" 2>&1)" || rc=$?
+  chmod 0644 "$DEST"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$DEST is not writable; teeup leaves it alone, so it was not reset." || return 1
+  assert_equals "$(printf 'shipped=1\nmine=1')" "$(cat "$DEST")" "the file's content is untouched" || return 1
+  cleanup_test_env
+}
+
 test_replace_literal_is_literal_and_repeats() {
   setup
   # shellcheck disable=SC2088  # the tilde is a literal token here, not a path
@@ -468,6 +526,10 @@ run_test "copy_config_once display_src defaults to src" test_copy_config_once_di
 run_test "refresh_config backs up and diffs" test_refresh_config_backs_up_and_diffs
 run_test "refresh_config removes backup when unchanged" test_refresh_config_removes_backup_when_unchanged
 run_test "refresh prints the backup path" test_refresh_prints_the_backup_path
+run_test "refresh_config installs a missing file" test_refresh_config_installs_a_missing_file
+run_test "refresh_config names the display_src" test_refresh_config_names_the_display_src
+run_test "refresh_config refuses a symlink" test_refresh_config_refuses_a_symlink
+run_test "refresh_config refuses a non-writable file" test_refresh_config_refuses_a_non_writable_file
 run_test "config_is_pristine follows the stock record" test_config_is_pristine_follows_the_stock_record
 run_test "write_config_region keeps a pristine file pristine" test_write_config_region_keeps_a_pristine_file_pristine
 run_test "write_config_region leaves an edited file edited" test_write_config_region_leaves_an_edited_file_edited

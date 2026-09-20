@@ -124,6 +124,28 @@ test_configure_quotes_a_path_with_shell_metacharacters() {
   cleanup_test_env
 }
 
+test_reset_renders_the_home_files_again() {
+  setup
+  # A config dir with a space and a dollar sign: the rendered env path is
+  # %q-quoted, so a raw copy of home/.zshrc would differ from the reset file.
+  export XDG_CONFIG_HOME="$TEST_HOME/con fig \$x"
+  # The narrowed PATH still exposes a host gum, and a capability's configure
+  # may ask a question; keep every prompt on the plain read path.
+  export TEEUP_NO_GUM=1
+  DRY_RUN=false "$TEEUP" install zsh >/dev/null
+  cp "$TEST_HOME/.zshrc" "$TEST_HOME/zshrc.installed"
+  printf 'alias gs="git status"\n' >> "$TEST_HOME/.zshrc"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" reset zsh 2>&1)"
+  cmp -s "$TEST_HOME/zshrc.installed" "$TEST_HOME/.zshrc" ||
+    { echo "reset must restore what configure rendered:"; diff "$TEST_HOME/zshrc.installed" "$TEST_HOME/.zshrc"; return 1; }
+  assert_not_contains "$(cat "$TEST_HOME/.zshrc")" '${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env' "not the raw template" || return 1
+  assert_contains "$out" "Reset $TEST_HOME/.zshrc (backup at" || return 1
+  assert_contains "$out" 'alias gs="git status"' "the diff shows the line the backup keeps" || return 1
+  assert_contains "$out" "Already at the shipped version: $TEST_HOME/.zshenv" || return 1
+  cleanup_test_env
+}
+
 test_configure_installs_under_zdotdir() {
   setup
   export ZDOTDIR="$TEST_HOME/zdot"
@@ -446,6 +468,7 @@ run_test "configure installs the thin home files" test_configure_installs_the_th
 run_test "configure bakes the absolute env path for a custom XDG_CONFIG_HOME" test_configure_bakes_the_absolute_env_path_for_a_custom_xdg_config_home
 run_test "configure bakes the absolute local.zsh path for a custom XDG_CONFIG_HOME" test_configure_bakes_the_absolute_local_zsh_path_for_a_custom_xdg_config_home
 run_test "configure quotes a path with shell metacharacters" test_configure_quotes_a_path_with_shell_metacharacters
+run_test "reset renders the home files again" test_reset_renders_the_home_files_again
 run_test "configure installs under ZDOTDIR" test_configure_installs_under_zdotdir
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure backs up a foreign zshrc" test_configure_backs_up_a_foreign_zshrc
