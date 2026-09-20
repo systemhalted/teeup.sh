@@ -35,7 +35,15 @@ state_done() {
     mark) _state_touch "$marker" ;;
     clear) _state_remove "$marker" ;;
     ensure)
-      [[ "$DRY_RUN" == "true" ]] && { _state_touch "$marker"; return 0; }
+      # A dry run must preview the answer the real run would give, not always
+      # say "first time": a caller that prints a long one-off notice on 0 and
+      # a short line otherwise would otherwise show the long one on every
+      # preview, including on a machine that has already seen it.
+      if [[ "$DRY_RUN" == "true" ]]; then
+        [[ -f "$marker" ]] && return 1
+        _state_touch "$marker"
+        return 0
+      fi
       mkdir -p "$(dirname "$marker")"
       (set -o noclobber; : > "$marker") 2>/dev/null
       ;;
