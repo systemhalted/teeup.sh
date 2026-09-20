@@ -16,19 +16,32 @@ export TEEUP_MIGRATIONS_DIR
 # helper file in the directory is never run. sort -n orders by the leading
 # number, which stays right if an epoch ever gains an eleventh digit.
 migrations_list() {
-  local f
+  local f name
   for f in "$TEEUP_MIGRATIONS_DIR"/[0-9]*.sh; do
     [[ -f "$f" ]] || continue
-    printf '%s\n' "${f##*/}"
+    name="${f##*/}"
+    # <epoch>.sh exactly, which is the only name migration_new writes. The
+    # glob alone would also accept "1700000000 copy.sh", and a name carrying a
+    # space breaks every caller that reads this list a line at a time -- and
+    # would have word-split into bogus tokens before those callers were
+    # fixed. Anything that looks like a migration but is not named like one is
+    # announced rather than silently skipped: a migration nobody runs is the
+    # kind of thing that is only noticed much later.
+    if ! [[ "$name" =~ ^[0-9]+\.sh$ ]]; then
+      warn "Not a migration name, so it is skipped: $f (a migration is <unix-epoch>.sh)"
+      continue
+    fi
+    printf '%s\n' "$name"
   done | sort -n
 }
 
 # migrations_pending -> the names not yet applied on this machine, oldest first
 migrations_pending() {
   local m
-  for m in $(migrations_list); do
+  while IFS= read -r m; do
+    [[ -n "$m" ]] || continue
     if ! state_migration_done "$m"; then printf '%s\n' "$m"; fi
-  done
+  done < <(migrations_list)
   return 0
 }
 
@@ -36,9 +49,10 @@ migrations_pending() {
 # What ./bootstrap does once, on a machine it has never finished on.
 migrations_mark_all() {
   local m
-  for m in $(migrations_list); do
+  while IFS= read -r m; do
+    [[ -n "$m" ]] || continue
     state_migration_mark "$m"
-  done
+  done < <(migrations_list)
   return 0
 }
 
@@ -68,15 +82,19 @@ migration_run() {
 # failure could do damage the failed one was meant to prevent. The failed
 # migration stays unmarked and runs again on the next `teeup update`.
 migrations_run_pending() {
+  # `while read` over a process substitution, not `for m in $(...)`: the loop
+  # body assigns `ran`, so it has to run in this shell, and a name is one
+  # whole line whatever it contains.
   local m ran=0
-  for m in $(migrations_pending); do
+  while IFS= read -r m; do
+    [[ -n "$m" ]] || continue
     log "Running migration $m"
     if ! migration_run "$m"; then
       err "Migration $m failed, so the migrations after it did not run. Fix the cause, then run: teeup update"
       return 1
     fi
     ran=$((ran + 1))
-  done
+  done < <(migrations_pending)
   if [[ $ran -eq 0 ]]; then
     log "No pending migrations."
   else

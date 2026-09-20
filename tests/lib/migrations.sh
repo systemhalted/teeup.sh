@@ -177,6 +177,52 @@ test_new_without_git_history_uses_the_clock_and_dry_run_writes_nothing() {
 }
 
 echo "lib/migrations.sh"
+# A file whose name is not <epoch>.sh: the glob accepts it, everything else
+# must not. It is announced rather than silently ignored, it never appears in
+# the list, marking everything applied never writes a marker for it, and
+# run_pending never tries to run it. A name with a space is the dangerous
+# shape -- it used to word-split into bogus tokens in every one of those
+# loops.
+test_a_file_that_is_not_a_migration_name_is_skipped_loudly() {
+  setup
+  make_migration "1700000000.sh" 'echo real'
+  make_migration "1700000001 copy.sh" 'echo "should never run"'
+  local out
+  out="$(migrations_list 2>&1)"
+  assert_contains "$out" "1700000000.sh" || return 1
+  assert_contains "$out" "Not a migration name" || return 1
+  # The list itself, without the warning: the warning names the file on
+  # purpose, so it has to be kept out of this check.
+  if migrations_list 2>/dev/null | grep -q 'copy'; then
+    echo "a file that is not a migration was listed"
+    return 1
+  fi
+  assert_equals "1700000000.sh" "$(migrations_list 2>/dev/null)" || return 1
+  assert_equals "1700000000.sh" "$(migrations_pending 2>/dev/null)" || return 1
+  migrations_mark_all >/dev/null 2>&1
+  assert_file_exists "$MARKS/1700000000.sh" || return 1
+  local marks
+  marks="$(ls "$MARKS" | tr '\n' ' ')"
+  assert_equals "1700000000.sh " "$marks" "only the real migration is marked" || return 1
+  cleanup_test_env
+}
+
+# run_pending counts what it ran, so its loop has to run in this shell.
+test_run_pending_counts_correctly_with_an_odd_name_present() {
+  setup
+  make_migration "1700000000.sh" 'echo one'
+  make_migration "1700000002 two.sh" 'echo two'
+  local out
+  # stderr carries the "not a migration name" warning, which names the file;
+  # stdout is what run_pending itself reports.
+  out="$(migrations_run_pending 2>/dev/null)"
+  assert_contains "$out" "Applied 1 migration(s)." || return 1
+  assert_not_contains "$out" "two" || return 1
+  cleanup_test_env
+}
+
+run_test "a file that is not a migration name is skipped loudly" test_a_file_that_is_not_a_migration_name_is_skipped_loudly
+run_test "run_pending counts correctly with an odd name present" test_run_pending_counts_correctly_with_an_odd_name_present
 run_test "list is oldest first and ignores other files" test_list_is_oldest_first_and_ignores_other_files
 run_test "pending leaves out applied migrations" test_pending_leaves_out_applied_migrations
 run_test "run_pending runs each once, in order, with the library" test_run_pending_runs_each_once_in_order_with_the_library
