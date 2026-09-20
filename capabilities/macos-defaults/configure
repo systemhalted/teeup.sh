@@ -35,8 +35,20 @@ else
 fi
 defaults_write com.apple.screencapture location -string "$SHOTS"
 
-# Finder and Dock read most of these only at start. killall fails when a
-# process is not running, which must not abort the script.
-run_cmd killall Finder || true
-run_cmd killall Dock || true
-ok_unless_dry "macOS preferences applied. KeyRepeat and InitialKeyRepeat take effect after the next login."
+# Finder and the Dock read most of these only at start, so each is restarted,
+# and only when defaults_write changed one of its keys in this run: teeup
+# update re-runs this configure, and a run that changes nothing must not
+# close every Finder window. AppleShowAllExtensions lives in the global domain
+# but is Finder's. killall fails when a process is not running, which must not
+# abort the script.
+if defaults_changed com.apple.finder || defaults_changed NSGlobalDomain; then
+  run_cmd killall Finder || true
+fi
+if defaults_changed com.apple.dock; then
+  run_cmd killall Dock || true
+fi
+if [[ "$TEEUP_DEFAULTS_CHANGED" == " " ]]; then
+  ok_unless_dry "macOS preferences already set; nothing to restart."
+else
+  ok_unless_dry "macOS preferences applied. KeyRepeat and InitialKeyRepeat take effect after the next login."
+fi

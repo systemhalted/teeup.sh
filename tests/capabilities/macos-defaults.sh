@@ -157,6 +157,35 @@ test_configure_is_idempotent() {
   cleanup_test_env
 }
 
+test_a_second_configure_writes_nothing_and_restarts_nothing() {
+  setup
+  mock_defaults_db
+  DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
+  assert_contains "$(cat "$MOCK_LOG")" "killall Finder" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "killall Dock" || return 1
+  : > "$MOCK_LOG"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure macos-defaults)"
+  assert_not_contains "$(cat "$MOCK_LOG")" "defaults write" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "killall" "Finder and the Dock keep running when nothing changed" || return 1
+  assert_contains "$out" "Already set: com.apple.dock autohide" || return 1
+  assert_contains "$out" "macOS preferences already set; nothing to restart." || return 1
+  cleanup_test_env
+}
+
+test_a_dock_change_restarts_only_the_dock() {
+  setup
+  mock_defaults_db
+  DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
+  seed_default com.apple.dock autohide boolean 0
+  : > "$MOCK_LOG"
+  DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
+  assert_contains "$(cat "$MOCK_LOG")" "defaults write com.apple.dock autohide -bool true" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "killall Dock" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "killall Finder" || return 1
+  cleanup_test_env
+}
+
 test_configure_dry_run_writes_nothing() {
   setup
   local out
@@ -210,6 +239,8 @@ run_test "configure writes every preference" test_configure_writes_every_prefere
 run_test "configure records every key and creates ~/Screenshots" test_configure_records_every_key_and_creates_the_screenshots_dir
 run_test "configure records a prior value" test_configure_records_a_prior_value
 run_test "configure is idempotent" test_configure_is_idempotent
+run_test "a second configure writes nothing and restarts nothing" test_a_second_configure_writes_nothing_and_restarts_nothing
+run_test "a Dock change restarts only the Dock" test_a_dock_change_restarts_only_the_dock
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "remove restores every key" test_remove_restores_every_key
 run_test "remove rewrites a recorded value" test_remove_rewrites_a_recorded_value
