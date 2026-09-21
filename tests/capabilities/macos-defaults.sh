@@ -140,8 +140,13 @@ test_remove_continues_past_a_failed_restore() {
   DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
   local rc=0 out
   out="$(DEFAULTS_FAIL_WRITE=AppleShowAllExtensions DRY_RUN=false cap_run macos-defaults remove 2>&1)" || rc=$?
-  assert_success "$rc" || return 1
+  # Two properties at once: every later key is still restored (one bad key
+  # must not stop the other fifteen), and the removal as a whole reports
+  # failure, so cmd_remove keeps the capability marked installed and the user
+  # can run it again instead of being told it is gone.
+  assert_failure "$rc" "a removal that left preferences behind is not a success" || return 1
   assert_contains "$out" "Could not restore NSGlobalDomain AppleShowAllExtensions" || return 1
+  assert_contains "$out" "stays marked installed" || return 1
   assert_equals $'boolean\nfalse' "$(cat "$DDB/com.apple.dock.autohide")" "later keys are still restored" || return 1
   assert_equals "1" "$(find "$RECORDS" -type f | wc -l | tr -d ' ')" "only the failed record remains" || return 1
   cleanup_test_env

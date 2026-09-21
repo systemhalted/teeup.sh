@@ -104,11 +104,17 @@ write_config_region() {
 # the function returns 1, so the migration can patch that file minimally
 # instead, after backup_copy. <display_src> names the file in the DRY-RUN
 # message when it differs from <src> -- see copy_config_once.
+# Three outcomes, three statuses, because the caller has to tell them apart:
+#   0  refreshed, installed, or already current
+#   1  the user edited it, so it was deliberately left alone (not a failure)
+#   2  teeup tried and could not write it
+# A single non-zero status would make a migration treat a failed write as
+# "the user edited this file" and mark itself applied over the top of it.
 refresh_if_pristine() {
   local src="$1" dest="$2" display_src="${3:-$1}"
   if [[ ! -e "$dest" && ! -L "$dest" ]]; then
-    copy_config_once "$src" "$dest" "$display_src"
-    return $?
+    copy_config_once "$src" "$dest" "$display_src" || return 2
+    return 0
   fi
   if ! config_is_pristine "$dest"; then
     log "Keeping your edited $dest; it was not refreshed."
@@ -122,7 +128,10 @@ refresh_if_pristine() {
     printf "%b %s\n" "🔍" "[DRY-RUN] Would refresh $dest from $display_src"
     return 0
   fi
-  cp "$src" "$dest"
+  if ! cp "$src" "$dest" 2>/dev/null; then
+    warn "Could not write $dest, so it was not refreshed from $display_src."
+    return 2
+  fi
   stock_record "$dest" "$(file_sha "$src")" || true
   ok "Refreshed $dest (you had not edited it)"
 }
@@ -312,7 +321,13 @@ copy_config_once() {
   # assignment clears the variable for the nested call, which may come back
   # here for a missing file.
   if [[ -n "${TEEUP_REFRESH:-}" && "$TEEUP_REFRESH" == "${TEEUP_CAP:-}" ]]; then
-    TEEUP_REFRESH="" refresh_if_pristine "$src" "$dest" "$display_src" || true
+    local refresh_rc=0
+    TEEUP_REFRESH="" refresh_if_pristine "$src" "$dest" "$display_src" || refresh_rc=$?
+    # 1 is the user's edit being respected, which is a normal outcome of a
+    # migration refresh. 2 is teeup failing to write, which the migration has
+    # to hear about: swallowing it marks the migration applied while the old
+    # file is still in place.
+    [[ "$refresh_rc" -eq 2 ]] && return 1
     return 0
   fi
   # `teeup reset <capability>` sets TEEUP_RESET to its name the same way: each

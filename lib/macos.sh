@@ -119,9 +119,12 @@ defaults_changed() {
 }
 
 # defaults_restore <domain> <key>
-# Always returns 0: `remove` restores sixteen keys in a row under `bash -e`, so
-# one key that cannot be written back warns, keeps its record for another try,
-# and lets the rest continue.
+# Returns 0 when the key is back the way teeup found it (or there was nothing
+# on record), and 1 when it could not be restored -- after warning, and with
+# the record kept for another try. It never aborts: `remove` restores sixteen
+# keys in a row under `bash -e`, and one key that will not write back must not
+# stop the other fifteen. The caller aggregates, so that a removal which left
+# preferences behind does not report itself as complete.
 defaults_restore() {
   local domain="$1" key="$2" record recorded type value
   record="$(_defaults_record_path "$domain" "$key")"
@@ -131,7 +134,10 @@ defaults_restore() {
   fi
   recorded="$(cat "$record")"
   if [[ "$recorded" == "absent" ]]; then
-    run_cmd defaults delete "$domain" "$key" || warn "Could not delete $domain $key."
+    if ! run_cmd defaults delete "$domain" "$key"; then
+      warn "Could not delete $domain $key; the record stays at $record."
+      return 1
+    fi
   else
     type="${recorded%%:*}"
     value="${recorded#*:}"
@@ -140,12 +146,12 @@ defaults_restore() {
       -int|-float|-string) ;;
       *)
         warn "$domain $key held a $type before teeup, which teeup cannot write back; leaving it as it is (record: $record)."
-        return 0
+        return 1
         ;;
     esac
     if ! run_cmd defaults write "$domain" "$key" "$type" "$value"; then
       warn "Could not restore $domain $key to $type $value; the record stays at $record."
-      return 0
+      return 1
     fi
   fi
   if [[ "$DRY_RUN" == "true" ]]; then

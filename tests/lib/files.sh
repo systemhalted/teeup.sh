@@ -538,6 +538,42 @@ test_refresh_config_refuses_a_directory() {
   cleanup_test_env
 }
 
+# Three outcomes, three statuses. A migration refresh has to tell "the user
+# edited this, leave it" (1) apart from "teeup could not write it" (2): one
+# status for both would let a migration mark itself applied while the old file
+# is still on disk, and the next run would read that file as a user edit.
+test_refresh_if_pristine_separates_an_edit_from_a_failure() {
+  setup
+  copy_config_once "$SRC" "$DEST" >/dev/null
+  local rc=0
+  # Pristine and already current.
+  refresh_if_pristine "$SRC" "$DEST" >/dev/null || rc=$?
+  assert_equals "0" "$rc" "already current is success" || return 1
+  # The user edited it: left alone, and that is not a failure to write.
+  printf 'mine\n' > "$DEST"
+  rc=0
+  refresh_if_pristine "$SRC" "$DEST" >/dev/null || rc=$?
+  assert_equals "1" "$rc" "an edited file reports 1" || return 1
+  assert_equals "mine" "$(cat "$DEST")" || return 1
+  # Pristine again, but teeup cannot write it.
+  copy_config_once "$SRC" "$DEST" >/dev/null 2>&1 || true
+  printf 'shipped=1\n' > "$SRC"
+  stock_record "$DEST" "$(file_sha "$DEST")" || true
+  printf 'shipped=2\n' > "$SRC"
+  chmod 0444 "$DEST"
+  local out
+  rc=0
+  out="$(refresh_if_pristine "$SRC" "$DEST" 2>&1)" || rc=$?
+  chmod 0644 "$DEST"
+  assert_equals "2" "$rc" "a write teeup could not do reports 2" || return 1
+  assert_contains "$out" "was not refreshed" || return 1
+  if printf '%s\n' "$out" | grep -q 'Refreshed'; then
+    echo "claimed a refresh that did not happen"
+    return 1
+  fi
+  cleanup_test_env
+}
+
 # The worst case this file can produce: a backup that was claimed but never
 # made, followed by the overwrite of the file it claimed to have saved. A
 # read-only parent directory fails the rename (a rename needs the directory's
@@ -630,6 +666,7 @@ run_test "refresh_config leaves a dangling symlink alone" test_refresh_config_le
 run_test "refresh_config refuses a directory" test_refresh_config_refuses_a_directory
 run_test "refresh_config refuses a non-writable file" test_refresh_config_refuses_a_non_writable_file
 run_test "refresh_config will not reset what it cannot back up" test_refresh_config_will_not_reset_what_it_cannot_back_up
+run_test "refresh_if_pristine separates an edit from a failure" test_refresh_if_pristine_separates_an_edit_from_a_failure
 run_test "backup_target reports a failed move" test_backup_target_reports_a_failed_move
 run_test "copy_config_once will not replace a foreign file it cannot back up" test_copy_config_once_will_not_replace_a_foreign_file_it_cannot_back_up
 run_test "config_is_pristine follows the stock record" test_config_is_pristine_follows_the_stock_record

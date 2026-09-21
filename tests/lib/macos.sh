@@ -215,7 +215,9 @@ test_defaults_restore_leaves_an_unreplayable_type_alone() {
   mkdir -p "$r"
   printf 'dictionary:{\n' > "$r/com.apple.finder.FXPreferredViewStyle"
   out="$(defaults_restore com.apple.finder FXPreferredViewStyle 2>&1)" || rc=$?
-  assert_success "$rc" || return 1
+  # A type teeup cannot write back leaves the preference where it is, so the
+  # removal is incomplete and the caller has to be able to see that.
+  assert_failure "$rc" "an unrestorable key is reported, not passed off as restored" || return 1
   assert_contains "$out" "com.apple.finder FXPreferredViewStyle held a dictionary" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "defaults write" || return 1
   assert_equals "dictionary:{" "$(cat "$r/com.apple.finder.FXPreferredViewStyle")" "the record is kept" || return 1
@@ -231,7 +233,7 @@ test_defaults_restore_warns_and_keeps_the_record_when_a_write_fails() {
   export DEFAULTS_FAIL_WRITE=KeyRepeat
   out="$(defaults_restore NSGlobalDomain KeyRepeat 2>&1)" || rc=$?
   unset DEFAULTS_FAIL_WRITE
-  assert_success "$rc" "one failed restore must not abort remove" || return 1
+  assert_failure "$rc" "a failed restore is reported to the caller" || return 1
   assert_contains "$out" "Could not restore NSGlobalDomain KeyRepeat" || return 1
   assert_file_exists "$r/NSGlobalDomain.KeyRepeat" "the record stays for another try" || return 1
   cleanup_test_env
