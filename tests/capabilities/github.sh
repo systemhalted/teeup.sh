@@ -19,7 +19,9 @@ EOF2
   # A second host's session (if seeded) lives in `gh-session-<host>`; a bare
   # `auth status` (no -h) prints every seeded host, github.com first, the way
   # the real multi-host CLI does, so a test can prove that only
-  # `-h github.com`'s own scopes decide teeup's refresh.
+  # `-h github.com`'s own scopes decide teeup's refresh. The mock always names
+  # the active account "testuser", whatever host or identity is asking, so a
+  # test that wants an account mismatch names anything other than that.
   mock_command_script gh <<'EOF2'
 echo "GH_HOST=$GH_HOST" >> "$MOCK_LOG"
 host=""
@@ -679,6 +681,115 @@ test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run() {
   cleanup_test_env
 }
 
+# identity_list itself only reads the machine file (work_get), never the
+# answers file, so this is not strictly needed for identity_list to see the
+# work identity below -- it just gives the doctor a normal answers file to
+# run against, the way a configured machine would have one.
+seed_github_answers() {
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_NAME="Ada Lovelace"\nTEEUP_EMAIL="ada@example.com"\nTEEUP_WORK_EMAIL=""\n' \
+    > "$TEST_HOME/.config/teeup/answers"
+}
+
+test_doctor_passes_when_signed_in_with_the_keys_uploaded() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'admin:public_key,admin:ssh_signing_key,repo\n' > "$TEST_HOME/gh-session"
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026\t1\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Signed in to github.com" || return 1
+  assert_contains "$out" "personal public key is on GitHub" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_being_signed_out() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Not signed in to github.com" || return 1
+  assert_contains "$(cat "$report")" "teeup configure github" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_missing_scopes_and_an_unuploaded_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'repo\n' > "$TEST_HOME/gh-session"
+  : > "$TEST_HOME/gh-keys"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "admin:public_key" || return 1
+  assert_contains "$out" "is not on GitHub" || return 1
+  assert_contains "$(cat "$report")" "gh auth refresh" || return 1
+  cleanup_test_env
+}
+
+# identity_gh_host means a work identity on a GitHub Enterprise host is its
+# own host to sign in to, never folded into the github.com check above -- a
+# doctor that only ever asked github.com would call this machine healthy
+# while the work key was never checked at all.
+test_doctor_reports_a_second_host_that_needs_signing_in() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com"
+  printf 'admin:public_key,admin:ssh_signing_key,repo\n' > "$TEST_HOME/gh-session"
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026\t1\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Signed in to github.com" || return 1
+  assert_contains "$out" "Not signed in to github.enterprise.example.com" || return 1
+  assert_contains "$(cat "$report")" "teeup configure github" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+# Doctor is read-only, so it never runs `gh auth switch` to check an identity
+# whose account is not the one already active on that host -- that would be a
+# mutation a read-only command must not make. It says it could not check
+# instead of guessing a pass or a fail for the work key.
+test_doctor_reports_it_could_not_check_a_work_key_on_the_wrong_account() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "ada-corp"
+  printf 'admin:public_key,admin:ssh_signing_key\n' > "$TEST_HOME/gh-session"
+  printf 'admin:public_key,admin:ssh_signing_key\n' > "$TEST_HOME/gh-session-github.enterprise.example.com"
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026\t1\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Could not check the work key on github.enterprise.example.com" || return 1
+  assert_contains "$out" "signed in there as testuser, not ada-corp" || return 1
+  assert_not_contains "$out" "work public key is not on GitHub" "an unchecked identity must not be reported as failed" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 echo "capabilities/github"
 run_test "install gets gh" test_install_gets_gh
 run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
@@ -713,4 +824,9 @@ run_test "configure signs in to each host independently" test_configure_signs_in
 run_test "configure skips a key already uploaded to the Enterprise host" test_configure_skips_a_key_already_uploaded_to_the_enterprise_host
 run_test "configure dry run uploads nothing for either identity" test_configure_dry_run_uploads_nothing_for_either_identity
 run_test "configure twice with a work identity uploads nothing new" test_configure_twice_with_a_work_identity_uploads_nothing_new
+run_test "doctor passes when signed in with keys uploaded" test_doctor_passes_when_signed_in_with_the_keys_uploaded
+run_test "doctor reports being signed out" test_doctor_reports_being_signed_out
+run_test "doctor reports missing scopes and an unuploaded key" test_doctor_reports_missing_scopes_and_an_unuploaded_key
+run_test "doctor reports a second host that needs signing in" test_doctor_reports_a_second_host_that_needs_signing_in
+run_test "doctor reports it could not check a work key on the wrong account" test_doctor_reports_it_could_not_check_a_work_key_on_the_wrong_account
 print_summary

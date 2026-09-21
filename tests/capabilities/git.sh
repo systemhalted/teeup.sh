@@ -574,6 +574,92 @@ test_configure_dry_run_leaves_a_symlinked_config_alone() {
   cleanup_test_env
 }
 
+# A configured git tree with its one key pair on disk, which is the state in
+# which commit signing is supposed to be on. Git has one identity, full stop,
+# so there is no work key to seed here -- that only ever exists when
+# machines/<hostname>.conf configures one, and git never reads it.
+configure_git_with_keys() {
+  seed_answers
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYpersonal personal\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+}
+
+test_doctor_passes_on_a_configured_tree() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '%s\n' "ada@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYpersonal" \
+    > "$TEST_HOME/.config/git/allowed_signers"
+  printf '[gpg "ssh"]\n\tallowedSignersFile = "%s"\n' "$TEST_HOME/.config/git/allowed_signers" \
+    > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Identity: ada@example.com" || return 1
+  assert_contains "$out" "Commit signing is on" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_an_unconfigured_tree() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "git has never been configured here" || return 1
+  assert_contains "$(cat "$report")" "teeup configure git" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_signing_left_off_although_the_keys_exist() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  # The keys arrive after git was configured, which is exactly the order a
+  # first bootstrap runs in: git, then ssh.
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY personal\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "has every key it needs on disk but commit signing is off" || return 1
+  assert_contains "$(cat "$report")" "teeup configure git" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_missing_allowed_signers_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "gpg.ssh.allowedSignersFile is not set" || return 1
+  assert_contains "$(cat "$report")" "allowedSignersFile" || return 1
+  cleanup_test_env
+}
+
+test_doctor_warns_about_a_leftover_gitconfig() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[user]\n\temail = someone@else\n' > "$TEST_HOME/.gitconfig"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "$TEST_HOME/.gitconfig exists and its keys win" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/git"
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
@@ -597,6 +683,11 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "configure dry run names the shipped source, not a temp file" test_configure_dry_run_names_the_shipped_source_not_a_temp_file
 run_test "configure dry run names the shipped source for a foreign config" test_configure_dry_run_names_the_shipped_source_for_a_foreign_config
 run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name
+run_test "doctor passes on a configured tree" test_doctor_passes_on_a_configured_tree
+run_test "doctor reports an unconfigured tree" test_doctor_reports_an_unconfigured_tree
+run_test "doctor reports signing left off" test_doctor_reports_signing_left_off_although_the_keys_exist
+run_test "doctor reports a missing allowed-signers file" test_doctor_reports_a_missing_allowed_signers_file
+run_test "doctor warns about a leftover ~/.gitconfig" test_doctor_warns_about_a_leftover_gitconfig
 run_test "configure repairs an old two-identity config" test_configure_repairs_an_old_two_identity_config
 run_test "configure leaves a hand-edited old config alone" test_configure_leaves_a_hand_edited_old_config_alone
 run_test "the leftover warning names every old-model line" test_the_leftover_warning_names_every_old_model_line
