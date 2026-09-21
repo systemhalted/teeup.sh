@@ -134,9 +134,18 @@ defaults_restore() {
   fi
   recorded="$(cat "$record")"
   if [[ "$recorded" == "absent" ]]; then
+    # The record says the key was not there before teeup, so the goal is a key
+    # that is gone. `defaults delete` fails on a key that does not exist, and
+    # someone who already removed the preference by hand would otherwise fail
+    # the removal for ever: the delete is attempted first (nothing changes for
+    # a key that is really there), and only a failure asks whether the goal
+    # has been reached anyway.
     if ! run_cmd defaults delete "$domain" "$key"; then
-      warn "Could not delete $domain $key; the record stays at $record."
-      return 1
+      if defaults read "$domain" "$key" >/dev/null 2>&1; then
+        warn "Could not delete $domain $key; the record stays at $record."
+        return 1
+      fi
+      log "$domain $key is already absent, the way teeup found it."
     fi
   else
     type="${recorded%%:*}"

@@ -111,7 +111,7 @@ write_config_region() {
 # A single non-zero status would make a migration treat a failed write as
 # "the user edited this file" and mark itself applied over the top of it.
 refresh_if_pristine() {
-  local src="$1" dest="$2" display_src="${3:-$1}"
+  local src="$1" dest="$2" display_src="${3:-$1}" refresh_tmp
   if [[ ! -e "$dest" && ! -L "$dest" ]]; then
     copy_config_once "$src" "$dest" "$display_src" || return 2
     return 0
@@ -128,7 +128,27 @@ refresh_if_pristine() {
     printf "%b %s\n" "🔍" "[DRY-RUN] Would refresh $dest from $display_src"
     return 0
   fi
-  if ! cp "$src" "$dest" 2>/dev/null; then
+  # A file the user made read-only is left alone, the way write_managed_file
+  # leaves one: the rename below would replace it regardless, because a rename
+  # needs the directory's permission and not the file's, so the check has to
+  # be explicit or the atomicity below would quietly undo that rule.
+  if [[ ! -w "$dest" ]]; then
+    warn "$dest is not writable, so it was not refreshed from $display_src."
+    return 2
+  fi
+  # Into a temp file beside the destination, then rename: a `cp` straight over
+  # the live file truncates it first, so a disk that fills mid-copy would
+  # leave a half-written config where a working one used to be. `mv` within
+  # the same directory is atomic, so the file is either the old one or the new
+  # one and never something in between. Nothing here holds a backup -- the
+  # file is pristine by definition at this point -- which is exactly why the
+  # copy must not be able to destroy it.
+  refresh_tmp="$(mktemp "$(dirname "$dest")/.teeup_refresh.XXXXXX" 2>/dev/null)" || {
+    warn "Could not write in $(dirname "$dest"), so $dest was not refreshed from $display_src."
+    return 2
+  }
+  if ! cp "$src" "$refresh_tmp" 2>/dev/null || ! mv "$refresh_tmp" "$dest" 2>/dev/null; then
+    rm -f "$refresh_tmp"
     warn "Could not write $dest, so it was not refreshed from $display_src."
     return 2
   fi

@@ -167,10 +167,12 @@ pull and the package manager warn and the rest still runs, which makes
   and the theme and font hooks run afterwards, so a reset `starship.toml`
   carries the current palette.
 - **`teeup remove <cap>`** runs the capability's own `remove` script when it
-  has one (five capabilities ship one today: `macos-defaults` puts every
+  has one (six capabilities ship one today: `macos-defaults` puts every
   preference back the way it found it, `emacs` and `keyboard` unload their
   LaunchAgents, `colima` stops the VM before Homebrew can orphan it, `ai`
-  deletes only the wrappers it wrote), then uninstalls the casks and packages
+  deletes only the wrappers it wrote, and `emacs` and `wezterm` also uninstall
+  the MacPorts port their install put there when casks were unavailable),
+  then uninstalls the casks and packages
   its metadata names, then forgets it. Your configuration files stay where
   they are. It refuses while another installed capability requires it, and it
   refuses outright rather than claim success when a capability ships no

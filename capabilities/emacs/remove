@@ -2,4 +2,16 @@
 # Unload the daemon agent and drop its plist. Your configuration under
 # ~/.config/emacs, ~/.config/doom or ~/.emacs.d is yours and stays.
 launchagent_remove sh.teeup.emacs
+
+# On MacPorts install put the `emacs` port on this machine, because there is
+# no cask machinery there -- and the metadata names only the cask, so
+# cmd_remove's own loop would uninstall nothing and still report the
+# capability gone. Undo what install actually did on this backend.
+if ! casks_supported; then
+  if pkg_installed emacs; then
+    pkg_uninstall emacs || exit 1
+  else
+    log "No emacs port is installed here, so there is nothing to uninstall."
+  fi
+fi
 ok_unless_dry "The Emacs daemon no longer starts at login."

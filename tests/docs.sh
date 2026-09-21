@@ -56,7 +56,28 @@ test_readme_remove_count_matches_the_tree() {
   return 0
 }
 
+# The README also counts the capabilities that ship a remove script. That
+# number moves whenever one gains or loses the file, and nothing else notices.
+test_readme_remove_script_count_matches_the_tree() {
+  local n bullet word
+  n="$(find "$REPO/capabilities" -mindepth 2 -maxdepth 2 -name remove | wc -l | tr -d ' ')"
+  bullet="$(awk '/^- \*\*`teeup remove/,/^- \*\*`?[A-Z]/' "$REPO/README.md")"
+  case "$n" in
+    5) word=five ;;
+    6) word=six ;;
+    7) word=seven ;;
+    8) word=eight ;;
+    *) echo "no spelling for $n remove scripts: update this test and the README"; return 1 ;;
+  esac
+  printf '%s' "$bullet" | grep -q "$word capabilities ship one today" || {
+    echo "the README does not say $word capabilities ship a remove script, but $n do"
+    return 1
+  }
+  return 0
+}
+
 echo "docs"
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
 run_test "README's remove count matches the tree" test_readme_remove_count_matches_the_tree
+run_test "README's remove-script count matches the tree" test_readme_remove_script_count_matches_the_tree
 print_summary

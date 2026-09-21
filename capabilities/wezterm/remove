@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# On MacPorts install put the `wezterm` port on this machine, because there is
+# no cask machinery there -- and the metadata names only the cask, so
+# cmd_remove's own loop would uninstall nothing and still report the
+# capability gone. Undo what install actually did on this backend; on
+# Homebrew the cask in the metadata is the whole story and this script has
+# nothing to add.
+if ! casks_supported; then
+  if pkg_installed wezterm; then
+    pkg_uninstall wezterm || exit 1
+  else
+    log "No wezterm port is installed here, so there is nothing to uninstall."
+  fi
+fi
