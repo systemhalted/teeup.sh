@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Read the config files rather than asking `git config`: the files are what
+# `teeup configure git` owns, and reading them says which of the three layers
+# (shipped, generated, yours) a value came from, which is the thing that goes
+# wrong here.
+git_dir="$(user_config_dir)/git"
+
+if [[ ! -f "$git_dir/config" ]]; then
+  doctor_fail "git has never been configured here: there is no $git_dir/config." "teeup configure git"
+  doctor_verdict
+  exit
+fi
+doctor_ok "$git_dir/config is in place."
+
+# One identity, full stop (2026-09-17 decision): git carries whatever
+# $git_dir/identity says regardless of where a repository sits, so there is
+# only ever this one file to check, never a per-root pair.
+identity_file="$git_dir/identity"
+if [[ ! -f "$identity_file" ]]; then
+  doctor_fail "No $identity_file, so the git identity resolves to nothing." "teeup configure git"
+elif grep -q '^[[:space:]]*email[[:space:]]*=[[:space:]]*"..*"' "$identity_file"; then
+  doctor_ok "Identity: $(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" | head -1)"
+else
+  doctor_fail "$identity_file has no email, so commits would be unattributed." "teeup configure git"
+fi
+
+generated="$git_dir/teeup-generated"
+if [[ ! -f "$generated" ]]; then
+  doctor_fail "No $generated, so the editor, pager and signing settings the shipped config expects are missing." "teeup configure git"
+  doctor_verdict
+  exit
+fi
+
+# The generated file records what was installed when configure last ran. A
+# delta that has since been installed means it is stale, and `git diff` is
+# quietly plainer than it should be.
+if have delta; then
+  if grep -q '^[[:space:]]*pager = delta$' "$generated"; then
+    doctor_ok "delta is git's pager."
+  else
+    doctor_fail "delta is installed but $generated still names another pager." "teeup configure git"
+  fi
+fi
+
+# Signing turns itself on at the next configure once the personal key has
+# both halves -- git signs with that key alone, whatever repository it is in,
+# so a work key (when one even exists) never enters into this. On a first
+# bootstrap git runs before ssh, so this is the ordinary state of a machine
+# that has not been re-configured since.
+personal_key="$(identity_key personal)"
+if [[ -s "$personal_key" && -s "$personal_key.pub" ]]; then
+  keys_present=true
+else
+  keys_present=false
+fi
+if grep -q '^[[:space:]]*gpgsign = true$' "$generated"; then
+  doctor_ok "Commit signing is on."
+  signing_on=true
+elif [[ "$keys_present" == "true" ]]; then
+  doctor_fail "git has every key it needs on disk but commit signing is off in $generated." "teeup configure git"
+  signing_on=false
+else
+  doctor_warn "Commit signing is off because the personal key does not exist yet. Run: teeup configure ssh"
+  signing_on=false
+fi
+
+# Signing with an SSH key is only half of it. Verification reads
+# gpg.ssh.allowedSignersFile, and with none set `git log --show-signature`
+# reports every commit teeup just signed as having no known signer. Nothing in
+# teeup writes that file yet, so the fix is a command, not a verb.
+if [[ "$signing_on" == "true" ]]; then
+  signers_set=false
+  for f in "$git_dir/config" "$generated" "$git_dir/local"; do
+    if [[ -f "$f" ]] && grep -qi 'allowedSignersFile' "$f"; then
+      signers_set=true
+    fi
+  done
+  if [[ "$signers_set" == "true" ]]; then
+    doctor_ok "gpg.ssh.allowedSignersFile is set, so signatures can be verified."
+  else
+    signers="$git_dir/allowed_signers"
+    personal_pub="$(identity_key personal).pub"
+    doctor_fail "Commit signing is on with gpg.format = ssh, but gpg.ssh.allowedSignersFile is not set, so git cannot verify any signature it makes. Add one line per identity." \
+      "printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $personal_pub)\" >> $signers && git config --global gpg.ssh.allowedSignersFile $signers"
+  fi
+fi
+
+# Two ways for the whole tree above to be ignored. teeup never edits either,
+# so both are notes with an instruction rather than failures with a fix.
+if [[ -f "$HOME/.gitconfig" ]]; then
+  doctor_warn "$HOME/.gitconfig exists and its keys win over $git_dir/config. Move what you want to keep into $git_dir/local, then delete it."
+fi
+if [[ -n "${GIT_CONFIG_GLOBAL:-}" ]]; then
+  doctor_warn "GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL overrides $git_dir/config outright; nothing above is read."
+fi
+
+doctor_verdict

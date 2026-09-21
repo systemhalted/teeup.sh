@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Keys, their permissions, and the host aliases that decide which key a push
+# uses. ssh refuses a private key other people can read, and it refuses it at
+# the moment you need it, so the mode is checked here rather than assumed.
+ssh_dir="$HOME/.ssh"
+
+# The same probe capabilities/ssh/configure's file_mode uses: GNU stat first
+# because its -f means something else entirely, BSD stat second.
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || printf 'unknown\n'; }
+
+if [[ ! -d "$ssh_dir" ]]; then
+  doctor_fail "No $ssh_dir, so no identity exists on this machine." "teeup configure ssh"
+  doctor_verdict
+  exit
+fi
+if [[ "$(mode_of "$ssh_dir")" == "700" ]]; then
+  doctor_ok "$ssh_dir is mode 700."
+else
+  doctor_fail "$ssh_dir is mode $(mode_of "$ssh_dir"), not 700." "chmod 700 $ssh_dir"
+fi
+
+# identity_key is the source of truth for which file this is, teeup's own
+# convention or a key named by an existing ~/.ssh/config (2026-09-20
+# decision) -- never re-derived by hand, so a reused key is checked at the
+# path ssh actually uses.
+for identity in $(identity_list); do
+  key="$(identity_key "$identity")"
+  if [[ ! -s "$key" || ! -s "$key.pub" ]]; then
+    doctor_fail "The $identity identity has no key pair at $key." "teeup configure ssh"
+    continue
+  fi
+  doctor_ok "The $identity key pair is present at $key."
+  if [[ "$(mode_of "$key")" != "600" ]]; then
+    doctor_fail "$key is mode $(mode_of "$key"); ssh refuses a private key other accounts can read." "chmod 600 $key"
+  fi
+done
+
+# Only the aliases identity_list actually names: github.com-work is rendered
+# only on a machine whose machines/<hostname>.conf configures a work
+# identity, so checking for it unconditionally would fail every personal-only
+# machine, which is most of them.
+if [[ ! -f "$ssh_dir/config" ]]; then
+  doctor_fail "No $ssh_dir/config, so no identity's key is ever offered to github.com." "teeup configure ssh"
+else
+  for identity in $(identity_list); do
+    host_alias="Host $(ssh_host_alias "$identity")"
+    if grep -q "^$host_alias\$" "$ssh_dir/config"; then
+      doctor_ok "$ssh_dir/config declares $host_alias."
+    else
+      doctor_fail "$ssh_dir/config has no '$host_alias' block." "teeup reset ssh"
+    fi
+  done
+fi
+
+# The agent is per-session state, not configuration: a Mac that has just been
+# rebooted has an empty agent and nothing is wrong. This only ever says
+# whether the agent is holding something, never which key -- ssh-add -l does
+# not say which identity a listed key belongs to without also running
+# ssh-keygen over every public key on this machine, which is more than a
+# fingerprint check earns here.
+if have ssh-add; then
+  if ssh-add -l >/dev/null 2>&1; then
+    doctor_ok "The ssh agent is holding at least one key."
+  else
+    doctor_warn "The ssh agent is holding no key yet; it fills up on first use. Run: ssh-add --apple-use-keychain $(identity_key personal)"
+  fi
+fi
+
+doctor_verdict

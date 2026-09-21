@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# One check per identity's own host and account, never once for the whole
+# machine: identity_gh_host lets a work identity live on a GitHub Enterprise
+# host, and identity_gh_account lets two identities share a host under
+# different accounts (both lib/answers.sh, both the source of truth here, the
+# same as `teeup configure github` reads). Hardcoding github.com would
+# silently skip a second host and call it healthy. Doctor is read-only, so it
+# never runs `gh auth switch` to check an identity whose account is not the
+# one already active -- that would mutate gh's session -- and it reports
+# "could not check" for that identity instead of guessing.
+
+if ! have gh; then
+  doctor_fail "gh is not installed, so nothing can talk to GitHub." "teeup install github"
+  doctor_verdict
+  exit
+fi
+
+# gh_key_listed <listed> <key-body> -> exits 0 when `gh ssh-key list`'s
+# output (a tab-separated TITLE/KEY/ADDED/ID/TYPE, the real non-TTY format gh
+# 2.100.0 prints) already has a row whose key field is our public key body.
+# The title is free text and comes first, so it is never matched: a title
+# that merely contains our key body is somebody else's key.
+gh_key_listed() {
+  printf '%s\n' "$1" | awk -F'\t' -v body="$2" '
+    { for (f = 2; f <= NF; f++) { split($f, w, " "); if (w[2] == body) { found = 1 } } }
+    END { exit(found ? 0 : 1) }
+  '
+}
+
+for identity in $(identity_list); do
+  gh_host="$(identity_gh_host "$identity")"
+  gh_account="$(identity_gh_account "$identity")"
+
+  # --active narrows the report to the one account gh will actually use for
+  # this host. Without it an unrelated stale account decides the exit status,
+  # and its scopes are the ones that get read.
+  if ! status_out="$(GH_HOST="$gh_host" gh auth status --active -h "$gh_host" 2>&1)"; then
+    doctor_fail "Not signed in to $gh_host (needed for the $identity identity)." "teeup configure github"
+    continue
+  fi
+  doctor_ok "Signed in to $gh_host ($identity identity)."
+
+  # A host can have exactly one active account, and identity_gh_account names
+  # the one this identity's key belongs on. When gh is signed in as someone
+  # else there, teeup never learns what that other account can or cannot do
+  # -- the scopes and key list below belong to whoever is active, not
+  # necessarily $gh_account -- so this identity is left unchecked rather than
+  # checked against the wrong account.
+  if [[ -n "$gh_account" ]]; then
+    active_account="$(printf '%s\n' "$status_out" | awk '{ for (i = 1; i < NF; i++) if ($i == "account") { print $(i + 1); exit } }')"
+    if [[ -n "$active_account" && "$active_account" != "$gh_account" ]]; then
+      doctor_warn "Could not check the $identity key on $gh_host: gh is signed in there as $active_account, not $gh_account. Sign in as $gh_account to check it (gh auth switch --hostname $gh_host --user $gh_account)."
+      continue
+    fi
+  fi
+
+  # The two scopes the key uploads need. A machine that authenticated gh
+  # before teeup existed is usually missing both.
+  for scope in admin:public_key admin:ssh_signing_key; do
+    case "$status_out" in
+      *"$scope"*) doctor_ok "gh has the $scope scope on $gh_host." ;;
+      *) doctor_fail "gh's token for $gh_host is missing the $scope scope, so teeup cannot upload the $identity key." "gh auth refresh -h $gh_host -s admin:public_key,admin:ssh_signing_key" ;;
+    esac
+  done
+
+  pub="$(identity_key "$identity").pub"
+  if [[ ! -s "$pub" ]]; then
+    doctor_warn "The $identity identity has no public key yet, so there is nothing to upload. Run: teeup configure ssh"
+    continue
+  fi
+  # NR == 1: a .pub is one line, but a stray second line would otherwise
+  # yield a multi-line body that can never match a listed row.
+  body="$(awk 'NR == 1 { print $2 }' "$pub")"
+  listed="$(GH_HOST="$gh_host" gh ssh-key list 2>/dev/null || true)"
+  if [[ -n "$body" ]] && gh_key_listed "$listed" "$body"; then
+    doctor_ok "The $identity public key is on GitHub ($gh_host)."
+  else
+    doctor_fail "The $identity public key is not on GitHub, so pushes with it are refused." "teeup configure github"
+  fi
+done
+
+doctor_verdict

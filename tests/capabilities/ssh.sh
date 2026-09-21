@@ -614,6 +614,53 @@ test_a_malformed_work_email_stops_the_run() {
   cleanup_test_env
 }
 
+test_doctor_passes_after_configure() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "personal key pair is present" || return 1
+  assert_contains "$out" "Host github.com" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_missing_key_pair() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  # The directory exists and is correctly locked down; what is missing is the
+  # keys, which is the state a half-finished `teeup configure ssh` leaves.
+  mkdir -p "$TEST_HOME/.ssh"
+  chmod 700 "$TEST_HOME/.ssh"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "has no key pair" || return 1
+  assert_contains "$(cat "$report")" "teeup configure ssh" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_world_readable_private_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  chmod 644 "$TEST_HOME/.ssh/id_ed25519_personal"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "is mode 644" || return 1
+  assert_contains "$(cat "$report")" "chmod 600 $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/ssh"
 run_test "configure generates one key on a machine with no work identity" test_configure_generates_one_key_on_a_machine_with_no_work_identity
 run_test "configure generates both keys when the machine file configures work" test_configure_generates_both_keys_when_the_machine_file_configures_work
@@ -649,4 +696,7 @@ run_test "configure does not re-run git when git was never configured" test_conf
 run_test "configure backs up a pub-only key and regenerates the pair" test_configure_backs_up_a_pub_only_key_and_regenerates_the_pair
 run_test "configure dry run pub-only backs up nothing and generates nothing" test_configure_dry_run_pub_only_backs_up_nothing_and_generates_nothing
 run_test "configure twice changes nothing" test_configure_twice_changes_nothing
+run_test "doctor passes after configure" test_doctor_passes_after_configure
+run_test "doctor reports a missing key pair" test_doctor_reports_a_missing_key_pair
+run_test "doctor reports a world-readable private key" test_doctor_reports_a_world_readable_private_key
 print_summary
