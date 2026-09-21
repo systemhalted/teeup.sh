@@ -76,25 +76,53 @@ _doctor_report_lines() {
 # resolves only inside the shims directory (phase 3b), so a lazy capability
 # marked installed whose shim never got replaced is a finding rather than a
 # pass. Always returns 0; the report carries the verdict.
+# doctor_backend_can_answer -> 0 when the package manager's own command is
+# here to be asked. Everything doctor says about packages and casks depends on
+# it, and a missing brew or port makes "not installed" unknowable rather than
+# true.
+doctor_backend_can_answer() {
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
+    homebrew) have brew ;;
+    macports) have port ;;
+    *) return 1 ;;
+  esac
+}
+
 doctor_metadata_check() {
   local cap="$1" item candidate found app
-  for item in $(cap_meta_get "$cap" packages); do
-    found=false
-    for candidate in $(package_candidates "$item"); do
-      if pkg_installed "$candidate"; then
-        found=true
-        break
+  # Without the backend's own command there is no way to ask whether anything
+  # is installed, and "not installed" would be teeup asserting something it
+  # never checked. Say what is actually true: the check could not run.
+  if ! doctor_backend_can_answer; then
+    if [[ -n "$(cap_meta_get "$cap" packages)" ]] || { [[ -n "$(cap_meta_get "$cap" casks)" ]] && casks_supported; }; then
+      doctor_warn "$(pkg_backend_label) is not on PATH, so teeup could not check what $cap installed."
+    fi
+  else
+    for item in $(cap_meta_get "$cap" packages); do
+      found=false
+      for candidate in $(package_candidates "$item"); do
+        if pkg_installed "$candidate"; then
+          found=true
+          break
+        fi
+      done
+      if [[ "$found" == "true" ]]; then
+        doctor_ok "package $item is installed."
+      else
+        _doctor_report_failure "$cap" "package $item is not installed." "teeup install $cap"
       fi
     done
-    if [[ "$found" == "true" ]]; then
-      doctor_ok "package $item is installed."
-    else
-      _doctor_report_failure "$cap" "package $item is not installed." "teeup install $cap"
-    fi
-  done
+  fi
   for item in $(cap_meta_get "$cap" casks); do
+    # Whether this backend has casks at all is a fact about the backend, not a
+    # question for its command: MacPorts has none whether or not `port` is
+    # installed, so this answer stands even when nothing can be asked.
     if ! casks_supported; then
       doctor_warn "casks are not available with $(pkg_backend_label); install $item by hand."
+      continue
+    fi
+    if ! doctor_backend_can_answer; then
       continue
     fi
     if cask_installed "$item"; then
@@ -139,6 +167,20 @@ doctor_targets() {
   return 0
 }
 
+# doctor_installed_any -> 0 when anything at all is marked installed here,
+# whatever TEEUP_SKIP says about it. doctor_targets deliberately leaves the
+# skipped ones out; this tells an empty target list apart from an empty
+# machine.
+doctor_installed_any() {
+  local name
+  for name in $(cap_list); do
+    if state_done check "cap-$name"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # doctor_run_one <capability>
 # Always returns 0: one capability that cannot be checked must not stop the
 # rest, and the report, not this function, carries the verdict. A doctor
@@ -146,6 +188,15 @@ doctor_targets() {
 doctor_run_one() {
   local cap="$1" script before
   log "== $cap: $(cap_meta_get "$cap" summary) =="
+  # A capability this machine cannot have is not a broken one. Checking its
+  # metadata would report every package it names as missing, exit 1, and
+  # offer `teeup install`, which would answer not-applicable and change
+  # nothing: a healthy machine described as broken, with a fix that is a
+  # no-op.
+  if state_na check "cap-$cap"; then
+    doctor_ok "$cap is not applicable on this machine, so there is nothing to check."
+    return 0
+  fi
   if cap_skipped "$cap"; then
     doctor_warn "$cap is skipped on this machine (TEEUP_SKIP); checking it anyway."
   fi

@@ -589,7 +589,16 @@ cmd_doctor() {
   else
     targets="$(doctor_targets)"
     if [[ -z "$targets" ]]; then
-      warn "No capability is marked installed here. Run ./bootstrap, or name one: teeup doctor <capability>"
+      # "Nothing installed" and "everything installed is skipped on this
+      # machine" are different facts, and saying the first when the second is
+      # true sends the user to ./bootstrap over a machine that is set up
+      # exactly as its machine file asks.
+      if doctor_installed_any; then
+        warn "Every installed capability is skipped on this machine (TEEUP_SKIP), so there was nothing to check."
+        warn "Check one anyway by naming it: teeup doctor <capability>"
+      else
+        warn "No capability is marked installed here. Run ./bootstrap, or name one: teeup doctor <capability>"
+      fi
     fi
     for name in $targets; do
       doctor_run_one "$name"
