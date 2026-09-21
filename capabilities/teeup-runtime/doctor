@@ -53,16 +53,28 @@ fi
 # The shell layer appends it last; anything that moves it earlier turns a shim
 # into a shadow over a real binary.
 shims="$(shims_dir)"
+# How many times it appears, not just whether it ends there: a PATH that
+# carries the shims directory twice -- once early, once last -- ends with it
+# and would pass an "ends with" test, while the early copy shadows every real
+# binary behind a shim. That is the exact failure this check exists for.
+shims_count="$(printf '%s' ":$PATH:" | awk -v d=":$shims:" '
+  { n = 0; i = 1
+    while (1) { p = index(substr($0, i), d); if (p == 0) break; n++; i += p }
+    print n }')"
 case ":$PATH:" in
   *":$shims:"*)
-    case "$PATH" in
-      "$shims"|*":$shims")
-        doctor_ok "The lazy shims directory is last on PATH."
-        ;;
-      *)
-        doctor_warn "The lazy shims directory is on PATH but not last, so a shim can shadow a real command. Open a new login shell, or check what prepends to PATH after ~/.zshenv."
-        ;;
-    esac
+    if [[ "$shims_count" -gt 1 ]]; then
+      doctor_warn "The lazy shims directory is on PATH $shims_count times; the earlier copy shadows real commands with shims. Check what prepends to PATH after ~/.zshenv."
+    else
+      case "$PATH" in
+        "$shims"|*":$shims")
+          doctor_ok "The lazy shims directory is last on PATH."
+          ;;
+        *)
+          doctor_warn "The lazy shims directory is on PATH but not last, so a shim can shadow a real command. Open a new login shell, or check what prepends to PATH after ~/.zshenv."
+          ;;
+      esac
+    fi
     ;;
   *)
     doctor_fail "$shims is not on PATH, so no lazy shim can fire." "teeup configure zsh"

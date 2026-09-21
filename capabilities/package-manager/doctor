@@ -3,23 +3,33 @@
 # what each capability declares, and this capability declares nothing. What
 # it owns is whether the package manager exists, is reachable, and is the one
 # everything else has been assuming.
-if pkg_backend_installed; then
-  doctor_ok "$(pkg_backend_label) is installed under $(pkg_prefix)."
+# Where the backend really is, asked of the machine rather than derived from
+# the architecture. pkg_prefix guesses (/opt/homebrew on Apple Silicon,
+# /usr/local otherwise) unless HOMEBREW_PREFIX says otherwise, and a Homebrew
+# installed at the other standard prefix -- or one whose HOMEBREW_PREFIX is
+# exported only in an interactive shell -- makes every line below name a
+# directory that has nothing in it.
+case "$(pkg_backend)" in
+  homebrew) backend_cmd=brew ;;
+  macports) backend_cmd=port ;;
+  *) backend_cmd="" ;;
+esac
+found_bin=""
+if [[ -n "$backend_cmd" ]] && have "$backend_cmd"; then
+  found_bin="$(command -v "$backend_cmd")"
+fi
+assumed_prefix="$(pkg_prefix)"
+if [[ -n "$found_bin" ]]; then
+  real_prefix="${found_bin%/bin/*}"
+  doctor_ok "$(pkg_backend_label) is installed under $real_prefix."
+  if [[ "$real_prefix" != "$assumed_prefix" ]]; then
+    doctor_warn "teeup looks for it under $assumed_prefix instead, so anything it installs there will not be found. Set HOMEBREW_PREFIX=$real_prefix in $(machine_file), or in your shell before running teeup."
+  fi
+elif [[ -x "$assumed_prefix/bin/$backend_cmd" ]]; then
+  doctor_fail "$(pkg_backend_label) is installed under $assumed_prefix but $assumed_prefix/bin is not on PATH, so nothing installed through it can be found." "teeup configure zsh"
 else
   doctor_fail "$(pkg_backend_label) is not installed." "./bootstrap"
 fi
-
-# A backend that is installed but whose bin directory is missing from PATH is
-# the quieter half of the same failure: every command installed through it is
-# invisible, and each one looks like its own capability's problem.
-case ":$PATH:" in
-  *":$(pkg_prefix)/bin:"*)
-    doctor_ok "$(pkg_prefix)/bin is on PATH."
-    ;;
-  *)
-    doctor_fail "$(pkg_prefix)/bin is not on PATH, so nothing installed through $(pkg_backend_label) can be found." "teeup configure zsh"
-    ;;
-esac
 
 # configure records the resolved backend so that a macOS upgrade past the
 # MacPorts cut-off cannot silently move the machine to Homebrew. The answers

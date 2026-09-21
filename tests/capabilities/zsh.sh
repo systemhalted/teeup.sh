@@ -490,6 +490,41 @@ test_doctor_reports_a_home_file_that_lost_the_teeup_layer() {
   cleanup_test_env
 }
 
+# A source line left behind commented out while debugging still contains the
+# marker text, so a substring match calls the shell healthy while none of
+# teeup's layer loads -- the exact silent failure this check exists for.
+test_doctor_does_not_count_a_commented_out_source_line() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  # shellcheck disable=SC2016  # the marker is literal text, not an expansion
+  printf '# DISABLED while debugging: . "$TEEUP_PATH/capabilities/zsh/default/rc"\n' > "$TEST_HOME/.zshrc"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a commented-out source line is not a loaded layer" || return 1
+  assert_contains "$out" "never loads" || return 1
+  cleanup_test_env
+}
+
+# A login shell recorded as zsh but no longer on disk: login falls back to
+# something else, and every teeup shell file goes unread.
+test_doctor_checks_the_login_shell_exists() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: $TEST_HOME/removed/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "nothing executable is there" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zsh"
 test_env_survives_errexit_without_nvim() {
   setup
@@ -537,4 +572,6 @@ run_test "rc leaves git revision syntax alone" test_rc_leaves_git_revision_synta
 run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor reports a login shell that is not zsh" test_doctor_reports_a_login_shell_that_is_not_zsh
 run_test "doctor reports a home file that lost the layer" test_doctor_reports_a_home_file_that_lost_the_teeup_layer
+run_test "doctor does not count a commented-out source line" test_doctor_does_not_count_a_commented_out_source_line
+run_test "doctor checks the login shell exists" test_doctor_checks_the_login_shell_exists
 print_summary

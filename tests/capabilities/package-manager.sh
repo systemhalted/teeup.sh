@@ -92,9 +92,36 @@ test_doctor_reports_a_backend_that_is_not_on_path() {
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
+  # One true statement per state: with no brew anywhere, "not installed" is
+  # the fact. Saying its prefix is also missing from PATH adds nothing and
+  # points at a directory that does not exist.
   assert_contains "$out" "Homebrew is not installed" || return 1
-  assert_contains "$out" "is not on PATH" || return 1
   assert_contains "$(cat "$report")" "./bootstrap" || return 1
+  cleanup_test_env
+}
+
+# Installed, but not where this architecture would put it -- a Homebrew at
+# /usr/local on Apple Silicon, or one whose HOMEBREW_PREFIX is exported only
+# in an interactive shell. teeup will look in the wrong place, and saying
+# "not installed" (or naming the guessed prefix as though it were real) sends
+# the user to reinstall something that is already there.
+test_doctor_names_the_prefix_the_backend_is_really_at() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local elsewhere="$TEST_HOME/opt/other brew"
+  mkdir -p "$elsewhere/bin"
+  printf '#!/usr/bin/env bash
+exit 0
+' > "$elsewhere/bin/brew"
+  chmod +x "$elsewhere/bin/brew"
+  rm -f "$MOCK_BIN/brew"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(PATH="$elsewhere/bin:$PATH" DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
+  assert_contains "$out" "Homebrew is installed under $elsewhere" || return 1
+  assert_contains "$out" "teeup looks for it under" || return 1
+  assert_not_contains "$out" "Homebrew is not installed" || return 1
   cleanup_test_env
 }
 
@@ -118,6 +145,7 @@ run_test "configure records backend in answers" test_configure_records_backend_i
 run_test "configure keeps existing answer" test_configure_keeps_existing_answer
 run_test "doctor passes on a healthy machine" test_doctor_passes_on_a_healthy_machine
 run_test "doctor reports a backend not on PATH" test_doctor_reports_a_backend_that_is_not_on_path
+run_test "doctor names the prefix the backend is really at" test_doctor_names_the_prefix_the_backend_is_really_at
 run_test "doctor says when the machine file pins another backend" test_doctor_says_when_the_machine_file_pins_another_backend
 run_test "configure dry run does not claim the backend was recorded" test_configure_dry_run_does_not_claim_the_backend_was_recorded
 run_test "configure real-run wording is unchanged" test_configure_real_run_wording_is_unchanged

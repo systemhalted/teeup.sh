@@ -8,7 +8,14 @@ zsh_home_dir="${ZDOTDIR:-$HOME}"
 login_shell="$(dscl . -read "/Users/${USER:-$(id -un)}" UserShell 2>/dev/null | awk '{print $2}')"
 case "$login_shell" in
   */zsh)
-    doctor_ok "Login shell is $login_shell."
+    # The path being spelled zsh is not the same as a zsh being there: a
+    # `chsh` to a shell that was later removed leaves the record behind, and
+    # login then falls back to something else entirely.
+    if [[ -x "$login_shell" ]]; then
+      doctor_ok "Login shell is $login_shell."
+    else
+      doctor_fail "Login shell is recorded as $login_shell, but nothing executable is there, so login falls back to another shell." "chsh -s /bin/zsh"
+    fi
     ;;
   *)
     doctor_fail "Login shell is ${login_shell:-unknown}, not zsh, so none of teeup's shell layer runs." "chsh -s /bin/zsh"
@@ -21,7 +28,11 @@ esac
 for f in .zshenv .zprofile .zshrc; do
   if [[ ! -f "$zsh_home_dir/$f" ]]; then
     doctor_fail "No $zsh_home_dir/$f." "teeup configure zsh"
-  elif grep -qF 'capabilities/zsh/default/' "$zsh_home_dir/$f"; then
+  # An uncommented line, not just the text somewhere in the file: a
+  # `# DISABLED: . "$TEEUP_PATH/capabilities/zsh/default/rc"` left behind
+  # while debugging still contains the marker, and a substring match would
+  # call that shell healthy while none of teeup's layer loads.
+  elif grep -v '^[[:space:]]*#' "$zsh_home_dir/$f" | grep -qF 'capabilities/zsh/default/'; then
     doctor_ok "$zsh_home_dir/$f loads teeup's shell layer."
   else
     doctor_fail "$zsh_home_dir/$f does not source teeup's default layer, so teeup's shell configuration never loads." "teeup reset zsh"
