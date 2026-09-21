@@ -1291,6 +1291,21 @@ test_doctor_checks_one_capability_even_when_it_is_not_installed() {
   cleanup_test_env
 }
 
+# Every installed capability skipped on this machine is not an empty machine:
+# telling the user to run ./bootstrap over a machine that is set up exactly as
+# its machine file asks sends them to do work that is already done.
+test_doctor_separates_an_empty_machine_from_a_fully_skipped_one() {
+  setup
+  local out
+  out="$(TEEUP_SKIP='' "$TEEUP" doctor 2>&1)" || true
+  assert_contains "$out" "No capability is marked installed here" || return 1
+  "$TEEUP" install alpha >/dev/null
+  out="$(TEEUP_SKIP="alpha beta" "$TEEUP" doctor 2>&1)" || true
+  assert_contains "$out" "Every installed capability is skipped on this machine" || return 1
+  assert_not_contains "$out" "No capability is marked installed here" || return 1
+  cleanup_test_env
+}
+
 test_doctor_rejects_an_unknown_capability() {
   setup
   local out rc=0
@@ -1371,5 +1386,6 @@ run_test "remove refuses a not-applicable capability" test_remove_refuses_a_not_
 run_test "doctor is quiet and zero when healthy" test_doctor_is_quiet_and_zero_when_nothing_is_installed_is_wrong
 run_test "doctor names the failure and its fix" test_doctor_names_the_failure_and_the_command_that_fixes_it
 run_test "doctor checks an uninstalled capability" test_doctor_checks_one_capability_even_when_it_is_not_installed
+run_test "doctor separates an empty machine from a fully skipped one" test_doctor_separates_an_empty_machine_from_a_fully_skipped_one
 run_test "doctor rejects an unknown capability" test_doctor_rejects_an_unknown_capability
 print_summary

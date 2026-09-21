@@ -68,11 +68,29 @@ test_verdict_is_zero_until_something_fails() {
 test_metadata_check_reports_a_missing_package_with_its_fix() {
   setup
   make_cap widget "ripgrep"
-  hide_host_commands brew
+  # A brew that answers, and answers no. Hiding brew entirely is a different
+  # state -- teeup cannot check at all -- and has its own test below.
+  mock_command brew 1 ""
   local out
   out="$(doctor_metadata_check widget 2>&1)"
   assert_contains "$out" "package ripgrep is not installed" || return 1
   assert_contains "$(cat "$REPORT")" "teeup install widget" || return 1
+  cleanup_test_env
+}
+
+# "not installed" and "teeup could not find out" are different answers, and
+# only one of them is a problem the user can fix. Without the backend's own
+# command there is nothing to ask, so doctor must not assert the package is
+# missing -- and must not file it as a failure with a fix.
+test_metadata_check_says_so_when_it_cannot_ask_the_backend() {
+  setup
+  make_cap widget "ripgrep"
+  hide_host_commands brew
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "is not on PATH, so teeup could not check what widget installed" || return 1
+  assert_not_contains "$out" "package ripgrep is not installed" || return 1
+  assert_equals "" "$(cat "$REPORT")" "an unanswerable check is not a failure with a fix" || return 1
   cleanup_test_env
 }
 
@@ -193,15 +211,52 @@ test_run_one_does_not_double_count_a_doctor_that_explained_itself() {
 }
 
 echo "lib/doctor.sh"
+# A capability this machine cannot have is healthy, not broken. Checking its
+# metadata would call every package it names missing, file a failure with a
+# `teeup install` fix that answers not-applicable and changes nothing, and
+# make `teeup doctor` exit 1 on a machine that is exactly as it should be.
+test_run_one_leaves_a_not_applicable_capability_alone() {
+  setup
+  make_cap widget "ripgrep" "widget-app"
+  mock_command brew 1 ""
+  state_na mark "cap-widget"
+  local out
+  out="$(doctor_run_one widget 2>&1)"
+  assert_contains "$out" "not applicable on this machine, so there is nothing to check" || return 1
+  assert_not_contains "$out" "package ripgrep is not installed" || return 1
+  assert_equals "" "$(cat "$REPORT")" "a not-applicable capability is not a problem to fix" || return 1
+  cleanup_test_env
+}
+
+# "Nothing is installed" and "everything installed is skipped here" are
+# different facts. Saying the first sends the user to ./bootstrap over a
+# machine that is set up exactly as its machine file asks.
+test_installed_any_sees_past_teeup_skip() {
+  setup
+  make_cap widget "" ""
+  doctor_installed_any && { echo "nothing is installed yet"; return 1; }
+  state_done mark "cap-widget"
+  doctor_installed_any || { echo "an installed capability must be seen"; return 1; }
+  TEEUP_SKIP=widget
+  export TEEUP_SKIP
+  assert_equals "" "$(doctor_targets)" "a skipped capability is not a target" || return 1
+  doctor_installed_any || { echo "a skipped capability is still installed"; return 1; }
+  unset TEEUP_SKIP
+  cleanup_test_env
+}
+
 run_test "fail prints and records against the current capability" test_fail_prints_and_records_against_the_current_capability
 run_test "fail flattens tabs and newlines" test_fail_flattens_tabs_and_newlines_so_one_failure_is_one_record
 run_test "record without a report is a no-op" test_record_without_a_report_is_a_no_op
 run_test "verdict is zero until something fails" test_verdict_is_zero_until_something_fails
 run_test "metadata check reports a missing package" test_metadata_check_reports_a_missing_package_with_its_fix
+run_test "metadata check says so when it cannot ask the backend" test_metadata_check_says_so_when_it_cannot_ask_the_backend
 run_test "metadata check passes when listed" test_metadata_check_passes_when_the_package_manager_lists_it
 run_test "metadata check reports a missing app" test_metadata_check_reports_a_missing_app
 run_test "metadata check skips casks on macports" test_metadata_check_skips_casks_on_macports
 run_test "metadata check rejects a shim-only command" test_metadata_check_rejects_a_command_that_is_only_a_shim
+run_test "run one leaves a not-applicable capability alone" test_run_one_leaves_a_not_applicable_capability_alone
+run_test "installed_any sees past TEEUP_SKIP" test_installed_any_sees_past_teeup_skip
 run_test "targets are the installed capabilities" test_targets_are_the_installed_capabilities_in_order
 run_test "summary is quiet on an empty report" test_summary_is_quiet_and_zero_when_the_report_is_empty
 run_test "summary names every failure and its fix" test_summary_names_every_failure_and_its_fix
