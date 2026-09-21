@@ -198,6 +198,64 @@ test_configure_survives_a_sample_it_cannot_write() {
 }
 
 
+# A PATH shaped the way the shell layer shapes it: the package prefix and
+# ~/.local/bin in front, the lazy shims directory last.
+healthy_path() {
+  export PATH="$TEEUP_PKG_PREFIX/bin:$TEST_HOME/.local/bin:$PATH:$TEST_HOME/.local/state/teeup/shims"
+}
+
+test_doctor_passes_after_configure() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  healthy_path
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "points at this checkout" || return 1
+  assert_contains "$out" "The lazy shims directory is last on PATH." || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_missing_env_file_link_and_state() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "shells and LaunchAgents cannot find the checkout" || return 1
+  assert_contains "$out" "so the teeup command is not on PATH" || return 1
+  assert_contains "$out" "Missing under" || return 1
+  assert_contains "$(cat "$report")" "teeup configure teeup-runtime" || return 1
+  cleanup_test_env
+}
+
+test_doctor_fails_when_the_shims_directory_is_off_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  export PATH="$TEEUP_PKG_PREFIX/bin:$TEST_HOME/.local/bin:$PATH"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "is not on PATH, so no lazy shim can fire" || return 1
+  cleanup_test_env
+}
+
+test_doctor_warns_when_the_shims_directory_is_not_last() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  export PATH="$TEEUP_PKG_PREFIX/bin:$TEST_HOME/.local/bin:$TEST_HOME/.local/state/teeup/shims:$PATH"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_success "$rc" "being out of order is a warning, not a failure" || return 1
+  assert_contains "$out" "on PATH but not last" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/teeup-runtime"
 run_test "install gets gum and jq" test_install_gets_gum_and_jq
 run_test "configure creates state, env and link" test_configure_creates_state_env_and_link
@@ -210,4 +268,8 @@ run_test "configure writes the lazy shims" test_configure_writes_the_lazy_shims
 run_test "configure removes a shim its capability dropped" test_configure_removes_a_shim_its_capability_dropped
 run_test "configure survives a sample it cannot write" test_configure_survives_a_sample_it_cannot_write
 run_test "configure dry run writes no shims" test_configure_dry_run_writes_no_shims
+run_test "doctor passes after configure" test_doctor_passes_after_configure
+run_test "doctor reports a missing env file, link and state" test_doctor_reports_a_missing_env_file_link_and_state
+run_test "doctor fails when the shims dir is off PATH" test_doctor_fails_when_the_shims_directory_is_off_path
+run_test "doctor warns when the shims dir is not last" test_doctor_warns_when_the_shims_directory_is_not_last
 print_summary

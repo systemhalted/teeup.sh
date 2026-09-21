@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# What configure put in place, checked from the outside: the env file shells
+# and LaunchAgents read, the command link users type, the state tree, and the
+# two PATH facts everything lazy depends on.
+env_file="$TEEUP_CONFIG_DIR/env"
+if [[ -f "$env_file" ]]; then
+  # Sourced in a subshell rather than parsed: configure writes the three
+  # values %q-escaped, so only a shell can read them back correctly.
+  # shellcheck source=/dev/null
+  recorded_path="$( (set +u; source "$env_file"; printf '%s\n' "${TEEUP_PATH:-}") )"
+  if [[ "$recorded_path" == "$TEEUP_PATH" ]]; then
+    doctor_ok "$env_file points at this checkout."
+  else
+    doctor_fail "$env_file says TEEUP_PATH=${recorded_path:-nothing}, but this checkout is $TEEUP_PATH." "teeup configure teeup-runtime"
+  fi
+else
+  doctor_fail "No $env_file, so shells and LaunchAgents cannot find the checkout." "teeup configure teeup-runtime"
+fi
+
+link="$HOME/.local/bin/teeup"
+link_target="$(readlink "$link" 2>/dev/null || true)"
+if [[ "$link_target" == "$TEEUP_PATH/bin/teeup" ]]; then
+  doctor_ok "$link points at this checkout."
+elif [[ -e "$link" || -L "$link" ]]; then
+  doctor_fail "$link is not teeup's symlink; it points at ${link_target:-a regular file}." "teeup configure teeup-runtime"
+else
+  doctor_fail "No $link, so the teeup command is not on PATH." "teeup configure teeup-runtime"
+fi
+
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*)
+    doctor_ok "$HOME/.local/bin is on PATH."
+    ;;
+  *)
+    doctor_fail "$HOME/.local/bin is not on PATH, so neither teeup nor its mise wrappers can be run by name." "teeup configure zsh"
+    ;;
+esac
+
+missing=""
+for d in "done" toggles migrations shims logs current stock; do
+  if [[ ! -d "$TEEUP_STATE_DIR/$d" ]]; then
+    missing="$missing $d"
+  fi
+done
+if [[ -z "$missing" ]]; then
+  doctor_ok "Every state directory is present under $TEEUP_STATE_DIR."
+else
+  doctor_fail "Missing under $TEEUP_STATE_DIR:$missing" "teeup configure teeup-runtime"
+fi
+
+# A lazy shim fires only when the calling shell cannot find the real command,
+# and that is only true while the shims directory is the LAST thing on PATH.
+# The shell layer appends it last; anything that moves it earlier turns a shim
+# into a shadow over a real binary.
+shims="$(shims_dir)"
+case ":$PATH:" in
+  *":$shims:"*)
+    case "$PATH" in
+      "$shims"|*":$shims")
+        doctor_ok "The lazy shims directory is last on PATH."
+        ;;
+      *)
+        doctor_warn "The lazy shims directory is on PATH but not last, so a shim can shadow a real command. Open a new login shell, or check what prepends to PATH after ~/.zshenv."
+        ;;
+    esac
+    ;;
+  *)
+    doctor_fail "$shims is not on PATH, so no lazy shim can fire." "teeup configure zsh"
+    ;;
+esac
+
+# install puts both in place. Neither is fatal any more (prompts fall back to
+# plain reads and the menu parses its own file), so they are notes.
+for cmd in gum jq; do
+  if have "$cmd"; then
+    doctor_ok "$cmd is installed."
+  else
+    doctor_warn "$cmd is not installed. Run: teeup install teeup-runtime"
+  fi
+done
+
+doctor_verdict

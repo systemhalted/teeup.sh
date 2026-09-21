@@ -47,9 +47,35 @@ test_configure_is_idempotent() {
   cleanup_test_env
 }
 
+test_doctor_passes_once_the_root_exists() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure dev-dirs >/dev/null
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run dev-dirs doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "$TEST_HOME/Work is present" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_missing_root_with_its_fix() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run dev-dirs doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TEST_HOME/Work is missing" || return 1
+  assert_contains "$(cat "$report")" "teeup configure dev-dirs" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/dev-dirs"
 run_test "creates Work only" test_creates_work_only
 run_test "existing dir reported not recreated" test_existing_dir_is_reported_not_recreated
+run_test "doctor passes once the root exists" test_doctor_passes_once_the_root_exists
+run_test "doctor reports a missing root with its fix" test_doctor_reports_a_missing_root_with_its_fix
 run_test "dry run does not claim the dir was created" test_dry_run_does_not_claim_the_dir_was_created
 run_test "configure is idempotent" test_configure_is_idempotent
 print_summary

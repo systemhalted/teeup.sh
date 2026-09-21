@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# The backend itself, not the packages: the generic metadata check covers
+# what each capability declares, and this capability declares nothing. What
+# it owns is whether the package manager exists, is reachable, and is the one
+# everything else has been assuming.
+if pkg_backend_installed; then
+  doctor_ok "$(pkg_backend_label) is installed under $(pkg_prefix)."
+else
+  doctor_fail "$(pkg_backend_label) is not installed." "./bootstrap"
+fi
+
+# A backend that is installed but whose bin directory is missing from PATH is
+# the quieter half of the same failure: every command installed through it is
+# invisible, and each one looks like its own capability's problem.
+case ":$PATH:" in
+  *":$(pkg_prefix)/bin:"*)
+    doctor_ok "$(pkg_prefix)/bin is on PATH."
+    ;;
+  *)
+    doctor_fail "$(pkg_prefix)/bin is not on PATH, so nothing installed through $(pkg_backend_label) can be found." "teeup configure zsh"
+    ;;
+esac
+
+# configure records the resolved backend so that a macOS upgrade past the
+# MacPorts cut-off cannot silently move the machine to Homebrew. The answers
+# file is read on its own here, not through answers_get: answers_load has
+# already layered the machine file on top, and the question this check asks
+# is whether `teeup configure package-manager` ever wrote the answer down.
+answers_recorded="$( (
+  unset TEEUP_PACKAGE_MANAGER
+  answers_f="$(answers_file)"
+  # shellcheck source=/dev/null
+  if [ -f "$answers_f" ]; then . "$answers_f"; fi
+  printf '%s\n' "${TEEUP_PACKAGE_MANAGER:-}"
+) )"
+if [[ -n "$answers_recorded" ]]; then
+  doctor_ok "The package manager is recorded in the answers file: $answers_recorded"
+else
+  doctor_fail "No TEEUP_PACKAGE_MANAGER in the answers file; the backend is detected afresh on every run." "teeup configure package-manager"
+fi
+
+# The machine file wins over the answers file by design, so this is not a
+# failure. It is the thing to know before wondering why an answer, or a
+# `teeup config set`, had no effect.
+if pinned="$(machine_get TEEUP_PACKAGE_MANAGER)"; then
+  doctor_warn "$(machine_file) pins TEEUP_PACKAGE_MANAGER=${pinned:-detect}, which wins over the answers file (currently ${answers_recorded:-unset})."
+fi
+
+doctor_verdict

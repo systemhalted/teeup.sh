@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# One directory (2026-09-17 decision: git identity lives in generated
+# settings now, not a directory rule, so there is no second root to check).
+if [[ -d "$HOME/Work" ]]; then
+  doctor_ok "$HOME/Work is present."
+else
+  doctor_fail "$HOME/Work is missing." "teeup configure dev-dirs"
+fi
+
+doctor_verdict

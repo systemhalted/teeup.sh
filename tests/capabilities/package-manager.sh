@@ -67,11 +67,58 @@ test_configure_real_run_wording_is_unchanged() {
   cleanup_test_env
 }
 
+test_doctor_passes_on_a_healthy_machine() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mkdir -p "$TEEUP_PKG_PREFIX/bin"
+  export PATH="$TEEUP_PKG_PREFIX/bin:$PATH"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
+  DRY_RUN=false "$TEEUP" configure package-manager >/dev/null
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Homebrew is installed" || return 1
+  assert_contains "$out" "recorded in the answers file: homebrew" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_backend_that_is_not_on_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  hide_host_commands brew
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Homebrew is not installed" || return 1
+  assert_contains "$out" "is not on PATH" || return 1
+  assert_contains "$(cat "$report")" "./bootstrap" || return 1
+  cleanup_test_env
+}
+
+test_doctor_says_when_the_machine_file_pins_another_backend() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  answers_set TEEUP_PACKAGE_MANAGER homebrew
+  local out
+  out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || true
+  assert_contains "$out" "pins TEEUP_PACKAGE_MANAGER=macports" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/package-manager"
 run_test "install bootstraps Homebrew in dry run" test_install_bootstraps_homebrew_in_dry_run
 run_test "install refuses missing MacPorts" test_install_refuses_missing_macports
 run_test "configure records backend in answers" test_configure_records_backend_in_answers
 run_test "configure keeps existing answer" test_configure_keeps_existing_answer
+run_test "doctor passes on a healthy machine" test_doctor_passes_on_a_healthy_machine
+run_test "doctor reports a backend not on PATH" test_doctor_reports_a_backend_that_is_not_on_path
+run_test "doctor says when the machine file pins another backend" test_doctor_says_when_the_machine_file_pins_another_backend
 run_test "configure dry run does not claim the backend was recorded" test_configure_dry_run_does_not_claim_the_backend_was_recorded
 run_test "configure real-run wording is unchanged" test_configure_real_run_wording_is_unchanged
 print_summary
