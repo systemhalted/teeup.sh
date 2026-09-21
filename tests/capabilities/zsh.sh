@@ -446,6 +446,50 @@ test_default_env_editor_ignores_a_lazy_shim() {
   cleanup_test_env
 }
 
+test_doctor_passes_after_configure() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Login shell is /bin/zsh." || return 1
+  assert_contains "$out" ".zshrc loads teeup's shell layer" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_login_shell_that_is_not_zsh() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/bash"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "not zsh" || return 1
+  assert_contains "$(cat "$report")" "chsh -s /bin/zsh" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_home_file_that_lost_the_teeup_layer() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  printf '# somebody replaced this\n' > "$TEST_HOME/.zshrc"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "never loads" || return 1
+  assert_contains "$(cat "$report")" "teeup reset zsh" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zsh"
 test_env_survives_errexit_without_nvim() {
   setup
@@ -490,4 +534,7 @@ run_test "rc exports appearance and sources the theme env" test_rc_exports_appea
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero
 run_test "rc does not grow fpath on a second source" test_rc_does_not_grow_fpath_on_a_second_source
 run_test "rc leaves git revision syntax alone" test_rc_leaves_git_revision_syntax_alone
+run_test "doctor passes after configure" test_doctor_passes_after_configure
+run_test "doctor reports a login shell that is not zsh" test_doctor_reports_a_login_shell_that_is_not_zsh
+run_test "doctor reports a home file that lost the layer" test_doctor_reports_a_home_file_that_lost_the_teeup_layer
 print_summary

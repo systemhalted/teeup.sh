@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# The shell layer is load-bearing for everything else teeup puts on PATH, and
+# it fails silently: a ~/.zshrc that no longer sources the teeup layer looks
+# completely normal until you notice nothing teeup installed is reachable.
+zsh_home_dir="${ZDOTDIR:-$HOME}"
+
+# The same probe capabilities/zsh/install uses to decide whether to chsh.
+login_shell="$(dscl . -read "/Users/${USER:-$(id -un)}" UserShell 2>/dev/null | awk '{print $2}')"
+case "$login_shell" in
+  */zsh)
+    doctor_ok "Login shell is $login_shell."
+    ;;
+  *)
+    doctor_fail "Login shell is ${login_shell:-unknown}, not zsh, so none of teeup's shell layer runs." "chsh -s /bin/zsh"
+    ;;
+esac
+
+# Each shipped home file sources one file out of the default layer, and that
+# path is the one part configure never rewrites, so it is the marker that
+# survives a config dir with spaces or metacharacters in it.
+for f in .zshenv .zprofile .zshrc; do
+  if [[ ! -f "$zsh_home_dir/$f" ]]; then
+    doctor_fail "No $zsh_home_dir/$f." "teeup configure zsh"
+  elif grep -qF 'capabilities/zsh/default/' "$zsh_home_dir/$f"; then
+    doctor_ok "$zsh_home_dir/$f loads teeup's shell layer."
+  else
+    doctor_fail "$zsh_home_dir/$f does not source teeup's default layer, so teeup's shell configuration never loads." "teeup reset zsh"
+  fi
+done
+
+# Where the user's own lines are meant to go. Without it ~/.zshrc sources
+# nothing at the end, which is harmless, but the documented place to put a
+# machine-specific line has quietly stopped existing.
+local_zsh="$(user_config_dir)/zsh/local.zsh"
+if [[ -f "$local_zsh" ]]; then
+  doctor_ok "$local_zsh is present for your own lines."
+else
+  doctor_fail "No $local_zsh, which is where your own shell lines belong." "teeup configure zsh"
+fi
+
+doctor_verdict
