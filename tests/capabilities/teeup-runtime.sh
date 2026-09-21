@@ -256,6 +256,23 @@ test_doctor_warns_when_the_shims_directory_is_not_last() {
   cleanup_test_env
 }
 
+# The shims directory twice on PATH -- once early, once last. It ends with
+# the shims dir, so an "ends with" test passes, while the early copy shadows
+# every real binary behind a shim: the exact failure the check is for.
+test_doctor_warns_when_the_shims_directory_appears_twice() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  local shims="$TEST_HOME/.local/state/teeup/shims"
+  export PATH="$shims:$TEEUP_PKG_PREFIX/bin:$TEST_HOME/.local/bin:$PATH:$shims"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a shadowing PATH is a warning, not a failure" || return 1
+  assert_contains "$out" "on PATH 2 times" || return 1
+  assert_not_contains "$out" "is last on PATH" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/teeup-runtime"
 run_test "install gets gum and jq" test_install_gets_gum_and_jq
 run_test "configure creates state, env and link" test_configure_creates_state_env_and_link
@@ -272,4 +289,5 @@ run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor reports a missing env file, link and state" test_doctor_reports_a_missing_env_file_link_and_state
 run_test "doctor fails when the shims dir is off PATH" test_doctor_fails_when_the_shims_directory_is_off_path
 run_test "doctor warns when the shims dir is not last" test_doctor_warns_when_the_shims_directory_is_not_last
+run_test "doctor warns when the shims dir appears twice" test_doctor_warns_when_the_shims_directory_appears_twice
 print_summary
