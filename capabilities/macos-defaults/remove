@@ -1,23 +1,35 @@
 #!/usr/bin/env bash
 # Replay what defaults_write recorded: a key that was absent is deleted, a key
 # that had a value is written back with its original type.
-defaults_restore NSGlobalDomain AppleShowAllExtensions
-defaults_restore com.apple.finder AppleShowAllFiles
-defaults_restore com.apple.finder ShowPathbar
-defaults_restore com.apple.finder FXPreferredViewStyle
-defaults_restore com.apple.finder FXEnableExtensionChangeWarning
-defaults_restore NSGlobalDomain NSNavPanelExpandedStateForSaveMode
-defaults_restore NSGlobalDomain PMPrintingExpandedStateForPrint
-defaults_restore NSGlobalDomain KeyRepeat
-defaults_restore NSGlobalDomain InitialKeyRepeat
-defaults_restore NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled
-defaults_restore NSGlobalDomain NSAutomaticDashSubstitutionEnabled
-defaults_restore NSGlobalDomain NSAutomaticCapitalizationEnabled
-defaults_restore NSGlobalDomain NSAutomaticSpellingCorrectionEnabled
-defaults_restore com.apple.dock autohide
-defaults_restore com.apple.AppleMultitouchTrackpad Clicking
-defaults_restore com.apple.screencapture location
+#
+# Every key is attempted, and the failures are counted rather than aborting on
+# the first one: fifteen preferences put back is better than one. But a
+# removal that left preferences behind must not report itself as complete --
+# cmd_remove keeps the capability marked installed when this script fails, so
+# `teeup remove macos-defaults` can be run again once the cause is fixed.
+restore_failed=0
+defaults_restore NSGlobalDomain AppleShowAllExtensions || restore_failed=$((restore_failed + 1))
+defaults_restore com.apple.finder AppleShowAllFiles || restore_failed=$((restore_failed + 1))
+defaults_restore com.apple.finder ShowPathbar || restore_failed=$((restore_failed + 1))
+defaults_restore com.apple.finder FXPreferredViewStyle || restore_failed=$((restore_failed + 1))
+defaults_restore com.apple.finder FXEnableExtensionChangeWarning || restore_failed=$((restore_failed + 1))
+defaults_restore NSGlobalDomain NSNavPanelExpandedStateForSaveMode || restore_failed=$((restore_failed + 1))
+defaults_restore NSGlobalDomain PMPrintingExpandedStateForPrint || restore_failed=$((restore_failed + 1))
+defaults_restore NSGlobalDomain KeyRepeat || restore_failed=$((restore_failed + 1))
+defaults_restore NSGlobalDomain InitialKeyRepeat || restore_failed=$((restore_failed + 1))
+defaults_restore NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled || restore_failed=$((restore_failed + 1))
+defaults_restore NSGlobalDomain NSAutomaticDashSubstitutionEnabled || restore_failed=$((restore_failed + 1))
+defaults_restore NSGlobalDomain NSAutomaticCapitalizationEnabled || restore_failed=$((restore_failed + 1))
+defaults_restore NSGlobalDomain NSAutomaticSpellingCorrectionEnabled || restore_failed=$((restore_failed + 1))
+defaults_restore com.apple.dock autohide || restore_failed=$((restore_failed + 1))
+defaults_restore com.apple.AppleMultitouchTrackpad Clicking || restore_failed=$((restore_failed + 1))
+defaults_restore com.apple.screencapture location || restore_failed=$((restore_failed + 1))
 
 run_cmd killall Finder || true
 run_cmd killall Dock || true
+if [[ "$restore_failed" -gt 0 ]]; then
+  err "$restore_failed preference(s) could not be put back; the warnings above say which."
+  err "macos-defaults stays marked installed so you can fix the cause and run: teeup remove macos-defaults"
+  exit 1
+fi
 ok_unless_dry "macOS preferences restored. ~/Screenshots was left alone; delete it yourself if you want it gone."

@@ -311,6 +311,13 @@ cmd_update() {
     fi
     hook_run post-update "$target"
     if [[ "$na" == "true" ]]; then
+      # It was installed and has just answered "this machine cannot have me"
+      # -- a Mac that moved from Homebrew to MacPorts, say. Make the same
+      # done-to-NA move cap_install_verbs makes, or `teeup has` and
+      # `teeup status` go on calling it installed and every future update
+      # runs its configure again instead of skipping it.
+      state_done clear "cap-$target" || true
+      state_na mark "cap-$target"
       log "$target is not applicable on this machine; skipping."
       return 0
     fi
@@ -355,6 +362,12 @@ cmd_update() {
       continue
     fi
     if cap_run "$name" configure; then
+      if [[ "$TEEUP_CAP_NA" == "true" ]]; then
+        # Same transition as the single-capability path above.
+        state_done clear "cap-$name" || true
+        state_na mark "cap-$name"
+        log "$name is not applicable on this machine any more; it is no longer marked installed."
+      fi
       if [[ "$name" == "theme" && "$TEEUP_CAP_NA" != "true" ]]; then theme_done=true; fi
     else
       warn "$name configure failed; continuing."

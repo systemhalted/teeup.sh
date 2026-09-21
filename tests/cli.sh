@@ -1070,6 +1070,38 @@ EOF2
 # not-applicable rendered nothing while still returning 0, so the fallback has
 # to run anyway -- otherwise `teeup update` quietly stops regenerating the
 # theme on exactly the machines that cannot configure it.
+# A capability that was installed and now answers not-applicable -- a Mac that
+# moved from Homebrew to MacPorts, say. Update must make the same done-to-NA
+# move cap_install_verbs makes, or `teeup has` and `teeup status` go on
+# calling it installed and every later update runs its configure again.
+test_update_moves_a_newly_inapplicable_capability_to_not_applicable() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  "$TEEUP" has alpha || { echo "fixture: alpha should be installed"; return 1; }
+  cat > "$TEEUP_CAPS_DIR/alpha/configure" <<'EOF2'
+#!/usr/bin/env bash
+not_applicable "alpha cannot work on this machine any more"
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/alpha/configure"
+  local out
+  out="$("$TEEUP" update alpha 2>&1)"
+  assert_contains "$out" "alpha is not applicable on this machine" || return 1
+  "$TEEUP" has alpha && { echo "it must no longer be marked installed"; return 1; }
+  assert_contains "$("$TEEUP" status 2>&1)" "not applicable" || return 1
+  # And the whole-machine path makes the same move.
+  "$TEEUP" install beta >/dev/null
+  cat > "$TEEUP_CAPS_DIR/beta/configure" <<'EOF2'
+#!/usr/bin/env bash
+not_applicable "beta cannot work on this machine any more"
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR/beta/configure"
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "beta is not applicable on this machine any more" || return 1
+  "$TEEUP" has beta && { echo "beta must no longer be marked installed"; return 1; }
+  cleanup_test_env
+}
+
 test_update_runs_the_theme_fallback_when_theme_is_not_applicable() {
   setup
   mock_update_world
@@ -1283,6 +1315,7 @@ run_test "an update script is dry run and its failure is reported" test_an_updat
 run_test "update skips a not-applicable capability" test_update_skips_a_not_applicable_capability
 run_test "update does not treat a not-applicable configure as done" test_update_does_not_treat_a_not_applicable_configure_as_done
 run_test "update carries on after a failed configure and still fails" test_update_carries_on_after_a_failed_configure_and_still_fails
+run_test "update moves a newly inapplicable capability to not applicable" test_update_moves_a_newly_inapplicable_capability_to_not_applicable
 run_test "update runs the theme fallback when theme is not applicable" test_update_runs_the_theme_fallback_when_theme_is_not_applicable
 run_test "update dry run changes nothing" test_update_dry_run_changes_nothing
 run_test "remove runs the script then uninstalls from metadata" test_remove_runs_the_script_then_uninstalls_from_metadata
