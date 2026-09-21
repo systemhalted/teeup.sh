@@ -1258,6 +1258,48 @@ test_dev_add_migration_creates_a_named_scaffold() {
   cleanup_test_env
 }
 
+test_doctor_is_quiet_and_zero_when_nothing_is_installed_is_wrong() {
+  setup
+  "$TEEUP" install alpha >/dev/null
+  local out rc=0
+  out="$("$TEEUP" doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a healthy machine must exit 0" || return 1
+  assert_contains "$out" "everything checked is healthy" || return 1
+  assert_not_contains "$out" "== beta:" "an uninstalled capability is not checked" || return 1
+  cleanup_test_env
+}
+
+test_doctor_names_the_failure_and_the_command_that_fixes_it() {
+  setup
+  "$TEEUP" install alpha >/dev/null
+  printf '#!/usr/bin/env bash\ndoctor_fail "alpha has no widget" "teeup configure alpha"\ndoctor_verdict\n' > "$TEEUP_CAPS_DIR/alpha/doctor"
+  local out rc=0
+  out="$("$TEEUP" doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "alpha has no widget" || return 1
+  assert_contains "$out" "fix: teeup configure alpha" || return 1
+  cleanup_test_env
+}
+
+test_doctor_checks_one_capability_even_when_it_is_not_installed() {
+  setup
+  printf '#!/usr/bin/env bash\ndoctor_ok "beta looks fine"\ndoctor_verdict\n' > "$TEEUP_CAPS_DIR/beta/doctor"
+  local out rc=0
+  out="$("$TEEUP" doctor beta 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "beta looks fine" || return 1
+  cleanup_test_env
+}
+
+test_doctor_rejects_an_unknown_capability() {
+  setup
+  local out rc=0
+  out="$("$TEEUP" doctor nope 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Unknown capability: nope" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
@@ -1326,4 +1368,8 @@ run_test "remove keeps the marker when an uninstall fails" test_remove_keeps_the
 run_test "remove dies when nothing can be undone" test_remove_dies_when_nothing_can_be_undone
 run_test "remove is honest when the remove script answers not-applicable" test_remove_is_honest_when_the_remove_script_answers_not_applicable
 run_test "remove refuses a not-applicable capability" test_remove_refuses_a_not_applicable_capability
+run_test "doctor is quiet and zero when healthy" test_doctor_is_quiet_and_zero_when_nothing_is_installed_is_wrong
+run_test "doctor names the failure and its fix" test_doctor_names_the_failure_and_the_command_that_fixes_it
+run_test "doctor checks an uninstalled capability" test_doctor_checks_one_capability_even_when_it_is_not_installed
+run_test "doctor rejects an unknown capability" test_doctor_rejects_an_unknown_capability
 print_summary

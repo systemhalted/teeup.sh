@@ -288,6 +288,20 @@ test_doctor_reports_the_missing_app_and_config() {
   cleanup_test_env
 }
 
+test_doctor_records_the_fix_for_each_finding() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command pgrep 1 ""
+  local report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  DRY_RUN=false cap_run aerospace doctor >/dev/null 2>&1 || true
+  assert_contains "$(cat "$report")" "teeup install aerospace" || return 1
+  assert_contains "$(cat "$report")" "teeup configure aerospace" || return 1
+  assert_equals "2" "$(wc -l < "$report" | tr -d ' ')" "the running check is a warning, not a failure" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/aerospace"
 run_test "install taps then installs the cask" test_install_taps_then_installs_the_cask
 run_test "install skips the tap when present" test_install_skips_the_tap_when_present
@@ -311,4 +325,5 @@ run_test "configure keeps an existing ~/.aerospace.toml" test_configure_keeps_an
 run_test "doctor fails when both configs exist" test_doctor_fails_when_both_configs_exist
 run_test "doctor accepts ~/.aerospace.toml" test_doctor_accepts_the_home_config
 run_test "doctor reports the missing app and config" test_doctor_reports_the_missing_app_and_config
+run_test "doctor records the fix for each finding" test_doctor_records_the_fix_for_each_finding
 print_summary
