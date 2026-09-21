@@ -35,6 +35,7 @@ teeup - your Mac, as a distribution
   teeup theme set|list|current   apply, list or print the cross-tool theme
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
   teeup lazy-run <cap> <cmd> [args]  what a lazy shim runs: install <cap> on first use, then exec <cmd>
+  teeup doctor [<capability>]    check what is installed, and say how to fix what is not
   teeup has <capability>         exit 0 when installed (for scripts and menus)
   teeup secret get|set|rm <name>  read, store or delete a Keychain secret
   teeup status                   package manager, answers, installed capabilities
@@ -568,6 +569,37 @@ cmd_launch() {
   run_cmd open -a "$app"
 }
 
+# teeup doctor [<capability>]
+# Exit 0 when healthy: the spec's release gate is "a real bootstrap on a
+# clean macOS VM, then teeup doctor must exit 0". With no argument it checks
+# what this machine has installed; with one it checks that capability whether
+# or not it is installed, because "why is this not working" gets asked about
+# things that did not install properly in the first place.
+cmd_doctor() {
+  local target="${1:-}" report targets name rc=0
+  report="$(mktemp)"
+  TEEUP_DOCTOR_REPORT="$report"
+  export TEEUP_DOCTOR_REPORT
+  if [[ -n "$target" ]]; then
+    if ! cap_exists "$target"; then
+      rm -f "$report"
+      die "Unknown capability: $target"
+    fi
+    doctor_run_one "$target"
+  else
+    targets="$(doctor_targets)"
+    if [[ -z "$targets" ]]; then
+      warn "No capability is marked installed here. Run ./bootstrap, or name one: teeup doctor <capability>"
+    fi
+    for name in $targets; do
+      doctor_run_one "$name"
+    done
+  fi
+  doctor_summary "$report" || rc=$?
+  rm -f "$report"
+  return $rc
+}
+
 cmd_has() {
   [[ -n "${1:-}" ]] || die "Usage: teeup has <capability>"
   state_done check "cap-$1"
@@ -686,6 +718,7 @@ case "$verb" in
   list) cmd_list "$@" ;;
   launch) cmd_launch "$@" ;;
   lazy-run) cmd_lazy_run "$@" ;;
+  doctor) cmd_doctor "$@" ;;
   has) cmd_has "$@" ;;
   secret) cmd_secret "$@" ;;
   status) cmd_status ;;

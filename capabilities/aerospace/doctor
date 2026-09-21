@@ -4,35 +4,31 @@
 # TEEUP_APPS_DIR is a test hook: without it this script reads the real
 # /Applications and passes or fails depending on the developer's own machine.
 APPS_DIR="${TEEUP_APPS_DIR:-/Applications}"
-problems=0
 
 if [[ -d "$APPS_DIR/AeroSpace.app" ]]; then
-  ok "AeroSpace is installed."
+  doctor_ok "AeroSpace is installed."
 else
-  err "AeroSpace is not in /Applications. Run: teeup install aerospace"
-  problems=$((problems + 1))
+  doctor_fail "AeroSpace is not in /Applications." "teeup install aerospace"
 fi
 
 # AeroSpace reads either file, and reports both at once as ambiguous.
 HOME_AERO="$HOME/.aerospace.toml"
 XDG_AERO="$(user_config_dir)/aerospace/aerospace.toml"
 if [[ -f "$HOME_AERO" && -f "$XDG_AERO" ]]; then
-  err "Two AeroSpace configs, $HOME_AERO and $XDG_AERO; AeroSpace reports that as ambiguous. Move one of them aside."
-  problems=$((problems + 1))
+  doctor_fail "Two AeroSpace configs, $HOME_AERO and $XDG_AERO; AeroSpace reports that as ambiguous." "mv $HOME_AERO $HOME_AERO.disabled"
 elif [[ -f "$HOME_AERO" ]]; then
-  ok "AeroSpace config present: $HOME_AERO"
+  doctor_ok "AeroSpace config present: $HOME_AERO"
 elif [[ -f "$XDG_AERO" ]]; then
-  ok "AeroSpace config present: $XDG_AERO"
+  doctor_ok "AeroSpace config present: $XDG_AERO"
 else
-  err "No aerospace.toml. Run: teeup configure aerospace"
-  problems=$((problems + 1))
+  doctor_fail "No aerospace.toml." "teeup configure aerospace"
 fi
 
 if pgrep -x AeroSpace >/dev/null 2>&1; then
-  ok "AeroSpace is running."
+  doctor_ok "AeroSpace is running."
 else
-  warn "AeroSpace is not running. Start it with: open -a AeroSpace"
+  doctor_warn "AeroSpace is not running. Start it with: open -a AeroSpace"
 fi
 
-echo "If windows still do not move, turn AeroSpace on under System Settings > Privacy & Security > Accessibility."
-[[ $problems -eq 0 ]]
+doctor_warn "If windows still do not move, turn AeroSpace on under System Settings > Privacy & Security > Accessibility."
+doctor_verdict
