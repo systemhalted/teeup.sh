@@ -696,7 +696,53 @@ run_test "configure does not re-run git when git was never configured" test_conf
 run_test "configure backs up a pub-only key and regenerates the pair" test_configure_backs_up_a_pub_only_key_and_regenerates_the_pair
 run_test "configure dry run pub-only backs up nothing and generates nothing" test_configure_dry_run_pub_only_backs_up_nothing_and_generates_nothing
 run_test "configure twice changes nothing" test_configure_twice_changes_nothing
+# ssh reads Host case-insensitively, allows leading whitespace, takes several
+# patterns on one line and ignores a trailing comment. A hand-written config
+# that works perfectly must not be called broken -- and offered a `teeup reset
+# ssh` that would change nothing.
+test_doctor_accepts_a_hand_written_host_block() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf '  host gitlab.com github.com   # mine, written by hand\n    IdentityFile %s\n' \
+    "$TEST_HOME/.ssh/id_ed25519_personal" > "$TEST_HOME/.ssh/config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a working hand-written config is not a failure" || return 1
+  assert_contains "$out" "declares Host github.com" || return 1
+  cleanup_test_env
+}
+
+# The agent check had no test at all: the suite's global ssh-add mock always
+# succeeded, so deleting the whole block left the suite green.
+test_doctor_reports_an_empty_ssh_agent() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  # ssh-add -l exits 1 when the agent holds nothing.
+  mock_command_script ssh-add <<'EOF2'
+case "$1" in
+  -l) exit 1 ;;
+esac
+exit 0
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_success "$rc" "an empty agent is a note, not a failure" || return 1
+  assert_contains "$out" "holding no key yet" || return 1
+  # And with a key loaded it says so instead.
+  mock_command ssh-add 0 ""
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)"
+  assert_contains "$out" "holding at least one key" || return 1
+  assert_not_contains "$out" "holding no key yet" || return 1
+  cleanup_test_env
+}
+
 run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor reports a missing key pair" test_doctor_reports_a_missing_key_pair
 run_test "doctor reports a world-readable private key" test_doctor_reports_a_world_readable_private_key
+run_test "doctor accepts a hand-written host block" test_doctor_accepts_a_hand_written_host_block
+run_test "doctor reports an empty ssh agent" test_doctor_reports_an_empty_ssh_agent
 print_summary
