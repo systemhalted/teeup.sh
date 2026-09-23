@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# mise is reached two ways, and both have to work: the command itself, and the
+# shims directory the shell layer appends so a tool installed through mise is
+# on PATH in shells that never ran `mise activate`.
+if ! have mise; then
+  doctor_fail "mise is not on PATH, so no runtime or tool it manages can be reached." "teeup install mise"
+  doctor_verdict
+  exit
+fi
+doctor_ok "mise is on PATH."
+
+# The same file mise_global_state falls back to reading, and the same
+# override order mise itself resolves: MISE_GLOBAL_CONFIG_FILE names the file
+# outright, else MISE_CONFIG_DIR, else user_config_dir()/mise.
+mise_config="${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml}"
+if [[ -f "$mise_config" ]]; then
+  doctor_ok "The global mise config is at $mise_config."
+else
+  doctor_fail "No $mise_config, so mise has no global tool list." "teeup configure mise"
+fi
+
+# The path the shell layer appends, spelled the way mise itself resolves it:
+# MISE_DATA_DIR, else XDG_DATA_HOME, else ~/.local/share.
+mise_shims="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"
+case ":$PATH:" in
+  *":$mise_shims:"*)
+    doctor_ok "The mise shims directory is on PATH."
+    ;;
+  *)
+    doctor_fail "$mise_shims is not on PATH, so tools installed through mise are invisible to shells that did not run mise activate." "teeup configure zsh"
+    ;;
+esac
+
+# mise_global_state (lib/mise.sh) keeps the two questions apart: the global
+# config can ask for a tool that is not on disk, and a row in `ls --global` is
+# no proof of a binary.
+case "$(mise_global_state pre-commit)" in
+  installed)
+    doctor_ok "pre-commit is installed through mise."
+    ;;
+  requested)
+    doctor_fail "pre-commit is asked for but not installed, so every repository's hooks fail." "teeup configure mise"
+    ;;
+  *)
+    doctor_fail "pre-commit is not in the global mise config." "teeup configure mise"
+    ;;
+esac
+
+# Not a health question, but the one thing people ask this capability.
+envs="$(dev_env_installed | tr '\n' ' ')"
+doctor_ok "Development environments installed: ${envs:-none (teeup install dev-env <python|node|java|ruby|rust|go>)}"
+
+doctor_verdict

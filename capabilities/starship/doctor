@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# The prompt itself, and the one part of its config teeup keeps writing: the
+# marker block `teeup theme set` rewrites. Lose the markers and the prompt
+# keeps working while quietly staying on whatever colours it had, which is the
+# kind of failure nobody reports because nothing looks broken.
+if have starship; then
+  doctor_ok "starship is on PATH."
+else
+  doctor_fail "starship is not on PATH, so the prompt falls back to zsh's default." "teeup install starship"
+fi
+
+config="$(user_config_dir)/starship.toml"
+if [[ ! -f "$config" ]]; then
+  doctor_fail "No $config, so starship runs on its built-in defaults." "teeup configure starship"
+  doctor_verdict
+  exit
+fi
+doctor_ok "$config is in place."
+
+start_count="$(grep -cxF '# teeup:theme-palette:start' "$config" || true)"
+end_count="$(grep -cxF '# teeup:theme-palette:end' "$config" || true)"
+if [[ "$start_count" -eq 1 && "$end_count" -eq 1 ]]; then
+  doctor_ok "The starship palette block is intact."
+elif [[ "$start_count" -eq 0 && "$end_count" -eq 0 ]]; then
+  doctor_fail "$config has no teeup:theme-palette markers, so it no longer follows the teeup theme." "teeup reset starship"
+else
+  doctor_fail "$config has $start_count start and $end_count teeup:theme-palette end markers; the palette rewrite refuses anything but one of each, so it no longer follows the teeup theme." "teeup reset starship"
+fi
+
+# The root selector the theme switch rewrites. Without it the palette tables
+# are present and unused.
+if grep -q '^palette *=' "$config"; then
+  doctor_ok "A root palette selector is present."
+else
+  doctor_fail "$config has no root 'palette =' line, so the rendered palettes are never selected." "teeup reset starship"
+fi
+
+doctor_verdict

@@ -433,6 +433,65 @@ EOF2
   cleanup_test_env
 }
 
+test_doctor_passes_after_a_theme_switch() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Current theme: catppuccin" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_machine_with_no_theme() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No theme has been applied" || return 1
+  assert_contains "$(cat "$report")" "teeup theme set" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_template_that_was_never_rendered() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  # A capability added a template after the last switch, which is exactly what
+  # every later phase does. This is written under the user template directory
+  # inside $TEST_HOME, not $TEEUP_CAPS_DIR (the real checkout), and uses a
+  # real catppuccin key (accent) rather than a made-up one: theme_templates
+  # reads $TEEUP_CONFIG_DIR/themed first, and a stray *.tpl under the real
+  # capabilities tree would be picked up by a theme_set running concurrently
+  # in another suite.
+  mkdir -p "$TEEUP_CONFIG_DIR/themed"
+  printf 'color = "{{ accent }}"\n' > "$TEEUP_CONFIG_DIR/themed/latecomer.conf.tpl"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "latecomer.conf has never been rendered" || return 1
+  assert_contains "$(cat "$report")" "teeup theme set catppuccin" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_an_unresolved_token_in_a_rendered_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  printf 'color = "{{ nope }}"\n' > "$TEEUP_STATE_DIR/current/theme/dark/env.sh"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "still holds an unresolved" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/theme"
 run_test "install dry run renders nothing" test_install_dry_run_renders_nothing
 run_test "configure writes env.sh for both modes" test_configure_writes_env_for_both_modes
@@ -455,4 +514,8 @@ run_test "theme set refuses an unknown or invalid name" test_theme_set_refuses_a
 run_test "theme set is remembered by configure" test_theme_set_is_remembered_by_configure
 run_test "theme set warns about a machine pin" test_theme_set_warns_about_a_machine_pin
 run_test "a theme that cannot render fails set and configure" test_a_theme_that_cannot_render_fails_set_and_configure
+run_test "doctor passes after a theme switch" test_doctor_passes_after_a_theme_switch
+run_test "doctor reports a machine with no theme" test_doctor_reports_a_machine_with_no_theme
+run_test "doctor reports a template never rendered" test_doctor_reports_a_template_that_was_never_rendered
+run_test "doctor reports an unresolved token" test_doctor_reports_an_unresolved_token_in_a_rendered_file
 print_summary

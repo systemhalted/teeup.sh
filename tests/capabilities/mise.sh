@@ -253,6 +253,61 @@ test_configure_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+# The mise suite's own mock is driven by two files: $HOME/mise-tools is what
+# the global config asks for, $HOME/mise-installed is what is on disk. Keeping
+# them apart is the whole point of mise_global_state, so the doctor tests use
+# the same mock rather than a second one that could drift from it.
+seed_mise_shims() {
+  export XDG_DATA_HOME="$TEST_HOME/.local/share"
+  mkdir -p "$XDG_DATA_HOME/mise/shims"
+  export PATH="$PATH:$XDG_DATA_HOME/mise/shims"
+}
+
+test_doctor_passes_on_a_configured_machine() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure mise >/dev/null 2>&1
+  seed_mise_shims
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "pre-commit is installed through mise" || return 1
+  assert_contains "$out" "mise shims directory is on PATH" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_missing_mise_and_config() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  hide_host_commands mise
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "mise is not on PATH" || return 1
+  assert_contains "$(cat "$report")" "teeup install mise" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_pre_commit_requested_but_not_installed() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure mise >/dev/null 2>&1
+  seed_mise_shims
+  # The global config still asks for pre-commit; the binary is gone, which is
+  # what an interrupted install or a wiped MISE_DATA_DIR leaves behind.
+  : > "$TEST_HOME/mise-installed"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "pre-commit is asked for but not installed" || return 1
+  assert_contains "$(cat "$report")" "teeup configure mise" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/mise"
 run_test "install gets mise" test_install_gets_mise
 run_test "configure writes the config and the setting" test_configure_writes_the_config_and_the_setting
@@ -264,4 +319,7 @@ run_test "configure falls back to mise where when --installed is unsupported" te
 run_test "configure falls back to the global config file" test_configure_falls_back_to_the_global_config_file
 run_test "configure ships an empty tools table" test_configure_ships_an_empty_tools_table
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "doctor passes on a configured machine" test_doctor_passes_on_a_configured_machine
+run_test "doctor reports a missing mise and config" test_doctor_reports_a_missing_mise_and_config
+run_test "doctor reports pre-commit requested but missing" test_doctor_reports_pre_commit_requested_but_not_installed
 print_summary

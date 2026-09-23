@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# A theme is only as applied as its last render. Every later phase adds
+# templates, and a template added after the last `teeup theme set` has no
+# rendered file at all -- the tool it belongs to silently keeps the colours it
+# was shipped with, and nothing anywhere says so.
+name="$(theme_current)"
+if [[ "$name" == "none" ]]; then
+  doctor_fail "No theme has been applied on this machine." "teeup theme set catppuccin"
+  doctor_verdict
+  exit
+fi
+doctor_ok "Current theme: $name"
+
+current="$TEEUP_STATE_DIR/current/theme"
+for mode in dark light; do
+  if [[ -d "$current/$mode" ]]; then
+    doctor_ok "Rendered $mode files are in $current/$mode."
+  else
+    doctor_fail "No $current/$mode, so nothing follows the theme in $mode mode." "teeup theme set $name"
+  fi
+done
+
+# theme_templates lists user templates first, then every capability's, one
+# absolute path per line -- a path that may hold a space, so it is read a
+# line at a time rather than split into words.
+while IFS= read -r tpl; do
+  if [[ -z "$tpl" ]]; then
+    continue
+  fi
+  base="${tpl##*/}"
+  base="${base%.tpl}"
+  for mode in dark light; do
+    rendered="$current/$mode/$base"
+    if [[ ! -f "$rendered" ]]; then
+      doctor_fail "$base has never been rendered for $mode mode." "teeup theme set $name"
+    elif grep -q '{{' "$rendered"; then
+      doctor_fail "$rendered still holds an unresolved {{ token }}." "teeup theme set $name"
+    fi
+  done
+done <<EOF_TPL
+$(theme_templates)
+EOF_TPL
+
+# The appearance the shell layer and every theme-apply hook read. Not a
+# failure: on a Mac in light mode `defaults read -g AppleInterfaceStyle` exits
+# 1, which is the correct answer and not an error.
+doctor_ok "macOS appearance right now: $(appearance)"
+
+doctor_verdict
