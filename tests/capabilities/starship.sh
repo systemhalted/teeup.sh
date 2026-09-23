@@ -97,6 +97,49 @@ test_reset_restores_the_file_and_the_current_palette() {
   cleanup_test_env
 }
 
+test_doctor_passes_after_configure() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command starship 0 "starship 1.23.0"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "palette block is intact" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_missing_config() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command starship 0 "starship 1.23.0"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "starship.toml" || return 1
+  assert_contains "$(cat "$report")" "teeup configure starship" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_palette_markers_that_were_edited_away() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command starship 0 "starship 1.23.0"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  grep -v 'teeup:theme-palette' "$TEST_HOME/.config/starship.toml" > "$TEST_HOME/trimmed"
+  mv "$TEST_HOME/trimmed" "$TEST_HOME/.config/starship.toml"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "no longer follows the teeup theme" || return 1
+  assert_contains "$(cat "$report")" "teeup reset starship" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/starship"
 run_test "install gets starship" test_install_gets_starship
 run_test "configure copies the config once" test_configure_copies_the_config_once
@@ -104,4 +147,7 @@ run_test "shipped config carries the theme markers" test_shipped_config_carries_
 run_test "palette is selected at the root" test_palette_is_selected_at_the_root
 run_test "reset restores the file and the current palette" test_reset_restores_the_file_and_the_current_palette
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
+run_test "doctor passes after configure" test_doctor_passes_after_configure
+run_test "doctor reports a missing config" test_doctor_reports_a_missing_config
+run_test "doctor reports palette markers edited away" test_doctor_reports_palette_markers_that_were_edited_away
 print_summary
