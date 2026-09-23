@@ -683,10 +683,66 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "configure dry run names the shipped source, not a temp file" test_configure_dry_run_names_the_shipped_source_not_a_temp_file
 run_test "configure dry run names the shipped source for a foreign config" test_configure_dry_run_names_the_shipped_source_for_a_foreign_config
 run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name
+# A comment mentioning the setting is not the setting. A half-written TODO in
+# any of git's files would otherwise make doctor report signature verification
+# as working while nothing is configured at all.
+test_doctor_does_not_count_a_commented_allowed_signers_line() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '# TODO: set allowedSignersFile = somewhere\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a comment is not configuration" || return 1
+  assert_contains "$out" "allowedSignersFile is not set" || return 1
+  cleanup_test_env
+}
+
+# Set, but pointing at a file that is not there: git reports that only when
+# you read a signature, so doctor is where it should surface.
+test_doctor_reports_an_allowed_signers_path_that_is_missing() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[gpg "ssh"]\n\tallowedSignersFile = "%s"\n' "$TEST_HOME/.config/git/gone_signers" \
+    > "$TEST_HOME/.config/git/local"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "which does not exist, so git can verify no signature" || return 1
+  cleanup_test_env
+}
+
+# Signing on with the key gone is worse than signing off: every commit fails,
+# and a doctor reporting full health is why nobody looks here first.
+test_doctor_reports_signing_on_with_the_key_gone() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '%s\n' "ada@example.com ssh-ed25519 AAAA" > "$TEST_HOME/.config/git/allowed_signers"
+  printf '[gpg "ssh"]\n\tallowedSignersFile = "%s"\n' "$TEST_HOME/.config/git/allowed_signers" \
+    > "$TEST_HOME/.config/git/local"
+  rm -f "$TEST_HOME/.ssh/id_ed25519_personal"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "but that key is not on this machine, so every git commit fails" || return 1
+  cleanup_test_env
+}
+
 run_test "doctor passes on a configured tree" test_doctor_passes_on_a_configured_tree
 run_test "doctor reports an unconfigured tree" test_doctor_reports_an_unconfigured_tree
 run_test "doctor reports signing left off" test_doctor_reports_signing_left_off_although_the_keys_exist
 run_test "doctor reports a missing allowed-signers file" test_doctor_reports_a_missing_allowed_signers_file
+run_test "doctor does not count a commented allowed-signers line" test_doctor_does_not_count_a_commented_allowed_signers_line
+run_test "doctor reports an allowed-signers path that is missing" test_doctor_reports_an_allowed_signers_path_that_is_missing
+run_test "doctor reports signing on with the key gone" test_doctor_reports_signing_on_with_the_key_gone
 run_test "doctor warns about a leftover ~/.gitconfig" test_doctor_warns_about_a_leftover_gitconfig
 run_test "configure repairs an old two-identity config" test_configure_repairs_an_old_two_identity_config
 run_test "configure leaves a hand-edited old config alone" test_configure_leaves_a_hand_edited_old_config_alone

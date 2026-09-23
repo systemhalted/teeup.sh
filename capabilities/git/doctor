@@ -54,7 +54,22 @@ else
   keys_present=false
 fi
 if grep -q '^[[:space:]]*gpgsign = true$' "$generated"; then
-  doctor_ok "Commit signing is on."
+  # Signing on with the key gone is worse than signing off: every `git commit`
+  # fails outright, and the doctor that reported full health is the reason
+  # nobody looked here first.
+  # The identity file is where configure writes signingkey; $generated holds
+  # the rest of the settings.
+  signing_key="$(grep -E '^[[:space:]]*signingkey[[:space:]]*=' "$identity_file" 2>/dev/null | tail -1)"
+  signing_key="${signing_key#*=}"
+  signing_key="${signing_key#"${signing_key%%[![:space:]]*}"}"
+  signing_key="${signing_key%\"}"
+  signing_key="${signing_key#\"}"
+  signing_key="${signing_key%.pub}"
+  if [[ -n "$signing_key" && ! -s "$signing_key" ]]; then
+    doctor_fail "Commit signing is on with user.signingkey = $signing_key, but that key is not on this machine, so every git commit fails." "teeup configure ssh"
+  else
+    doctor_ok "Commit signing is on."
+  fi
   signing_on=true
 elif [[ "$keys_present" == "true" ]]; then
   doctor_fail "git has every key it needs on disk but commit signing is off in $generated." "teeup configure git"
@@ -69,14 +84,35 @@ fi
 # reports every commit teeup just signed as having no known signer. Nothing in
 # teeup writes that file yet, so the fix is a command, not a verb.
 if [[ "$signing_on" == "true" ]]; then
+  # An assignment, not a mention: the word can appear in a comment, a
+  # half-written TODO or a commented-out line, and counting that as
+  # configuration reports verification working when nothing is set. The value
+  # is read too, because a path set to a file that is not there verifies
+  # nothing. (Read from the files rather than asked of `git config --get`:
+  # these are teeup's own files, and the answer must not depend on which git
+  # happens to be on PATH.)
   signers_set=false
+  signers_file=""
   for f in "$git_dir/config" "$generated" "$git_dir/local"; do
-    if [[ -f "$f" ]] && grep -qi 'allowedSignersFile' "$f"; then
+    [[ -f "$f" ]] || continue
+    line="$(grep -iE '^[[:space:]]*allowedSignersFile[[:space:]]*=' "$f" | tail -1)"
+    if [[ -n "$line" ]]; then
       signers_set=true
+      signers_file="${line#*=}"
+      signers_file="${signers_file#"${signers_file%%[![:space:]]*}"}"
+      signers_file="${signers_file%\"}"
+      signers_file="${signers_file#\"}"
     fi
   done
   if [[ "$signers_set" == "true" ]]; then
-    doctor_ok "gpg.ssh.allowedSignersFile is set, so signatures can be verified."
+    # Set is not the same as usable: a path that is not there verifies
+    # nothing, and git says so only at the moment you read a signature.
+    if [[ -f "$signers_file" ]]; then
+      doctor_ok "gpg.ssh.allowedSignersFile is set, so signatures can be verified."
+    else
+      doctor_fail "gpg.ssh.allowedSignersFile points at $signers_file, which does not exist, so git can verify no signature." \
+        "printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $(identity_key personal).pub)\" >> $signers_file"
+    fi
   else
     signers="$git_dir/allowed_signers"
     personal_pub="$(identity_key personal).pub"

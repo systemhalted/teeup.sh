@@ -43,11 +43,21 @@ if [[ ! -f "$ssh_dir/config" ]]; then
   doctor_fail "No $ssh_dir/config, so no identity's key is ever offered to github.com." "teeup configure ssh"
 else
   for identity in $(identity_list); do
-    host_alias="Host $(ssh_host_alias "$identity")"
-    if grep -q "^$host_alias\$" "$ssh_dir/config"; then
-      doctor_ok "$ssh_dir/config declares $host_alias."
+    # ssh reads `Host` case-insensitively, allows leading whitespace, takes
+    # several patterns on one line and ignores a trailing comment. A
+    # hand-written config that works perfectly would fail an exact,
+    # case-sensitive, anchored match -- and be offered `teeup reset ssh`,
+    # which would not change a thing.
+    alias_name="$(ssh_host_alias "$identity")"
+    if awk -v want="$alias_name" '
+        { sub(/#.*/, "") }
+        tolower($1) == "host" {
+          for (i = 2; i <= NF; i++) if ($i == want) { found = 1; exit }
+        }
+        END { exit found ? 0 : 1 }' "$ssh_dir/config"; then
+      doctor_ok "$ssh_dir/config declares Host $alias_name."
     else
-      doctor_fail "$ssh_dir/config has no '$host_alias' block." "teeup reset ssh"
+      doctor_fail "$ssh_dir/config has no 'Host $alias_name' block." "teeup reset ssh"
     fi
   done
 fi
