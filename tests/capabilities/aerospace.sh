@@ -553,6 +553,35 @@ EOF2
   cleanup_test_env
 }
 
+# The commonest state on the machine this feature is for: AeroSpace is
+# installed but has never been launched, so its socket answers nothing.
+# reload-config fails there for a reason that has nothing to do with the
+# config, and reading that as a rejection would refuse to install a perfectly
+# good file on every fresh Mac.
+test_backstop_skips_when_aerospace_is_not_running() {
+  setup
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
+  printf '\nstart-at-login = false\n' >> "$local_toml"
+  # An installed AeroSpace whose server is not up: every command that needs
+  # it fails, reload-config included.
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  list-monitors) echo "aerospace: Can not establish connection with AeroSpace server" >&2; exit 1 ;;
+  reload-config) echo "aerospace: Can not establish connection with AeroSpace server" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
+  assert_success "$rc" "an AeroSpace that is not running is not a rejected config" || return 1
+  assert_contains "$(cat "$AERO")" "start-at-login = false" "the merged config must still be installed" || return 1
+  assert_contains "$out" "not running yet" || return 1
+  # And it must not claim the config was checked.
+  assert_not_contains "$(cat "$MOCK_LOG")" "aerospace reload-config" "there is nobody to ask, so it must not ask" || return 1
+  cleanup_test_env
+}
+
 test_backstop_installs_normally_when_aerospace_accepts_it() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
@@ -600,6 +629,7 @@ run_test "install runs as usual at the macOS minimum" test_install_runs_as_usual
 run_test "configure copies the config and prints the manual step" test_configure_copies_the_config_and_prints_the_manual_step
 run_test "configure fails when the generated config cannot be written" test_configure_fails_when_the_generated_config_cannot_be_written
 run_test "backstop leaves the config untouched when AeroSpace rejects it" test_backstop_leaves_the_config_untouched_when_aerospace_rejects_it
+run_test "backstop skips when aerospace is not running" test_backstop_skips_when_aerospace_is_not_running
 run_test "backstop installs normally when AeroSpace accepts it" test_backstop_installs_normally_when_aerospace_accepts_it
 run_test "backstop skips without claiming success when there is no aerospace binary" test_backstop_skips_without_claiming_success_when_there_is_no_aerospace_binary
 run_test "reset leaves the local override alone" test_reset_leaves_the_local_override_alone

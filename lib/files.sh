@@ -766,6 +766,22 @@ toml_merge_local() {
 aerospace_config_ok() {
   local dest="$1" candidate="$2" dir stage saved="" had_dest=false out rc=0
   have aerospace || return 0
+  # reload-config talks to a running AeroSpace over its socket, so it fails
+  # on a Mac where the app has never been launched -- which is every fresh
+  # machine at the moment `configure` first runs, right after the cask lands.
+  # Reading that as "your config is broken" would refuse to install a perfectly
+  # good config on exactly the machines teeup is for. Ask the server something
+  # harmless first: no answer means there is nobody to validate with, which is
+  # a skip, not a verdict. (A probe rather than matching on AeroSpace's
+  # "not running" wording, which teeup has not verified against a real binary
+  # and which would silently start failing if it ever changed.)
+  # To stderr, like every other message this function prints: the caller
+  # captures its stdout to read AeroSpace's error out of it, so anything said
+  # on stdout is swallowed instead of shown.
+  if ! aerospace list-monitors >/dev/null 2>&1; then
+    log "AeroSpace is not running yet, so its own config check was skipped; it validates the file the next time it starts." >&2
+    return 0
+  fi
   dir="$(dirname "$dest")"
   if [[ -e "$dest" || -L "$dest" ]]; then
     had_dest=true
