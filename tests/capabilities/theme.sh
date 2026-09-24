@@ -492,6 +492,56 @@ test_doctor_reports_an_unresolved_token_in_a_rendered_file() {
   cleanup_test_env
 }
 
+# An empty rendered file is neither missing nor holding a {{ token }}, so it
+# slips past both of the other checks while the tool it belongs to reads no
+# colours at all. A truncating write or a full disk leaves exactly this.
+test_doctor_reports_an_empty_rendered_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  : > "$TEEUP_STATE_DIR/current/theme/dark/env.sh"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "an empty render is not a render" || return 1
+  assert_contains "$out" "is empty, so env.sh has no colours" || return 1
+  cleanup_test_env
+}
+
+# theme_templates skips a themed/ directory it cannot read, in silence, so
+# every template behind it goes unchecked and the doctor reports a clean bill
+# for a theme it never looked at.
+test_doctor_reports_a_themed_directory_it_cannot_read() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  local themed="$TEEUP_CAPS_DIR/emacs/themed"
+  [[ -d "$themed" ]] || { echo "fixture: expected $themed"; return 1; }
+  chmod 0000 "$themed"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  chmod 0755 "$themed"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "cannot be read, so its templates were not checked at all" || return 1
+  cleanup_test_env
+}
+
+# A template edited after the last render leaves the tool on colours teeup no
+# longer ships, and `teeup update` does not re-render on its own.
+test_doctor_warns_when_a_template_is_newer_than_its_render() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  local tpl
+  tpl="$(theme_templates | head -1)"
+  [[ -n "$tpl" ]] || { echo "fixture: no templates"; return 1; }
+  touch "$tpl"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a stale render is a warning, not a failure" || return 1
+  assert_contains "$out" "is rendered from an older template" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/theme"
 run_test "install dry run renders nothing" test_install_dry_run_renders_nothing
 run_test "configure writes env.sh for both modes" test_configure_writes_env_for_both_modes
@@ -518,4 +568,7 @@ run_test "doctor passes after a theme switch" test_doctor_passes_after_a_theme_s
 run_test "doctor reports a machine with no theme" test_doctor_reports_a_machine_with_no_theme
 run_test "doctor reports a template never rendered" test_doctor_reports_a_template_that_was_never_rendered
 run_test "doctor reports an unresolved token" test_doctor_reports_an_unresolved_token_in_a_rendered_file
+run_test "doctor reports an empty rendered file" test_doctor_reports_an_empty_rendered_file
+run_test "doctor reports a themed dir it cannot read" test_doctor_reports_a_themed_directory_it_cannot_read
+run_test "doctor warns when a template is newer than its render" test_doctor_warns_when_a_template_is_newer_than_its_render
 print_summary

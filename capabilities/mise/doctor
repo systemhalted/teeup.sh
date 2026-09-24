@@ -18,6 +18,12 @@ if [[ -f "$mise_config" ]]; then
 else
   doctor_fail "No $mise_config, so mise has no global tool list." "teeup configure mise"
 fi
+if [[ -e "$mise_config" && ! -r "$mise_config" ]]; then
+  # Unreadable is not missing: the line above would call a file that is
+  # plainly there "No $mise_config", and send the user to configure it again
+  # when what they have is a permissions problem.
+  doctor_fail "$mise_config cannot be read, so teeup cannot tell what mise manages." "chmod u+r $mise_config"
+fi
 
 # The path the shell layer appends, spelled the way mise itself resolves it:
 # MISE_DATA_DIR, else XDG_DATA_HOME, else ~/.local/share.
