@@ -727,6 +727,19 @@ inner = 8
   merge_parses "$out" || { echo "whitespace header produced invalid TOML"; return 1; }
   grep -q 'inner = 0' "$out" || { echo "whitespace header override did not apply"; return 1; }
   grep -q 'inner = 8' "$out" && { echo "whitespace header left the base table too"; return 1; }
+  # A header carrying a trailing comment. Unrecognised, the keys under it
+  # become root keys and the override silently does nothing -- and the
+  # generated file may not parse at all.
+  printf '[gaps] # laptop\ninner = 0\n' > "$TEST_HOME/cmt.toml"
+  toml_merge_local "$base" "$TEST_HOME/cmt.toml" > "$out"
+  merge_parses "$out" || { echo "commented header produced invalid TOML"; return 1; }
+  grep -q 'inner = 0' "$out" || { echo "commented header override did not apply"; return 1; }
+  grep -q 'inner = 8' "$out" && { echo "commented header left the base table too"; return 1; }
+  # And the same for an array-of-table header.
+  printf '[[on-window-detected]] # mine\nrun = "move-node-to-workspace 4"\n' > "$TEST_HOME/cmt2.toml"
+  toml_merge_local "$base" "$TEST_HOME/cmt2.toml" > "$out"
+  merge_parses "$out" || { echo "commented array-of-table header produced invalid TOML"; return 1; }
+  grep -q 'move-node-to-workspace 4' "$out" || { echo "the commented [[ ]] entry was lost"; return 1; }
   # CRLF line endings.
   printf '%s\r\n' '[gaps]' 'inner = 0' > "$TEST_HOME/crlf.toml"
   toml_merge_local "$base" "$TEST_HOME/crlf.toml" > "$out"
