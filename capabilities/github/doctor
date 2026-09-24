@@ -46,12 +46,18 @@ for identity in $(identity_list); do
   if ! status_out="$(GH_HOST="$gh_host" gh auth status --active -h "$gh_host" 2>&1)"; then
     # gh fails `auth status` both when nobody is signed in there and when it
     # cannot reach the host at all (offline, DNS, a rate limit); only the
-    # first is "not signed in to GitHub". gh's own wording for the first
-    # case is "not logged into any accounts on <host>" -- a real network
-    # failure never says that, so the rest is "could not check", not "not
-    # signed in", and `teeup configure github` (which runs an interactive
-    # `gh auth login`) is not offered for a machine that is merely offline.
-    if printf '%s' "$status_out" | grep -qi 'not logged in'; then
+    # first is "not signed in to GitHub". gh's own wording for that case is
+    # "not logged into any accounts on <host>" -- a real network failure
+    # never says that. A revoked or invalid token is a third shape gh 2.100.0
+    # reports on its own: "Failed to log in to <host> account ... / The token
+    # in .../hosts.yml is invalid." (verified against the real CLI, NB1) --
+    # that machine is not merely offline, `gh auth login` is exactly the fix
+    # (the one `teeup configure github` runs), and reporting it as "could not
+    # check" left it silently unfixable. Anything else is a genuine transport
+    # failure, so THAT is "could not check", not "not signed in", and
+    # `teeup configure github` (an interactive `gh auth login`) is not
+    # offered for a machine that is merely offline.
+    if printf '%s' "$status_out" | grep -qiE 'not logged in|failed to log in to|token[^.]*is invalid'; then
       doctor_fail "Not signed in to $gh_host (needed for the $identity identity)." "teeup configure github"
     else
       doctor_warn "Could not check whether $identity is signed in to $gh_host: gh auth status failed for a reason other than being signed out. Check by hand: gh auth status -h $gh_host"

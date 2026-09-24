@@ -19,9 +19,16 @@ ssh_doctor_identity_files() {
   while IFS= read -r raw || [[ -n "$raw" ]]; do
     line="${raw%%#*}"
     line="${line/=/ }"
-    # Deliberate word splitting, to tokenize the line.
+    # Deliberate word splitting, to tokenize the line -- but pathname
+    # expansion must stay off while it does: a bare `set -- $line` also
+    # expands `*` and friends against files in the current directory, so a
+    # config's own `Host *` (the commonest ssh pattern of all) or an
+    # `IdentityFile ~/.ssh/id_*` silently turned into whatever happened to be
+    # in $PWD instead of staying the literal pattern ssh itself reads (NI6).
+    set -f
     # shellcheck disable=SC2086
     set -- $line
+    set +f
     [[ $# -ge 1 ]] || continue
     kw="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
     shift

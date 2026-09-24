@@ -72,7 +72,7 @@ test_doctor_passes_on_a_healthy_machine() {
   source "$TEEUP_PATH/lib/all.sh"
   mkdir -p "$TEEUP_PKG_PREFIX/bin"
   export PATH="$TEEUP_PKG_PREFIX/bin:$PATH"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "Homebrew 4.3.9" ;; esac\nexit 0\n' > "$TEEUP_PKG_PREFIX/bin/brew"
   chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
   DRY_RUN=false "$TEEUP" configure package-manager >/dev/null
   local rc=0 out
@@ -100,6 +100,24 @@ test_doctor_reports_a_backend_that_is_not_on_path() {
   cleanup_test_env
 }
 
+# Mutation gap: the "installed under prefix but bin not on PATH" branch
+# mutated to `if false` stayed green -- no test ever put a real, executable
+# brew at the assumed prefix while also keeping it off PATH.
+test_doctor_reports_a_backend_installed_under_the_prefix_but_not_on_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mkdir -p "$TEEUP_PKG_PREFIX/bin"
+  printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "Homebrew 4.3.9" ;; esac\nexit 0\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
+  hide_host_commands brew
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Homebrew is installed under $TEEUP_PKG_PREFIX but $TEEUP_PKG_PREFIX/bin is not on PATH" || return 1
+  assert_not_contains "$out" "Homebrew is not installed." || return 1
+  cleanup_test_env
+}
+
 # Installed, but not where this architecture would put it -- a Homebrew at
 # /usr/local on Apple Silicon, or one whose HOMEBREW_PREFIX is exported only
 # in an interactive shell. teeup will look in the wrong place, and saying
@@ -111,6 +129,7 @@ test_doctor_names_the_prefix_the_backend_is_really_at() {
   local elsewhere="$TEST_HOME/opt/other brew"
   mkdir -p "$elsewhere/bin"
   printf '#!/usr/bin/env bash
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 exit 0
 ' > "$elsewhere/bin/brew"
   chmod +x "$elsewhere/bin/brew"
@@ -155,7 +174,7 @@ test_doctor_does_not_offer_the_homebrew_prefix_fix_on_macports() {
   export TEEUP_PACKAGE_MANAGER=macports
   local elsewhere="$TEST_HOME/mp"
   mkdir -p "$elsewhere/bin"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$elsewhere/bin/port"
+  printf '#!/usr/bin/env bash\ncase "$1" in version) echo "Version: 2.9.3" ;; esac\nexit 0\n' > "$elsewhere/bin/port"
   chmod +x "$elsewhere/bin/port"
   local rc=0 out
   out="$(PATH="$elsewhere/bin:$PATH" DRY_RUN=false cap_run package-manager doctor 2>&1)" || true
@@ -163,6 +182,28 @@ test_doctor_does_not_offer_the_homebrew_prefix_fix_on_macports() {
   assert_contains "$out" "teeup looks for it under" || return 1
   assert_not_contains "$out" "HOMEBREW_PREFIX" || return 1
   assert_contains "$out" "MacPorts prefix is fixed" || return 1
+  cleanup_test_env
+}
+
+# Mutation gap: `-n "$answers_recorded"` mutated to `if true` stayed green --
+# every other doctor test that reaches this far has already run `teeup
+# configure package-manager`, so answers_recorded is never actually empty
+# when this branch is checked. A backend that answers, with no answers file
+# at all, must still report the missing record as a failure.
+test_doctor_reports_no_recorded_backend_when_the_answers_file_is_empty() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mkdir -p "$TEEUP_PKG_PREFIX/bin"
+  printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "Homebrew 4.3.9" ;; esac\nexit 0\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
+  export PATH="$TEEUP_PKG_PREFIX/bin:$PATH"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "no answers file recorded must not read as recorded" || return 1
+  assert_contains "$out" "No TEEUP_PACKAGE_MANAGER in the answers file" || return 1
+  assert_not_contains "$out" "recorded in the answers file" || return 1
   cleanup_test_env
 }
 
@@ -186,9 +227,11 @@ run_test "configure records backend in answers" test_configure_records_backend_i
 run_test "configure keeps existing answer" test_configure_keeps_existing_answer
 run_test "doctor passes on a healthy machine" test_doctor_passes_on_a_healthy_machine
 run_test "doctor reports a backend not on PATH" test_doctor_reports_a_backend_that_is_not_on_path
+run_test "doctor reports a backend installed under the prefix but not on PATH" test_doctor_reports_a_backend_installed_under_the_prefix_but_not_on_path
 run_test "doctor names the prefix the backend is really at" test_doctor_names_the_prefix_the_backend_is_really_at
 run_test "doctor reports a backend that is on PATH but unreachable" test_doctor_reports_a_backend_that_is_on_path_but_unreachable
 run_test "doctor does not offer the Homebrew prefix fix on MacPorts" test_doctor_does_not_offer_the_homebrew_prefix_fix_on_macports
+run_test "doctor reports no recorded backend when the answers file is empty" test_doctor_reports_no_recorded_backend_when_the_answers_file_is_empty
 run_test "doctor says when the machine file pins another backend" test_doctor_says_when_the_machine_file_pins_another_backend
 run_test "configure dry run does not claim the backend was recorded" test_configure_dry_run_does_not_claim_the_backend_was_recorded
 run_test "configure real-run wording is unchanged" test_configure_real_run_wording_is_unchanged

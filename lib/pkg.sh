@@ -54,6 +54,19 @@ pkg_backend_label() {
   esac
 }
 
+# pkg_backend_cmd -> brew | port
+# The one command name every backend probe (doctor's "can it answer" gate,
+# package-manager/doctor's own prefix checks) means when it says "the
+# backend": resolved once here so the two never name a different command for
+# the same TEEUP_PKG_BACKEND.
+pkg_backend_cmd() {
+  _pkg_backend_resolve
+  case "$TEEUP_PKG_BACKEND" in
+    homebrew) echo brew ;;
+    macports) echo port ;;
+  esac
+}
+
 pkg_prefix() {
   # TEEUP_PKG_PREFIX lets tests point at an empty directory instead of the
   # real /opt/homebrew on the CI runner.
