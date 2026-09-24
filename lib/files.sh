@@ -618,6 +618,29 @@ toml_merge_local() {
       return canon_path(s)
     }
     function is_kv(line) { return trim(line) ~ /^[A-Za-z0-9_.-]+[ \t]*=/ }
+    # value_is_closed(text) -- has this assignment finished on the text so far?
+    # It is still open while a [ or { is unbalanced, or a triple quote is
+    # unpaired. A # outside a string starts a comment, so its brackets do not
+    # count. Needed because a multiline value may legitimately contain a line
+    # that looks like an assignment.
+    function value_is_closed(text,   i, c, n, depth, inbasic, inlit, ml3, rest) {
+      depth = 0; inbasic = 0; inlit = 0; ml3 = 0
+      n = length(text)
+      for (i = 1; i <= n; i++) {
+        c = substr(text, i, 1)
+        rest = substr(text, i, 3)
+        if (!inbasic && !inlit && (rest == "\"\"\"" || rest == "'\''")) { ml3 = !ml3; i += 2; continue }
+        if (ml3) continue
+        if (inbasic && c == "\\") { i++; continue }
+        if (!inlit && c == "\"") { inbasic = !inbasic; continue }
+        if (!inbasic && c == "'\''") { inlit = !inlit; continue }
+        if (inbasic || inlit) continue
+        if (c == "#") break
+        if (c == "[" || c == "{") depth++
+        else if (c == "]" || c == "}") depth--
+      }
+      return (depth <= 0 && !ml3 && !inbasic && !inlit)
+    }
     function kv_key(line,   i, s) {
       s = trim(line)
       i = index(s, "=")
@@ -654,6 +677,7 @@ toml_merge_local() {
       # Pass 2: the machine local.toml.
       if (is_header($0)) {
         lrootopen = ""
+        lvalclosed = 1
         lname = header_name($0)
         if (lname ~ /^\[\[/) {
           larrname = substr(lname, 3, length(lname) - 4)
@@ -667,11 +691,22 @@ toml_merge_local() {
         if (!(lsec in lseen)) { lseen[lsec] = 1; lorder[++lcount] = lsec }
         lblock[lsec] = (lsec in lblock) ? lblock[lsec] "\n" $0 : $0
       } else if (lsec == "") {
-        if (is_kv($0)) {
+        # An open value swallows every line until its own delimiter closes,
+        # whatever those lines look like. A multiline string can legitimately
+        # contain `accordion-padding = 99`, and starting a new key there
+        # splits the value: the remainder is emitted at the base key position,
+        # taking the settings in between into the string with it. The result
+        # can still be valid TOML, so AeroSpace accepts a config that quietly
+        # lost settings and the validation backstop has nothing to catch.
+        if (lrootopen != "" && !lvalclosed) {
+          lrootval[lrootopen] = lrootval[lrootopen] "\n" $0
+          lvalclosed = value_is_closed(lrootval[lrootopen])
+        } else if (is_kv($0)) {
           k = kv_key($0)
           if (!(k in lrootseen)) { lrootseen[k] = 1; lrootorder[++lrootn] = k }
           lrootval[k] = $0
           lrootopen = k
+          lvalclosed = value_is_closed($0)
         } else if (lrootopen != "" && trim($0) != "") {
           # A value written across several lines (`after-startup-command = [`
           # and the entries under it). Keeping only the first line would emit
@@ -782,8 +817,18 @@ aerospace_config_ok() {
     log "AeroSpace is not running yet, so its own config check was skipped; it validates the file the next time it starts." >&2
     return 0
   fi
+  # A symlinked destination is never staged through. The swap below would
+  # replace the LINK with a regular file and restore a regular file in its
+  # place, quietly detaching a config someone keeps in a dotfiles repo --
+  # before refresh_config, which refuses symlinks precisely to prevent that,
+  # ever sees it. Validation is worth nothing next to that: skip it and let
+  # the write path downstream refuse the symlink as it already does.
+  if [[ -L "$dest" ]]; then
+    log "$dest is a symlink, so AeroSpace's own config check was skipped rather than write through it." >&2
+    return 0
+  fi
   dir="$(dirname "$dest")"
-  if [[ -e "$dest" || -L "$dest" ]]; then
+  if [[ -e "$dest" ]]; then
     had_dest=true
     saved="$(mktemp "$dir/.teeup_validate_old.XXXXXX" 2>/dev/null)" || {
       warn "Could not stage a validation copy of $dest; skipping AeroSpace's own config check."
