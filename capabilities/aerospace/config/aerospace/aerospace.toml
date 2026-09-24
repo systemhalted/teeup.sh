@@ -4,7 +4,13 @@
 # i3 muscle memory on macOS: alt is the modifier, hjkl moves focus,
 # alt+shift+hjkl moves the window, alt+<n> switches workspace, alt+f is
 # fullscreen, alt+/ flips the split orientation, alt+shift+; enters a service
-# mode for the things you do once a week.
+# mode for the things you do once a week. Emacs-style aliases (alt+ctrl+bnpf
+# to focus, alt+ctrl+shift+bnpf to move/join) sit alongside the hjkl set
+# rather than replacing it.
+
+# config-version 2 is required for `persistent-workspaces` below to take the
+# explicit list rather than falling back to inferring it from keybindings.
+config-version = 2
 
 after-login-command = []
 after-startup-command = []
@@ -20,26 +26,38 @@ default-root-container-layout = 'tiles'
 default-root-container-orientation = 'auto'
 
 # Follow the mouse to the monitor that took focus, so the next keystroke lands
-# where you are looking.
+# where you are looking. focus-follows-mouse itself stays off: moving the
+# mouse to read something must not steal focus from the window you're typing
+# into.
 on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
 automatically-unhide-macos-hidden-apps = false
+focus-follows-mouse.enabled = false
+
+# Workspaces 1-9 always exist, so alt+<n> never creates one implicitly.
+# Which monitor each belongs to is not set here -- that's a fact about one
+# desk's monitor layout, not a teeup default. Put a
+# [workspace-to-monitor-force-assignment] block in local.toml for that.
+# (This has to stay above [key-mapping]/[gaps] below: a bare key after a
+# [table] header belongs to that table in TOML, not to the root.)
+persistent-workspaces = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
 
 [key-mapping]
 preset = 'qwerty'
 
 [gaps]
-inner.horizontal = 8
-inner.vertical = 8
-outer.left = 8
-outer.bottom = 8
-outer.top = 8
-outer.right = 8
+inner.horizontal = 0
+inner.vertical = 0
+outer.left = 0
+outer.bottom = 0
+outer.top = 0
+outer.right = 0
 
 [mode.main.binding]
 alt-enter = 'exec-and-forget open -na WezTerm'
 
 alt-slash = 'layout tiles horizontal vertical'
 alt-comma = 'layout accordion horizontal vertical'
+alt-backslash = 'layout tiling floating'
 alt-f = 'fullscreen'
 
 alt-h = 'focus left'
@@ -47,10 +65,21 @@ alt-j = 'focus down'
 alt-k = 'focus up'
 alt-l = 'focus right'
 
+# Emacs-style aliases for the same four focus moves.
+alt-ctrl-b = 'focus left'
+alt-ctrl-n = 'focus down'
+alt-ctrl-p = 'focus up'
+alt-ctrl-f = 'focus right'
+
 alt-shift-h = 'move left'
 alt-shift-j = 'move down'
 alt-shift-k = 'move up'
 alt-shift-l = 'move right'
+
+alt-ctrl-shift-b = 'move left'
+alt-ctrl-shift-n = 'move down'
+alt-ctrl-shift-p = 'move up'
+alt-ctrl-shift-f = 'move right'
 
 alt-minus = 'resize smart -50'
 alt-equal = 'resize smart +50'
@@ -90,3 +119,7 @@ alt-shift-h = ['join-with left', 'mode main']
 alt-shift-j = ['join-with down', 'mode main']
 alt-shift-k = ['join-with up', 'mode main']
 alt-shift-l = ['join-with right', 'mode main']
+alt-ctrl-shift-b = ['join-with left', 'mode main']
+alt-ctrl-shift-n = ['join-with down', 'mode main']
+alt-ctrl-shift-p = ['join-with up', 'mode main']
+alt-ctrl-shift-f = ['join-with right', 'mode main']
