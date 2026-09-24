@@ -563,12 +563,21 @@ toml_merge_local() {
     # into one. An array-of-table name keeps its brackets, so "[[x]]" and
     # "[x]" can never collide, and every [[x]] entry accumulates under that
     # one name so repeats survive in order.
-    function is_header(line,   s) {
+    # A header may carry a trailing comment ("[gaps] # laptop"). The comment is
+    # stripped for detection and for the name only -- never for a key line,
+    # where a "#" inside a quoted value is part of the value, not a comment.
+    function header_text(line,   s) {
       s = trim(line)
+      if (substr(s, 1, 1) != "[") return s
+      sub(/\][ \t]*#.*$/, "]", s)
+      return trim(s)
+    }
+    function is_header(line,   s) {
+      s = header_text(line)
       return s ~ /^\[\[[^]]+\]\]$/ || s ~ /^\[[^]]+\]$/
     }
     function header_name(line,   s) {
-      s = trim(line)
+      s = header_text(line)
       if (s ~ /^\[\[[^]]+\]\]$/) return s
       sub(/^\[/, "", s)
       sub(/\]$/, "", s)
