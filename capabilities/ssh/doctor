@@ -8,6 +8,46 @@ ssh_dir="$HOME/.ssh"
 # because its -f means something else entirely, BSD stat second.
 mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || printf 'unknown\n'; }
 
+# ssh_doctor_identity_files <config-file> <alias>
+# Prints, one per line, every IdentityFile value from every Host block in
+# <config-file> whose pattern list matches <alias> the way ssh itself
+# matches it: a literal token, or a glob (`case "$alias" in $pattern)`).
+# ssh accepts `Key=Value` as well as `Key Value` on a line, and a trailing
+# comment, so both forms are normalised before the line is tokenized.
+ssh_doctor_identity_files() {
+  local file="$1" want="$2" raw line kw tok in_block=false
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    line="${raw%%#*}"
+    line="${line/=/ }"
+    # Deliberate word splitting, to tokenize the line.
+    # shellcheck disable=SC2086
+    set -- $line
+    [[ $# -ge 1 ]] || continue
+    kw="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    shift
+    if [[ "$kw" == "host" ]]; then
+      in_block=false
+      for tok in "$@"; do
+        if [[ "$tok" == "$want" ]]; then
+          in_block=true
+        else
+          # $tok is deliberately used unquoted here: it is a glob pattern
+          # from the config file (Host github.com-*), matched the way ssh
+          # itself matches it, not a literal string.
+          # shellcheck disable=SC2254
+          case "$want" in
+            $tok) in_block=true ;;
+          esac
+        fi
+      done
+      continue
+    fi
+    if [[ "$in_block" == "true" && "$kw" == "identityfile" ]]; then
+      printf '%s\n' "$*"
+    fi
+  done < "$file"
+}
+
 if [[ ! -d "$ssh_dir" ]]; then
   doctor_fail "No $ssh_dir, so no identity exists on this machine." "teeup configure ssh"
   doctor_verdict
@@ -30,9 +70,39 @@ for identity in $(identity_list); do
     continue
   fi
   doctor_ok "The $identity key pair is present at $key."
-  if [[ "$(mode_of "$key")" != "600" ]]; then
-    doctor_fail "$key is mode $(mode_of "$key"); ssh refuses a private key other accounts can read." "chmod 600 $key"
+
+  # A private key file that exists and is non-empty is not necessarily a
+  # private key: a half-written copy, or a passphrase pasted into the wrong
+  # file, is just as non-empty. The marker line every OpenSSH/PEM private
+  # key starts with never appears in a genuine key's byte stream by
+  # accident, and reading only the first line never risks a passphrase
+  # prompt or printing key material.
+  if ! head -1 "$key" 2>/dev/null | grep -q 'PRIVATE KEY'; then
+    doctor_fail "$key does not look like a private key, so ssh cannot use the $identity identity." "teeup configure ssh"
+  elif have ssh-keygen; then
+    # The public half only: `-l -f` on a private key can still work, but it
+    # is never worth the risk of a passphrase prompt hanging doctor, or of
+    # any private key byte reaching a subprocess whose output this script
+    # then has to be careful never to echo.
+    if ! ssh-keygen -l -f "$key.pub" >/dev/null 2>&1; then
+      doctor_fail "$key.pub is not a valid public key, so ssh cannot use the $identity key pair." "teeup configure ssh"
+    fi
+  else
+    doctor_warn "ssh-keygen is not on PATH, so teeup could not fully check the $identity key pair."
   fi
+
+  # ssh refuses a private key that group or other can read; it does not
+  # require exactly 600. Mode 400 (or 700) is just as acceptable as 600, so
+  # only the last two digits -- group and other -- decide this.
+  key_mode="$(mode_of "$key")"
+  case "$key_mode" in
+    unknown)
+      doctor_warn "$key's permissions could not be checked; no usable stat is on PATH. Check by hand: ls -l $key" ;;
+    *00)
+      : ;;
+    *)
+      doctor_fail "$key is mode $key_mode; ssh refuses a private key that group or other can read." "chmod 600 $key" ;;
+  esac
 done
 
 # Only the aliases identity_list actually names: github.com-work is rendered
@@ -41,21 +111,78 @@ done
 # machine, which is most of them.
 if [[ ! -f "$ssh_dir/config" ]]; then
   doctor_fail "No $ssh_dir/config, so no identity's key is ever offered to github.com." "teeup configure ssh"
+elif [[ ! -r "$ssh_dir/config" ]]; then
+  doctor_warn "$ssh_dir/config cannot be read, so teeup could not check which Host block your keys use. chmod u+r $ssh_dir/config"
 else
+  # Every pattern from every Host line, collected once: ssh reads Host
+  # case-insensitively, allows leading whitespace, `Key=Value` as well as
+  # `Key Value`, several patterns on one line, and ignores a trailing
+  # comment. A hand-written config using any of that would otherwise fail an
+  # exact, case-sensitive, whitespace-only match -- and be offered `teeup
+  # reset ssh`, which would not change a thing.
+  host_patterns="$(awk '
+      { line = $0; sub(/#.*/, "", line) }
+      { sub(/^[[:space:]]*[Hh][Oo][Ss][Tt][[:space:]]*=[[:space:]]*/, "Host ", line) }
+      { n = split(line, f) }
+      n >= 2 && tolower(f[1]) == "host" {
+        for (i = 2; i <= n; i++) print f[i]
+      }
+    ' "$ssh_dir/config" 2>/dev/null)"
   for identity in $(identity_list); do
-    # ssh reads `Host` case-insensitively, allows leading whitespace, takes
-    # several patterns on one line and ignores a trailing comment. A
-    # hand-written config that works perfectly would fail an exact,
-    # case-sensitive, anchored match -- and be offered `teeup reset ssh`,
-    # which would not change a thing.
     alias_name="$(ssh_host_alias "$identity")"
-    if awk -v want="$alias_name" '
-        { sub(/#.*/, "") }
-        tolower($1) == "host" {
-          for (i = 2; i <= NF; i++) if ($i == want) { found = 1; exit }
-        }
-        END { exit found ? 0 : 1 }' "$ssh_dir/config"; then
+    matched=false
+    while IFS= read -r pattern; do
+      if [[ -z "$pattern" ]]; then
+        continue
+      fi
+      if [[ "$pattern" == "$alias_name" ]]; then
+        matched=true
+      else
+        # ssh's own glob matching (Host github.com-* github.*): a literal
+        # alias never itself contains a glob character, so this only ever
+        # fires for a pattern the user wrote. $pattern is deliberately
+        # unquoted, to match as a glob.
+        # shellcheck disable=SC2254
+        case "$alias_name" in
+          $pattern) matched=true ;;
+        esac
+      fi
+    done <<EOF_HOST_PATTERNS
+$host_patterns
+EOF_HOST_PATTERNS
+    if [[ "$matched" == "true" ]]; then
       doctor_ok "$ssh_dir/config declares Host $alias_name."
+      # A Host block that exists but names a key that is not on this
+      # machine is healthy in every way this script checked so far, and
+      # every push still fails. A block with no IdentityFile at all is left
+      # alone: ssh falls back to its own default key search, which is a
+      # legitimate hand-written setup teeup never generated.
+      id_files="$(ssh_doctor_identity_files "$ssh_dir/config" "$alias_name")"
+      if [[ -n "$id_files" ]]; then
+        any_exists=false
+        while IFS= read -r idf; do
+          if [[ -z "$idf" ]]; then
+            continue
+          fi
+          # The tilde is deliberately quoted so the shell does not expand it
+          # before matching: $idf is a literal string read from the config
+          # file, and it is that literal leading "~/" being tested for, not
+          # a real path.
+          # shellcheck disable=SC2088
+          case "$idf" in
+            "~/"*) idf="$HOME/${idf#\~/}" ;;
+            "~") idf="$HOME" ;;
+          esac
+          if [[ -f "$idf" ]]; then
+            any_exists=true
+          fi
+        done <<EOF_ID_FILES
+$id_files
+EOF_ID_FILES
+        if [[ "$any_exists" != "true" ]]; then
+          doctor_fail "$ssh_dir/config's Host $alias_name block names an IdentityFile that is not on this machine, so pushes with it are refused." "teeup configure ssh"
+        fi
+      fi
     else
       doctor_fail "$ssh_dir/config has no 'Host $alias_name' block." "teeup reset ssh"
     fi

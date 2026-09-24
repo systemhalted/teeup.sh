@@ -41,7 +41,20 @@ case "$1 ${2:-}" in
     if [ -n "$host" ]; then
       session_file="$HOME/gh-session"
       [ "$host" = "github.com" ] || session_file="$HOME/gh-session-$host"
-      [ -f "$session_file" ] || exit 1
+      # A seeded control file simulates a transport failure (offline, DNS, a
+      # rate limit) -- a real gh failure that is NOT "signed out", and whose
+      # wording never contains gh's own "not logged into" phrase.
+      error_file="$HOME/gh-auth-status-error"
+      [ "$host" = "github.com" ] || error_file="$HOME/gh-auth-status-error-$host"
+      if [ -f "$error_file" ]; then
+        echo "error connecting to $host: dial tcp: lookup $host: no such host" >&2
+        exit 1
+      fi
+      if [ ! -f "$session_file" ]; then
+        # gh 2.100.0's own wording for "nobody is signed in here".
+        echo "You are not logged into any accounts on $host" >&2
+        exit 1
+      fi
       echo "$host"
       echo "  Logged in to $host account testuser (keyring)"
       echo "  - Active account: true"
@@ -87,6 +100,15 @@ case "$1 ${2:-}" in
   "ssh-key list")
     keys_file="$HOME/gh-keys"
     [ "$GH_HOST" = "github.com" ] || keys_file="$HOME/gh-keys-$GH_HOST"
+    # A seeded control file simulates the listing itself failing (offline, a
+    # rate limit, a revoked token) -- distinct from a successful, empty
+    # listing, which means the key really is not there.
+    fail_marker="$HOME/gh-keys-list-fail"
+    [ "$GH_HOST" = "github.com" ] || fail_marker="$HOME/gh-keys-list-fail-$GH_HOST"
+    if [ -f "$fail_marker" ]; then
+      echo "HTTP 500: Internal Server Error" >&2
+      exit 1
+    fi
     cat "$keys_file" 2>/dev/null || true
     ;;
   # An upload lands in the same list a later run reads back, so running
@@ -790,6 +812,109 @@ test_doctor_reports_it_could_not_check_a_work_key_on_the_wrong_account() {
   cleanup_test_env
 }
 
+# I13: gh fails `auth status` both when nobody is signed in and when it
+# cannot reach the host at all. Only the first is "not signed in" -- the
+# second is "could not check", and must not offer `teeup configure github`,
+# which would run an interactive `gh auth login` on a machine that is merely
+# offline.
+test_doctor_reports_a_transport_failure_as_could_not_check() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  : > "$TEST_HOME/gh-auth-status-error"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a transport failure is not the same as being signed out" || return 1
+  assert_contains "$out" "Could not check whether personal is signed in to github.com" || return 1
+  assert_not_contains "$out" "Not signed in to github.com" "a network failure must not be reported as signed out" || return 1
+  cleanup_test_env
+}
+
+# I12: `gh ssh-key list` failing (offline, a rate limit, a revoked token)
+# used to be swallowed (`|| true`) and read as an empty, successful listing
+# -- the key reported simply not there. It must be "could not check".
+test_doctor_reports_it_could_not_list_keys() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'admin:public_key,admin:ssh_signing_key\n' > "$TEST_HOME/gh-session"
+  : > "$TEST_HOME/gh-keys-list-fail"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_success "$rc" "gh ssh-key list failing is not the same as the key being missing" || return 1
+  assert_contains "$out" "Could not list SSH keys on github.com" || return 1
+  assert_not_contains "$out" "is not on GitHub" "an unlistable key list must not be reported as the key being absent" || return 1
+  cleanup_test_env
+}
+
+# I14: `configure github` uploads two rows per identity -- authentication for
+# pushes, signing for commit signatures -- and they fail independently. A key
+# present only as signing must not pass the check that stands for "pushes
+# work".
+test_doctor_reports_a_signing_only_key_as_not_ready_for_push() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'admin:public_key,admin:ssh_signing_key\n' > "$TEST_HOME/gh-session"
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' > "$TEST_HOME/gh-keys"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a key uploaded only as signing must not pass the authentication check" || return 1
+  assert_contains "$out" "not on GitHub (github.com) as an authentication key" || return 1
+  assert_contains "$out" "on GitHub (github.com) as a signing key" || return 1
+  cleanup_test_env
+}
+
+# Mutation testing found `--active -h` -> `-h` stayed green: without --active,
+# `gh auth status -h github.com` reports every account on the host, and an
+# inactive account's scopes would hide the active account's own missing
+# ones.
+test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'repo\n' > "$TEST_HOME/gh-session"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-inactive-scopes"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "the active account's own missing scopes must not be hidden by an inactive account's scopes" || return 1
+  assert_contains "$out" "missing the admin:public_key scope" || return 1
+  cleanup_test_env
+}
+
+# Mutation testing found the key-body field match loosened to a whole-line
+# index() stayed green: a title that merely contains our key body as a
+# substring is somebody else's key, not ours. The signing row is a real,
+# correctly matching row -- not a decoy -- so a doctor fooled by the
+# authentication row's title would report full health here (both checks
+# "pass"), and only a doctor that rejects the title-only match still fails on
+# the authentication row alone; without the real signing row, an unrelated
+# missing-signing-row failure would mask whether the authentication match
+# itself was fooled.
+test_doctor_does_not_match_the_key_body_against_the_title() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'admin:public_key,admin:ssh_signing_key\n' > "$TEST_HOME/gh-session"
+  {
+    printf 'copy-of-AAAAPERSONALKEY\tssh-ed25519 AAAAUNRELATEDKEY\t2026\t1\tauthentication\n'
+    printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n'
+  } > "$TEST_HOME/gh-keys"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a title that merely contains the key body is not the key" || return 1
+  assert_contains "$out" "not on GitHub (github.com) as an authentication key" || return 1
+  assert_contains "$out" "on GitHub (github.com) as a signing key" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/github"
 run_test "install gets gh" test_install_gets_gh
 run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
@@ -829,4 +954,9 @@ run_test "doctor reports being signed out" test_doctor_reports_being_signed_out
 run_test "doctor reports missing scopes and an unuploaded key" test_doctor_reports_missing_scopes_and_an_unuploaded_key
 run_test "doctor reports a second host that needs signing in" test_doctor_reports_a_second_host_that_needs_signing_in
 run_test "doctor reports it could not check a work key on the wrong account" test_doctor_reports_it_could_not_check_a_work_key_on_the_wrong_account
+run_test "doctor reports a transport failure as could not check" test_doctor_reports_a_transport_failure_as_could_not_check
+run_test "doctor reports it could not list keys" test_doctor_reports_it_could_not_list_keys
+run_test "doctor reports a signing-only key as not ready for push" test_doctor_reports_a_signing_only_key_as_not_ready_for_push
+run_test "doctor checks the active account's scopes, not an inactive one's" test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones
+run_test "doctor does not match the key body against the title" test_doctor_does_not_match_the_key_body_against_the_title
 print_summary
