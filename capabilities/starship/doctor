@@ -9,9 +9,19 @@ else
   doctor_fail "starship is not on PATH, so the prompt falls back to zsh's default." "teeup install starship"
 fi
 
+name="$(theme_current)"
 config="$(user_config_dir)/starship.toml"
 if [[ ! -f "$config" ]]; then
   doctor_fail "No $config, so starship runs on its built-in defaults." "teeup configure starship"
+  doctor_verdict
+  exit
+fi
+# Unreadable is not missing, and the fix is not the same: every check below
+# reads this file, so without this they would all report their own kind of
+# absence -- and `teeup reset starship`, which replaces the file, would be
+# offered for what is only a permissions problem.
+if [[ ! -r "$config" ]]; then
+  doctor_fail "$config cannot be read, so teeup cannot tell whether the prompt follows the theme." "chmod u+r $config"
   doctor_verdict
   exit
 fi
@@ -20,7 +30,22 @@ doctor_ok "$config is in place."
 start_count="$(grep -cxF '# teeup:theme-palette:start' "$config" || true)"
 end_count="$(grep -cxF '# teeup:theme-palette:end' "$config" || true)"
 if [[ "$start_count" -eq 1 && "$end_count" -eq 1 ]]; then
-  doctor_ok "The starship palette block is intact."
+  # Intact markers are not intact colours: the block between them is what
+  # `teeup theme set` writes, and a hand-edited or stale one keeps the prompt
+  # on colours the current theme does not name while every structural check
+  # here passes. Compare what is in the file with what the theme renders.
+  rendered_palette="$TEEUP_STATE_DIR/current/theme/$(appearance)/starship-palette.toml"
+  if [[ ! -f "$rendered_palette" ]]; then
+    doctor_ok "The starship palette block is intact."
+  elif [[ ! -r "$rendered_palette" ]]; then
+    doctor_warn "$rendered_palette cannot be read, so the palette block's colours were not compared."
+  elif awk '/^# teeup:theme-palette:start$/ { inside = 1; next }
+            /^# teeup:theme-palette:end$/ { inside = 0; next }
+            inside { print }' "$config" | diff -q - "$rendered_palette" >/dev/null 2>&1; then
+    doctor_ok "The starship palette block is intact and matches the current theme."
+  else
+    doctor_fail "$config's palette block does not match what the $name theme renders, so the prompt is on other colours." "teeup theme set $(theme_current)"
+  fi
 elif [[ "$start_count" -eq 0 && "$end_count" -eq 0 ]]; then
   doctor_fail "$config has no teeup:theme-palette markers, so it no longer follows the teeup theme." "teeup reset starship"
 else

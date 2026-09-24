@@ -13,10 +13,25 @@ doctor_ok "Current theme: $name"
 
 current="$TEEUP_STATE_DIR/current/theme"
 for mode in dark light; do
-  if [[ -d "$current/$mode" ]]; then
+  if [[ -d "$current/$mode" && -r "$current/$mode" && -x "$current/$mode" ]]; then
     doctor_ok "Rendered $mode files are in $current/$mode."
+  elif [[ -e "$current/$mode" ]]; then
+    # "Cannot look" is not "is not there", and the fix is different: one is a
+    # permissions problem, the other a missing render.
+    doctor_fail "$current/$mode cannot be read, so teeup cannot tell what follows the theme in $mode mode." "chmod u+rx $current/$mode"
   else
     doctor_fail "No $current/$mode, so nothing follows the theme in $mode mode." "teeup theme set $name"
+  fi
+done
+
+# A capability's themed/ directory that cannot be read makes theme_templates
+# skip its templates in silence, and every tool behind it would then go
+# unmentioned below -- the doctor would report a clean bill for a theme it
+# never actually checked.
+for themed_dir in "$TEEUP_CAPS_DIR"/*/themed; do
+  [[ -d "$themed_dir" ]] || continue
+  if [[ ! -r "$themed_dir" || ! -x "$themed_dir" ]]; then
+    doctor_fail "$themed_dir cannot be read, so its templates were not checked at all." "chmod u+rx $themed_dir"
   fi
 done
 
@@ -33,8 +48,20 @@ while IFS= read -r tpl; do
     rendered="$current/$mode/$base"
     if [[ ! -f "$rendered" ]]; then
       doctor_fail "$base has never been rendered for $mode mode." "teeup theme set $name"
+    elif [[ ! -r "$rendered" ]]; then
+      doctor_fail "$rendered cannot be read, so teeup cannot tell whether it rendered." "chmod u+r $rendered"
+    elif [[ ! -s "$rendered" ]]; then
+      # Existing is not rendered: an empty file has no unresolved token to
+      # find either, so it passes both of the other checks while the tool it
+      # belongs to reads nothing at all.
+      doctor_fail "$rendered is empty, so $base has no colours in $mode mode." "teeup theme set $name"
     elif grep -q '{{' "$rendered"; then
       doctor_fail "$rendered still holds an unresolved {{ token }}." "teeup theme set $name"
+    elif [[ "$tpl" -nt "$rendered" ]]; then
+      # The template has changed since it was last rendered, so the tool is
+      # running on colours teeup no longer ships. `teeup update` does not
+      # re-render on its own, so this window stays open until someone looks.
+      doctor_warn "$tpl is newer than $rendered, so $base is rendered from an older template. Run: teeup theme set $name"
     fi
   done
 done <<EOF_TPL

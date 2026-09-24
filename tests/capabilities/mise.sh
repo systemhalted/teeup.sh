@@ -308,6 +308,26 @@ test_doctor_reports_pre_commit_requested_but_not_installed() {
   cleanup_test_env
 }
 
+# Unreadable is not missing: the file is plainly there, and telling the user
+# to run `teeup configure mise` over a permissions problem sends them to do
+# something that will not help.
+test_doctor_separates_an_unreadable_config_from_a_missing_one() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local config
+  config="$(user_config_dir)/mise/config.toml"
+  mkdir -p "$(dirname "$config")"
+  printf '[tools]\n' > "$config"
+  chmod 0000 "$config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  chmod 0644 "$config"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "cannot be read, so teeup cannot tell what mise manages" || return 1
+  assert_not_contains "$out" "has no global tool list" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/mise"
 run_test "install gets mise" test_install_gets_mise
 run_test "configure writes the config and the setting" test_configure_writes_the_config_and_the_setting
@@ -321,5 +341,6 @@ run_test "configure ships an empty tools table" test_configure_ships_an_empty_to
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "doctor passes on a configured machine" test_doctor_passes_on_a_configured_machine
 run_test "doctor reports a missing mise and config" test_doctor_reports_a_missing_mise_and_config
+run_test "doctor separates an unreadable config from a missing one" test_doctor_separates_an_unreadable_config_from_a_missing_one
 run_test "doctor reports pre-commit requested but missing" test_doctor_reports_pre_commit_requested_but_not_installed
 print_summary

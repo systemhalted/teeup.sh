@@ -140,6 +140,64 @@ test_doctor_reports_palette_markers_that_were_edited_away() {
   cleanup_test_env
 }
 
+# Intact markers are not intact colours. A hand-edited or stale palette block
+# keeps the prompt on colours the current theme does not name, while every
+# structural check passes.
+test_doctor_reports_a_palette_block_that_does_not_match_the_theme() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  theme_set catppuccin >/dev/null 2>&1
+  local config
+  config="$(user_config_dir)/starship.toml"
+  # Keep the markers, change what is between them.
+  awk '/^# teeup:theme-palette:start$/ { print; print "red = \"#000000\""; skip = 1; next }
+       /^# teeup:theme-palette:end$/ { skip = 0 }
+       !skip { print }' "$config" > "$config.new" && mv "$config.new" "$config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "colours that do not match the theme are a problem" || return 1
+  assert_contains "$out" "does not match what the" || return 1
+  cleanup_test_env
+}
+
+# Unreadable is not missing, and `teeup reset starship` would replace the file
+# over what is only a permissions problem.
+test_doctor_separates_an_unreadable_config_from_a_missing_one() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  local config
+  config="$(user_config_dir)/starship.toml"
+  chmod 0000 "$config"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  chmod 0644 "$config"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "cannot be read" || return 1
+  assert_not_contains "$out" "runs on its built-in defaults" || return 1
+  assert_not_contains "$(cat "$report")" "teeup reset starship" "a permissions problem is not fixed by replacing the file" || return 1
+  cleanup_test_env
+}
+
+# The root selector had no coverage at all: deleting the whole branch left the
+# suite green.
+test_doctor_reports_a_missing_root_palette_selector() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  local config
+  config="$(user_config_dir)/starship.toml"
+  grep -v '^palette *=' "$config" > "$config.new" && mv "$config.new" "$config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "no root 'palette =' line" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/starship"
 run_test "install gets starship" test_install_gets_starship
 run_test "configure copies the config once" test_configure_copies_the_config_once
@@ -150,4 +208,7 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor reports a missing config" test_doctor_reports_a_missing_config
 run_test "doctor reports palette markers edited away" test_doctor_reports_palette_markers_that_were_edited_away
+run_test "doctor reports a palette block that does not match the theme" test_doctor_reports_a_palette_block_that_does_not_match_the_theme
+run_test "doctor separates an unreadable config from a missing one" test_doctor_separates_an_unreadable_config_from_a_missing_one
+run_test "doctor reports a missing root palette selector" test_doctor_reports_a_missing_root_palette_selector
 print_summary
