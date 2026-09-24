@@ -15,14 +15,23 @@ if ! have gh; then
   exit
 fi
 
-# gh_key_listed <listed> <key-body> -> exits 0 when `gh ssh-key list`'s
-# output (a tab-separated TITLE/KEY/ADDED/ID/TYPE, the real non-TTY format gh
-# 2.100.0 prints) already has a row whose key field is our public key body.
-# The title is free text and comes first, so it is never matched: a title
-# that merely contains our key body is somebody else's key.
+# gh_key_listed <listed> <key-body> <type> -> exits 0 when `gh ssh-key
+# list`'s output (a tab-separated TITLE/KEY/ADDED/ID/TYPE, the real non-TTY
+# format gh 2.100.0 prints) already has a row for this key body AND this
+# type. `configure github` uploads two rows per identity -- authentication
+# for pushes, signing for commit signatures -- and they fail independently:
+# a key present only as signing still has every push refused, so the type is
+# read from the row's own last column, never assumed from the body match
+# alone. The title is free text and comes first, so it is never matched: a
+# title that merely contains our key body is somebody else's key.
 gh_key_listed() {
-  printf '%s\n' "$1" | awk -F'\t' -v body="$2" '
-    { for (f = 2; f <= NF; f++) { split($f, w, " "); if (w[2] == body) { found = 1 } } }
+  printf '%s\n' "$1" | awk -F'\t' -v body="$2" -v type="$3" '
+    NF < 2 || $NF != type { next }
+    {
+      for (i = NF - 1; i >= 2; i--) {
+        if (split($i, w, " ") >= 2 && w[2] == body) { found = 1; exit }
+      }
+    }
     END { exit(found ? 0 : 1) }
   '
 }
@@ -35,7 +44,18 @@ for identity in $(identity_list); do
   # this host. Without it an unrelated stale account decides the exit status,
   # and its scopes are the ones that get read.
   if ! status_out="$(GH_HOST="$gh_host" gh auth status --active -h "$gh_host" 2>&1)"; then
-    doctor_fail "Not signed in to $gh_host (needed for the $identity identity)." "teeup configure github"
+    # gh fails `auth status` both when nobody is signed in there and when it
+    # cannot reach the host at all (offline, DNS, a rate limit); only the
+    # first is "not signed in to GitHub". gh's own wording for the first
+    # case is "not logged into any accounts on <host>" -- a real network
+    # failure never says that, so the rest is "could not check", not "not
+    # signed in", and `teeup configure github` (which runs an interactive
+    # `gh auth login`) is not offered for a machine that is merely offline.
+    if printf '%s' "$status_out" | grep -qi 'not logged in'; then
+      doctor_fail "Not signed in to $gh_host (needed for the $identity identity)." "teeup configure github"
+    else
+      doctor_warn "Could not check whether $identity is signed in to $gh_host: gh auth status failed for a reason other than being signed out. Check by hand: gh auth status -h $gh_host"
+    fi
     continue
   fi
   doctor_ok "Signed in to $gh_host ($identity identity)."
@@ -71,11 +91,34 @@ for identity in $(identity_list); do
   # NR == 1: a .pub is one line, but a stray second line would otherwise
   # yield a multi-line body that can never match a listed row.
   body="$(awk 'NR == 1 { print $2 }' "$pub")"
-  listed="$(GH_HOST="$gh_host" gh ssh-key list 2>/dev/null || true)"
-  if [[ -n "$body" ]] && gh_key_listed "$listed" "$body"; then
-    doctor_ok "The $identity public key is on GitHub ($gh_host)."
+  if [[ -z "$body" ]]; then
+    doctor_warn "$pub does not look like a public key, so teeup could not check whether it is on GitHub."
+    continue
+  fi
+  # `|| true` used to swallow every failure -- offline, DNS, a rate limit, a
+  # revoked token -- and an empty listing then read as "the key is not
+  # there". Keeping the real exit status tells "gh could not answer" apart
+  # from "gh answered, and the key is missing".
+  if listed="$(GH_HOST="$gh_host" gh ssh-key list 2>/dev/null)"; then
+    for key_type in authentication signing; do
+      if [[ "$key_type" == "authentication" ]]; then
+        article="an"
+      else
+        article="a"
+      fi
+      if gh_key_listed "$listed" "$body" "$key_type"; then
+        doctor_ok "The $identity public key is on GitHub ($gh_host) as $article $key_type key."
+      else
+        if [[ "$key_type" == "authentication" ]]; then
+          consequence="pushes with it are refused"
+        else
+          consequence="its commit signatures cannot be verified there"
+        fi
+        doctor_fail "The $identity public key is not on GitHub ($gh_host) as $article $key_type key, so $consequence." "teeup configure github"
+      fi
+    done
   else
-    doctor_fail "The $identity public key is not on GitHub, so pushes with it are refused." "teeup configure github"
+    doctor_warn "Could not list SSH keys on $gh_host (gh ssh-key list failed), so teeup could not check whether the $identity key is uploaded."
   fi
 done
 

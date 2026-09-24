@@ -9,8 +9,22 @@ setup() {
   # A keygen that actually leaves the two files behind, so the permission and
   # idempotency steps have something to act on. `-y -f <key>` (the partial-pair
   # repair path) prints a fake public key to stdout instead, matching real
-  # ssh-keygen -y, since the caller redirects that into place itself.
+  # ssh-keygen -y, since the caller redirects that into place itself. `-l`
+  # (the doctor's own format check, I10) is forwarded to the real ssh-keygen
+  # via `command -p`, the same trick tests/capabilities/git.sh uses to reach
+  # the real git past this mock's own PATH entry: doctor's validation only
+  # means something if it is checked against a real parser, not a second
+  # mock that would just say yes. The private/public bodies below are a
+  # throwaway ed25519 test fixture generated for this suite -- not anyone's
+  # real key, not reused anywhere else -- so that fixture is a real,
+  # parseable key pair rather than placeholder text a real `ssh-keygen -l`
+  # would reject.
   mock_command_script ssh-keygen <<'EOF2'
+if [ "$1" = "-l" ]; then
+  shift
+  command -p ssh-keygen -l "$@"
+  exit $?
+fi
 if [ "$1" = "-y" ]; then
   shift
   [ "$1" = "-f" ] && shift
@@ -25,8 +39,16 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$out" ] || exit 1
 mkdir -p "$(dirname "$out")"
-printf 'PRIVATE\n' > "$out"
-printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY comment\n' > "$out.pub"
+cat > "$out" <<'PRIVEOF'
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACAkK08if0AlZkVvDkmakB/ucgDiL5Hq96D/BdKjEN4kTQAAAJAPsUCPD7FA
+jwAAAAtzc2gtZWQyNTUxOQAAACAkK08if0AlZkVvDkmakB/ucgDiL5Hq96D/BdKjEN4kTQ
+AAAECuWgOPDYlfp6179AZqZY+HHlzff+XHt6o18zUdwGkBcyQrTyJ/QCVmRW8OSZqQH+5y
+AOIvker3oP8F0qMQ3iRNAAAAB2NvbW1lbnQBAgMEBQY=
+-----END OPENSSH PRIVATE KEY-----
+PRIVEOF
+printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICQrTyJ/QCVmRW8OSZqQH+5yAOIvker3oP8F0qMQ3iRN comment\n' > "$out.pub"
 EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
 }
@@ -381,7 +403,7 @@ test_configure_replaces_a_zero_byte_private_key() {
   assert_contains "$out" "Backed up $TEST_HOME/.ssh/id_ed25519_personal.pub to" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
   [[ -s "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "no private key generated"; return 1; }
-  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" "AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY comment" || return 1
+  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" "AAAAC3NzaC1lZDI1NTE5AAAAICQrTyJ/QCVmRW8OSZqQH+5yAOIvker3oP8F0qMQ3iRN comment" || return 1
   cleanup_test_env
 }
 
@@ -433,8 +455,8 @@ test_configure_backs_up_a_pub_only_key_and_regenerates_the_pair() {
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
   assert_contains "$out" "Backed up $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
   assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal" || return 1
-  assert_equals "PRIVATE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
-  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" "AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY comment" || return 1
+  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" "BEGIN OPENSSH PRIVATE KEY" || return 1
+  assert_contains "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" "AAAAC3NzaC1lZDI1NTE5AAAAICQrTyJ/QCVmRW8OSZqQH+5yAOIvker3oP8F0qMQ3iRN comment" || return 1
   local backup="" f
   for f in "$TEST_HOME"/.ssh/id_ed25519_personal.pub.teeup_backup_*; do
     [[ -e "$f" ]] && backup="$f"
@@ -740,9 +762,131 @@ EOF2
   cleanup_test_env
 }
 
+# I8: ssh refuses a private key that group or other can read; it does not
+# require exactly 600. Mode 400 is just as safe and must not be reported
+# broken.
+test_doctor_accepts_a_mode_400_private_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  chmod 400 "$TEST_HOME/.ssh/id_ed25519_personal"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_success "$rc" "ssh accepts mode 400; it only refuses group/other access" || return 1
+  assert_not_contains "$out" "refuses a private key" || return 1
+  cleanup_test_env
+}
+
+# I9: a glob ssh really matches (Host github.com-* github.*), and `Key=Value`
+# syntax, must not be reported broken -- and must not be offered `teeup
+# reset ssh`, which would replace a config that already works.
+test_doctor_accepts_a_glob_host_pattern() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf 'Host github.com-* github.*\n  IdentityFile %s\n' \
+    "$TEST_HOME/.ssh/id_ed25519_personal" > "$TEST_HOME/.ssh/config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a glob pattern ssh really matches must not be reported broken" || return 1
+  assert_not_contains "$out" "teeup reset ssh" || return 1
+  cleanup_test_env
+}
+
+test_doctor_accepts_a_host_equals_line() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf 'Host=github.com\n  IdentityFile=%s\n' \
+    "$TEST_HOME/.ssh/id_ed25519_personal" > "$TEST_HOME/.ssh/config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_success "$rc" "Key=Value is valid ssh config syntax" || return 1
+  assert_not_contains "$out" "teeup reset ssh" || return 1
+  cleanup_test_env
+}
+
+test_doctor_warns_about_an_unreadable_ssh_config() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  chmod 000 "$TEST_HOME/.ssh/config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "teeup reset ssh" "an unreadable config is not a broken one" || return 1
+  assert_not_contains "$out" "Permission denied" "a raw permission error must never reach the report" || return 1
+  assert_contains "$out" "cannot be read" || return 1
+  chmod 644 "$TEST_HOME/.ssh/config"
+  cleanup_test_env
+}
+
+# I11: the Host block's own IdentityFile is never checked once the block
+# itself is found, so a key that is not on this machine still reports
+# healthy while every push fails.
+test_doctor_reports_a_host_block_naming_a_missing_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf 'Host github.com\n  IdentityFile %s\n' "$TEST_HOME/.ssh/nope" \
+    > "$TEST_HOME/.ssh/config"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a Host block naming a key that is not on this machine must fail" || return 1
+  assert_contains "$out" "not on this machine" || return 1
+  cleanup_test_env
+}
+
+# I10: only -s (non-empty) was ever tested, so a plausible half-written or
+# corrupted key passed. The private half's own marker line is checked
+# without ever reading past it (no prompt, nothing that could be a
+# passphrase); the public half is validated for real with ssh-keygen -l.
+test_doctor_reports_a_malformed_private_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf 'hello world\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a private key that is not a key must not pass" || return 1
+  assert_contains "$out" "does not look like a private key" || return 1
+  # No key material of any kind may reach stdout, stderr or the report.
+  assert_not_contains "$out" "hello world" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_malformed_public_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf 'not-a-real-public-key\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a malformed public key must not pass" || return 1
+  assert_contains "$out" "not a valid public key" || return 1
+  cleanup_test_env
+}
+
 run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor reports a missing key pair" test_doctor_reports_a_missing_key_pair
 run_test "doctor reports a world-readable private key" test_doctor_reports_a_world_readable_private_key
 run_test "doctor accepts a hand-written host block" test_doctor_accepts_a_hand_written_host_block
 run_test "doctor reports an empty ssh agent" test_doctor_reports_an_empty_ssh_agent
+run_test "doctor accepts a mode 400 private key" test_doctor_accepts_a_mode_400_private_key
+run_test "doctor accepts a glob host pattern" test_doctor_accepts_a_glob_host_pattern
+run_test "doctor accepts a Host=value line" test_doctor_accepts_a_host_equals_line
+run_test "doctor warns about an unreadable ssh config" test_doctor_warns_about_an_unreadable_ssh_config
+run_test "doctor reports a host block naming a missing key" test_doctor_reports_a_host_block_naming_a_missing_key
+run_test "doctor reports a malformed private key" test_doctor_reports_a_malformed_private_key
+run_test "doctor reports a malformed public key" test_doctor_reports_a_malformed_public_key
 print_summary

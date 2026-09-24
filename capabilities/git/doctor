@@ -5,6 +5,51 @@
 # wrong here.
 git_dir="$(user_config_dir)/git"
 
+# _git_doctor_last_value <key> <file>...
+# Prints the value of the last <key> = ... assignment found across the given
+# files, read in the order git itself reads them (so a later file's value
+# wins, matching git's own "last value read wins" rule). A file that does
+# not exist is skipped; a file that exists but cannot be read sets
+# _git_doctor_unreadable=true so the caller can say "could not check"
+# instead of asserting the key is unset. The match is a bare `grep`, not
+# section-aware, so it can be fooled by an identically-named key in an
+# unrelated section -- the same shortcut the allowedSignersFile search
+# already took.
+_git_doctor_unreadable=false
+_git_doctor_last_value() {
+  local key="$1" f line value result=""
+  shift
+  _git_doctor_unreadable=false
+  for f in "$@"; do
+    [[ -f "$f" ]] || continue
+    if [[ ! -r "$f" ]]; then
+      _git_doctor_unreadable=true
+      continue
+    fi
+    line="$(grep -iE "^[[:space:]]*${key}[[:space:]]*=" "$f" 2>/dev/null | tail -1)"
+    if [[ -n "$line" ]]; then
+      value="${line#*=}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      if [[ "$value" == \"* ]]; then
+        # A quoted value keeps everything up to its closing quote; a
+        # trailing comment after that (git allows one) is dropped with it.
+        # The unquoted else-branch below is for the shipped config's own
+        # `format = ssh  # ...` line.
+        value="${value#\"}"
+        value="\"${value%%\"*}\""
+      else
+        value="${value%%#*}"
+        value="${value%%;*}"
+      fi
+      value="${value%\"}"
+      value="${value#\"}"
+      value="${value%"${value##*[![:space:]]}"}"
+      result="$value"
+    fi
+  done
+  printf '%s\n' "$result"
+}
+
 if [[ ! -f "$git_dir/config" ]]; then
   doctor_fail "git has never been configured here: there is no $git_dir/config." "teeup configure git"
   doctor_verdict
@@ -18,8 +63,10 @@ doctor_ok "$git_dir/config is in place."
 identity_file="$git_dir/identity"
 if [[ ! -f "$identity_file" ]]; then
   doctor_fail "No $identity_file, so the git identity resolves to nothing." "teeup configure git"
-elif grep -q '^[[:space:]]*email[[:space:]]*=[[:space:]]*"..*"' "$identity_file"; then
-  doctor_ok "Identity: $(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" | head -1)"
+elif [[ ! -r "$identity_file" ]]; then
+  doctor_warn "$identity_file cannot be read, so teeup could not check the git identity. chmod u+r $identity_file"
+elif grep -q '^[[:space:]]*email[[:space:]]*=[[:space:]]*"..*"' "$identity_file" 2>/dev/null; then
+  doctor_ok "Identity: $(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" 2>/dev/null | head -1)"
 else
   doctor_fail "$identity_file has no email, so commits would be unattributed." "teeup configure git"
 fi
@@ -30,12 +77,17 @@ if [[ ! -f "$generated" ]]; then
   doctor_verdict
   exit
 fi
+if [[ ! -r "$generated" ]]; then
+  doctor_warn "$generated cannot be read, so teeup could not check the editor, pager or signing settings. chmod u+r $generated"
+  doctor_verdict
+  exit
+fi
 
 # The generated file records what was installed when configure last ran. A
 # delta that has since been installed means it is stale, and `git diff` is
 # quietly plainer than it should be.
 if have delta; then
-  if grep -q '^[[:space:]]*pager = delta$' "$generated"; then
+  if grep -q '^[[:space:]]*pager = delta$' "$generated" 2>/dev/null; then
     doctor_ok "delta is git's pager."
   else
     doctor_fail "delta is installed but $generated still names another pager." "teeup configure git"
@@ -53,19 +105,21 @@ if [[ -s "$personal_key" && -s "$personal_key.pub" ]]; then
 else
   keys_present=false
 fi
-if grep -q '^[[:space:]]*gpgsign = true$' "$generated"; then
+if grep -q '^[[:space:]]*gpgsign = true$' "$generated" 2>/dev/null; then
   # Signing on with the key gone is worse than signing off: every `git commit`
   # fails outright, and the doctor that reported full health is the reason
-  # nobody looked here first.
-  # The identity file is where configure writes signingkey; $generated holds
-  # the rest of the settings.
-  signing_key="$(grep -E '^[[:space:]]*signingkey[[:space:]]*=' "$identity_file" 2>/dev/null | tail -1)"
-  signing_key="${signing_key#*=}"
-  signing_key="${signing_key#"${signing_key%%[![:space:]]*}"}"
-  signing_key="${signing_key%\"}"
-  signing_key="${signing_key#\"}"
+  # nobody looked here first. The identity file is where configure writes
+  # signingkey, but a hand edit could have put it in teeup-generated or
+  # local instead, so all three are read, last value wins.
+  signing_key="$(_git_doctor_last_value signingkey "$identity_file" "$generated" "$git_dir/local")"
   signing_key="${signing_key%.pub}"
-  if [[ -n "$signing_key" && ! -s "$signing_key" ]]; then
+  if [[ "$_git_doctor_unreadable" == "true" ]]; then
+    doctor_warn "commit.gpgsign is on but not every git config file could be read, so teeup could not check user.signingkey."
+  elif [[ -z "$signing_key" ]]; then
+    # What real git does here: "fatal: either user.signingkey or
+    # gpg.ssh.defaultKeyCommand needs to be configured" on every commit.
+    doctor_fail "commit.gpgsign is on but no user.signingkey is set, so every git commit fails." "teeup configure git"
+  elif [[ ! -s "$signing_key" ]]; then
     doctor_fail "Commit signing is on with user.signingkey = $signing_key, but that key is not on this machine, so every git commit fails." "teeup configure ssh"
   else
     doctor_ok "Commit signing is on."
@@ -81,43 +135,67 @@ fi
 
 # Signing with an SSH key is only half of it. Verification reads
 # gpg.ssh.allowedSignersFile, and with none set `git log --show-signature`
-# reports every commit teeup just signed as having no known signer. Nothing in
-# teeup writes that file yet, so the fix is a command, not a verb.
+# reports every commit teeup just signed as having no known signer. Nothing
+# in teeup writes that file yet (B2, 2026-09-23 review): `configure git`
+# never sets gpg.ssh.allowedSignersFile, so a standard, correctly bootstrapped
+# machine has signing on and no allowed-signers file every single time. That
+# is the ordinary state, not a broken one, so it is a note with instructions
+# rather than a failure -- and the instructions never touch ~/.gitconfig,
+# which the warning two sections down says to delete.
 if [[ "$signing_on" == "true" ]]; then
-  # An assignment, not a mention: the word can appear in a comment, a
-  # half-written TODO or a commented-out line, and counting that as
-  # configuration reports verification working when nothing is set. The value
-  # is read too, because a path set to a file that is not there verifies
-  # nothing. (Read from the files rather than asked of `git config --get`:
-  # these are teeup's own files, and the answer must not depend on which git
-  # happens to be on PATH.)
-  signers_set=false
-  signers_file=""
-  for f in "$git_dir/config" "$generated" "$git_dir/local"; do
-    [[ -f "$f" ]] || continue
-    line="$(grep -iE '^[[:space:]]*allowedSignersFile[[:space:]]*=' "$f" | tail -1)"
-    if [[ -n "$line" ]]; then
-      signers_set=true
-      signers_file="${line#*=}"
-      signers_file="${signers_file#"${signers_file%%[![:space:]]*}"}"
-      signers_file="${signers_file%\"}"
-      signers_file="${signers_file#\"}"
-    fi
-  done
-  if [[ "$signers_set" == "true" ]]; then
-    # Set is not the same as usable: a path that is not there verifies
-    # nothing, and git says so only at the moment you read a signature.
-    if [[ -f "$signers_file" ]]; then
-      doctor_ok "gpg.ssh.allowedSignersFile is set, so signatures can be verified."
-    else
-      doctor_fail "gpg.ssh.allowedSignersFile points at $signers_file, which does not exist, so git can verify no signature." \
-        "printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $(identity_key personal).pub)\" >> $signers_file"
-    fi
+  # gpg.format decides whether any of this even applies: a machine that has
+  # switched to GPG signing (or turned SSH signing off) does not owe teeup an
+  # allowedSignersFile, and the message above must say what format actually
+  # is rather than assuming the shipped default is still in effect.
+  gpg_format="$(_git_doctor_last_value format "$git_dir/config" "$generated" "$git_dir/local")"
+  if [[ "$gpg_format" != "ssh" ]]; then
+    doctor_ok "Commit signing is on with gpg.format = ${gpg_format:-unset}, so the SSH allowed-signers check does not apply."
   else
-    signers="$git_dir/allowed_signers"
-    personal_pub="$(identity_key personal).pub"
-    doctor_fail "Commit signing is on with gpg.format = ssh, but gpg.ssh.allowedSignersFile is not set, so git cannot verify any signature it makes. Add one line per identity." \
-      "printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $personal_pub)\" >> $signers && git config --global gpg.ssh.allowedSignersFile $signers"
+    # An assignment, not a mention: the word can appear in a comment, a
+    # half-written TODO or a commented-out line, and counting that as
+    # configuration reports verification working when nothing is set. The
+    # value is read too, because a path set to a file that is not there
+    # verifies nothing. (Read from the files rather than asked of `git
+    # config --get`: these are teeup's own files, and the answer must not
+    # depend on which git happens to be on PATH.)
+    signers_set=false
+    signers_file=""
+    signers_unreadable=false
+    for f in "$git_dir/config" "$generated" "$git_dir/local"; do
+      [[ -f "$f" ]] || continue
+      if [[ ! -r "$f" ]]; then
+        signers_unreadable=true
+        continue
+      fi
+      line="$(grep -iE '^[[:space:]]*allowedSignersFile[[:space:]]*=' "$f" 2>/dev/null | tail -1)"
+      if [[ -n "$line" ]]; then
+        signers_set=true
+        signers_file="${line#*=}"
+        signers_file="${signers_file#"${signers_file%%[![:space:]]*}"}"
+        signers_file="${signers_file%\"}"
+        signers_file="${signers_file#\"}"
+      fi
+    done
+    if [[ "$signers_set" == "true" ]]; then
+      # Set is not the same as usable: a path that is not there verifies
+      # nothing, and git says so only at the moment you read a signature.
+      if [[ -f "$signers_file" ]]; then
+        doctor_ok "gpg.ssh.allowedSignersFile is set, so signatures can be verified."
+      else
+        doctor_fail "gpg.ssh.allowedSignersFile points at $signers_file, which does not exist, so git can verify no signature." \
+          "printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $(identity_key personal).pub)\" >> $signers_file"
+      fi
+    elif [[ "$signers_unreadable" == "true" ]]; then
+      doctor_warn "One of $git_dir/config, $generated or $git_dir/local could not be read, so teeup could not check gpg.ssh.allowedSignersFile."
+    else
+      # B2 (2026-09-23 review): a note, not a failure -- teeup does not set
+      # this yet, so a clean bootstrap must still pass doctor -- and the
+      # instructions add a line to $git_dir/local, never to ~/.gitconfig
+      # (the section below warns that file overrides teeup's own config).
+      signers="$git_dir/allowed_signers"
+      personal_pub="$(identity_key personal).pub"
+      doctor_warn "Commit signing is on with gpg.format = ssh, but gpg.ssh.allowedSignersFile is not set, so git cannot verify its own signatures yet (git log --show-signature calls them unknown). teeup does not set this yet. To enable verification: printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $personal_pub)\" >> $signers, then add gpg.ssh.allowedSignersFile = $signers to $git_dir/local (never ~/.gitconfig)."
+    fi
   fi
 fi
 
