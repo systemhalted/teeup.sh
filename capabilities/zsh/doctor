@@ -5,22 +5,33 @@
 zsh_home_dir="${ZDOTDIR:-$HOME}"
 
 # The same probe capabilities/zsh/install uses to decide whether to chsh.
-login_shell="$(dscl . -read "/Users/${USER:-$(id -un)}" UserShell 2>/dev/null | awk '{print $2}')"
-case "$login_shell" in
-  */zsh)
-    # The path being spelled zsh is not the same as a zsh being there: a
-    # `chsh` to a shell that was later removed leaves the record behind, and
-    # login then falls back to something else entirely.
-    if [[ -x "$login_shell" ]]; then
-      doctor_ok "Login shell is $login_shell."
-    else
-      doctor_fail "Login shell is recorded as $login_shell, but nothing executable is there, so login falls back to another shell." "chsh -s /bin/zsh"
-    fi
-    ;;
-  *)
-    doctor_fail "Login shell is ${login_shell:-unknown}, not zsh, so none of teeup's shell layer runs." "chsh -s /bin/zsh"
-    ;;
-esac
+# dscl's own exit status is kept apart from its output: a network/AD account
+# whose record is not under /Users/$USER, or a DirectoryService that is not
+# answering, prints nothing and either fails outright or exits 0 with an
+# empty answer -- both are a machine that cannot be checked, not one that is
+# broken, and `chsh` will not fix either.
+dscl_rc=0
+dscl_out="$(dscl . -read "/Users/${USER:-$(id -un)}" UserShell 2>/dev/null)" || dscl_rc=$?
+login_shell="$(printf '%s' "$dscl_out" | awk '{print $2}')"
+if [[ "$dscl_rc" -ne 0 || -z "$login_shell" ]]; then
+  doctor_warn "Could not ask dscl what the login shell is, so teeup cannot tell whether it is zsh. Check by hand: dscl . -read /Users/${USER:-$(id -un)} UserShell"
+else
+  case "$login_shell" in
+    */zsh)
+      # The path being spelled zsh is not the same as a zsh being there: a
+      # `chsh` to a shell that was later removed leaves the record behind, and
+      # login then falls back to something else entirely.
+      if [[ -x "$login_shell" ]]; then
+        doctor_ok "Login shell is $login_shell."
+      else
+        doctor_fail "Login shell is recorded as $login_shell, but nothing executable is there, so login falls back to another shell." "chsh -s /bin/zsh"
+      fi
+      ;;
+    *)
+      doctor_fail "Login shell is $login_shell, not zsh, so none of teeup's shell layer runs." "chsh -s /bin/zsh"
+      ;;
+  esac
+fi
 
 # Each shipped home file sources one file out of the default layer, and that
 # path is the one part configure never rewrites, so it is the marker that
@@ -28,11 +39,16 @@ esac
 for f in .zshenv .zprofile .zshrc; do
   if [[ ! -f "$zsh_home_dir/$f" ]]; then
     doctor_fail "No $zsh_home_dir/$f." "teeup configure zsh"
+  elif [[ ! -r "$zsh_home_dir/$f" ]]; then
+    # Unreadable is not missing, and the fix is not the same: the file is
+    # plainly there, and `teeup reset zsh`, which replaces it, would be
+    # offered for what is only a permissions problem.
+    doctor_fail "$zsh_home_dir/$f cannot be read, so teeup cannot tell whether it sources teeup's shell layer." "chmod u+r $zsh_home_dir/$f"
   # An uncommented line, not just the text somewhere in the file: a
   # `# DISABLED: . "$TEEUP_PATH/capabilities/zsh/default/rc"` left behind
   # while debugging still contains the marker, and a substring match would
   # call that shell healthy while none of teeup's layer loads.
-  elif grep -v '^[[:space:]]*#' "$zsh_home_dir/$f" | grep -qF 'capabilities/zsh/default/'; then
+  elif grep -v '^[[:space:]]*#' "$zsh_home_dir/$f" 2>/dev/null | grep -qF 'capabilities/zsh/default/'; then
     doctor_ok "$zsh_home_dir/$f loads teeup's shell layer."
   else
     doctor_fail "$zsh_home_dir/$f does not source teeup's default layer, so teeup's shell configuration never loads." "teeup reset zsh"

@@ -3,24 +3,91 @@
 # templates, and a template added after the last `teeup theme set` has no
 # rendered file at all -- the tool it belongs to silently keeps the colours it
 # was shipped with, and nothing anywhere says so.
+name_file="$TEEUP_STATE_DIR/current/theme.name"
+if [[ -e "$name_file" && ! -r "$name_file" ]]; then
+  # theme_current does a plain `cat`, which would abort this whole script
+  # under `bash -eu` with a raw "Permission denied" and no findings at all --
+  # say so instead of dying.
+  doctor_fail "$name_file cannot be read, so teeup cannot tell which theme is current." "chmod u+r $name_file"
+  doctor_verdict
+  exit
+fi
 name="$(theme_current)"
 if [[ "$name" == "none" ]]; then
   doctor_fail "No theme has been applied on this machine." "teeup theme set catppuccin"
   doctor_verdict
   exit
 fi
+# A name in theme.name is only a claim; nothing before this confirmed teeup
+# still has a theme by that name. `teeup theme set $name`, the fix every
+# other finding below offers, cannot succeed against a name that is not real.
+if ! theme_list | grep -qxF "$name"; then
+  doctor_fail "$name is recorded as the current theme, but teeup has no theme by that name (try: teeup theme list)." "teeup theme set catppuccin"
+  doctor_verdict
+  exit
+fi
 doctor_ok "Current theme: $name"
 
 current="$TEEUP_STATE_DIR/current/theme"
+tmp_render="$(mktemp)"
+trap 'rm -f "$tmp_render"; [[ -n "${TEEUP_COLOR_SED:-}" ]] && rm -f "$TEEUP_COLOR_SED"' EXIT
+
 for mode in dark light; do
-  if [[ -d "$current/$mode" && -r "$current/$mode" && -x "$current/$mode" ]]; then
-    doctor_ok "Rendered $mode files are in $current/$mode."
-  elif [[ -e "$current/$mode" ]]; then
-    # "Cannot look" is not "is not there", and the fix is different: one is a
-    # permissions problem, the other a missing render.
-    doctor_fail "$current/$mode cannot be read, so teeup cannot tell what follows the theme in $mode mode." "chmod u+rx $current/$mode"
+  if [[ ! -d "$current/$mode" || ! -r "$current/$mode" || ! -x "$current/$mode" ]]; then
+    if [[ -e "$current/$mode" ]]; then
+      # "Cannot look" is not "is not there", and the fix is different: one is
+      # a permissions problem, the other a missing render.
+      doctor_fail "$current/$mode cannot be read, so teeup cannot tell what follows the theme in $mode mode." "chmod u+rx $current/$mode"
+    else
+      doctor_fail "No $current/$mode, so nothing follows the theme in $mode mode." "teeup theme set $name"
+    fi
+    continue
+  fi
+  doctor_ok "Rendered $mode files are in $current/$mode."
+
+  # theme_set copies the palette it actually rendered from beside its output
+  # (current/$mode/colors.toml). Comparing that copy against the theme now
+  # named in theme.name is the one thing that tells "$mode was rendered" from
+  # "$mode was rendered from $name": a `theme.name` written by hand, or by a
+  # `teeup theme set` that recorded the name and then failed to render, would
+  # otherwise pass every check below while following a different theme.
+  colors="$current/$mode/colors.toml"
+  palette_matches_named_theme=false
+  if [[ ! -f "$colors" ]]; then
+    doctor_warn "$current/$mode/colors.toml is missing, so the $mode render could not be checked against $name."
+  elif [[ ! -r "$colors" ]]; then
+    doctor_fail "$colors cannot be read, so teeup cannot tell which theme the $mode render came from." "chmod u+r $colors"
   else
-    doctor_fail "No $current/$mode, so nothing follows the theme in $mode mode." "teeup theme set $name"
+    theme_path="$(theme_dir "$name" 2>/dev/null)" || theme_path=""
+    if [[ -n "$theme_path" ]] && ! diff -q "$colors" "$theme_path/$mode.toml" >/dev/null 2>&1; then
+      doctor_fail "$current/$mode was rendered from a different theme than $name, the theme now named as current. Run: teeup theme set $name" "teeup theme set $name"
+    fi
+    if theme_palette_load "$colors" "$mode" >/dev/null 2>&1; then
+      palette_matches_named_theme=true
+    else
+      doctor_warn "$colors does not hold a valid $mode palette, so its renders could not be re-checked for truncation."
+    fi
+  fi
+
+  if [[ "$palette_matches_named_theme" == "true" ]]; then
+    # Re-render every template against the palette its own output claims to
+    # follow, and diff: a render that is intact by every check above but was
+    # interrupted part way through (I18) differs from a fresh render byte for
+    # byte, even with no unresolved {{ token }} left and a non-zero size.
+    while IFS= read -r tpl; do
+      [[ -z "$tpl" ]] && continue
+      base="${tpl##*/}"
+      base="${base%.tpl}"
+      rendered="$current/$mode/$base"
+      [[ -f "$rendered" && -r "$rendered" && -s "$rendered" ]] || continue
+      if sed -f "$TEEUP_COLOR_SED" "$tpl" > "$tmp_render" 2>/dev/null; then
+        if ! diff -q "$tmp_render" "$rendered" >/dev/null 2>&1; then
+          doctor_fail "$rendered does not match a fresh render of $base for $mode mode; it looks truncated or hand-edited." "teeup theme set $name"
+        fi
+      fi
+    done <<EOF_TPL
+$(theme_templates)
+EOF_TPL
   fi
 done
 

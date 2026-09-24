@@ -198,6 +198,37 @@ test_doctor_reports_a_missing_root_palette_selector() {
   cleanup_test_env
 }
 
+# I17: `grep -q '^palette *='` matched anywhere in the file, including
+# inside a [palettes.X] table -- a root selector with no root selector at
+# all reads as healthy while the prompt selects nothing.
+test_doctor_rejects_a_palette_line_inside_a_table() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  local config
+  config="$(user_config_dir)/starship.toml"
+  grep -v '^palette *=' "$config" > "$config.new" && mv "$config.new" "$config"
+  printf '\n[palettes.other]\npalette = "nonsense"\n' >> "$config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "no root 'palette =' line" || return 1
+  cleanup_test_env
+}
+
+# The passing case should also name which palette was picked, so a stale
+# answer is visible instead of a bare checkmark.
+test_doctor_names_the_root_palette_selected() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "A root palette selector is present (\"teeup-" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/starship"
 run_test "install gets starship" test_install_gets_starship
 run_test "configure copies the config once" test_configure_copies_the_config_once
@@ -211,4 +242,6 @@ run_test "doctor reports palette markers edited away" test_doctor_reports_palett
 run_test "doctor reports a palette block that does not match the theme" test_doctor_reports_a_palette_block_that_does_not_match_the_theme
 run_test "doctor separates an unreadable config from a missing one" test_doctor_separates_an_unreadable_config_from_a_missing_one
 run_test "doctor reports a missing root palette selector" test_doctor_reports_a_missing_root_palette_selector
+run_test "doctor rejects a palette line inside a table" test_doctor_rejects_a_palette_line_inside_a_table
+run_test "doctor names the root palette selected" test_doctor_names_the_root_palette_selected
 print_summary

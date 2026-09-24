@@ -68,9 +68,13 @@ test_verdict_is_zero_until_something_fails() {
 test_metadata_check_reports_a_missing_package_with_its_fix() {
   setup
   make_cap widget "ripgrep"
-  # A brew that answers, and answers no. Hiding brew entirely is a different
-  # state -- teeup cannot check at all -- and has its own test below.
-  mock_command brew 1 ""
+  # A brew that answers --version (so doctor_backend_can_answer trusts it),
+  # and answers no on the package itself. Hiding brew entirely is a
+  # different state -- teeup cannot check at all -- and has its own test
+  # below; so is one that is on PATH but cannot even answer --version.
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
   local out
   out="$(doctor_metadata_check widget 2>&1)"
   assert_contains "$out" "package ripgrep is not installed" || return 1
@@ -94,10 +98,28 @@ test_metadata_check_says_so_when_it_cannot_ask_the_backend() {
   cleanup_test_env
 }
 
+# A brew that is on PATH but fails every call (a half-finished upgrade, a
+# broken prefix, a shim that always exits non-zero) is not "on PATH" in any
+# sense doctor can use. `have` alone would pass this gate and doctor would
+# then report every package "not installed" -- a flood of confident, wrong
+# findings that all point away from the real cause.
+test_metadata_check_says_so_when_the_backend_is_on_path_but_broken() {
+  setup
+  make_cap widget "ripgrep"
+  mock_command brew 1 ""
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "is not on PATH, so teeup could not check what widget installed" || return 1
+  assert_not_contains "$out" "package ripgrep is not installed" || return 1
+  assert_equals "" "$(cat "$REPORT")" "an unanswerable check is not a failure with a fix" || return 1
+  cleanup_test_env
+}
+
 test_metadata_check_passes_when_the_package_manager_lists_it() {
   setup
   make_cap widget "ripgrep"
   mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0"; exit 0 ;; esac
 case "$1 ${2:-} ${3:-}" in
   "list --formula ripgrep") exit 0 ;;
   *) exit 1 ;;
@@ -172,6 +194,42 @@ test_summary_is_quiet_and_zero_when_the_report_is_empty() {
   out="$(doctor_summary "$REPORT" 2>&1)" || rc=$?
   assert_success "$rc" || return 1
   assert_contains "$out" "everything checked is healthy" || return 1
+  cleanup_test_env
+}
+
+# An empty report with checked=false means nothing was looked at, not that
+# everything looked at passed. Silence, not a false "healthy" (B4).
+test_summary_says_nothing_when_nothing_was_checked() {
+  setup
+  local out rc=0
+  out="$(doctor_summary "$REPORT" false 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_not_contains "$out" "everything checked is healthy" || return 1
+  cleanup_test_env
+}
+
+test_state_readable_sees_a_done_dir_it_cannot_search() {
+  setup
+  mkdir -p "$TEEUP_STATE_DIR/done"
+  doctor_state_readable || { echo "a fresh readable done/ must pass"; return 1; }
+  chmod 0000 "$TEEUP_STATE_DIR/done"
+  doctor_state_readable && { echo "an unreadable done/ must not pass"; chmod 0755 "$TEEUP_STATE_DIR/done"; return 1; }
+  chmod 0755 "$TEEUP_STATE_DIR/done"
+  cleanup_test_env
+}
+
+test_state_readable_treats_a_missing_done_dir_as_a_bare_machine() {
+  setup
+  rm -rf "$TEEUP_STATE_DIR/done"
+  doctor_state_readable || { echo "a machine that never wrote done/ is not unreadable"; return 1; }
+  cleanup_test_env
+}
+
+test_report_state_unreadable_records_a_chmod_fix_not_a_reset() {
+  setup
+  doctor_report_state_unreadable
+  assert_contains "$(cat "$REPORT")" "could not be read" || return 1
+  assert_contains "$(cat "$REPORT")" "chmod u+rx" || return 1
   cleanup_test_env
 }
 
@@ -251,6 +309,7 @@ run_test "record without a report is a no-op" test_record_without_a_report_is_a_
 run_test "verdict is zero until something fails" test_verdict_is_zero_until_something_fails
 run_test "metadata check reports a missing package" test_metadata_check_reports_a_missing_package_with_its_fix
 run_test "metadata check says so when it cannot ask the backend" test_metadata_check_says_so_when_it_cannot_ask_the_backend
+run_test "metadata check says so when the backend is on PATH but broken" test_metadata_check_says_so_when_the_backend_is_on_path_but_broken
 run_test "metadata check passes when listed" test_metadata_check_passes_when_the_package_manager_lists_it
 run_test "metadata check reports a missing app" test_metadata_check_reports_a_missing_app
 run_test "metadata check skips casks on macports" test_metadata_check_skips_casks_on_macports
@@ -258,6 +317,10 @@ run_test "metadata check rejects a shim-only command" test_metadata_check_reject
 run_test "run one leaves a not-applicable capability alone" test_run_one_leaves_a_not_applicable_capability_alone
 run_test "installed_any sees past TEEUP_SKIP" test_installed_any_sees_past_teeup_skip
 run_test "targets are the installed capabilities" test_targets_are_the_installed_capabilities_in_order
+run_test "summary says nothing when nothing was checked" test_summary_says_nothing_when_nothing_was_checked
+run_test "state readable sees a done dir it cannot search" test_state_readable_sees_a_done_dir_it_cannot_search
+run_test "state readable treats a missing done dir as a bare machine" test_state_readable_treats_a_missing_done_dir_as_a_bare_machine
+run_test "report state unreadable records a chmod fix, not a reset" test_report_state_unreadable_records_a_chmod_fix_not_a_reset
 run_test "summary is quiet on an empty report" test_summary_is_quiet_and_zero_when_the_report_is_empty
 run_test "summary names every failure and its fix" test_summary_names_every_failure_and_its_fix
 run_test "run one records a silent non-zero doctor" test_run_one_records_a_doctor_that_exits_without_saying_why

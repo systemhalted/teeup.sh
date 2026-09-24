@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # Accessibility grants live in the TCC database, which no unprivileged process
 # may read. So doctor checks everything else and prints the one manual step.
-# TEEUP_APPS_DIR is a test hook: without it this script reads the real
-# /Applications and passes or fails depending on the developer's own machine.
-APPS_DIR="${TEEUP_APPS_DIR:-/Applications}"
-
-if [[ -d "$APPS_DIR/AeroSpace.app" ]]; then
-  doctor_ok "AeroSpace is installed."
-else
-  doctor_fail "AeroSpace is not in /Applications." "teeup install aerospace"
-fi
+# Whether AeroSpace.app is installed is already covered by
+# doctor_metadata_check (apps="AeroSpace" in the capability file), which
+# searches every real location through app_installed -- ~/Applications and
+# the MacPorts apps dir included. A second check here that only ever looked
+# under /Applications duplicated that, and reported "not in /Applications"
+# even when app_installed had just found it somewhere else and called the
+# same run healthy.
 
 # AeroSpace reads either file, and reports both at once as ambiguous.
 HOME_AERO="$HOME/.aerospace.toml"
