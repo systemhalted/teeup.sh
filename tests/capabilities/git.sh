@@ -635,7 +635,12 @@ test_doctor_reports_signing_left_off_although_the_keys_exist() {
   cleanup_test_env
 }
 
-test_doctor_reports_a_missing_allowed_signers_file() {
+# B2: nothing in teeup ever writes gpg.ssh.allowedSignersFile, so a standard
+# post-bootstrap machine hits this every time. It must be a note, not a
+# failure -- a clean bootstrap has to pass doctor -- and the note must never
+# suggest `git config --global`, which writes ~/.gitconfig, the same file the
+# leftover-gitconfig warning below says to delete.
+test_doctor_warns_about_a_missing_allowed_signers_file() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   configure_git_with_keys
@@ -643,9 +648,98 @@ test_doctor_reports_a_missing_allowed_signers_file() {
   : > "$report"
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
-  assert_failure "$rc" || return 1
+  assert_success "$rc" "nothing in teeup writes allowedSignersFile yet, so a clean bootstrap must still pass doctor" || return 1
   assert_contains "$out" "gpg.ssh.allowedSignersFile is not set" || return 1
-  assert_contains "$(cat "$report")" "allowedSignersFile" || return 1
+  assert_equals "" "$(cat "$report")" "a note must not be recorded as a doctor failure" || return 1
+  assert_not_contains "$out" "git config --global" "the note must never suggest git config --global (it writes ~/.gitconfig)" || return 1
+  cleanup_test_env
+}
+
+# B3: gpgsign on with no user.signingkey at all fails every commit outright
+# ("fatal: either user.signingkey or gpg.ssh.defaultKeyCommand needs to be
+# configured"), a different and worse failure than the key existing but not
+# being on disk.
+test_doctor_reports_signing_on_with_no_signing_key_configured() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  grep -v signingkey "$TEST_HOME/.config/git/identity" > "$TEST_HOME/.config/git/identity.new"
+  mv "$TEST_HOME/.config/git/identity.new" "$TEST_HOME/.config/git/identity"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "gpgsign on with no signingkey must not report healthy" || return 1
+  assert_contains "$out" "no user.signingkey is set" || return 1
+  assert_contains "$(cat "$report")" "teeup configure git" || return 1
+  cleanup_test_env
+}
+
+# I6: a claim about gpg.format that was never read. Once the format is
+# something other than ssh, the whole SSH-signature verification check does
+# not apply, and the message must say what format actually is.
+test_doctor_skips_verification_when_gpg_format_is_not_ssh() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[gpg]\n\tformat = openpgp\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_success "$rc" "gpg.format = openpgp means the SSH allowed-signers check does not apply" || return 1
+  assert_contains "$out" "gpg.format = openpgp" || return 1
+  assert_not_contains "$out" "gpg.format = ssh" "a claim about gpg.format must be read, not assumed" || return 1
+  cleanup_test_env
+}
+
+# I7: an unreadable file is "could not check", not the absence of what it
+# would have said. Both the identity file and the generated file are guarded.
+test_doctor_warns_when_identity_file_is_unreadable() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  chmod 000 "$TEST_HOME/.config/git/identity"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_not_contains "$out" "has no email" "an unreadable file's absent content must not be reported as its content" || return 1
+  assert_not_contains "$out" "Permission denied" "a raw permission error must never reach the report" || return 1
+  assert_contains "$out" "cannot be read" || return 1
+  chmod 600 "$TEST_HOME/.config/git/identity"
+  cleanup_test_env
+}
+
+test_doctor_warns_when_generated_file_is_unreadable() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  chmod 000 "$TEST_HOME/.config/git/teeup-generated"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_success "$rc" "an unreadable generated file is 'could not check', not broken" || return 1
+  assert_not_contains "$out" "commit signing is off in" "an unreadable file's absent content must not be reported as its content" || return 1
+  assert_not_contains "$out" "Permission denied" || return 1
+  assert_contains "$out" "cannot be read" || return 1
+  chmod 600 "$TEST_HOME/.config/git/teeup-generated"
+  cleanup_test_env
+}
+
+# Mutation testing found `^[[:space:]]*pager = delta$` -> `grep -q 'delta'`
+# stayed green: a stray mention of "delta" anywhere in teeup-generated (a
+# comment, say) must not be mistaken for the pager actually being set to it.
+test_doctor_requires_the_exact_pager_setting_not_a_stray_mention_of_delta() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  export TEEUP_TEST_MISSING="lazygit emacsclient"
+  mock_command delta 0 ""
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  printf '# used to use delta here\n[core]\n\tpager = less\n[commit]\n\tgpgsign = false\n' \
+    > "$TEST_HOME/.config/git/teeup-generated"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a stray mention of delta is not the pager setting" || return 1
+  assert_contains "$out" "delta is installed but" || return 1
   cleanup_test_env
 }
 
@@ -684,8 +778,9 @@ run_test "configure dry run names the shipped source, not a temp file" test_conf
 run_test "configure dry run names the shipped source for a foreign config" test_configure_dry_run_names_the_shipped_source_for_a_foreign_config
 run_test "configure quotes special characters in the name" test_configure_quotes_special_characters_in_the_name
 # A comment mentioning the setting is not the setting. A half-written TODO in
-# any of git's files would otherwise make doctor report signature verification
-# as working while nothing is configured at all.
+# any of git's files must not make doctor report signature verification as
+# working -- but per B2, an unset allowedSignersFile is a note, not a
+# failure, so this must still pass doctor.
 test_doctor_does_not_count_a_commented_allowed_signers_line() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -695,7 +790,7 @@ test_doctor_does_not_count_a_commented_allowed_signers_line() {
   : > "$report"
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
-  assert_failure "$rc" "a comment is not configuration" || return 1
+  assert_success "$rc" "a comment is not configuration, but it also must not fail a clean machine" || return 1
   assert_contains "$out" "allowedSignersFile is not set" || return 1
   cleanup_test_env
 }
@@ -739,7 +834,12 @@ test_doctor_reports_signing_on_with_the_key_gone() {
 run_test "doctor passes on a configured tree" test_doctor_passes_on_a_configured_tree
 run_test "doctor reports an unconfigured tree" test_doctor_reports_an_unconfigured_tree
 run_test "doctor reports signing left off" test_doctor_reports_signing_left_off_although_the_keys_exist
-run_test "doctor reports a missing allowed-signers file" test_doctor_reports_a_missing_allowed_signers_file
+run_test "doctor warns about a missing allowed-signers file" test_doctor_warns_about_a_missing_allowed_signers_file
+run_test "doctor reports signing on with no signing key configured" test_doctor_reports_signing_on_with_no_signing_key_configured
+run_test "doctor skips verification when gpg.format is not ssh" test_doctor_skips_verification_when_gpg_format_is_not_ssh
+run_test "doctor warns when the identity file is unreadable" test_doctor_warns_when_identity_file_is_unreadable
+run_test "doctor warns when the generated file is unreadable" test_doctor_warns_when_generated_file_is_unreadable
+run_test "doctor requires the exact pager setting, not a stray mention of delta" test_doctor_requires_the_exact_pager_setting_not_a_stray_mention_of_delta
 run_test "doctor does not count a commented allowed-signers line" test_doctor_does_not_count_a_commented_allowed_signers_line
 run_test "doctor reports an allowed-signers path that is missing" test_doctor_reports_an_allowed_signers_path_that_is_missing
 run_test "doctor reports signing on with the key gone" test_doctor_reports_signing_on_with_the_key_gone
