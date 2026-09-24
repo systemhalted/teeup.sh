@@ -542,6 +542,76 @@ test_doctor_warns_when_a_template_is_newer_than_its_render() {
   cleanup_test_env
 }
 
+# I19: theme.name is only a claim. A `teeup theme set` that wrote the name
+# and then failed to render (or a hand-edited theme.name) leaves a render
+# that never followed it -- nothing before this compared the two.
+test_doctor_reports_a_theme_name_that_does_not_match_the_render() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  # A second, real, complete theme this doctor can resolve but never rendered.
+  mkdir -p "$TEEUP_CONFIG_DIR/themes/otherhue"
+  printf 'mode = "dark"\naccent = "#000000"\n' > "$TEEUP_CONFIG_DIR/themes/otherhue/dark.toml"
+  printf 'mode = "light"\naccent = "#ffffff"\n' > "$TEEUP_CONFIG_DIR/themes/otherhue/light.toml"
+  theme_list | grep -qxF otherhue || { echo "fixture: otherhue must be a real theme"; return 1; }
+  printf 'otherhue\n' > "$TEEUP_STATE_DIR/current/theme.name"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Current theme: otherhue" || return 1
+  assert_contains "$out" "rendered from a different theme than otherhue" || return 1
+  cleanup_test_env
+}
+
+# I19: a name that is not a real theme at all. Every fix line elsewhere in
+# this doctor offers `teeup theme set $name`, which cannot succeed against
+# this value, so it must be caught on its own before any of them fire.
+test_doctor_reports_a_theme_name_that_does_not_exist() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  printf 'not-a-real-theme\n' > "$TEEUP_STATE_DIR/current/theme.name"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "not-a-real-theme" || return 1
+  assert_contains "$out" "teeup has no theme by that name" || return 1
+  assert_not_contains "$out" "teeup theme set not-a-real-theme" "the fix offered must be able to succeed" || return 1
+  cleanup_test_env
+}
+
+# I19: theme_current does a plain `cat`, which would otherwise die under
+# `bash -eu` on an unreadable theme.name before a single finding is recorded.
+test_doctor_reports_an_unreadable_theme_name_instead_of_dying() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  chmod 0000 "$TEEUP_STATE_DIR/current/theme.name"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  chmod 0644 "$TEEUP_STATE_DIR/current/theme.name"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "theme.name cannot be read" || return 1
+  assert_not_contains "$out" "Permission denied" "raw cat stderr must not leak" || return 1
+  cleanup_test_env
+}
+
+# I18: truncated is not empty and holds no {{ token }}, so it passes both of
+# the other checks while the tool it belongs to reads a cut-off file.
+test_doctor_reports_a_truncated_rendered_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  local rendered="$TEEUP_STATE_DIR/current/theme/dark/env.sh"
+  [[ -s "$rendered" ]] || { echo "fixture: expected a non-empty render"; return 1; }
+  head -c 5 "$rendered" > "$rendered.trunc" && mv "$rendered.trunc" "$rendered"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a truncated render is not a healthy one" || return 1
+  assert_contains "$out" "does not match a fresh render" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/theme"
 run_test "install dry run renders nothing" test_install_dry_run_renders_nothing
 run_test "configure writes env.sh for both modes" test_configure_writes_env_for_both_modes
@@ -571,4 +641,8 @@ run_test "doctor reports an unresolved token" test_doctor_reports_an_unresolved_
 run_test "doctor reports an empty rendered file" test_doctor_reports_an_empty_rendered_file
 run_test "doctor reports a themed dir it cannot read" test_doctor_reports_a_themed_directory_it_cannot_read
 run_test "doctor warns when a template is newer than its render" test_doctor_warns_when_a_template_is_newer_than_its_render
+run_test "doctor reports a theme name that does not match the render" test_doctor_reports_a_theme_name_that_does_not_match_the_render
+run_test "doctor reports a theme name that does not exist" test_doctor_reports_a_theme_name_that_does_not_exist
+run_test "doctor reports an unreadable theme name instead of dying" test_doctor_reports_an_unreadable_theme_name_instead_of_dying
+run_test "doctor reports a truncated rendered file" test_doctor_reports_a_truncated_rendered_file
 print_summary
