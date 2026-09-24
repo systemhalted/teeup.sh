@@ -365,6 +365,17 @@ copy_config_once() {
   # happens inside the capability's own configure, a file configure renders
   # is reset to the rendered version, never to the raw template.
   if [[ -n "${TEEUP_RESET:-}" && "$TEEUP_RESET" == "${TEEUP_CAP:-}" ]]; then
+    # A local.* file is the one teeup promises never to touch again: it holds
+    # the machine's own settings (aerospace's monitor assignment, wezterm's
+    # passthrough, the zsh and emacs local files). Reset exists to put teeup's
+    # own files back, and someone reaching for it because the managed config
+    # is broken is not asking to lose the overrides they wrote by hand.
+    case "${dest##*/}" in
+      local.*)
+        log "Keeping your $dest; teeup reset leaves the local override file alone."
+        return 0
+        ;;
+    esac
     TEEUP_RESET="" refresh_config "$src" "$dest" "$display_src"
     return $?
   fi
@@ -533,17 +544,30 @@ replace_literal() {
 # different passes" without needing gawk's FILENAME/ARGIND.
 toml_merge_local() {
   awk '
-    function is_header(line) { return line ~ /^\[[^]]+\]$/ }
-    function header_name(line,   s) {
+    # TOML allows whitespace around a table header and around a key, and a
+    # file edited on another machine can arrive with CRLF line endings. A
+    # header this does not recognise is swallowed into the previous table,
+    # which produces a duplicate table declaration no TOML parser accepts --
+    # and a local.toml override that silently never takes effect.
+    function trim(line,   s) {
       s = line
+      sub(/\r$/, "", s)
+      sub(/^[ \t]+/, "", s)
+      sub(/[ \t]+$/, "", s)
+      return s
+    }
+    function is_header(line) { return trim(line) ~ /^\[[^]]+\]$/ }
+    function header_name(line,   s) {
+      s = trim(line)
       sub(/^\[/, "", s)
       sub(/\]$/, "", s)
       return s
     }
-    function is_kv(line) { return line ~ /^[A-Za-z0-9_.-]+[ \t]*=/ }
+    function is_kv(line) { return trim(line) ~ /^[A-Za-z0-9_.-]+[ \t]*=/ }
     function kv_key(line,   i, s) {
-      i = index(line, "=")
-      s = substr(line, 1, i - 1)
+      s = trim(line)
+      i = index(s, "=")
+      s = substr(s, 1, i - 1)
       gsub(/[ \t]+$/, "", s)
       return s
     }
