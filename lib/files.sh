@@ -556,9 +556,20 @@ toml_merge_local() {
       sub(/[ \t]+$/, "", s)
       return s
     }
-    function is_header(line) { return trim(line) ~ /^\[[^]]+\]$/ }
+    # [table] and [[array-of-table]] both start a section. An unrecognised
+    # header is swallowed into the previous section, which produces a
+    # duplicate declaration no parser accepts -- and for [[...]] it would also
+    # promote the keys of that entry to the root and collapse repeated entries
+    # into one. An array-of-table name keeps its brackets, so "[[x]]" and
+    # "[x]" can never collide, and every [[x]] entry accumulates under that
+    # one name so repeats survive in order.
+    function is_header(line,   s) {
+      s = trim(line)
+      return s ~ /^\[\[[^]]+\]\]$/ || s ~ /^\[[^]]+\]$/
+    }
     function header_name(line,   s) {
       s = trim(line)
+      if (s ~ /^\[\[[^]]+\]\]$/) return s
       sub(/^\[/, "", s)
       sub(/\]$/, "", s)
       return s
@@ -589,6 +600,7 @@ toml_merge_local() {
     {
       # Pass 2: the machine local.toml.
       if (is_header($0)) {
+        lrootopen = ""
         lsec = header_name($0)
         if (!(lsec in lseen)) { lseen[lsec] = 1; lorder[++lcount] = lsec }
         lblock[lsec] = (lsec in lblock) ? lblock[lsec] "\n" $0 : $0
@@ -597,6 +609,12 @@ toml_merge_local() {
           k = kv_key($0)
           if (!(k in lrootseen)) { lrootseen[k] = 1; lrootorder[++lrootn] = k }
           lrootval[k] = $0
+          lrootopen = k
+        } else if (lrootopen != "" && trim($0) != "") {
+          # A value written across several lines (`after-startup-command = [`
+          # and the entries under it). Keeping only the first line would emit
+          # an unterminated value that AeroSpace cannot load.
+          lrootval[lrootopen] = lrootval[lrootopen] "\n" $0
         }
       } else {
         lblock[lsec] = lblock[lsec] "\n" $0
