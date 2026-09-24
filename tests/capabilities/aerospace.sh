@@ -478,6 +478,24 @@ EOF2
 }
 
 echo "capabilities/aerospace"
+# local.toml holds this machine's own settings -- the monitor assignment, for
+# one. Someone runs `teeup reset aerospace` because the managed config is
+# broken, not to lose the overrides they wrote by hand.
+test_reset_leaves_the_local_override_alone() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  local local_toml
+  local_toml="$(user_config_dir)/aerospace/local.toml"
+  assert_file_exists "$local_toml" || return 1
+  printf "[workspace-to-monitor-force-assignment]\n1 = 'main'\n" > "$local_toml"
+  local out
+  out="$(DRY_RUN=false TEEUP_RESET=aerospace cap_run aerospace configure 2>&1)"
+  assert_contains "$out" "leaves the local override file alone" || return 1
+  assert_contains "$(cat "$local_toml")" "workspace-to-monitor-force-assignment" || return 1
+  cleanup_test_env
+}
+
 run_test "install taps then installs the cask" test_install_taps_then_installs_the_cask
 run_test "install skips the tap when present" test_install_skips_the_tap_when_present
 run_test "install is skipped on macports" test_install_is_skipped_on_macports
@@ -487,6 +505,7 @@ run_test "install below the macOS minimum leaves no done marker" test_install_be
 run_test "install at the macOS minimum marks done as before" test_install_at_the_macos_minimum_marks_done_as_before
 run_test "install runs as usual at the macOS minimum" test_install_runs_as_usual_at_the_macos_minimum
 run_test "configure copies the config and prints the manual step" test_configure_copies_the_config_and_prints_the_manual_step
+run_test "reset leaves the local override alone" test_reset_leaves_the_local_override_alone
 run_test "configure writes the tuned defaults" test_configure_writes_the_tuned_defaults
 run_test "shipped defaults do not force a monitor layout" test_shipped_defaults_do_not_force_a_monitor_layout
 run_test "configure installs local.toml" test_configure_installs_local_toml

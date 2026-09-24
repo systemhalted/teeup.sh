@@ -2,6 +2,12 @@
 set -euo pipefail
 source "$(dirname "$0")/../helper.sh"
 
+# python3 is resolved before setup_test_env narrows PATH: the merge tests
+# check their output parses as real TOML rather than eyeballing it, which is
+# how a header the merge failed to recognise gets caught. A machine without
+# python3 skips those tests with a note instead of failing them.
+PY_BIN="$(command -v python3 || true)"
+
 setup() {
   setup_test_env
   source "$TEEUP_PATH/lib/all.sh"
@@ -662,6 +668,134 @@ test_copy_config_once_will_not_replace_a_foreign_file_it_cannot_back_up() {
   cleanup_test_env
 }
 
+# toml_merge_local: teeup's base, plus a machine's local.toml, merged into the
+# single file AeroSpace will read. The merge rule is table-level: a [table] in
+# local.toml replaces teeup's table of that name entirely, a bare root key
+# replaces teeup's, anything new is appended. Every case here asserts the
+# result parses as TOML, because the failure mode that matters is output that
+# looks right and no parser accepts.
+merge_parses() {
+  [[ -n "$PY_BIN" ]] || return 0
+  "$PY_BIN" - "$1" <<'EOF_PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    tomllib.load(fh)
+EOF_PY
+}
+
+test_toml_merge_local_replaces_a_table_and_keeps_the_rest() {
+  setup
+  local base="$TEST_HOME/base.toml" local_f="$TEST_HOME/local.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1
+
+[gaps]
+inner = 8
+
+[keys]
+alt-h = "focus left"
+' > "$base"
+  printf '[gaps]
+inner = 0
+outer = 0
+' > "$local_f"
+  toml_merge_local "$base" "$local_f" > "$out"
+  merge_parses "$out" || { echo "merged output is not valid TOML"; return 1; }
+  grep -q 'inner = 0' "$out" || { echo "the local table did not win"; return 1; }
+  grep -q 'inner = 8' "$out" && { echo "teeup's table survived alongside it"; return 1; }
+  grep -q 'alt-h = "focus left"' "$out" || { echo "an untouched table was lost"; return 1; }
+  grep -q '^top = 1' "$out" || { echo "a root key was lost"; return 1; }
+  cleanup_test_env
+}
+
+# TOML allows whitespace around a header, and a file edited on another machine
+# arrives with CRLF. A header the merge does not recognise is swallowed into
+# the previous table: the output then declares that table twice, which no
+# parser accepts, and the override silently never applies.
+test_toml_merge_local_handles_whitespace_and_crlf_headers() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1
+
+[gaps]
+inner = 8
+' > "$base"
+  # Leading whitespace before the header.
+  printf '  [gaps]
+  inner = 0
+' > "$TEST_HOME/ws.toml"
+  toml_merge_local "$base" "$TEST_HOME/ws.toml" > "$out"
+  merge_parses "$out" || { echo "whitespace header produced invalid TOML"; return 1; }
+  grep -q 'inner = 0' "$out" || { echo "whitespace header override did not apply"; return 1; }
+  grep -q 'inner = 8' "$out" && { echo "whitespace header left the base table too"; return 1; }
+  # CRLF line endings.
+  printf '%s\r\n' '[gaps]' 'inner = 0' > "$TEST_HOME/crlf.toml"
+  toml_merge_local "$base" "$TEST_HOME/crlf.toml" > "$out"
+  merge_parses "$out" || { echo "CRLF produced invalid TOML"; return 1; }
+  grep -q 'inner = 0' "$out" || { echo "CRLF override did not apply"; return 1; }
+  grep -q 'inner = 8' "$out" && { echo "CRLF left the base table too"; return 1; }
+  cleanup_test_env
+}
+
+test_toml_merge_local_with_nothing_to_merge() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1
+
+[gaps]
+inner = 8
+' > "$base"
+  # Empty, and comments-only: both mean "no overrides", and both must leave
+  # the base exactly as it is.
+  : > "$TEST_HOME/empty.toml"
+  toml_merge_local "$base" "$TEST_HOME/empty.toml" > "$out"
+  merge_parses "$out" || { echo "empty local produced invalid TOML"; return 1; }
+  assert_equals "$(cat "$base")" "$(cat "$out")" "an empty local.toml changes nothing" || return 1
+  printf '# just a comment
+# and another
+' > "$TEST_HOME/comments.toml"
+  toml_merge_local "$base" "$TEST_HOME/comments.toml" > "$out"
+  merge_parses "$out" || { echo "comments-only local produced invalid TOML"; return 1; }
+  grep -q 'inner = 8' "$out" || { echo "comments-only local dropped the base"; return 1; }
+  cleanup_test_env
+}
+
+test_toml_merge_local_appends_a_table_the_base_never_had() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1
+
+[gaps]
+inner = 8
+' > "$base"
+  printf "[workspace-to-monitor-force-assignment]
+1 = 'main'
+4 = '2'
+" > "$TEST_HOME/new.toml"
+  toml_merge_local "$base" "$TEST_HOME/new.toml" > "$out"
+  merge_parses "$out" || { echo "appended table produced invalid TOML"; return 1; }
+  grep -q 'workspace-to-monitor-force-assignment' "$out" || { echo "the new table was dropped"; return 1; }
+  grep -q 'inner = 8' "$out" || { echo "the base table was lost"; return 1; }
+  cleanup_test_env
+}
+
+# A value carrying the characters the merge itself parses on.
+test_toml_merge_local_keeps_awkward_values_intact() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1
+
+[keys]
+alt-a = "a"
+' > "$base"
+  printf '[keys]
+alt-a = "x = y # [not a header]"
+' > "$TEST_HOME/odd.toml"
+  toml_merge_local "$base" "$TEST_HOME/odd.toml" > "$out"
+  merge_parses "$out" || { echo "awkward value produced invalid TOML"; return 1; }
+  grep -qF 'x = y # [not a header]' "$out" || { echo "the value was mangled"; return 1; }
+  cleanup_test_env
+}
+
 run_test "append_once is idempotent" test_append_once_is_idempotent
 run_test "write_managed_file noops when identical" test_write_managed_file_noops_when_identical
 run_test "write_managed_file keeps an existing mode" test_write_managed_file_keeps_an_existing_mode
@@ -701,6 +835,11 @@ run_test "write_config_region refuses a symlink, and dry run" test_write_config_
 run_test "refresh_if_pristine replaces only an unedited file" test_refresh_if_pristine_replaces_only_an_unedited_file
 run_test "refresh_if_pristine dry run changes nothing" test_refresh_if_pristine_dry_run_changes_nothing
 run_test "backup_copy keeps the original in place" test_backup_copy_keeps_the_original_in_place
+run_test "toml_merge_local replaces a table and keeps the rest" test_toml_merge_local_replaces_a_table_and_keeps_the_rest
+run_test "toml_merge_local handles whitespace and CRLF headers" test_toml_merge_local_handles_whitespace_and_crlf_headers
+run_test "toml_merge_local with nothing to merge" test_toml_merge_local_with_nothing_to_merge
+run_test "toml_merge_local appends a table the base never had" test_toml_merge_local_appends_a_table_the_base_never_had
+run_test "toml_merge_local keeps awkward values intact" test_toml_merge_local_keeps_awkward_values_intact
 run_test "backup_copy reports a copy it could not make" test_backup_copy_reports_a_copy_it_could_not_make
 run_test "two backups of the same file within one second both survive" test_two_backups_of_the_same_file_within_one_second_both_survive
 run_test "replace_literal is literal and repeats" test_replace_literal_is_literal_and_repeats
