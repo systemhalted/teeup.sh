@@ -700,6 +700,29 @@ test_doctor_reports_a_world_readable_private_key() {
 }
 
 echo "capabilities/ssh"
+# ssh-add -l exits 1 when it reached the agent and the agent is empty, and 2
+# when it could not reach one at all. Reporting the second as the first says
+# a healthy-but-empty agent is waiting to fill on first use, and prints a fix
+# that fails with the very error being hidden.
+test_doctor_separates_an_unreachable_agent_from_an_empty_one() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  mock_command_script ssh-add <<'EOF2'
+case "$1" in
+  -l) exit 2 ;;
+esac
+exit 0
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_unknown "$rc" "an agent teeup could not reach is not an empty agent" || return 1
+  assert_contains "$out" "Could not reach an ssh agent" || return 1
+  assert_not_contains "$out" "holding no key yet" || return 1
+  cleanup_test_env
+}
+
 run_test "configure generates one key on a machine with no work identity" test_configure_generates_one_key_on_a_machine_with_no_work_identity
 run_test "configure generates both keys when the machine file configures work" test_configure_generates_both_keys_when_the_machine_file_configures_work
 run_test "a stale work email answer generates no second key" test_a_stale_work_email_answer_generates_no_second_key
@@ -961,6 +984,7 @@ run_test "doctor reports unknown when ssh-keygen is missing" test_doctor_reports
 run_test "doctor reports a missing key pair" test_doctor_reports_a_missing_key_pair
 run_test "doctor reports a world-readable private key" test_doctor_reports_a_world_readable_private_key
 run_test "doctor accepts a hand-written host block" test_doctor_accepts_a_hand_written_host_block
+run_test "doctor separates an unreachable agent from an empty one" test_doctor_separates_an_unreachable_agent_from_an_empty_one
 run_test "doctor reports an empty ssh agent" test_doctor_reports_an_empty_ssh_agent
 run_test "doctor accepts a mode 400 private key" test_doctor_accepts_a_mode_400_private_key
 run_test "doctor accepts a glob host pattern" test_doctor_accepts_a_glob_host_pattern

@@ -852,6 +852,26 @@ test_doctor_warns_about_a_leftover_gitconfig() {
 }
 
 echo "capabilities/git"
+# An unsearchable ~/.ssh makes every key test answer "no", which used to
+# downgrade the real failure ("every key is here but signing is off") into a
+# note that the key does not exist yet -- about a machine teeup could not
+# look at.
+test_doctor_separates_an_unreadable_ssh_dir_from_a_missing_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  # Signing off, keys unreachable rather than absent.
+  grep -v 'gpgsign' "$TEST_HOME/.config/git/teeup-generated" > "$TEST_HOME/tg" && mv "$TEST_HOME/tg" "$TEST_HOME/.config/git/teeup-generated"
+  chmod 0000 "$TEST_HOME/.ssh"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  chmod 0755 "$TEST_HOME/.ssh"
+  assert_unknown "$rc" "a key teeup could not look for is not a key that is absent" || return 1
+  assert_contains "$out" "cannot be read, so teeup could not tell whether the key" || return 1
+  assert_not_contains "$out" "does not exist yet" || return 1
+  cleanup_test_env
+}
+
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
 run_test "a configured work identity does not change the git identity" test_a_configured_work_identity_does_not_change_the_git_identity
@@ -930,6 +950,7 @@ test_doctor_reports_signing_on_with_the_key_gone() {
 
 run_test "doctor passes on a configured tree" test_doctor_passes_on_a_configured_tree
 run_test "doctor reports an unconfigured tree" test_doctor_reports_an_unconfigured_tree
+run_test "doctor separates an unreadable ssh dir from a missing key" test_doctor_separates_an_unreadable_ssh_dir_from_a_missing_key
 run_test "doctor reports signing left off" test_doctor_reports_signing_left_off_although_the_keys_exist
 run_test "doctor warns about a missing allowed-signers file" test_doctor_warns_about_a_missing_allowed_signers_file
 run_test "doctor reports signing on with no signing key configured" test_doctor_reports_signing_on_with_no_signing_key_configured

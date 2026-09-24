@@ -125,7 +125,15 @@ fi
 # bootstrap git runs before ssh, so this is the ordinary state of a machine
 # that has not been re-configured since.
 personal_key="$(identity_key personal)"
-if [[ -s "$personal_key" && -s "$personal_key.pub" ]]; then
+# An unsearchable ~/.ssh makes every test below answer "no", which would
+# downgrade the failure two branches down ("every key is here but signing is
+# off") into a note that the key does not exist yet -- about a machine where
+# teeup simply could not look.
+keys_unknown=false
+if [[ ! -r "$(dirname "$personal_key")" || ! -x "$(dirname "$personal_key")" ]]; then
+  keys_unknown=true
+  keys_present=false
+elif [[ -s "$personal_key" && -s "$personal_key.pub" ]]; then
   keys_present=true
 else
   keys_present=false
@@ -156,6 +164,9 @@ if grep -q '^[[:space:]]*gpgsign = true$' "$generated" 2>/dev/null; then
   signing_on=true
 elif [[ "$keys_present" == "true" ]]; then
   doctor_fail "git has every key it needs on disk but commit signing is off in $generated." "teeup configure git"
+  signing_on=false
+elif [[ "$keys_unknown" == "true" ]]; then
+  doctor_unknown "Commit signing is off in $generated, and $(dirname "$personal_key") cannot be read, so teeup could not tell whether the key it needs is there." "chmod u+rx $(dirname "$personal_key")"
   signing_on=false
 else
   doctor_warn "Commit signing is off because the personal key does not exist yet. Run: teeup configure ssh"

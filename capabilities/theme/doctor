@@ -84,6 +84,12 @@ for mode in dark light; do
         if ! diff -q "$tmp_render" "$rendered" >/dev/null 2>&1; then
           doctor_fail "$rendered does not match a fresh render of $base for $mode mode; it looks truncated or hand-edited." "teeup theme set $name"
         fi
+      else
+        # The template itself could not be read or re-rendered. Skipping in
+        # silence leaves the tool behind it unchecked with nothing said at
+        # all -- the directory-level case is already reported, and a single
+        # unreadable template deserves the same (I4).
+        doctor_unknown "Could not re-render $tpl, so $base was not checked for $mode mode." "chmod u+r $tpl"
       fi
     done <<EOF_TPL
 $(theme_templates)

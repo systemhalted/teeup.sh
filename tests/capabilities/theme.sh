@@ -672,6 +672,25 @@ test_doctor_reports_a_truncated_rendered_file() {
 }
 
 echo "capabilities/theme"
+# A template teeup cannot read is skipped by the truncation re-check. Doing
+# that in silence leaves the tool behind it unchecked with nothing said at
+# all -- the directory-level case is already reported, a single file was not.
+test_doctor_reports_a_template_it_could_not_re_render() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  local tpl
+  tpl="$(theme_templates | head -1)"
+  [[ -n "$tpl" ]] || { echo "fixture: no templates"; return 1; }
+  chmod 0000 "$tpl"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  chmod 0644 "$tpl"
+  assert_unknown "$rc" "a template teeup could not read is not a verified one" || return 1
+  assert_contains "$out" "Could not re-render" || return 1
+  cleanup_test_env
+}
+
 run_test "install dry run renders nothing" test_install_dry_run_renders_nothing
 run_test "configure writes env.sh for both modes" test_configure_writes_env_for_both_modes
 run_test "configure writes both starship palettes" test_configure_writes_both_starship_palettes
@@ -701,6 +720,7 @@ run_test "doctor reports a template never rendered" test_doctor_reports_a_templa
 run_test "doctor reports an unresolved token" test_doctor_reports_an_unresolved_token_in_a_rendered_file
 run_test "doctor reports an empty rendered file" test_doctor_reports_an_empty_rendered_file
 run_test "doctor reports a themed dir it cannot read" test_doctor_reports_a_themed_directory_it_cannot_read
+run_test "doctor reports a template it could not re-render" test_doctor_reports_a_template_it_could_not_re_render
 run_test "doctor warns when a template is newer than its render" test_doctor_warns_when_a_template_is_newer_than_its_render
 run_test "doctor reports a theme name that does not match the render" test_doctor_reports_a_theme_name_that_does_not_match_the_render
 run_test "doctor reports a theme name that does not exist" test_doctor_reports_a_theme_name_that_does_not_exist

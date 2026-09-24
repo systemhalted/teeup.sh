@@ -85,7 +85,16 @@ for identity in $(identity_list); do
   # checked against the wrong account.
   if [[ -n "$gh_account" ]]; then
     active_account="$(printf '%s\n' "$status_out" | awk '{ for (i = 1; i < NF; i++) if ($i == "account") { print $(i + 1); exit } }')"
-    if [[ -n "$active_account" && "$active_account" != "$gh_account" ]]; then
+    if [[ -z "$active_account" ]]; then
+      # The "account <name>" token is gh 2.100.0's wording; an older gh says
+      # it differently. An empty answer here used to let the run carry on and
+      # check the keys below against whoever is actually active -- reporting
+      # a clean bill for an account teeup never identified, which is the one
+      # thing the whole per-account check exists to prevent (NI-B).
+      doctor_unknown "Could not tell which account gh is signed in as on $gh_host, so the $identity key was not checked against $gh_account." "gh auth status -h $gh_host"
+      continue
+    fi
+    if [[ "$active_account" != "$gh_account" ]]; then
       doctor_unknown "Could not check the $identity key on $gh_host: gh is signed in there as $active_account, not $gh_account. Sign in as $gh_account to check it (gh auth switch --hostname $gh_host --user $gh_account)." "gh auth switch --hostname $gh_host --user $gh_account"
       continue
     fi

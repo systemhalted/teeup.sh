@@ -391,7 +391,7 @@ test_summary_names_every_failure_and_its_fix() {
   printf 'zsh\tnot the login shell\tchsh -s /bin/zsh\n' >> "$REPORT"
   local out rc=0
   out="$(doctor_summary "$REPORT" 2>&1)" || rc=$?
-  assert_failure "$rc" || return 1
+  assert_equals "1" "$rc" "confirmed problems exit 1, never the unknown status" || return 1
   assert_contains "$out" "found 2 problem" || return 1
   assert_contains "$out" "git: no signing key" || return 1
   assert_contains "$out" "fix: teeup configure git" || return 1
@@ -427,7 +427,12 @@ test_summary_reports_both_a_failure_and_an_unknown_but_exits_on_the_failure() {
   printf 'github\tcould not check signed-in\tgh auth status\tunknown\n' >> "$REPORT"
   local out rc=0
   out="$(doctor_summary "$REPORT" 2>&1)" || rc=$?
-  assert_failure "$rc" || return 1
+  # Exactly 1, not merely non-zero: `assert_failure` passes for 2 as well, so
+  # it cannot tell "found a real problem" from "could not verify", which is
+  # the whole distinction this status exists to make. Mutating the precedence
+  # rule to always return 2 left every suite green until this asserted the
+  # code itself.
+  assert_equals "1" "$rc" "a confirmed problem outranks an unknown" || return 1
   assert_contains "$out" "found 1 problem" || return 1
   assert_contains "$out" "could not verify 1 item" || return 1
   assert_contains "$out" "git: no signing key" || return 1
