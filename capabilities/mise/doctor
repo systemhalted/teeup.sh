@@ -7,7 +7,23 @@ if ! have mise; then
   doctor_verdict
   exit
 fi
-doctor_ok "mise is on PATH."
+
+# On PATH is not the same as working: a mise that fails on every call (a
+# broken config, a corrupt install) makes mise_global_state's own fallbacks
+# read "requested but not installed" for every tool, and the offered fix,
+# teeup configure mise, only runs the same broken mise again. Ask it
+# directly, once, so a broken mise is its own failure rather than being
+# reported through a tool's verdict it never really produced.
+mise_usable=true
+mise_version_out=""
+if ! mise_version_out="$(mise --version 2>&1)"; then
+  mise_usable=false
+fi
+if [[ "$mise_usable" == "true" ]]; then
+  doctor_ok "mise is on PATH."
+else
+  doctor_fail "mise is on PATH but did not answer to mise --version ($mise_version_out), so teeup could not check what it manages." "Investigate why mise is failing, then re-run teeup doctor."
+fi
 
 # The same file mise_global_state falls back to reading, and the same
 # override order mise itself resolves: MISE_GLOBAL_CONFIG_FILE names the file
@@ -30,7 +46,15 @@ fi
 mise_shims="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"
 case ":$PATH:" in
   *":$mise_shims:"*)
-    doctor_ok "The mise shims directory is on PATH."
+    if [[ -d "$mise_shims" && -x "$mise_shims" ]]; then
+      doctor_ok "The mise shims directory is on PATH."
+    else
+      # On PATH is not on disk: mise removes nothing from PATH when its own
+      # data directory is wiped or moved, so the string match above passes
+      # while every shim it names is gone -- the exact failure this check's
+      # own wording describes.
+      doctor_fail "$mise_shims is on PATH but the directory does not exist (or cannot be searched), so tools installed through mise are invisible to shells that did not run mise activate." "mise reshim"
+    fi
     ;;
   *)
     doctor_fail "$mise_shims is not on PATH, so tools installed through mise are invisible to shells that did not run mise activate." "teeup configure zsh"
@@ -39,18 +63,24 @@ esac
 
 # mise_global_state (lib/mise.sh) keeps the two questions apart: the global
 # config can ask for a tool that is not on disk, and a row in `ls --global` is
-# no proof of a binary.
-case "$(mise_global_state pre-commit)" in
-  installed)
-    doctor_ok "pre-commit is installed through mise."
-    ;;
-  requested)
-    doctor_fail "pre-commit is asked for but not installed, so every repository's hooks fail." "teeup configure mise"
-    ;;
-  *)
-    doctor_fail "pre-commit is not in the global mise config." "teeup configure mise"
-    ;;
-esac
+# no proof of a binary. None of that means anything when mise itself is not
+# answering: its own fallback path reads a broken mise the same as "pre-commit
+# requested but not installed".
+if [[ "$mise_usable" == "true" ]]; then
+  case "$(mise_global_state pre-commit)" in
+    installed)
+      doctor_ok "pre-commit is installed through mise."
+      ;;
+    requested)
+      doctor_fail "pre-commit is asked for but not installed, so every repository's hooks fail." "teeup configure mise"
+      ;;
+    *)
+      doctor_fail "pre-commit is not in the global mise config." "teeup configure mise"
+      ;;
+  esac
+else
+  doctor_warn "Skipped the pre-commit check: mise is not answering, so nothing it reports can be trusted."
+fi
 
 # Not a health question, but the one thing people ask this capability.
 envs="$(dev_env_installed | tr '\n' ' ')"

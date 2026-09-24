@@ -3,18 +3,51 @@
 # and LaunchAgents read, the command link users type, the state tree, and the
 # two PATH facts everything lazy depends on.
 env_file="$TEEUP_CONFIG_DIR/env"
-if [[ -f "$env_file" ]]; then
-  # Sourced in a subshell rather than parsed: configure writes the three
-  # values %q-escaped, so only a shell can read them back correctly.
-  # shellcheck source=/dev/null
-  recorded_path="$( (set +u; source "$env_file"; printf '%s\n' "${TEEUP_PATH:-}") )"
-  if [[ "$recorded_path" == "$TEEUP_PATH" ]]; then
-    doctor_ok "$env_file points at this checkout."
-  else
-    doctor_fail "$env_file says TEEUP_PATH=${recorded_path:-nothing}, but this checkout is $TEEUP_PATH." "teeup configure teeup-runtime"
-  fi
-else
+if [[ ! -f "$env_file" ]]; then
   doctor_fail "No $env_file, so shells and LaunchAgents cannot find the checkout." "teeup configure teeup-runtime"
+elif [[ ! -r "$env_file" ]]; then
+  doctor_fail "$env_file cannot be read, so teeup cannot tell whether shells and LaunchAgents can find the checkout." "chmod u+r $env_file"
+else
+  # Sourced in a subshell rather than parsed: configure writes the three
+  # values %q-escaped, so only a shell can read them back correctly. All
+  # three are unset first: lib/all.sh has already exported them into this
+  # process, so without the unset, a file that never sets one of them --
+  # empty, truncated mid-write, or with the line commented out -- would
+  # print this process's own value back and the comparison below would
+  # always pass.
+  env_read_ok=true
+  env_values="$( (
+    set +u
+    unset TEEUP_PATH TEEUP_CONFIG_DIR TEEUP_STATE_DIR
+    # shellcheck source=/dev/null
+    source "$env_file" >/dev/null 2>&1 || exit 1
+    # A tab is IFS whitespace, so `read` would collapse a leading empty
+    # field (TEEUP_PATH commented out or unset) into the next one instead of
+    # keeping it empty. \x1f is not whitespace, so each field survives empty.
+    printf '%s\x1f%s\x1f%s\n' "${TEEUP_PATH:-}" "${TEEUP_CONFIG_DIR:-}" "${TEEUP_STATE_DIR:-}"
+  ) )" || env_read_ok=false
+  if [[ "$env_read_ok" != "true" ]]; then
+    doctor_fail "$env_file exists but a shell could not source it (a syntax error, most likely), so teeup cannot tell whether it points at this checkout." "teeup configure teeup-runtime"
+  else
+    IFS=$'\x1f' read -r recorded_path recorded_config_dir recorded_state_dir <<EOF_ENV_VALUES
+$env_values
+EOF_ENV_VALUES
+    mismatch=""
+    if [[ "$recorded_path" != "$TEEUP_PATH" ]]; then
+      mismatch="$mismatch TEEUP_PATH=${recorded_path:-nothing} (expected $TEEUP_PATH);"
+    fi
+    if [[ "$recorded_config_dir" != "$TEEUP_CONFIG_DIR" ]]; then
+      mismatch="$mismatch TEEUP_CONFIG_DIR=${recorded_config_dir:-nothing} (expected $TEEUP_CONFIG_DIR);"
+    fi
+    if [[ "$recorded_state_dir" != "$TEEUP_STATE_DIR" ]]; then
+      mismatch="$mismatch TEEUP_STATE_DIR=${recorded_state_dir:-nothing} (expected $TEEUP_STATE_DIR);"
+    fi
+    if [[ -z "$mismatch" ]]; then
+      doctor_ok "$env_file points at this checkout."
+    else
+      doctor_fail "$env_file does not match this checkout:$mismatch" "teeup configure teeup-runtime"
+    fi
+  fi
 fi
 
 link="$HOME/.local/bin/teeup"
@@ -36,16 +69,30 @@ case ":$PATH:" in
     ;;
 esac
 
-missing=""
+missing="" unusable="" unusable_paths=""
 for d in "done" toggles migrations shims logs current stock; do
-  if [[ ! -d "$TEEUP_STATE_DIR/$d" ]]; then
+  dir="$TEEUP_STATE_DIR/$d"
+  if [[ ! -d "$dir" ]]; then
     missing="$missing $d"
+  elif [[ ! -r "$dir" || ! -x "$dir" ]]; then
+    # -d succeeds on a directory that cannot be read or searched, which is
+    # exactly the state that makes every state_done lookup under it lie
+    # (a root-owned state tree left behind by a sudo bootstrap, or a bad
+    # umask): every "is this marked installed/done" check answers "no",
+    # silently, and this loop must not call that "present".
+    unusable="$unusable $d"
+    unusable_paths="$unusable_paths $dir"
   fi
 done
-if [[ -z "$missing" ]]; then
+if [[ -z "$missing" && -z "$unusable" ]]; then
   doctor_ok "Every state directory is present under $TEEUP_STATE_DIR."
 else
-  doctor_fail "Missing under $TEEUP_STATE_DIR:$missing" "teeup configure teeup-runtime"
+  if [[ -n "$missing" ]]; then
+    doctor_fail "Missing under $TEEUP_STATE_DIR:$missing" "teeup configure teeup-runtime"
+  fi
+  if [[ -n "$unusable" ]]; then
+    doctor_fail "Present but not readable/searchable under $TEEUP_STATE_DIR:$unusable, so teeup cannot tell what is recorded there." "chmod u+rx$unusable_paths"
+  fi
 fi
 
 # A lazy shim fires only when the calling shell cannot find the real command,
