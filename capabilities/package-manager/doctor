@@ -9,7 +9,11 @@
 # installed at the other standard prefix -- or one whose HOMEBREW_PREFIX is
 # exported only in an interactive shell -- makes every line below name a
 # directory that has nothing in it.
-case "$(pkg_backend)" in
+# Captured once, not read back from TEEUP_PKG_BACKEND: pkg_backend runs
+# inside this command substitution's own subshell, so the export
+# _pkg_backend_resolve makes never reaches this process.
+backend="$(pkg_backend)"
+case "$backend" in
   homebrew) backend_cmd=brew ;;
   macports) backend_cmd=port ;;
   *) backend_cmd="" ;;
@@ -21,9 +25,42 @@ fi
 assumed_prefix="$(pkg_prefix)"
 if [[ -n "$found_bin" ]]; then
   real_prefix="${found_bin%/bin/*}"
-  doctor_ok "$(pkg_backend_label) is installed under $real_prefix."
-  if [[ "$real_prefix" != "$assumed_prefix" ]]; then
-    doctor_warn "teeup looks for it under $assumed_prefix instead, so anything it installs there will not be found. Set HOMEBREW_PREFIX=$real_prefix in $(machine_file), or in your shell before running teeup."
+  # On PATH is not the same as reachable: a brew/port that errors on every
+  # call would otherwise be reported "installed", and every capability's
+  # doctor would then read the resulting flood of "not installed" package
+  # lines as fact instead of as a backend that was never really asked.
+  backend_reachable=false
+  backend_check_out=""
+  case "$backend" in
+    homebrew)
+      if backend_check_out="$("$backend_cmd" --version 2>&1)"; then backend_reachable=true; fi
+      ;;
+    macports)
+      if backend_check_out="$("$backend_cmd" version 2>&1)"; then backend_reachable=true; fi
+      ;;
+  esac
+  if [[ "$backend_reachable" == "true" ]]; then
+    doctor_ok "$(pkg_backend_label) is installed under $real_prefix."
+    if [[ "$real_prefix" != "$assumed_prefix" ]]; then
+      # HOMEBREW_PREFIX is what pkg_prefix obeys for Homebrew; MacPorts'
+      # prefix is hardcoded to /opt/local and reads no override, so offering
+      # the Homebrew fix on a MacPorts machine names an environment variable
+      # that changes nothing (I4).
+      case "$backend" in
+        homebrew)
+          doctor_warn "teeup looks for it under $assumed_prefix instead, so anything it installs there will not be found. Set HOMEBREW_PREFIX=$real_prefix in $(machine_file), or in your shell before running teeup."
+          ;;
+        macports)
+          doctor_warn "teeup looks for it under $assumed_prefix instead, so anything it installs there will not be found. teeup's MacPorts prefix is fixed at $assumed_prefix; a MacPorts installed elsewhere is not supported."
+          ;;
+      esac
+    fi
+  else
+    unreachable_fix="$backend_cmd version"
+    if [[ "$backend" == "homebrew" ]]; then
+      unreachable_fix="brew doctor"
+    fi
+    doctor_fail "$found_bin is on PATH but did not answer ($backend_check_out), so teeup could not check what $(pkg_backend_label) has installed." "$unreachable_fix"
   fi
 elif [[ -x "$assumed_prefix/bin/$backend_cmd" ]]; then
   doctor_fail "$(pkg_backend_label) is installed under $assumed_prefix but $assumed_prefix/bin is not on PATH, so nothing installed through it can be found." "teeup configure zsh"

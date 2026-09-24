@@ -328,6 +328,44 @@ test_doctor_separates_an_unreadable_config_from_a_missing_one() {
   cleanup_test_env
 }
 
+# I15: a mise shims directory named on PATH but gone from disk (the data
+# directory wiped or moved) must not read as healthy -- that is precisely the
+# state the failure branch's own wording describes.
+test_doctor_reports_a_stale_shims_directory_on_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure mise >/dev/null 2>&1
+  seed_mise_shims
+  rm -rf "$XDG_DATA_HOME/mise/shims"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "does not exist" || return 1
+  assert_not_contains "$out" "shims directory is on PATH." || return 1
+  cleanup_test_env
+}
+
+# I16: a mise that is on PATH but fails on every call (a broken config, a
+# corrupt install) must be its own failure, not read through as "pre-commit
+# is asked for but not installed" -- the offered fix there, teeup configure
+# mise, would only run the same broken mise again.
+test_doctor_reports_an_unusable_mise_instead_of_a_missing_tool() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure mise >/dev/null 2>&1
+  seed_mise_shims
+  mock_command_script mise <<'EOF2'
+echo "mise: failed to load config" >&2
+exit 1
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "did not answer to mise --version" || return 1
+  assert_not_contains "$out" "pre-commit is asked for but not installed" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/mise"
 run_test "install gets mise" test_install_gets_mise
 run_test "configure writes the config and the setting" test_configure_writes_the_config_and_the_setting
@@ -343,4 +381,6 @@ run_test "doctor passes on a configured machine" test_doctor_passes_on_a_configu
 run_test "doctor reports a missing mise and config" test_doctor_reports_a_missing_mise_and_config
 run_test "doctor separates an unreadable config from a missing one" test_doctor_separates_an_unreadable_config_from_a_missing_one
 run_test "doctor reports pre-commit requested but missing" test_doctor_reports_pre_commit_requested_but_not_installed
+run_test "doctor reports a stale shims directory on PATH" test_doctor_reports_a_stale_shims_directory_on_path
+run_test "doctor reports an unusable mise instead of a missing tool" test_doctor_reports_an_unusable_mise_instead_of_a_missing_tool
 print_summary

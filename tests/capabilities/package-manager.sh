@@ -125,6 +125,47 @@ exit 0
   cleanup_test_env
 }
 
+# I5: `brew` on PATH but failing on every call must not be reported
+# "installed" -- everything downstream (every other capability's package
+# lines) reads doctor_backend_can_answer's "have brew" as proof the backend
+# can be asked, and this doctor must not certify a backend that cannot.
+test_doctor_reports_a_backend_that_is_on_path_but_unreachable() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mkdir -p "$TEEUP_PKG_PREFIX/bin"
+  export PATH="$TEEUP_PKG_PREFIX/bin:$PATH"
+  printf '#!/usr/bin/env bash\necho "brew: fatal error" >&2\nexit 1\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "did not answer" || return 1
+  assert_not_contains "$out" "Homebrew is installed under" || return 1
+  cleanup_test_env
+}
+
+# I4: pkg_prefix hardcodes /opt/local for MacPorts and never reads
+# HOMEBREW_PREFIX, so offering that fix on a MacPorts machine names a
+# variable that changes nothing.
+test_doctor_does_not_offer_the_homebrew_prefix_fix_on_macports() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  export TEEUP_PACKAGE_MANAGER=macports
+  local elsewhere="$TEST_HOME/mp"
+  mkdir -p "$elsewhere/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$elsewhere/bin/port"
+  chmod +x "$elsewhere/bin/port"
+  local rc=0 out
+  out="$(PATH="$elsewhere/bin:$PATH" DRY_RUN=false cap_run package-manager doctor 2>&1)" || true
+  assert_contains "$out" "MacPorts is installed under $elsewhere" || return 1
+  assert_contains "$out" "teeup looks for it under" || return 1
+  assert_not_contains "$out" "HOMEBREW_PREFIX" || return 1
+  assert_contains "$out" "MacPorts prefix is fixed" || return 1
+  cleanup_test_env
+}
+
 test_doctor_says_when_the_machine_file_pins_another_backend() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -146,6 +187,8 @@ run_test "configure keeps existing answer" test_configure_keeps_existing_answer
 run_test "doctor passes on a healthy machine" test_doctor_passes_on_a_healthy_machine
 run_test "doctor reports a backend not on PATH" test_doctor_reports_a_backend_that_is_not_on_path
 run_test "doctor names the prefix the backend is really at" test_doctor_names_the_prefix_the_backend_is_really_at
+run_test "doctor reports a backend that is on PATH but unreachable" test_doctor_reports_a_backend_that_is_on_path_but_unreachable
+run_test "doctor does not offer the Homebrew prefix fix on MacPorts" test_doctor_does_not_offer_the_homebrew_prefix_fix_on_macports
 run_test "doctor says when the machine file pins another backend" test_doctor_says_when_the_machine_file_pins_another_backend
 run_test "configure dry run does not claim the backend was recorded" test_configure_dry_run_does_not_claim_the_backend_was_recorded
 run_test "configure real-run wording is unchanged" test_configure_real_run_wording_is_unchanged

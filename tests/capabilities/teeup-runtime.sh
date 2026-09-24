@@ -217,6 +217,114 @@ test_doctor_passes_after_configure() {
   cleanup_test_env
 }
 
+# B1: TEEUP_PATH (and the other two values) are already exported into this
+# process by lib/all.sh, so the env file's check has to prove it read the
+# *file*, not echo back what it already had. A different checkout recorded in
+# the file is the one case that must fail.
+test_doctor_fails_when_the_env_file_points_at_another_checkout() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  healthy_path
+  sed -i.bak "s#export TEEUP_PATH=.*#export TEEUP_PATH=$(printf '%q' "$TEST_HOME/somewhere-else")#" "$TEST_HOME/.config/teeup/env"
+  rm -f "$TEST_HOME/.config/teeup/env.bak"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "does not match this checkout" || return 1
+  assert_contains "$out" "TEEUP_PATH=$TEST_HOME/somewhere-else" || return 1
+  assert_not_contains "$out" "/env points at this checkout" || return 1
+  cleanup_test_env
+}
+
+# The commented-out case is exactly the mutation the adversarial review found
+# undetected: with TEEUP_PATH inherited rather than unset before sourcing, a
+# file that never sets it at all still "matches" this process's own value.
+test_doctor_fails_when_the_env_file_has_teeup_path_commented_out() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  healthy_path
+  sed -i.bak 's/^export TEEUP_PATH=/# export TEEUP_PATH=/' "$TEST_HOME/.config/teeup/env"
+  rm -f "$TEST_HOME/.config/teeup/env.bak"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "does not match this checkout" || return 1
+  assert_contains "$out" "TEEUP_PATH=nothing" || return 1
+  assert_not_contains "$out" "/env points at this checkout" || return 1
+  cleanup_test_env
+}
+
+test_doctor_fails_when_the_env_file_is_empty() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  healthy_path
+  : > "$TEST_HOME/.config/teeup/env"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "does not match this checkout" || return 1
+  assert_not_contains "$out" "/env points at this checkout" || return 1
+  cleanup_test_env
+}
+
+test_doctor_fails_when_the_env_file_has_a_syntax_error() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  healthy_path
+  printf 'if [ then\n' >> "$TEST_HOME/.config/teeup/env"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "could not source it" || return 1
+  assert_not_contains "$out" "/env points at this checkout" || return 1
+  # bash's own syntax-error text is stderr noise, not a finding.
+  assert_not_contains "$out" "unexpected token" || return 1
+  cleanup_test_env
+}
+
+test_doctor_fails_without_leaking_raw_errors_when_the_env_file_is_unreadable() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  healthy_path
+  chmod 000 "$TEST_HOME/.config/teeup/env"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  chmod 644 "$TEST_HOME/.config/teeup/env"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "cannot be read" || return 1
+  assert_contains "$(cat "$report")" "chmod u+r" || return 1
+  assert_not_contains "$out" "/env points at this checkout" || return 1
+  assert_not_contains "$out" "Permission denied" || return 1
+  cleanup_test_env
+}
+
+# I3: -d succeeds on a directory that cannot be read or searched, which is
+# the exact state that makes state_done's own -f lookups silently answer no.
+test_doctor_fails_when_a_state_directory_cannot_be_searched() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  healthy_path
+  chmod 000 "$TEST_HOME/.local/state/teeup/done"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run teeup-runtime doctor 2>&1)" || rc=$?
+  chmod 755 "$TEST_HOME/.local/state/teeup/done"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "not readable/searchable" || return 1
+  assert_contains "$(cat "$report")" "chmod u+rx" || return 1
+  assert_not_contains "$out" "Every state directory is present" || return 1
+  cleanup_test_env
+}
+
 test_doctor_reports_a_missing_env_file_link_and_state() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -290,4 +398,10 @@ run_test "doctor reports a missing env file, link and state" test_doctor_reports
 run_test "doctor fails when the shims dir is off PATH" test_doctor_fails_when_the_shims_directory_is_off_path
 run_test "doctor warns when the shims dir is not last" test_doctor_warns_when_the_shims_directory_is_not_last
 run_test "doctor warns when the shims dir appears twice" test_doctor_warns_when_the_shims_directory_appears_twice
+run_test "doctor fails when the env file points at another checkout" test_doctor_fails_when_the_env_file_points_at_another_checkout
+run_test "doctor fails when the env file has TEEUP_PATH commented out" test_doctor_fails_when_the_env_file_has_teeup_path_commented_out
+run_test "doctor fails when the env file is empty" test_doctor_fails_when_the_env_file_is_empty
+run_test "doctor fails when the env file has a syntax error" test_doctor_fails_when_the_env_file_has_a_syntax_error
+run_test "doctor fails without leaking raw errors when the env file is unreadable" test_doctor_fails_without_leaking_raw_errors_when_the_env_file_is_unreadable
+run_test "doctor fails when a state directory cannot be searched" test_doctor_fails_when_a_state_directory_cannot_be_searched
 print_summary
