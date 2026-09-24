@@ -51,6 +51,15 @@ else
     refresh_if_pristine "$AEROSPACE_RENDERED" "$AEROSPACE_DEST_TOML" "$AEROSPACE_DISPLAY_SRC" || AEROSPACE_REFRESH_RC=$?
     if [[ "$AEROSPACE_REFRESH_RC" -eq 1 ]]; then
       log "For machine-specific tweaks, edit $AEROSPACE_LOCAL_TOML, or run: teeup reset aerospace"
+    elif [[ "$AEROSPACE_REFRESH_RC" -ne 0 ]]; then
+      # 2 is "teeup could not write it" (a read-only file, a full disk), not
+      # "you edited it". The old file is still in place and does not carry the
+      # local.toml settings this run just merged, so finishing quietly would
+      # mark aerospace configured over a config that is not what teeup says it
+      # is. refresh_if_pristine has already said why.
+      rm -f "$AEROSPACE_RENDERED"
+      err "$AEROSPACE_DEST_TOML was not updated, so AeroSpace is still on its previous configuration."
+      exit 1
     fi
   fi
   rm -f "$AEROSPACE_RENDERED"

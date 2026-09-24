@@ -779,6 +779,38 @@ inner = 8
 }
 
 # A value carrying the characters the merge itself parses on.
+# A value written across several lines -- `after-startup-command = [` and its
+# entries -- must survive whole. Keeping only its first line emits an
+# unterminated value that AeroSpace cannot load at all.
+test_toml_merge_local_keeps_a_multiline_root_value_whole() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1\n\n[gaps]\ninner = 8\n' > "$base"
+  printf 'after-startup-command = [\n  "exec-and-forget one",\n  "exec-and-forget two",\n]\n' > "$TEST_HOME/ml.toml"
+  toml_merge_local "$base" "$TEST_HOME/ml.toml" > "$out"
+  merge_parses "$out" || { echo "a multiline root value produced invalid TOML"; return 1; }
+  grep -q 'exec-and-forget one' "$out" || { echo "a continuation line was dropped"; return 1; }
+  grep -q 'exec-and-forget two' "$out" || { echo "a continuation line was dropped"; return 1; }
+  cleanup_test_env
+}
+
+# [[array-of-table]] is a different kind of header, and a merge that does not
+# recognise it promotes the keys of each entry to the root and collapses
+# repeated entries into one -- losing every window rule but the last.
+test_toml_merge_local_keeps_array_of_table_entries() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1\n\n[gaps]\ninner = 8\n' > "$base"
+  printf '[[on-window-detected]]\nif.app-id = "com.apple.finder"\nrun = "move-node-to-workspace 4"\n\n[[on-window-detected]]\nif.app-id = "com.apple.mail"\nrun = "move-node-to-workspace 5"\n' > "$TEST_HOME/aot.toml"
+  toml_merge_local "$base" "$TEST_HOME/aot.toml" > "$out"
+  merge_parses "$out" || { echo "array-of-table produced invalid TOML"; return 1; }
+  [[ "$(grep -c '^\[\[on-window-detected\]\]' "$out")" -eq 2 ]] || { echo "repeated entries were collapsed"; return 1; }
+  grep -q 'com.apple.finder' "$out" || { echo "the first entry was lost"; return 1; }
+  grep -q 'com.apple.mail' "$out" || { echo "the second entry was lost"; return 1; }
+  grep -q 'inner = 8' "$out" || { echo "the base was lost"; return 1; }
+  cleanup_test_env
+}
+
 test_toml_merge_local_keeps_awkward_values_intact() {
   setup
   local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
@@ -839,6 +871,8 @@ run_test "toml_merge_local replaces a table and keeps the rest" test_toml_merge_
 run_test "toml_merge_local handles whitespace and CRLF headers" test_toml_merge_local_handles_whitespace_and_crlf_headers
 run_test "toml_merge_local with nothing to merge" test_toml_merge_local_with_nothing_to_merge
 run_test "toml_merge_local appends a table the base never had" test_toml_merge_local_appends_a_table_the_base_never_had
+run_test "toml_merge_local keeps a multiline root value whole" test_toml_merge_local_keeps_a_multiline_root_value_whole
+run_test "toml_merge_local keeps array-of-table entries" test_toml_merge_local_keeps_array_of_table_entries
 run_test "toml_merge_local keeps awkward values intact" test_toml_merge_local_keeps_awkward_values_intact
 run_test "backup_copy reports a copy it could not make" test_backup_copy_reports_a_copy_it_could_not_make
 run_test "two backups of the same file within one second both survive" test_two_backups_of_the_same_file_within_one_second_both_survive

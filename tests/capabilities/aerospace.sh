@@ -496,6 +496,34 @@ test_reset_leaves_the_local_override_alone() {
   cleanup_test_env
 }
 
+# refresh_if_pristine returns 2 when teeup could not write the file at all (a
+# read-only aerospace.toml, a full disk). The old file is then still in place
+# and does not carry the local.toml settings this run merged, so finishing
+# quietly would mark aerospace configured over a config that is not what teeup
+# says it is.
+test_configure_fails_when_the_generated_config_cannot_be_written() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  local dest
+  dest="$(user_config_dir)/aerospace/aerospace.toml"
+  assert_file_exists "$dest" || return 1
+  # Change local.toml so the next run has something new to write, then make
+  # the destination unwritable.
+  printf "[gaps]\ninner.horizontal = 42\n" >> "$(user_config_dir)/aerospace/local.toml"
+  chmod 0444 "$dest"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run aerospace configure 2>&1)" || rc=$?
+  chmod 0644 "$dest"
+  assert_failure "$rc" "a config teeup could not write is not a configured capability" || return 1
+  assert_contains "$out" "still on its previous configuration" || return 1
+  if printf '%s\n' "$out" | grep -q 'inner.horizontal = 42'; then
+    echo "claimed to have written settings it could not write"
+    return 1
+  fi
+  cleanup_test_env
+}
+
 run_test "install taps then installs the cask" test_install_taps_then_installs_the_cask
 run_test "install skips the tap when present" test_install_skips_the_tap_when_present
 run_test "install is skipped on macports" test_install_is_skipped_on_macports
@@ -505,6 +533,7 @@ run_test "install below the macOS minimum leaves no done marker" test_install_be
 run_test "install at the macOS minimum marks done as before" test_install_at_the_macos_minimum_marks_done_as_before
 run_test "install runs as usual at the macOS minimum" test_install_runs_as_usual_at_the_macos_minimum
 run_test "configure copies the config and prints the manual step" test_configure_copies_the_config_and_prints_the_manual_step
+run_test "configure fails when the generated config cannot be written" test_configure_fails_when_the_generated_config_cannot_be_written
 run_test "reset leaves the local override alone" test_reset_leaves_the_local_override_alone
 run_test "configure writes the tuned defaults" test_configure_writes_the_tuned_defaults
 run_test "shipped defaults do not force a monitor layout" test_shipped_defaults_do_not_force_a_monitor_layout
