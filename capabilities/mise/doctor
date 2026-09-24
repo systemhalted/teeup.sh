@@ -11,18 +11,23 @@ fi
 # On PATH is not the same as working: a mise that fails on every call (a
 # broken config, a corrupt install) makes mise_global_state's own fallbacks
 # read "requested but not installed" for every tool, and the offered fix,
-# teeup configure mise, only runs the same broken mise again. Ask it
+# teeup configure mise, only runs the same broken mise again. `mise
+# --version` is not the right gate for that: real mise still prints its
+# version fine with a config.toml that fails to parse -- the realistic
+# failure I16 was filed about, and the one that survived I16's own fix
+# (NI4/I16 residual). Ask the command whose answer is actually used --
+# `mise -C / ls --global`, the same one mise_global_state falls back from --
 # directly, once, so a broken mise is its own failure rather than being
 # reported through a tool's verdict it never really produced.
 mise_usable=true
-mise_version_out=""
-if ! mise_version_out="$(mise --version 2>&1)"; then
+mise_ls_out=""
+if ! mise_ls_out="$(mise -C / ls --global 2>&1)"; then
   mise_usable=false
 fi
 if [[ "$mise_usable" == "true" ]]; then
   doctor_ok "mise is on PATH."
 else
-  doctor_fail "mise is on PATH but did not answer to mise --version ($mise_version_out), so teeup could not check what it manages." "Investigate why mise is failing, then re-run teeup doctor."
+  doctor_fail "mise is on PATH but did not answer to mise -C / ls --global ($mise_ls_out), so teeup could not check what it manages." "mise doctor"
 fi
 
 # The same file mise_global_state falls back to reading, and the same

@@ -5,8 +5,12 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  # `--version` answers for real: an exit-0, silent brew reads as "cannot
+  # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
+  # off the cask check below in silence (NI2).
   mock_command_script brew <<'EOF2'
 case "$1" in
+  --version) echo "Homebrew 4.3.9" ;;
   list) exit 1 ;;
   tap) exit 0 ;;
   *) exit 0 ;;
@@ -310,6 +314,7 @@ test_doctor_does_not_contradict_the_metadata_check_on_home_applications() {
   source "$TEEUP_PATH/lib/all.sh"
   mock_command pgrep 0 ""
   mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 case "$1" in list) exit 0 ;; tap) exit 0 ;; *) exit 0 ;; esac
 EOF2
   # TEEUP_APPS_DIR is this suite's stand-in for /Applications (setup, above);

@@ -5,7 +5,11 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  # `--version` answers for real: an exit-0, silent brew reads as "cannot
+  # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
+  # off every package check below in silence (NI2).
   mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
   # A gh that is signed out until `auth login` runs, and whose key list and
@@ -48,6 +52,21 @@ case "$1 ${2:-}" in
       [ "$host" = "github.com" ] || error_file="$HOME/gh-auth-status-error-$host"
       if [ -f "$error_file" ]; then
         echo "error connecting to $host: dial tcp: lookup $host: no such host" >&2
+        exit 1
+      fi
+      # A seeded control file simulates a revoked or invalid token (NB1) --
+      # gh 2.100.0's own real wording, verified against the actual CLI, for
+      # the commonest "you must sign in again" state: distinct from both
+      # "signed out" (no "not logged into" phrase) and a transport failure
+      # (it names the host and the token file, not a DNS/dial error).
+      invalid_file="$HOME/gh-auth-status-invalid-token"
+      [ "$host" = "github.com" ] || invalid_file="$HOME/gh-auth-status-invalid-token-$host"
+      if [ -f "$invalid_file" ]; then
+        echo "$host" >&2
+        echo "  X Failed to log in to $host account someone (/Users/test/.config/gh/hosts.yml)" >&2
+        echo "  - Active account: true" >&2
+        echo "  - The token in /Users/test/.config/gh/hosts.yml is invalid." >&2
+        echo "  - To re-authenticate, run: gh auth login -h $host" >&2
         exit 1
       fi
       if [ ! -f "$session_file" ]; then
@@ -831,6 +850,33 @@ test_doctor_reports_a_transport_failure_as_could_not_check() {
   cleanup_test_env
 }
 
+# NB1: a revoked or invalid token is a THIRD shape, distinct from both
+# "signed out" and a transport failure -- gh's own wording for it
+# ("Failed to log in to ... / The token in ... is invalid."), verified
+# against the real gh 2.100.0 CLI. Reading it as "could not check" left it
+# unfixable: nothing was recorded, so `teeup doctor` printed
+# "everything checked is healthy" and exited 0 on a machine where every gh
+# call, key upload and `teeup configure github` precondition was dead --
+# `gh auth login` (what `teeup configure github` runs) is exactly the fix gh
+# itself names, and it is safe to offer even to a machine that turns out to
+# only be offline.
+test_doctor_reports_an_invalid_token_as_not_signed_in() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  : > "$TEST_HOME/gh-auth-status-invalid-token"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "an invalid token must not report healthy (NB1)" || return 1
+  assert_contains "$out" "Not signed in to github.com" || return 1
+  assert_not_contains "$out" "Could not check whether personal is signed in" "an invalid token is fixable; it must not be reported as merely unknowable" || return 1
+  assert_contains "$(cat "$report")" "teeup configure github" || return 1
+  cleanup_test_env
+}
+
 # I12: `gh ssh-key list` failing (offline, a rate limit, a revoked token)
 # used to be swallowed (`|| true`) and read as an empty, successful listing
 # -- the key reported simply not there. It must be "could not check".
@@ -955,6 +1001,7 @@ run_test "doctor reports missing scopes and an unuploaded key" test_doctor_repor
 run_test "doctor reports a second host that needs signing in" test_doctor_reports_a_second_host_that_needs_signing_in
 run_test "doctor reports it could not check a work key on the wrong account" test_doctor_reports_it_could_not_check_a_work_key_on_the_wrong_account
 run_test "doctor reports a transport failure as could not check" test_doctor_reports_a_transport_failure_as_could_not_check
+run_test "doctor reports an invalid token as not signed in" test_doctor_reports_an_invalid_token_as_not_signed_in
 run_test "doctor reports it could not list keys" test_doctor_reports_it_could_not_list_keys
 run_test "doctor reports a signing-only key as not ready for push" test_doctor_reports_a_signing_only_key_as_not_ready_for_push
 run_test "doctor checks the active account's scopes, not an inactive one's" test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones

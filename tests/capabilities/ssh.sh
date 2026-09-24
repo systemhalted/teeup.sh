@@ -843,6 +843,68 @@ test_doctor_reports_a_host_block_naming_a_missing_key() {
   cleanup_test_env
 }
 
+# NI6: `set -- $line` tokenizes with pathname expansion still on, so a
+# `Host *` line -- the commonest ssh pattern of all -- gets expanded against
+# files in the current directory before it is ever read as a pattern. The
+# block's own IdentityFile check (I11) then finds nothing to test, and a
+# push through a `Host *` block whose key is not on this machine reported
+# healthy.
+test_doctor_reports_a_host_star_block_naming_a_missing_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf 'Host *\n  IdentityFile %s\n' "$TEST_HOME/.ssh/nope" \
+    > "$TEST_HOME/.ssh/config"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a Host * block naming a key that is not on this machine must fail too (NI6)" || return 1
+  assert_contains "$out" "not on this machine" || return 1
+  cleanup_test_env
+}
+
+# Mutation gap: the tokenizer's `Key=Value` normalisation had a test for
+# `Host=value` but not `IdentityFile=value` -- with the normalisation
+# removed, "IdentityFile=/path" is one whole, unrecognised token, id_files
+# stays empty, and the check is silently skipped (a pass), indistinguishable
+# from the key genuinely being found. Only a missing key exposes the gap.
+test_doctor_reports_a_host_block_naming_a_missing_key_via_identityfile_equals() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf 'Host github.com\n  IdentityFile=%s\n' "$TEST_HOME/.ssh/nope" \
+    > "$TEST_HOME/.ssh/config"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "IdentityFile=value must be parsed, not skipped as one unrecognised token" || return 1
+  assert_contains "$out" "not on this machine" || return 1
+  cleanup_test_env
+}
+
+# Mutation gap: `! -s "$key" || ! -s "$key.pub"` mutated to `! -e "$key"`
+# stayed green because every fixture key is non-empty. A zero-byte private
+# key file (a truncating write, a full disk) exists, so `-e` alone would
+# pass it straight through the "has no key pair" check.
+test_doctor_reports_a_zero_byte_private_key_as_no_key_pair() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  : > "$TEST_HOME/.ssh/id_ed25519_personal"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a zero-byte private key file is not a key pair, even though the file exists" || return 1
+  assert_contains "$out" "has no key pair" || return 1
+  cleanup_test_env
+}
+
 # I10: only -s (non-empty) was ever tested, so a plausible half-written or
 # corrupted key passed. The private half's own marker line is checked
 # without ever reading past it (no prompt, nothing that could be a
@@ -887,6 +949,9 @@ run_test "doctor accepts a glob host pattern" test_doctor_accepts_a_glob_host_pa
 run_test "doctor accepts a Host=value line" test_doctor_accepts_a_host_equals_line
 run_test "doctor warns about an unreadable ssh config" test_doctor_warns_about_an_unreadable_ssh_config
 run_test "doctor reports a host block naming a missing key" test_doctor_reports_a_host_block_naming_a_missing_key
+run_test "doctor reports a Host * block naming a missing key" test_doctor_reports_a_host_star_block_naming_a_missing_key
+run_test "doctor reports a host block naming a missing key via IdentityFile=" test_doctor_reports_a_host_block_naming_a_missing_key_via_identityfile_equals
+run_test "doctor reports a zero-byte private key as no key pair" test_doctor_reports_a_zero_byte_private_key_as_no_key_pair
 run_test "doctor reports a malformed private key" test_doctor_reports_a_malformed_private_key
 run_test "doctor reports a malformed public key" test_doctor_reports_a_malformed_public_key
 print_summary

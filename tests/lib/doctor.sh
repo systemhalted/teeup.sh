@@ -102,14 +102,37 @@ test_metadata_check_says_so_when_it_cannot_ask_the_backend() {
 # broken prefix, a shim that always exits non-zero) is not "on PATH" in any
 # sense doctor can use. `have` alone would pass this gate and doctor would
 # then report every package "not installed" -- a flood of confident, wrong
-# findings that all point away from the real cause.
+# findings that all point away from the real cause. And once it is on PATH,
+# saying "is not on PATH" is simply false (NI3) -- the wording must say what
+# was actually established: that it did not answer.
 test_metadata_check_says_so_when_the_backend_is_on_path_but_broken() {
   setup
   make_cap widget "ripgrep"
   mock_command brew 1 ""
   local out
   out="$(doctor_metadata_check widget 2>&1)"
-  assert_contains "$out" "is not on PATH, so teeup could not check what widget installed" || return 1
+  assert_contains "$out" "teeup could not get an answer out of brew, so it could not check what widget installed" || return 1
+  assert_not_contains "$out" "is not on PATH" "brew is on PATH; that sentence is the one thing just disproved" || return 1
+  assert_not_contains "$out" "package ripgrep is not installed" || return 1
+  assert_equals "" "$(cat "$REPORT")" "an unanswerable check is not a failure with a fix" || return 1
+  cleanup_test_env
+}
+
+# NI2/mutation gap: dropping the `-n "$out"` requirement (lib/doctor.sh:117,
+# exit 0 AND non-empty output both required) was caught by no suite at all,
+# and it is exactly the change that silently turned off package and cask
+# checking in seven suites whose shared brew mock exits 0 with nothing on
+# stdout for `--version`. This pins the contract directly: an exit-0, silent
+# backend must read exactly like a non-zero one, never like a real answer.
+test_metadata_check_says_so_when_the_backend_answers_nothing() {
+  setup
+  make_cap widget "ripgrep"
+  mock_command_script brew <<'EOF2'
+exit 0
+EOF2
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "teeup could not get an answer out of brew, so it could not check what widget installed" || return 1
   assert_not_contains "$out" "package ripgrep is not installed" || return 1
   assert_equals "" "$(cat "$REPORT")" "an unanswerable check is not a failure with a fix" || return 1
   cleanup_test_env
@@ -225,11 +248,39 @@ test_state_readable_treats_a_missing_done_dir_as_a_bare_machine() {
   cleanup_test_env
 }
 
+# NB3: permissions damage from `sudo ./bootstrap` or a bad umask lands on the
+# state tree ROOT, not just done/. `[[ ! -e "$TEEUP_STATE_DIR/done" ]]` used
+# to succeed for the wrong reason (a `stat` that failed with EACCES) and a
+# fully installed, unreadable machine read as bare, exit 0.
+test_state_readable_sees_an_unsearchable_parent_not_just_an_unsearchable_done() {
+  setup
+  mkdir -p "$TEEUP_STATE_DIR/done"
+  doctor_state_readable || { echo "a fresh readable tree must pass"; return 1; }
+  chmod 0000 "$TEEUP_STATE_DIR"
+  doctor_state_readable && { echo "an unsearchable state root must not pass"; chmod 0755 "$TEEUP_STATE_DIR"; return 1; }
+  chmod 0755 "$TEEUP_STATE_DIR"
+  cleanup_test_env
+}
+
 test_report_state_unreadable_records_a_chmod_fix_not_a_reset() {
   setup
   doctor_report_state_unreadable
   assert_contains "$(cat "$REPORT")" "could not be read" || return 1
   assert_contains "$(cat "$REPORT")" "chmod u+rx" || return 1
+  cleanup_test_env
+}
+
+# NB3: the failure must name whichever of the two is actually unreadable,
+# not always point at done/ -- an unsearchable root is a different problem
+# from an unsearchable done/, with the same shaped fix at a different path.
+test_report_state_unreadable_names_the_root_when_that_is_the_problem() {
+  setup
+  mkdir -p "$TEEUP_STATE_DIR/done"
+  chmod 0000 "$TEEUP_STATE_DIR"
+  doctor_report_state_unreadable
+  chmod 0755 "$TEEUP_STATE_DIR"
+  assert_contains "$(cat "$REPORT")" "$TEEUP_STATE_DIR could not be read" || return 1
+  assert_not_contains "$(cat "$REPORT")" "$TEEUP_STATE_DIR/done could not be read" || return 1
   cleanup_test_env
 }
 
@@ -310,6 +361,7 @@ run_test "verdict is zero until something fails" test_verdict_is_zero_until_some
 run_test "metadata check reports a missing package" test_metadata_check_reports_a_missing_package_with_its_fix
 run_test "metadata check says so when it cannot ask the backend" test_metadata_check_says_so_when_it_cannot_ask_the_backend
 run_test "metadata check says so when the backend is on PATH but broken" test_metadata_check_says_so_when_the_backend_is_on_path_but_broken
+run_test "metadata check says so when the backend answers nothing" test_metadata_check_says_so_when_the_backend_answers_nothing
 run_test "metadata check passes when listed" test_metadata_check_passes_when_the_package_manager_lists_it
 run_test "metadata check reports a missing app" test_metadata_check_reports_a_missing_app
 run_test "metadata check skips casks on macports" test_metadata_check_skips_casks_on_macports
@@ -320,7 +372,9 @@ run_test "targets are the installed capabilities" test_targets_are_the_installed
 run_test "summary says nothing when nothing was checked" test_summary_says_nothing_when_nothing_was_checked
 run_test "state readable sees a done dir it cannot search" test_state_readable_sees_a_done_dir_it_cannot_search
 run_test "state readable treats a missing done dir as a bare machine" test_state_readable_treats_a_missing_done_dir_as_a_bare_machine
+run_test "state readable sees an unsearchable parent, not just an unsearchable done" test_state_readable_sees_an_unsearchable_parent_not_just_an_unsearchable_done
 run_test "report state unreadable records a chmod fix, not a reset" test_report_state_unreadable_records_a_chmod_fix_not_a_reset
+run_test "report state unreadable names the root when that is the problem" test_report_state_unreadable_names_the_root_when_that_is_the_problem
 run_test "summary is quiet on an empty report" test_summary_is_quiet_and_zero_when_the_report_is_empty
 run_test "summary names every failure and its fix" test_summary_names_every_failure_and_its_fix
 run_test "run one records a silent non-zero doctor" test_run_one_records_a_doctor_that_exits_without_saying_why

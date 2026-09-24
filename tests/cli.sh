@@ -1332,6 +1332,29 @@ test_doctor_reports_an_unreadable_state_dir_instead_of_calling_it_empty() {
   cleanup_test_env
 }
 
+# NB3: doctor_state_readable used to test only $TEEUP_STATE_DIR/done. When
+# the PARENT $TEEUP_STATE_DIR itself is unsearchable (the shape a `sudo
+# ./bootstrap` or a bad umask actually leaves -- permissions damage lands on
+# the tree root), `[[ ! -e "$TEEUP_STATE_DIR/done" ]]` used to succeed for
+# the wrong reason (a `stat` that failed with EACCES), the gate passed, and
+# a fully installed, healthy machine was told "No capability is marked
+# installed here. Run ./bootstrap."
+test_doctor_reports_an_unreadable_state_dir_parent_instead_of_calling_it_empty() {
+  setup
+  "$TEEUP" install alpha >/dev/null
+  local state_root="$TEST_HOME/.local/state/teeup"
+  [[ -d "$state_root/done" ]] || { echo "state dir fixture assumption broke"; return 1; }
+  chmod 0000 "$state_root"
+  local out rc=0
+  out="$("$TEEUP" doctor 2>&1)" || rc=$?
+  chmod 0755 "$state_root"
+  assert_failure "$rc" "an unsearchable state root must not exit 0 either (NB3)" || return 1
+  assert_contains "$out" "could not be read" || return 1
+  assert_not_contains "$out" "No capability is marked installed here" || return 1
+  assert_not_contains "$out" "everything checked is healthy" || return 1
+  cleanup_test_env
+}
+
 test_doctor_rejects_an_unknown_capability() {
   setup
   local out rc=0
@@ -1414,5 +1437,6 @@ run_test "doctor names the failure and its fix" test_doctor_names_the_failure_an
 run_test "doctor checks an uninstalled capability" test_doctor_checks_one_capability_even_when_it_is_not_installed
 run_test "doctor separates an empty machine from a fully skipped one" test_doctor_separates_an_empty_machine_from_a_fully_skipped_one
 run_test "doctor reports an unreadable state dir instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_instead_of_calling_it_empty
+run_test "doctor reports an unreadable state dir parent instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_parent_instead_of_calling_it_empty
 run_test "doctor rejects an unknown capability" test_doctor_rejects_an_unknown_capability
 print_summary

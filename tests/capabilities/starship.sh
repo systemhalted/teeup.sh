@@ -5,7 +5,11 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  # `--version` answers for real: an exit-0, silent brew reads as "cannot
+  # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
+  # off every package check below in silence (NI2).
   mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
@@ -106,6 +110,72 @@ test_doctor_passes_after_configure() {
   out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
   assert_success "$rc" || return 1
   assert_contains "$out" "palette block is intact" || return 1
+  cleanup_test_env
+}
+
+# NB2: a real bootstrap, then `teeup theme set`, must leave doctor healthy.
+# `theme-apply` writes ONE marker block holding BOTH modes (dark render,
+# blank line, light render, blank line), so it can switch appearance without
+# a re-render; the block was being diffed against only ONE mode's rendered
+# file, which can never equal it in either appearance -- a correctly
+# themed, freshly bootstrapped machine failed doctor every time, with a fix
+# (`teeup theme set catppuccin`) that had just run and changes nothing.
+test_doctor_passes_after_configure_then_theme_set() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  # theme-apply hooks only fire for a capability teeup has actually marked
+  # installed (cap_hook_eligible), so this needs a real `install`, not just
+  # `configure` -- the same shape test_reset_restores_the_file_and_the_current_palette
+  # uses above. starship pulls in zsh, whose configure calls chsh.
+  mock_command starship 0 "starship 1.23.0"
+  mock_command defaults 1 ""
+  mock_command chsh 0 ""
+  export TEEUP_NO_GUM=1
+  DRY_RUN=false "$TEEUP" install starship >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" install theme >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null 2>&1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a real bootstrap then teeup theme set must leave doctor healthy (NB2)" || return 1
+  assert_contains "$out" "palette block is intact and matches the current theme" || return 1
+  cleanup_test_env
+}
+
+# NI5: theme_current does a plain `cat`, which would otherwise die under
+# `bash -eu` on an unreadable theme.name before starship's own findings are
+# recorded -- the exact I19 defect, fixed in theme/doctor but not here.
+test_doctor_reports_an_unreadable_theme_name_instead_of_dying() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command starship 0 "starship 1.23.0"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  theme_set catppuccin >/dev/null 2>&1
+  chmod 0000 "$TEEUP_STATE_DIR/current/theme.name"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  chmod 0644 "$TEEUP_STATE_DIR/current/theme.name"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "theme.name cannot be read" || return 1
+  assert_not_contains "$out" "Permission denied" "raw cat stderr must not leak" || return 1
+  cleanup_test_env
+}
+
+# NI5: a bogus theme.name must not be offered as a fix that cannot succeed
+# ("teeup theme set not-a-real-theme"), the same guard theme/doctor already
+# has.
+test_doctor_reports_a_theme_name_that_does_not_exist() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command starship 0 "starship 1.23.0"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  theme_set catppuccin >/dev/null 2>&1
+  printf 'not-a-real-theme\n' > "$TEEUP_STATE_DIR/current/theme.name"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "not-a-real-theme" || return 1
+  assert_contains "$out" "teeup has no theme by that name" || return 1
+  assert_not_contains "$out" "teeup theme set not-a-real-theme" "the fix offered must be able to succeed" || return 1
   cleanup_test_env
 }
 
@@ -237,6 +307,9 @@ run_test "palette is selected at the root" test_palette_is_selected_at_the_root
 run_test "reset restores the file and the current palette" test_reset_restores_the_file_and_the_current_palette
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "doctor passes after configure" test_doctor_passes_after_configure
+run_test "doctor passes after configure then theme set" test_doctor_passes_after_configure_then_theme_set
+run_test "doctor reports an unreadable theme name instead of dying" test_doctor_reports_an_unreadable_theme_name_instead_of_dying
+run_test "doctor reports a theme name that does not exist" test_doctor_reports_a_theme_name_that_does_not_exist
 run_test "doctor reports a missing config" test_doctor_reports_a_missing_config
 run_test "doctor reports palette markers edited away" test_doctor_reports_palette_markers_that_were_edited_away
 run_test "doctor reports a palette block that does not match the theme" test_doctor_reports_a_palette_block_that_does_not_match_the_theme

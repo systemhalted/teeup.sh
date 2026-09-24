@@ -5,7 +5,11 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  # `--version` answers for real: an exit-0, silent brew reads as "cannot
+  # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
+  # off every package check below in silence (NI2).
   mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
   mock_command dscl 0 "UserShell: /bin/bash"

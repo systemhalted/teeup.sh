@@ -13,11 +13,7 @@
 # inside this command substitution's own subshell, so the export
 # _pkg_backend_resolve makes never reaches this process.
 backend="$(pkg_backend)"
-case "$backend" in
-  homebrew) backend_cmd=brew ;;
-  macports) backend_cmd=port ;;
-  *) backend_cmd="" ;;
-esac
+backend_cmd="$(pkg_backend_cmd)"
 found_bin=""
 if [[ -n "$backend_cmd" ]] && have "$backend_cmd"; then
   found_bin="$(command -v "$backend_cmd")"
@@ -29,17 +25,10 @@ if [[ -n "$found_bin" ]]; then
   # call would otherwise be reported "installed", and every capability's
   # doctor would then read the resulting flood of "not installed" package
   # lines as fact instead of as a backend that was never really asked.
-  backend_reachable=false
-  backend_check_out=""
-  case "$backend" in
-    homebrew)
-      if backend_check_out="$("$backend_cmd" --version 2>&1)"; then backend_reachable=true; fi
-      ;;
-    macports)
-      if backend_check_out="$("$backend_cmd" version 2>&1)"; then backend_reachable=true; fi
-      ;;
-  esac
-  if [[ "$backend_reachable" == "true" ]]; then
+  # doctor_backend_can_answer (lib/doctor.sh) is the one definition of
+  # "reachable" every capability's metadata check also uses (NI3): rolling a
+  # second probe here let the two disagree about the very same `brew`.
+  if doctor_backend_can_answer; then
     doctor_ok "$(pkg_backend_label) is installed under $real_prefix."
     if [[ "$real_prefix" != "$assumed_prefix" ]]; then
       # HOMEBREW_PREFIX is what pkg_prefix obeys for Homebrew; MacPorts'
@@ -60,7 +49,7 @@ if [[ -n "$found_bin" ]]; then
     if [[ "$backend" == "homebrew" ]]; then
       unreachable_fix="brew doctor"
     fi
-    doctor_fail "$found_bin is on PATH but did not answer ($backend_check_out), so teeup could not check what $(pkg_backend_label) has installed." "$unreachable_fix"
+    doctor_fail "$found_bin is on PATH but did not answer ($TEEUP_DOCTOR_BACKEND_OUT), so teeup could not check what $(pkg_backend_label) has installed." "$unreachable_fix"
   fi
 elif [[ -x "$assumed_prefix/bin/$backend_cmd" ]]; then
   doctor_fail "$(pkg_backend_label) is installed under $assumed_prefix but $assumed_prefix/bin is not on PATH, so nothing installed through it can be found." "teeup configure zsh"

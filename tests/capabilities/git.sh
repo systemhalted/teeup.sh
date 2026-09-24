@@ -5,7 +5,11 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  # `--version` answers for real: an exit-0, silent brew reads as "cannot
+  # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
+  # off every package check below in silence (NI2).
   mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
   mock_command git 0 ""
@@ -675,6 +679,29 @@ test_doctor_reports_signing_on_with_no_signing_key_configured() {
   cleanup_test_env
 }
 
+# Mutation gap: `_git_doctor_last_value signingkey "$identity_file"
+# "$generated" "$git_dir/local"` mutated to read from $identity_file alone
+# stayed green -- every other test's signingkey lives in identity (where
+# `configure git` itself writes it), so no test ever put it anywhere else.
+# B3's whole point is that a hand edit could put it in teeup-generated or
+# $git_dir/local instead, with the same "last value wins" rule real git
+# uses; the fixed key must still be found there.
+test_doctor_reads_signingkey_from_local_not_only_identity() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  grep -v signingkey "$TEST_HOME/.config/git/identity" > "$TEST_HOME/.config/git/identity.new"
+  mv "$TEST_HOME/.config/git/identity.new" "$TEST_HOME/.config/git/identity"
+  printf '[user]\n\tsigningkey = "%s.pub"\n' "$TEST_HOME/.ssh/id_ed25519_personal" \
+    > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a signingkey set in \$git_dir/local, not identity, must still be found" || return 1
+  assert_contains "$out" "Commit signing is on" || return 1
+  assert_not_contains "$out" "no user.signingkey is set" || return 1
+  cleanup_test_env
+}
+
 # I6: a claim about gpg.format that was never read. Once the format is
 # something other than ssh, the whole SSH-signature verification check does
 # not apply, and the message must say what format actually is.
@@ -695,17 +722,51 @@ test_doctor_skips_verification_when_gpg_format_is_not_ssh() {
 
 # I7: an unreadable file is "could not check", not the absence of what it
 # would have said. Both the identity file and the generated file are guarded.
+#
+# NI1: the identity file is also where `signingkey` lives, and
+# _git_doctor_last_value's "could not read this file" flag used to be set
+# inside the `$( )` that calls it, so it never reached the caller -- the
+# branch that reads "could not check user.signingkey" was unreachable, and
+# doctor instead asserted the key was unset (chmod 000 identity used to print
+# "❌ commit.gpgsign is on but no user.signingkey is set", rc=1, even though
+# the key IS set, in the file doctor just said it could not read). Fixed,
+# this is a warn, not a failure: the key really might be fine, teeup only
+# could not tell.
 test_doctor_warns_when_identity_file_is_unreadable() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   configure_git_with_keys
   chmod 000 "$TEST_HOME/.config/git/identity"
-  local out
-  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_success "$rc" "an unreadable identity file is 'could not check', not a real missing signingkey (NI1)" || return 1
   assert_not_contains "$out" "has no email" "an unreadable file's absent content must not be reported as its content" || return 1
   assert_not_contains "$out" "Permission denied" "a raw permission error must never reach the report" || return 1
+  assert_not_contains "$out" "no user.signingkey is set" "the key is in the file doctor could not read, not actually unset (NI1)" || return 1
   assert_contains "$out" "cannot be read" || return 1
+  assert_contains "$out" "could not check user.signingkey" || return 1
   chmod 600 "$TEST_HOME/.config/git/identity"
+  cleanup_test_env
+}
+
+# NI1: the same subshell-scoping bug also swallowed "could not check" for
+# gpg.format, read from $git_dir/config among others. Unreadable, doctor used
+# to assume gpg.format was unset (or read from whatever the other files said)
+# and print a confident "does not apply" pass -- skipping the
+# allowed-signers verification block entirely as though the question never
+# came up.
+test_doctor_warns_when_config_file_is_unreadable() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  chmod 000 "$TEST_HOME/.config/git/config"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  chmod 600 "$TEST_HOME/.config/git/config"
+  assert_success "$rc" "an unreadable config file is 'could not check', not broken" || return 1
+  assert_not_contains "$out" "Permission denied" || return 1
+  assert_not_contains "$out" "does not apply" "gpg.format was never actually read here (NI1)" || return 1
+  assert_contains "$out" "could not check gpg.format" || return 1
   cleanup_test_env
 }
 
@@ -836,8 +897,10 @@ run_test "doctor reports an unconfigured tree" test_doctor_reports_an_unconfigur
 run_test "doctor reports signing left off" test_doctor_reports_signing_left_off_although_the_keys_exist
 run_test "doctor warns about a missing allowed-signers file" test_doctor_warns_about_a_missing_allowed_signers_file
 run_test "doctor reports signing on with no signing key configured" test_doctor_reports_signing_on_with_no_signing_key_configured
+run_test "doctor reads signingkey from local, not only identity" test_doctor_reads_signingkey_from_local_not_only_identity
 run_test "doctor skips verification when gpg.format is not ssh" test_doctor_skips_verification_when_gpg_format_is_not_ssh
 run_test "doctor warns when the identity file is unreadable" test_doctor_warns_when_identity_file_is_unreadable
+run_test "doctor warns when the config file is unreadable" test_doctor_warns_when_config_file_is_unreadable
 run_test "doctor warns when the generated file is unreadable" test_doctor_warns_when_generated_file_is_unreadable
 run_test "doctor requires the exact pager setting, not a stray mention of delta" test_doctor_requires_the_exact_pager_setting_not_a_stray_mention_of_delta
 run_test "doctor does not count a commented allowed-signers line" test_doctor_does_not_count_a_commented_allowed_signers_line

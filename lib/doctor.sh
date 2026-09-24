@@ -89,31 +89,39 @@ _doctor_report_lines() {
 # The answer is remembered per backend for the life of this process: one
 # `teeup doctor` run asks this once per capability with packages or casks,
 # and the answer cannot change mid-run.
+#
+# This is the ONE definition of "can the backend answer": every caller that
+# needs to know -- doctor_metadata_check below and
+# capabilities/package-manager/doctor -- calls this rather than rolling its
+# own probe. Two definitions once meant a `brew` that exits 0 with no output
+# was "cannot answer" here and "installed" in package-manager/doctor, in the
+# same run (NI3). TEEUP_DOCTOR_BACKEND_OUT is the raw output (or error text)
+# of the probe that produced the cached answer, for a caller that wants to
+# say more than yes/no about why.
 TEEUP_DOCTOR_BACKEND_ANSWER=""
+TEEUP_DOCTOR_BACKEND_OUT=""
 doctor_backend_can_answer() {
   _pkg_backend_resolve
   case "$TEEUP_DOCTOR_BACKEND_ANSWER" in
     "$TEEUP_PKG_BACKEND:0") return 0 ;;
     "$TEEUP_PKG_BACKEND:1") return 1 ;;
   esac
-  local out="" rc=0
-  case "$TEEUP_PKG_BACKEND" in
-    homebrew)
-      if have brew; then
-        out="$(brew --version 2>/dev/null)" || rc=$?
-      else
-        rc=1
-      fi
-      ;;
-    macports)
-      if have port; then
-        out="$(port version 2>/dev/null)" || rc=$?
-      else
-        rc=1
-      fi
-      ;;
-    *) rc=1 ;;
-  esac
+  local cmd out="" rc=0
+  cmd="$(pkg_backend_cmd)"
+  if [[ -n "$cmd" ]] && have "$cmd"; then
+    case "$TEEUP_PKG_BACKEND" in
+      homebrew) out="$("$cmd" --version 2>&1)" || rc=$? ;;
+      macports) out="$("$cmd" version 2>&1)" || rc=$? ;;
+    esac
+  else
+    rc=1
+  fi
+  # shellcheck disable=SC2034  # read by callers (capabilities/package-manager/doctor)
+  TEEUP_DOCTOR_BACKEND_OUT="$out"
+  # Both halves of the gate matter: a shim or a half-finished upgrade that
+  # exits 0 with nothing on stdout is exactly as unable to answer as one that
+  # exits non-zero, and a caller that only checked the exit status would read
+  # it as a real, empty, healthy answer.
   if [[ "$rc" -eq 0 && -n "$out" ]]; then
     TEEUP_DOCTOR_BACKEND_ANSWER="$TEEUP_PKG_BACKEND:0"
     return 0
@@ -129,7 +137,15 @@ doctor_metadata_check() {
   # never checked. Say what is actually true: the check could not run.
   if ! doctor_backend_can_answer; then
     if [[ -n "$(cap_meta_get "$cap" packages)" ]] || { [[ -n "$(cap_meta_get "$cap" casks)" ]] && casks_supported; }; then
-      doctor_warn "$(pkg_backend_label) is not on PATH, so teeup could not check what $cap installed."
+      # "Not on PATH" is only true when it really is not on PATH: a backend
+      # that is there but answered nothing (exit 0 and silent, or a non-zero
+      # exit) just disproved that sentence, and saying it anyway points away
+      # from the real cause (NI3).
+      if have "$(pkg_backend_cmd)"; then
+        doctor_warn "teeup could not get an answer out of $(pkg_backend_cmd), so it could not check what $cap installed."
+      else
+        doctor_warn "$(pkg_backend_label) is not on PATH, so teeup could not check what $cap installed."
+      fi
     fi
   else
     for item in $(cap_meta_get "$cap" packages); do
@@ -192,19 +208,34 @@ EOF_APPS
 # root-owned by `sudo ./bootstrap`, or a bad umask, fails every `-f` test in
 # it silently and looks exactly like a bare machine; this tells the two
 # apart before doctor_targets ever asks (B4). A directory that does not
-# exist yet is a genuinely bare machine, not an unreadable one.
+# exist yet is a genuinely bare machine, not an unreadable one -- but that is
+# only true when its PARENT can be searched: permissions damage from a `sudo
+# ./bootstrap` or a bad umask lands on the tree root, and `[[ ! -e
+# "$TEEUP_STATE_DIR/done" ]]` succeeds for the wrong reason (a `stat` that
+# failed with EACCES) on a machine that is actually fully installed (NB3).
+# So the root is checked first, on its own: an unsearchable root fails
+# outright, whatever done/ looks like from here.
 doctor_state_readable() {
-  local dir="$TEEUP_STATE_DIR/done"
+  local root="$TEEUP_STATE_DIR" dir="$TEEUP_STATE_DIR/done"
+  if [[ -e "$root" && ( ! -r "$root" || ! -x "$root" ) ]]; then
+    return 1
+  fi
   [[ ! -e "$dir" ]] || [[ -r "$dir" && -x "$dir" ]]
 }
 
 # doctor_report_state_unreadable -> the one failure that stands in for every
 # state_done lookup this run could not trust, with a fix that addresses the
-# permissions problem it actually is rather than replacing anything.
+# permissions problem it actually is rather than replacing anything. Names
+# whichever of the tree root or done/ itself is the one doctor_state_readable
+# actually failed on (NB3), rather than always pointing at done/.
 doctor_report_state_unreadable() {
+  local root="$TEEUP_STATE_DIR" target="$TEEUP_STATE_DIR/done"
+  if [[ -e "$root" && ( ! -r "$root" || ! -x "$root" ) ]]; then
+    target="$root"
+  fi
   _doctor_report_failure "teeup" \
-    "$TEEUP_STATE_DIR/done could not be read, so teeup doctor cannot tell what is installed here." \
-    "chmod u+rx \"$TEEUP_STATE_DIR/done\""
+    "$target could not be read, so teeup doctor cannot tell what is installed here." \
+    "chmod u+rx \"$target\""
 }
 
 # doctor_targets -> what `teeup doctor` with no argument checks: the

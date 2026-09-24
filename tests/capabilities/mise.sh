@@ -5,7 +5,11 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  # `--version` answers for real: an exit-0, silent brew reads as "cannot
+  # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
+  # off every package check below in silence (NI2).
   mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
   # A mise that knows nothing yet, keeping "requested" and "installed" apart
@@ -328,6 +332,39 @@ test_doctor_separates_an_unreadable_config_from_a_missing_one() {
   cleanup_test_env
 }
 
+# Mutation gap: hardcoding the config path resolution (dropping
+# MISE_GLOBAL_CONFIG_FILE/MISE_CONFIG_DIR) stayed green -- every other test
+# leaves both unset, so the fallback default is the only path ever checked.
+# MISE_GLOBAL_CONFIG_FILE names the file outright and wins even over
+# MISE_CONFIG_DIR, the same override order mise itself resolves.
+test_doctor_reads_the_config_at_mise_global_config_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local custom="$TEST_HOME/elsewhere/mise-config.toml"
+  mkdir -p "$(dirname "$custom")"
+  printf '[tools]\n' > "$custom"
+  local rc=0 out
+  out="$(MISE_GLOBAL_CONFIG_FILE="$custom" DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_contains "$out" "The global mise config is at $custom" || return 1
+  assert_not_contains "$out" "No $(user_config_dir)/mise/config.toml" || return 1
+  cleanup_test_env
+}
+
+# Mutation gap: hardcoding the shims path resolution (dropping
+# MISE_DATA_DIR) stayed green for the same reason -- no test set it.
+test_doctor_reads_the_shims_dir_at_mise_data_dir() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure mise >/dev/null 2>&1
+  local custom="$TEST_HOME/elsewhere/mise-data"
+  mkdir -p "$custom/shims"
+  local rc=0 out
+  out="$(MISE_DATA_DIR="$custom" PATH="$PATH:$custom/shims" DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_contains "$out" "mise shims directory is on PATH" || return 1
+  assert_not_contains "$out" "is not on PATH, so tools installed through mise are invisible" || return 1
+  cleanup_test_env
+}
+
 # I15: a mise shims directory named on PATH but gone from disk (the data
 # directory wiped or moved) must not read as healthy -- that is precisely the
 # state the failure branch's own wording describes.
@@ -361,8 +398,34 @@ EOF2
   local rc=0 out
   out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "did not answer to mise --version" || return 1
+  assert_contains "$out" "did not answer to mise -C / ls --global" || return 1
   assert_not_contains "$out" "pre-commit is asked for but not installed" || return 1
+  cleanup_test_env
+}
+
+# NI4/I16 residual: `mise --version` was the old gate, and real mise still
+# answers it fine even when its global config.toml fails to parse -- the
+# realistic way mise breaks. The gate has to be the command whose answer is
+# actually used, `mise -C / ls --global`, or this exact scenario (I16's
+# original bug report) still reads as "pre-commit is asked for but not
+# installed" through a mise that never really answered.
+test_doctor_reports_an_unusable_mise_with_a_broken_config_even_though_version_still_works() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure mise >/dev/null 2>&1
+  seed_mise_shims
+  mock_command_script mise <<'EOF2'
+[ "$1" = "--version" ] && { echo "2026.9.4 linux-x64"; exit 0; }
+case "$*" in
+  "-C / ls --global"*) echo "TOML parse error in config.toml" >&2; exit 1 ;;
+esac
+exit 1
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "a mise that only fails to parse its config must not read as healthy" || return 1
+  assert_contains "$out" "did not answer to mise -C / ls --global" || return 1
+  assert_not_contains "$out" "pre-commit is asked for but not installed" "the realistic I16 failure -- a broken config -- must not slip through mise --version still working" || return 1
   cleanup_test_env
 }
 
@@ -380,7 +443,10 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "doctor passes on a configured machine" test_doctor_passes_on_a_configured_machine
 run_test "doctor reports a missing mise and config" test_doctor_reports_a_missing_mise_and_config
 run_test "doctor separates an unreadable config from a missing one" test_doctor_separates_an_unreadable_config_from_a_missing_one
+run_test "doctor reads the config at MISE_GLOBAL_CONFIG_FILE" test_doctor_reads_the_config_at_mise_global_config_file
+run_test "doctor reads the shims dir at MISE_DATA_DIR" test_doctor_reads_the_shims_dir_at_mise_data_dir
 run_test "doctor reports pre-commit requested but missing" test_doctor_reports_pre_commit_requested_but_not_installed
 run_test "doctor reports a stale shims directory on PATH" test_doctor_reports_a_stale_shims_directory_on_path
 run_test "doctor reports an unusable mise instead of a missing tool" test_doctor_reports_an_unusable_mise_instead_of_a_missing_tool
+run_test "doctor reports an unusable mise with a broken config even though --version still works" test_doctor_reports_an_unusable_mise_with_a_broken_config_even_though_version_still_works
 print_summary

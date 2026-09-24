@@ -510,16 +510,28 @@ test_doctor_reports_an_empty_rendered_file() {
 # theme_templates skips a themed/ directory it cannot read, in silence, so
 # every template behind it goes unchecked and the doctor reports a clean bill
 # for a theme it never looked at.
+#
+# NI7: this used to chmod 0000 a REAL capability directory
+# ($TEEUP_CAPS_DIR/emacs/themed) and chmod it back to a hardcoded 0755,
+# writing into the checkout -- the standing "no test writes into the
+# checkout" rule, broken. TEEUP_CAPS_DIR is swapped to a throwaway fixture
+# tree under $TEST_HOME instead: a copy of theme's own capability (so
+# cap_run can still find and run it) plus one throwaway capability whose
+# themed/ is unreadable, reproducing the exact defect without touching a
+# real capability directory.
 test_doctor_reports_a_themed_directory_it_cannot_read() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   theme_set catppuccin >/dev/null 2>&1
-  local themed="$TEEUP_CAPS_DIR/emacs/themed"
-  [[ -d "$themed" ]] || { echo "fixture: expected $themed"; return 1; }
-  chmod 0000 "$themed"
+  local fixture_caps="$TEST_HOME/fixture-caps"
+  mkdir -p "$fixture_caps"
+  cp -R "$TEEUP_PATH/capabilities/theme" "$fixture_caps/theme"
+  mkdir -p "$fixture_caps/throwaway/themed"
+  printf 'color = "{{ accent }}"\n' > "$fixture_caps/throwaway/themed/broken.conf.tpl"
+  chmod 0000 "$fixture_caps/throwaway/themed"
   local rc=0 out
-  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
-  chmod 0755 "$themed"
+  out="$(TEEUP_CAPS_DIR="$fixture_caps" DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  chmod 0755 "$fixture_caps/throwaway/themed"
   assert_failure "$rc" || return 1
   assert_contains "$out" "cannot be read, so its templates were not checked at all" || return 1
   cleanup_test_env
@@ -527,14 +539,22 @@ test_doctor_reports_a_themed_directory_it_cannot_read() {
 
 # A template edited after the last render leaves the tool on colours teeup no
 # longer ships, and `teeup update` does not re-render on its own.
+#
+# NI7: this used to `touch` a real capability's .tpl file in the checkout
+# ($TEEUP_CAPS_DIR/*/themed/*.tpl). theme_templates lists a user template
+# under $TEEUP_CONFIG_DIR/themed FIRST, ahead of any capability's own, so
+# copying one real template's basename there (never editing the original)
+# shadows it with a fresher file under $TEST_HOME instead.
 test_doctor_warns_when_a_template_is_newer_than_its_render() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   theme_set catppuccin >/dev/null 2>&1
-  local tpl
-  tpl="$(theme_templates | head -1)"
-  [[ -n "$tpl" ]] || { echo "fixture: no templates"; return 1; }
-  touch "$tpl"
+  local real_tpl base
+  real_tpl="$(theme_templates | head -1)"
+  [[ -n "$real_tpl" ]] || { echo "fixture: no templates"; return 1; }
+  base="$(basename "$real_tpl")"
+  mkdir -p "$TEEUP_CONFIG_DIR/themed"
+  cp "$real_tpl" "$TEEUP_CONFIG_DIR/themed/$base"
   local rc=0 out
   out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
   assert_success "$rc" "a stale render is a warning, not a failure" || return 1
