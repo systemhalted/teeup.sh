@@ -492,6 +492,29 @@ test_backup_copy_keeps_the_original_in_place() {
   cleanup_test_env
 }
 
+# The same trap backup_target had: every caller rewrites the file in place
+# right after, and backup_copy is always called as `b="$(backup_copy ...)"`,
+# where a non-zero status belongs to the assignment and `set -e` never fires.
+# A claimed backup that did not happen is how an edit gets destroyed.
+test_backup_copy_reports_a_copy_it_could_not_make() {
+  setup
+  local dir="$TEST_HOME/ro"
+  mkdir -p "$dir"
+  printf 'keep me\n' > "$dir/file"
+  chmod 0555 "$dir"
+  local rc=0 out
+  out="$(backup_copy "$dir/file" 2>&1)" || rc=$?
+  chmod 0755 "$dir"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Could not copy" || return 1
+  if printf '%s\n' "$out" | grep -q '✅'; then
+    echo "claimed a backup that did not happen"
+    return 1
+  fi
+  assert_equals "keep me" "$(cat "$dir/file")" || return 1
+  cleanup_test_env
+}
+
 test_two_backups_of_the_same_file_within_one_second_both_survive() {
   setup
   printf 'first\n' > "$TEST_HOME/file"
@@ -678,6 +701,7 @@ run_test "write_config_region refuses a symlink, and dry run" test_write_config_
 run_test "refresh_if_pristine replaces only an unedited file" test_refresh_if_pristine_replaces_only_an_unedited_file
 run_test "refresh_if_pristine dry run changes nothing" test_refresh_if_pristine_dry_run_changes_nothing
 run_test "backup_copy keeps the original in place" test_backup_copy_keeps_the_original_in_place
+run_test "backup_copy reports a copy it could not make" test_backup_copy_reports_a_copy_it_could_not_make
 run_test "two backups of the same file within one second both survive" test_two_backups_of_the_same_file_within_one_second_both_survive
 run_test "replace_literal is literal and repeats" test_replace_literal_is_literal_and_repeats
 print_summary

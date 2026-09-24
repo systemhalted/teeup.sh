@@ -187,7 +187,16 @@ backup_copy() {
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "%b %s\n" "🔍" "[DRY-RUN] Would copy $target to $backup" >&2
   else
-    cp -p "$target" "$backup"
+    # The `cp` is checked, and "Copied" is only said when it worked. Every
+    # caller goes on to rewrite <target> in place, so a claimed backup that
+    # never happened is the worst thing this function can produce -- and
+    # `set -e` cannot catch it, because backup_copy is always called inside
+    # `$(...)`, where a non-zero status is the assignment's, not the shell's.
+    # backup_target carries the same guard for the same reason.
+    if ! cp -p "$target" "$backup" 2>/dev/null; then
+      warn "Could not copy $target to $backup; leaving it alone." >&2
+      return 1
+    fi
     ok "Copied $target to $backup" >&2
   fi
   printf '%s\n' "$backup"
