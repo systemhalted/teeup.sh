@@ -237,8 +237,9 @@ function M.config(overrides, state_dir)
     config.color_scheme = "Catppuccin Latte"
   end
 
-  -- Window
-  config.window_decorations = "TITLE | RESIZE"
+  -- Window. INTEGRATED_BUTTONS folds macOS's traffic-light buttons into the
+  -- tab bar instead of drawing a separate title bar above it.
+  config.window_decorations = "INTEGRATED_BUTTONS | RESIZE"
   config.window_background_opacity = 0.92
   config.macos_window_background_blur = 20
   config.window_padding = { left = 12, right = 12, top = 12, bottom = 12 }
@@ -246,10 +247,13 @@ function M.config(overrides, state_dir)
   config.inactive_pane_hsb = { saturation = 0.9, brightness = 0.8 }
 
   -- Tab bar. Always visible, so the tab workflow stays in muscle memory.
-  config.use_fancy_tab_bar = true
+  -- The retro (non-fancy) bar pairs with INTEGRATED_BUTTONS above; the fancy
+  -- bar draws its own window controls and fights with it. No new-tab button
+  -- either -- tabs are opened with the leader-c binding below, not a click.
+  config.use_fancy_tab_bar = false
   config.hide_tab_bar_if_only_one_tab = false
   config.tab_max_width = 30
-  config.show_new_tab_button_in_tab_bar = true
+  config.show_new_tab_button_in_tab_bar = false
 
   -- Keys
   config.leader = { key = "Space", mods = "CTRL", timeout_milliseconds = 1000 }
@@ -260,6 +264,17 @@ function M.config(overrides, state_dir)
   config.scrollback_lines = 10000
   config.enable_scroll_bar = false
   config.hyperlink_rules = M.hyperlink_rules(overrides)
+
+  -- Passthrough, applied last so it wins over every teeup default set above:
+  -- any raw WezTerm config key, for the machine-specific setting that has no
+  -- dedicated override of its own. See the commented example in local.lua.
+  -- A typo'd or non-table overrides.config (an editing mistake in
+  -- local.lua) is ignored rather than erroring the whole config.
+  if type(overrides.config) == "table" then
+    for key, value in pairs(overrides.config) do
+      config[key] = value
+    end
+  end
 
   return config
 end

@@ -511,6 +511,105 @@ replace_literal() {
   printf '%s\n' "$out$rest"
 }
 
+# --- TOML local-override merge -------------------------------------------------
+# toml_merge_local <base> <local>   (merged file on stdout)
+# Merges a machine's local.toml onto teeup's shipped base TOML and prints the
+# result. Used where a config format has no include mechanism of its own
+# (AeroSpace, so far), so a per-machine override file has to be folded into
+# the shipped one at configure time rather than just sitting alongside it.
+# Three rules, applied only to what <local> actually sets -- everything else
+# in it (comments, its own commented-out examples) is inert:
+#   - a [table] in <local> replaces <base>'s table of the same name entirely
+#     (redefining [gaps] gives you your gaps, not a mix of the two);
+#   - a bare top-level `key = value` in <local> replaces just that key;
+#   - anything <local> sets that <base> does not mention is appended (a
+#     top-level key ahead of <base>'s first [table], a whole new [table] at
+#     the end).
+# AWK, not a shell loop: portable to the BSD awk bash-3.2 boxes ship, and a
+# TOML table is naturally the line-oriented block one pass can gather.
+# FNR == NR is true only while reading the first file (<base>); once the
+# second file (<local>) starts, FNR resets but NR keeps counting, so it goes
+# false for the rest of the run -- the standard awk idiom for "two files, two
+# different passes" without needing gawk's FILENAME/ARGIND.
+toml_merge_local() {
+  awk '
+    function is_header(line) { return line ~ /^\[[^]]+\]$/ }
+    function header_name(line,   s) {
+      s = line
+      sub(/^\[/, "", s)
+      sub(/\]$/, "", s)
+      return s
+    }
+    function is_kv(line) { return line ~ /^[A-Za-z0-9_.-]+[ \t]*=/ }
+    function kv_key(line,   i, s) {
+      i = index(line, "=")
+      s = substr(line, 1, i - 1)
+      gsub(/[ \t]+$/, "", s)
+      return s
+    }
+    FNR == NR {
+      # Pass 1: the shipped base. bsec == "" is the root, before any [table].
+      if (is_header($0)) {
+        bsec = header_name($0)
+        if (!(bsec in bseen)) { bseen[bsec] = 1; border[++bcount] = bsec }
+        bblock[bsec] = (bsec in bblock) ? bblock[bsec] "\n" $0 : $0
+      } else if (bsec == "") {
+        rootn++
+        rootline[rootn] = $0
+        if (is_kv($0)) rootkey[kv_key($0)] = rootn
+      } else {
+        bblock[bsec] = bblock[bsec] "\n" $0
+      }
+      next
+    }
+    {
+      # Pass 2: the machine local.toml.
+      if (is_header($0)) {
+        lsec = header_name($0)
+        if (!(lsec in lseen)) { lseen[lsec] = 1; lorder[++lcount] = lsec }
+        lblock[lsec] = (lsec in lblock) ? lblock[lsec] "\n" $0 : $0
+      } else if (lsec == "") {
+        if (is_kv($0)) {
+          k = kv_key($0)
+          if (!(k in lrootseen)) { lrootseen[k] = 1; lrootorder[++lrootn] = k }
+          lrootval[k] = $0
+        }
+      } else {
+        lblock[lsec] = lblock[lsec] "\n" $0
+      }
+      next
+    }
+    END {
+      # Root: base lines, with any locally-overridden key swapped in place.
+      for (i = 1; i <= rootn; i++) {
+        line = rootline[i]
+        if (is_kv(line)) {
+          k = kv_key(line)
+          if (k in lrootval) { print lrootval[k]; continue }
+        }
+        print line
+      }
+      # Root keys local.toml sets that the base never mentioned: appended, in
+      # local order, still ahead of the first [table] printed below.
+      for (i = 1; i <= lrootn; i++) {
+        k = lrootorder[i]
+        if (!(k in rootkey)) print lrootval[k]
+      }
+      # Every base table, local.tomls own version of it when it set one.
+      for (i = 1; i <= bcount; i++) {
+        name = border[i]
+        if (name in lblock) print lblock[name]
+        else print bblock[name]
+      }
+      # Tables only local.toml defines: appended, in local order.
+      for (i = 1; i <= lcount; i++) {
+        name = lorder[i]
+        if (!(name in bseen)) print lblock[name]
+      }
+    }
+  ' "$1" "$2"
+}
+
 # --- JSON settings files ------------------------------------------------------
 # Zed and VS Code keep their settings in a JSON file the user also edits, so
 # teeup never ships one: it sets the few keys the theme and the font need and

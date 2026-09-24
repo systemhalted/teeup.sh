@@ -18,4 +18,12 @@ return {
   -- hyperlink_rules = {
   --   { regex = [[\b(PROJ-\d+)\b]], format = "https://example.atlassian.net/browse/$1" },
   -- },
+
+  -- Anything else: raw WezTerm config keys, set directly on the config
+  -- object after everything above, so they win over every teeup default.
+  -- Use this for a setting with no dedicated override of its own -- see
+  -- https://wezfurlong.org/wezterm/config/lua/config/ for the full list.
+  -- config = {
+  --   check_for_updates = false,
+  -- },
 }

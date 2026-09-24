@@ -217,6 +217,167 @@ test_font_entry_does_not_force_a_weight() {
   assert_contains "$out" "M.font_family(state_dir)," "the plain family name should still be the first fallback entry" || return 1
 }
 
+# Fake `wezterm` module used to drive teeup's Lua under a plain lua
+# interpreter, with no real WezTerm install: just enough of the API surface
+# M.config touches while building a config (M.color_schemes' pcall(dofile,
+# ...) on a nonexistent theme path is harmless without any of this, and the
+# event handlers it registers via M.on are never invoked).
+_wezterm_write_fake_module() {
+  cat > "$1/wezterm.lua" <<'FAKE'
+local M = {}
+M.home_dir = os.getenv("WEZTERM_TEST_HOME") or "/tmp"
+M.config_dir = os.getenv("WEZTERM_TEST_CONFIG_DIR") or "/tmp"
+M.log_error = function(msg) io.stderr:write("LOG_ERROR: " .. tostring(msg) .. "\n") end
+M.on = function() end
+M.action_callback = function(fn) return fn end
+M.config_builder = function() return {} end
+M.font_with_fallback = function(specs) return specs end
+M.add_to_config_reload_watch_list = function() end
+M.default_hyperlink_rules = function() return {} end
+M.action = setmetatable({}, { __index = function() return function(...) return {} end end })
+return M
+FAKE
+}
+
+# _wezterm_config_keys <overrides-lua-table-literal> <config-key>...
+# Calls teeup.wezterm's M.config(overrides, state_dir) directly (bypassing
+# the thin ~/.config/wezterm/wezterm.lua entirely -- there is no local.lua
+# involved here, just the passthrough contract M.config itself implements)
+# and prints one "KEY=value" line per requested config key.
+_wezterm_config_keys() {
+  local overrides_lua="$1" fake_dir driver out key
+  shift
+  fake_dir="$(mktemp -d)"
+  _wezterm_write_fake_module "$fake_dir"
+  driver="$(mktemp)"
+  {
+    printf 'package.path = "%s/?.lua;%s/capabilities/wezterm/default/?.lua;" .. package.path\n' "$fake_dir" "$TEEUP_PATH"
+    printf 'local layer = require("teeup.wezterm")\n'
+    printf 'local config = layer.config(%s, "%s/no-such-state-dir")\n' "$overrides_lua" "$TEST_HOME"
+    for key in "$@"; do
+      printf 'print("%s=" .. tostring(config["%s"]))\n' "$key" "$key"
+    done
+  } > "$driver"
+  out="$("$WEZTERM_LUA" "$driver" 2>&1)"
+  rm -rf "$fake_dir"
+  rm -f "$driver"
+  printf '%s\n' "$out"
+}
+
+# The passthrough contract local.lua's `config = { ... }` table gives a
+# machine (see local.lua's own comments): applied last, so it wins over any
+# teeup default, while a key it does not touch keeps teeup's value.
+test_local_config_passthrough_overrides_a_teeup_default() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return 1
+  fi
+  local out
+  out="$(_wezterm_config_keys '{ config = { scrollback_lines = 42, window_decorations = "NONE" } }' scrollback_lines window_decorations enable_scroll_bar)"
+  assert_contains "$out" "scrollback_lines=42" "the passthrough should override teeup's scrollback_lines default" || return 1
+  assert_contains "$out" "window_decorations=NONE" "the passthrough should override teeup's window_decorations default" || return 1
+  assert_contains "$out" "enable_scroll_bar=false" "a key the passthrough did not touch should keep teeup's default" || return 1
+  cleanup_test_env
+}
+
+test_teeup_defaults_stand_without_a_passthrough_table() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return 1
+  fi
+  local out
+  out="$(_wezterm_config_keys '{}' scrollback_lines window_decorations)"
+  assert_contains "$out" "scrollback_lines=10000" "with no passthrough at all, teeup's default should stand" || return 1
+  assert_contains "$out" "window_decorations=INTEGRATED_BUTTONS | RESIZE" "with no passthrough at all, teeup's default should stand" || return 1
+  cleanup_test_env
+}
+
+# A local.lua with `config = "oops"` (a typo, not a table) must not take the
+# whole config down with it.
+test_local_config_passthrough_ignores_a_non_table() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return 1
+  fi
+  local out
+  out="$(_wezterm_config_keys '{ config = "oops" }' scrollback_lines)"
+  # A crash in M.config would mean this print statement, which runs right
+  # after layer.config() returns, never executes at all -- so its presence
+  # is itself proof nothing errored.
+  assert_contains "$out" "scrollback_lines=10000" "a non-table passthrough should be ignored, not error the whole config" || return 1
+  cleanup_test_env
+}
+
+# Same contract, exercised through the real, shipped ~/.config/wezterm/
+# wezterm.lua rather than calling M.config directly: local.lua absent
+# entirely, and local.lua returning something that is not a table, must
+# both still produce a working config. wezterm.lua's own pcall/type guard
+# around dofile(local.lua) is what this is actually testing.
+test_local_lua_absent_still_builds_a_working_config() {
+  setup
+  DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return 1
+  fi
+  rm -f "$WEZ/local.lua"
+  local fake_dir driver out
+  fake_dir="$(mktemp -d)"
+  _wezterm_write_fake_module "$fake_dir"
+  driver="$(mktemp)"
+  cat > "$driver" <<DRIVER
+package.path = "$fake_dir/?.lua;" .. package.path
+local config = dofile("$WEZ/wezterm.lua")
+print("SCROLLBACK=" .. tostring(config.scrollback_lines))
+print("HAS_FONT=" .. tostring(config.font ~= nil))
+DRIVER
+  out="$(
+    WEZTERM_TEST_HOME="$TEST_HOME" WEZTERM_TEST_CONFIG_DIR="$WEZ" \
+      XDG_CONFIG_HOME="$TEST_HOME/.config" "$WEZTERM_LUA" "$driver" 2>&1
+  )"
+  rm -rf "$fake_dir"
+  rm -f "$driver"
+  assert_contains "$out" "SCROLLBACK=10000" "a missing local.lua should still leave teeup's defaults in place" || return 1
+  assert_contains "$out" "HAS_FONT=true" || return 1
+  assert_not_contains "$out" "LOG_ERROR" "teeup.wezterm should still have loaded" || return 1
+  cleanup_test_env
+}
+
+test_local_lua_returning_a_non_table_still_builds_a_working_config() {
+  setup
+  DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return 1
+  fi
+  printf 'return "not a table"\n' > "$WEZ/local.lua"
+  local fake_dir driver out
+  fake_dir="$(mktemp -d)"
+  _wezterm_write_fake_module "$fake_dir"
+  driver="$(mktemp)"
+  cat > "$driver" <<DRIVER
+package.path = "$fake_dir/?.lua;" .. package.path
+local config = dofile("$WEZ/wezterm.lua")
+print("SCROLLBACK=" .. tostring(config.scrollback_lines))
+DRIVER
+  out="$(
+    WEZTERM_TEST_HOME="$TEST_HOME" WEZTERM_TEST_CONFIG_DIR="$WEZ" \
+      XDG_CONFIG_HOME="$TEST_HOME/.config" "$WEZTERM_LUA" "$driver" 2>&1
+  )"
+  rm -rf "$fake_dir"
+  rm -f "$driver"
+  assert_contains "$out" "SCROLLBACK=10000" "a local.lua that returns a non-table should be ignored, not break the config" || return 1
+  cleanup_test_env
+}
+
 test_lua_files_parse() {
   setup
   # This is the only gate on three shipped Lua files and the rendered scheme,
@@ -457,6 +618,11 @@ run_test "configure installs both user files" test_configure_installs_both_user_
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "font entry does not force a weight" test_font_entry_does_not_force_a_weight
+run_test "local config passthrough overrides a teeup default" test_local_config_passthrough_overrides_a_teeup_default
+run_test "teeup defaults stand without a passthrough table" test_teeup_defaults_stand_without_a_passthrough_table
+run_test "local config passthrough ignores a non-table" test_local_config_passthrough_ignores_a_non_table
+run_test "local.lua absent still builds a working config" test_local_lua_absent_still_builds_a_working_config
+run_test "local.lua returning a non-table still builds a working config" test_local_lua_returning_a_non_table_still_builds_a_working_config
 run_test "configure names the MacPorts app location" test_configure_names_the_macports_app_location
 run_test "configure names the MacPorts app location in dry run too" test_configure_names_the_macports_app_location_in_dry_run_too
 run_test "configure says nothing when the bundle is missing" test_configure_says_nothing_when_the_bundle_is_missing

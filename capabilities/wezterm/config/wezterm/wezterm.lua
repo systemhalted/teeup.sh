@@ -185,8 +185,9 @@ local teeup_search_path = table.concat({
 }, ";")
 package.path = teeup_search_path .. ";" .. package.path
 
--- Machine-specific settings. local.lua may set font_size, workspaces and
--- hyperlink_rules; see the comments in that file.
+-- Machine-specific settings. local.lua may set font_size, workspaces,
+-- hyperlink_rules and a config passthrough for anything else; see the
+-- comments in that file.
 local overrides = {}
 local ok, loaded = pcall(dofile, wezterm.config_dir .. "/local.lua")
 if ok and type(loaded) == "table" then
