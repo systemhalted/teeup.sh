@@ -810,6 +810,33 @@ test_toml_merge_local_keeps_a_multiline_root_value_whole() {
 # [[array-of-table]] is a different kind of header, and a merge that does not
 # recognise it promotes the keys of each entry to the root and collapses
 # repeated entries into one -- losing every window rule but the last.
+# A multiline value may legitimately contain a line that looks like an
+# assignment. Starting a new key there splits the value: the remainder is
+# emitted at the base key position, swallowing the settings in between into
+# the string -- and the result can still parse, so the validation backstop
+# would pass a config that quietly lost settings.
+test_toml_merge_local_keeps_a_key_shaped_line_inside_a_value() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1\naccordion-padding = 30\nkeep-me = "yes"\n\n[gaps]\ninner = 8\n' > "$base"
+  # A multiline string whose second line reads exactly like a shipped key.
+  printf 'after-startup-command = """\naccordion-padding = 99\n"""\n' > "$TEST_HOME/ml2.toml"
+  toml_merge_local "$base" "$TEST_HOME/ml2.toml" > "$out"
+  merge_parses "$out" || { echo "a key-shaped continuation produced invalid TOML"; return 1; }
+  [[ -n "$PY_BIN" ]] || { cleanup_test_env; return 0; }
+  # The base settings must all survive, and the string must still hold its
+  # inner line rather than it becoming a real key.
+  "$PY_BIN" - "$out" <<'EOF_PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    d = tomllib.load(fh)
+assert d.get("accordion-padding") == 30, "a base setting was swallowed into the value: %r" % d.get("accordion-padding")
+assert d.get("keep-me") == "yes", "a base setting between the split halves was lost"
+assert "accordion-padding = 99" in d.get("after-startup-command", ""), "the value lost its own inner line"
+EOF_PY
+  cleanup_test_env
+}
+
 test_toml_merge_local_keeps_array_of_table_entries() {
   setup
   local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
@@ -978,6 +1005,7 @@ run_test "toml_merge_local handles whitespace and CRLF headers" test_toml_merge_
 run_test "toml_merge_local with nothing to merge" test_toml_merge_local_with_nothing_to_merge
 run_test "toml_merge_local appends a table the base never had" test_toml_merge_local_appends_a_table_the_base_never_had
 run_test "toml_merge_local keeps a multiline root value whole" test_toml_merge_local_keeps_a_multiline_root_value_whole
+run_test "toml_merge_local keeps a key-shaped line inside a value" test_toml_merge_local_keeps_a_key_shaped_line_inside_a_value
 run_test "toml_merge_local keeps array-of-table entries" test_toml_merge_local_keeps_array_of_table_entries
 run_test "toml_merge_local keeps array entries together with their subtables" test_toml_merge_local_keeps_array_entries_together_with_their_subtables
 run_test "toml_merge_local table header overrides a base dotted root key" test_toml_merge_local_table_header_overrides_a_base_dotted_root_key

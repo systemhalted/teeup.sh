@@ -558,6 +558,35 @@ EOF2
 # reload-config fails there for a reason that has nothing to do with the
 # config, and reading that as a rejection would refuse to install a perfectly
 # good file on every fresh Mac.
+# Staging a candidate at the destination to ask AeroSpace about it must never
+# be how a dotfile-manager symlink gets replaced: the swap would put a regular
+# file where the link was, and restore a regular file after -- destroying the
+# link before refresh_config, which refuses symlinks for exactly this reason,
+# ever sees it.
+test_backstop_never_writes_through_a_symlinked_config() {
+  setup
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  local store="$TEST_HOME/dotfiles/aerospace.toml"
+  mkdir -p "$(dirname "$store")"
+  printf 'config-version = 2\n# managed elsewhere\n' > "$store"
+  rm -f "$AERO"
+  ln -s "$store" "$AERO"
+  printf '\nstart-at-login = false\n' >> "$TEST_HOME/.config/aerospace/local.toml"
+  # A running AeroSpace, so the backstop would otherwise stage through it.
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  list-monitors) echo "monitor 1"; exit 0 ;;
+  reload-config) exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1 || true
+  [[ -L "$AERO" ]] || { echo "the symlink was replaced by a regular file"; return 1; }
+  assert_equals "$store" "$(readlink "$AERO")" "the link must still point where it did" || return 1
+  assert_contains "$(cat "$store")" "managed elsewhere" "the link target must be untouched" || return 1
+  cleanup_test_env
+}
+
 test_backstop_skips_when_aerospace_is_not_running() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
@@ -629,6 +658,7 @@ run_test "install runs as usual at the macOS minimum" test_install_runs_as_usual
 run_test "configure copies the config and prints the manual step" test_configure_copies_the_config_and_prints_the_manual_step
 run_test "configure fails when the generated config cannot be written" test_configure_fails_when_the_generated_config_cannot_be_written
 run_test "backstop leaves the config untouched when AeroSpace rejects it" test_backstop_leaves_the_config_untouched_when_aerospace_rejects_it
+run_test "backstop never writes through a symlinked config" test_backstop_never_writes_through_a_symlinked_config
 run_test "backstop skips when aerospace is not running" test_backstop_skips_when_aerospace_is_not_running
 run_test "backstop installs normally when AeroSpace accepts it" test_backstop_installs_normally_when_aerospace_accepts_it
 run_test "backstop skips without claiming success when there is no aerospace binary" test_backstop_skips_without_claiming_success_when_there_is_no_aerospace_binary
