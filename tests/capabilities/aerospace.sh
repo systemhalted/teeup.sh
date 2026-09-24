@@ -276,19 +276,18 @@ test_configure_dry_run_still_prints_the_cask_message() {
   cleanup_test_env
 }
 
-test_doctor_reports_the_missing_app_and_config() {
+test_doctor_reports_the_missing_config() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   mock_command pgrep 1 ""
   local rc=0 out
   out="$(DRY_RUN=false cap_run aerospace doctor 2>&1)" || rc=$?
   assert_failure "$rc" "doctor must exit non-zero when something is wrong" || return 1
-  assert_contains "$out" "AeroSpace is not in /Applications" || return 1
   assert_contains "$out" "No aerospace.toml" || return 1
   cleanup_test_env
 }
 
-test_doctor_records_the_fix_for_each_finding() {
+test_doctor_records_the_fix_for_the_finding() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   mock_command pgrep 1 ""
@@ -296,9 +295,38 @@ test_doctor_records_the_fix_for_each_finding() {
   : > "$report"
   export TEEUP_DOCTOR_REPORT="$report"
   DRY_RUN=false cap_run aerospace doctor >/dev/null 2>&1 || true
-  assert_contains "$(cat "$report")" "teeup install aerospace" || return 1
   assert_contains "$(cat "$report")" "teeup configure aerospace" || return 1
-  assert_equals "2" "$(wc -l < "$report" | tr -d ' ')" "the running check is a warning, not a failure" || return 1
+  assert_equals "1" "$(wc -l < "$report" | tr -d ' ')" "the running check is a warning, not a failure" || return 1
+  cleanup_test_env
+}
+
+# I20: AeroSpace.app in ~/Applications (a real cask location app_installed
+# already searches) must not fail this script's own, narrower /Applications
+# check while doctor_metadata_check calls the same run healthy -- the two
+# findings contradicting each other in one run, on a machine with nothing
+# wrong.
+test_doctor_does_not_contradict_the_metadata_check_on_home_applications() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command pgrep 0 ""
+  mock_command_script brew <<'EOF2'
+case "$1" in list) exit 0 ;; tap) exit 0 ;; *) exit 0 ;; esac
+EOF2
+  # TEEUP_APPS_DIR is this suite's stand-in for /Applications (setup, above);
+  # point it somewhere empty so the app is found only through app_installed's
+  # ~/Applications fallback, not through the same path this script checks.
+  export TEEUP_APPS_DIR="$TEST_HOME/EmptyApplications"
+  mkdir -p "$TEEUP_APPS_DIR"
+  mkdir -p "$HOME/Applications/AeroSpace.app"
+  printf 'x = 1\n' > "$TEST_HOME/.aerospace.toml"
+  local report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  local out
+  out="$(DRY_RUN=false doctor_run_one aerospace 2>&1)"
+  assert_contains "$out" "AeroSpace.app is installed" || return 1
+  assert_not_contains "$out" "not in /Applications" "app_installed found it; this script must not contradict that" || return 1
+  assert_equals "" "$(cat "$report")" "a healthy machine is not a problem to fix" || return 1
   cleanup_test_env
 }
 
@@ -324,6 +352,7 @@ run_test "the manual step is printed in full once" test_the_manual_step_is_print
 run_test "configure keeps an existing ~/.aerospace.toml" test_configure_keeps_an_existing_home_config
 run_test "doctor fails when both configs exist" test_doctor_fails_when_both_configs_exist
 run_test "doctor accepts ~/.aerospace.toml" test_doctor_accepts_the_home_config
-run_test "doctor reports the missing app and config" test_doctor_reports_the_missing_app_and_config
-run_test "doctor records the fix for each finding" test_doctor_records_the_fix_for_each_finding
+run_test "doctor reports the missing config" test_doctor_reports_the_missing_config
+run_test "doctor records the fix for the finding" test_doctor_records_the_fix_for_the_finding
+run_test "doctor does not contradict the metadata check on ~/Applications" test_doctor_does_not_contradict_the_metadata_check_on_home_applications
 print_summary

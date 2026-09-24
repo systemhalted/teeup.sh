@@ -525,6 +525,85 @@ test_doctor_checks_the_login_shell_exists() {
   cleanup_test_env
 }
 
+# A missing home file is its own outcome, distinct from one whose content is
+# wrong; nothing else in this suite deletes one, so a mutation that disabled
+# this branch outright went unnoticed.
+test_doctor_reports_a_missing_home_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  rm -f "$TEST_HOME/.zshrc"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No $TEST_HOME/.zshrc." || return 1
+  assert_contains "$(cat "$report")" "teeup configure zsh" || return 1
+  cleanup_test_env
+}
+
+# I1: unreadable is not missing, and the fix is not the same. The file is
+# plainly there; `teeup reset zsh` replaces it and would destroy a file whose
+# only problem is permissions.
+test_doctor_reports_an_unreadable_home_file_not_a_replaceable_one() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  chmod 0000 "$TEST_HOME/.zshrc"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  chmod 0644 "$TEST_HOME/.zshrc"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TEST_HOME/.zshrc cannot be read" || return 1
+  assert_contains "$(cat "$report")" "chmod u+r $TEST_HOME/.zshrc" || return 1
+  assert_not_contains "$(cat "$report")" "teeup reset zsh" || return 1
+  assert_not_contains "$out" "Permission denied" "raw grep stderr must not leak" || return 1
+  cleanup_test_env
+}
+
+# I2: dscl failing outright (offline DirectoryService, wrong account type) is
+# a machine that cannot be checked, not one that is broken -- chsh will not
+# fix either.
+test_doctor_says_dscl_could_not_answer_when_it_fails() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  mock_command dscl 1 ""
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_contains "$out" "Could not ask dscl" || return 1
+  assert_not_contains "$out" "not zsh" || return 1
+  assert_not_contains "$(cat "$report")" "chsh -s /bin/zsh" || return 1
+  cleanup_test_env
+}
+
+# I2: dscl exits 0 but answers nothing -- a network/AD account whose record
+# is not under /Users/$USER. Same "could not check" outcome as an outright
+# failure, not "not zsh".
+test_doctor_says_dscl_could_not_answer_when_it_is_blank() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  mock_command dscl 0 ""
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_contains "$out" "Could not ask dscl" || return 1
+  assert_not_contains "$out" "not zsh" || return 1
+  assert_not_contains "$(cat "$report")" "chsh -s /bin/zsh" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zsh"
 test_env_survives_errexit_without_nvim() {
   setup
@@ -574,4 +653,8 @@ run_test "doctor reports a login shell that is not zsh" test_doctor_reports_a_lo
 run_test "doctor reports a home file that lost the layer" test_doctor_reports_a_home_file_that_lost_the_teeup_layer
 run_test "doctor does not count a commented-out source line" test_doctor_does_not_count_a_commented_out_source_line
 run_test "doctor checks the login shell exists" test_doctor_checks_the_login_shell_exists
+run_test "doctor reports a missing home file" test_doctor_reports_a_missing_home_file
+run_test "doctor reports an unreadable home file, not a replaceable one" test_doctor_reports_an_unreadable_home_file_not_a_replaceable_one
+run_test "doctor says dscl could not answer when it fails" test_doctor_says_dscl_could_not_answer_when_it_fails
+run_test "doctor says dscl could not answer when it is blank" test_doctor_says_dscl_could_not_answer_when_it_is_blank
 print_summary

@@ -53,11 +53,22 @@ else
 fi
 
 # The root selector the theme switch rewrites. Without it the palette tables
-# are present and unused.
-if grep -q '^palette *=' "$config"; then
-  doctor_ok "A root palette selector is present."
+# are present and unused. Only a `palette =` line before the file's first
+# [table] header counts: `grep -q '^palette *='` anywhere in the file also
+# matches inside a [palettes.X] table, which selects nothing at the root.
+root_palette="$(awk '
+  /^\[/ { exit }
+  /^palette[[:space:]]*=/ {
+    line = $0
+    sub(/^palette[[:space:]]*=[[:space:]]*/, "", line)
+    print line
+    exit
+  }
+' "$config")"
+if [[ -n "$root_palette" ]]; then
+  doctor_ok "A root palette selector is present ($root_palette)."
 else
-  doctor_fail "$config has no root 'palette =' line, so the rendered palettes are never selected." "teeup reset starship"
+  doctor_fail "$config has no root 'palette =' line before its first [table], so the rendered palettes are never selected." "teeup reset starship"
 fi
 
 doctor_verdict

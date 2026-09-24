@@ -79,14 +79,47 @@ _doctor_report_lines() {
 # doctor_backend_can_answer -> 0 when the package manager's own command is
 # here to be asked. Everything doctor says about packages and casks depends on
 # it, and a missing brew or port makes "not installed" unknowable rather than
-# true.
+# true. `have` alone only proves the command is on PATH: a half-finished
+# upgrade, a backend pointed at a broken prefix, or a shim that exits
+# non-zero on every call is on PATH too and fails every real call, and
+# passing this gate for one of those turns into a flood of confident, wrong
+# "not installed" findings from every capability at once -- so this probes
+# the backend's own cheap self-identifying command and treats a non-zero
+# exit or empty output as "cannot answer", the same as not being on PATH.
+# The answer is remembered per backend for the life of this process: one
+# `teeup doctor` run asks this once per capability with packages or casks,
+# and the answer cannot change mid-run.
+TEEUP_DOCTOR_BACKEND_ANSWER=""
 doctor_backend_can_answer() {
   _pkg_backend_resolve
-  case "$TEEUP_PKG_BACKEND" in
-    homebrew) have brew ;;
-    macports) have port ;;
-    *) return 1 ;;
+  case "$TEEUP_DOCTOR_BACKEND_ANSWER" in
+    "$TEEUP_PKG_BACKEND:0") return 0 ;;
+    "$TEEUP_PKG_BACKEND:1") return 1 ;;
   esac
+  local out="" rc=0
+  case "$TEEUP_PKG_BACKEND" in
+    homebrew)
+      if have brew; then
+        out="$(brew --version 2>/dev/null)" || rc=$?
+      else
+        rc=1
+      fi
+      ;;
+    macports)
+      if have port; then
+        out="$(port version 2>/dev/null)" || rc=$?
+      else
+        rc=1
+      fi
+      ;;
+    *) rc=1 ;;
+  esac
+  if [[ "$rc" -eq 0 && -n "$out" ]]; then
+    TEEUP_DOCTOR_BACKEND_ANSWER="$TEEUP_PKG_BACKEND:0"
+    return 0
+  fi
+  TEEUP_DOCTOR_BACKEND_ANSWER="$TEEUP_PKG_BACKEND:1"
+  return 1
 }
 
 doctor_metadata_check() {
@@ -154,9 +187,32 @@ EOF_APPS
   return 0
 }
 
+# doctor_state_readable -> 0 when $TEEUP_STATE_DIR/done can be listed and
+# searched, i.e. every state_done check below can be trusted. A tree left
+# root-owned by `sudo ./bootstrap`, or a bad umask, fails every `-f` test in
+# it silently and looks exactly like a bare machine; this tells the two
+# apart before doctor_targets ever asks (B4). A directory that does not
+# exist yet is a genuinely bare machine, not an unreadable one.
+doctor_state_readable() {
+  local dir="$TEEUP_STATE_DIR/done"
+  [[ ! -e "$dir" ]] || [[ -r "$dir" && -x "$dir" ]]
+}
+
+# doctor_report_state_unreadable -> the one failure that stands in for every
+# state_done lookup this run could not trust, with a fix that addresses the
+# permissions problem it actually is rather than replacing anything.
+doctor_report_state_unreadable() {
+  _doctor_report_failure "teeup" \
+    "$TEEUP_STATE_DIR/done could not be read, so teeup doctor cannot tell what is installed here." \
+    "chmod u+rx \"$TEEUP_STATE_DIR/done\""
+}
+
 # doctor_targets -> what `teeup doctor` with no argument checks: the
 # capabilities this machine has installed and does not skip, in cap_list
 # order. A capability that was never installed has nothing to be wrong with.
+# Callers must confirm doctor_state_readable first: an unreadable done/
+# makes every state_done check below answer "no" for a reason that has
+# nothing to do with what is installed.
 doctor_targets() {
   local name
   for name in $(cap_list); do
@@ -213,19 +269,25 @@ doctor_run_one() {
   return 0
 }
 
-# doctor_summary <report-file>
+# doctor_summary <report-file> [checked]
 # 0 when the report is empty, which is the spec's "teeup doctor must exit 0"
 # gate. Otherwise one block per failure: what is wrong, and the one command
-# that fixes it.
+# that fixes it. `checked` defaults to true, the case every caller with an
+# explicit or non-empty target list is in; a no-argument run that found
+# nothing to check (a bare machine, or everything installed skipped) passes
+# false so an empty report is not misread as "everything checked passed" --
+# it is silence about nothing (B4).
 doctor_summary() {
-  local report="$1" count cap message fix
+  local report="$1" checked="${2:-true}" count cap message fix
   count=0
   if [[ -f "$report" ]]; then
     count="$(wc -l < "$report" | tr -d ' ')"
   fi
   echo ""
   if [[ "${count:-0}" -eq 0 ]]; then
-    ok "teeup doctor: everything checked is healthy."
+    if [[ "$checked" == "true" ]]; then
+      ok "teeup doctor: everything checked is healthy."
+    fi
     return 0
   fi
   err "teeup doctor found $count problem(s):"
