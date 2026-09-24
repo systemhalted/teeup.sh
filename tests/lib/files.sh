@@ -824,6 +824,99 @@ test_toml_merge_local_keeps_array_of_table_entries() {
   cleanup_test_env
 }
 
+# Grouping blocks by header name alone moves every "[[on-window-detected]]"
+# ahead of every "[on-window-detected.if]" once an entry has a nested
+# subtable of its own -- TOML attaches "[on-window-detected.if]" to whichever
+# array entry was opened most recently, so scattering the two apart declares
+# the last entry's subtable twice and no parser accepts the result. Each
+# entry has to stay together with the subtable that follows it, in order.
+test_toml_merge_local_keeps_array_entries_together_with_their_subtables() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1\n\n[[on-window-detected]]\nrun = "move-node-to-workspace 4"\n[on-window-detected.if]\napp-id = "com.apple.finder"\n\n[[on-window-detected]]\nrun = "move-node-to-workspace 5"\n[on-window-detected.if]\napp-id = "com.apple.mail"\n\n[gaps]\ninner = 8\n' > "$base"
+  : > "$TEST_HOME/empty.toml"
+  toml_merge_local "$base" "$TEST_HOME/empty.toml" > "$out"
+  merge_parses "$out" || { echo "a nested subtable under an array entry produced invalid TOML"; return 1; }
+  if [[ -n "$PY_BIN" ]]; then
+    "$PY_BIN" - "$out" <<'EOF_PY' || return 1
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    data = tomllib.load(fh)
+entries = data["on-window-detected"]
+assert len(entries) == 2, entries
+assert entries[0]["run"] == "move-node-to-workspace 4", entries
+assert entries[0]["if"]["app-id"] == "com.apple.finder", entries
+assert entries[1]["run"] == "move-node-to-workspace 5", entries
+assert entries[1]["if"]["app-id"] == "com.apple.mail", entries
+EOF_PY
+  fi
+  cleanup_test_env
+}
+
+# A dotted key and a [table] header can name the same TOML path. The shipped
+# base sets "focus-follows-mouse.enabled = false" as a root key; a local
+# override written as a table ("[focus-follows-mouse]" + "enabled = true")
+# claims that same path by a different route, and comparing header text to
+# key text instead of the canonical path leaves both in the merged file --
+# "Cannot declare (focus-follows-mouse,) twice".
+test_toml_merge_local_table_header_overrides_a_base_dotted_root_key() {
+  setup
+  local base="$TEST_HOME/base.toml" local_f="$TEST_HOME/local.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1\nfocus-follows-mouse.enabled = false\n\n[keys]\nalt-h = "focus left"\n' > "$base"
+  printf '[focus-follows-mouse]\nenabled = true\n' > "$local_f"
+  toml_merge_local "$base" "$local_f" > "$out"
+  merge_parses "$out" || { echo "a table overriding a base dotted root key produced invalid TOML"; return 1; }
+  grep -q 'alt-h = "focus left"' "$out" || { echo "an untouched table was lost"; return 1; }
+  if [[ -n "$PY_BIN" ]]; then
+    "$PY_BIN" - "$out" <<'EOF_PY' || return 1
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    data = tomllib.load(fh)
+assert data["focus-follows-mouse"]["enabled"] is True, data
+EOF_PY
+  fi
+  cleanup_test_env
+}
+
+# The inverse: a local dotted root key can name the same path as a base
+# [table]. "gaps.inner.horizontal = 12" at local.toml's root claims the same
+# "gaps" path the base's "[gaps]" table already declares; keeping both is
+# the same "declared twice" error, just from the other direction.
+test_toml_merge_local_dotted_root_key_overrides_a_base_table() {
+  setup
+  local base="$TEST_HOME/base.toml" local_f="$TEST_HOME/local.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1\n\n[gaps]\ninner = 8\n' > "$base"
+  printf 'gaps.inner.horizontal = 12\n' > "$local_f"
+  toml_merge_local "$base" "$local_f" > "$out"
+  merge_parses "$out" || { echo "a dotted root key overriding a base table produced invalid TOML"; return 1; }
+  grep -q '^top = 1' "$out" || { echo "a root key was lost"; return 1; }
+  if [[ -n "$PY_BIN" ]]; then
+    "$PY_BIN" - "$out" <<'EOF_PY' || return 1
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    data = tomllib.load(fh)
+assert data["gaps"]["inner"]["horizontal"] == 12, data
+EOF_PY
+  fi
+  cleanup_test_env
+}
+
+# TOML allows whitespace inside a header, not just around it: "[ gaps ]"
+# names the same path as "[gaps]". Trimming only the outer line and not the
+# text inside the brackets leaves the name " gaps " (with the spaces), which
+# never matches the base's "gaps" and lets both survive as two declarations.
+test_toml_merge_local_trims_whitespace_inside_a_header() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'top = 1\n\n[gaps]\ninner = 8\n' > "$base"
+  printf '[ gaps ]\ninner = 0\n' > "$TEST_HOME/spaced.toml"
+  toml_merge_local "$base" "$TEST_HOME/spaced.toml" > "$out"
+  merge_parses "$out" || { echo "whitespace inside a header produced invalid TOML"; return 1; }
+  grep -q 'inner = 0' "$out" || { echo "the override with a spaced header did not apply"; return 1; }
+  grep -q 'inner = 8' "$out" && { echo "the base table survived alongside the spaced-header override"; return 1; }
+  cleanup_test_env
+}
+
 test_toml_merge_local_keeps_awkward_values_intact() {
   setup
   local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
@@ -886,6 +979,10 @@ run_test "toml_merge_local with nothing to merge" test_toml_merge_local_with_not
 run_test "toml_merge_local appends a table the base never had" test_toml_merge_local_appends_a_table_the_base_never_had
 run_test "toml_merge_local keeps a multiline root value whole" test_toml_merge_local_keeps_a_multiline_root_value_whole
 run_test "toml_merge_local keeps array-of-table entries" test_toml_merge_local_keeps_array_of_table_entries
+run_test "toml_merge_local keeps array entries together with their subtables" test_toml_merge_local_keeps_array_entries_together_with_their_subtables
+run_test "toml_merge_local table header overrides a base dotted root key" test_toml_merge_local_table_header_overrides_a_base_dotted_root_key
+run_test "toml_merge_local dotted root key overrides a base table" test_toml_merge_local_dotted_root_key_overrides_a_base_table
+run_test "toml_merge_local trims whitespace inside a header" test_toml_merge_local_trims_whitespace_inside_a_header
 run_test "toml_merge_local keeps awkward values intact" test_toml_merge_local_keeps_awkward_values_intact
 run_test "backup_copy reports a copy it could not make" test_backup_copy_reports_a_copy_it_could_not_make
 run_test "two backups of the same file within one second both survive" test_two_backups_of_the_same_file_within_one_second_both_survive

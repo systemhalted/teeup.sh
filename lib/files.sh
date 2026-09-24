@@ -562,7 +562,15 @@ toml_merge_local() {
     # promote the keys of that entry to the root and collapse repeated entries
     # into one. An array-of-table name keeps its brackets, so "[[x]]" and
     # "[x]" can never collide, and every [[x]] entry accumulates under that
-    # one name so repeats survive in order.
+    # one name so repeats survive in order. A table header right after a
+    # "[[x]]" entry whose own dotted name starts with "x." is a subtable of
+    # that entry, not a section of its own -- TOML attaches it to whichever
+    # array entry was opened most recently ("[[on-window-detected]]" then
+    # "[on-window-detected.if]"), so grouping by header name alone moves
+    # every "[[on-window-detected]]" ahead of every "[on-window-detected.if]"
+    # and ends up declaring the subtable of the last entry twice. Each
+    # subtable header instead stays folded into the entry bucket it followed,
+    # in source order.
     # A header may carry a trailing comment ("[gaps] # laptop"). The comment is
     # stripped for detection and for the name only -- never for a key line,
     # where a "#" inside a quoted value is part of the value, not a comment.
@@ -576,12 +584,38 @@ toml_merge_local() {
       s = header_text(line)
       return s ~ /^\[\[[^]]+\]\]$/ || s ~ /^\[[^]]+\]$/
     }
+    # canon_path(path) -- a dotted TOML path with the whitespace trimmed off
+    # every segment. "[ gaps ]" and "gaps . inner" name the same paths as
+    # "gaps" and "gaps.inner"; comparing the raw header or key text instead
+    # of this canonical form misses that, and both survive into the merged
+    # file as two declarations of the same path.
+    function canon_path(path,    n, i, parts, out) {
+      n = split(path, parts, ".")
+      out = ""
+      for (i = 1; i <= n; i++) {
+        gsub(/^[ \t]+/, "", parts[i])
+        gsub(/[ \t]+$/, "", parts[i])
+        out = (i == 1) ? parts[i] : out "." parts[i]
+      }
+      return out
+    }
+    # is_ancestor(anc, path) -- true when anc and path name the same TOML
+    # path, or anc names a table that path lives inside. A dotted root key
+    # ("gaps.inner.horizontal = 12") and a table header ("[gaps]") can both
+    # claim the "gaps" path; this is the test for whether two declarations,
+    # one from each shape, collide.
+    function is_ancestor(anc, path) {
+      return (anc == path) || (index(path, anc ".") == 1)
+    }
     function header_name(line,   s) {
       s = header_text(line)
-      if (s ~ /^\[\[[^]]+\]\]$/) return s
+      if (s ~ /^\[\[[^]]+\]\]$/) {
+        s = substr(s, 3, length(s) - 4)
+        return "[[" canon_path(s) "]]"
+      }
       sub(/^\[/, "", s)
       sub(/\]$/, "", s)
-      return s
+      return canon_path(s)
     }
     function is_kv(line) { return trim(line) ~ /^[A-Za-z0-9_.-]+[ \t]*=/ }
     function kv_key(line,   i, s) {
@@ -589,12 +623,22 @@ toml_merge_local() {
       i = index(s, "=")
       s = substr(s, 1, i - 1)
       gsub(/[ \t]+$/, "", s)
-      return s
+      return canon_path(s)
     }
     FNR == NR {
       # Pass 1: the shipped base. bsec == "" is the root, before any [table].
       if (is_header($0)) {
-        bsec = header_name($0)
+        bname = header_name($0)
+        if (bname ~ /^\[\[/) {
+          barrname = substr(bname, 3, length(bname) - 4)
+          bsec = bname
+        } else if (barrname != "" && is_ancestor(barrname, bname)) {
+          # A subtable of the array entry still open: bsec is left as the
+          # entry bucket it belongs to, so this header lands there too.
+        } else {
+          barrname = ""
+          bsec = bname
+        }
         if (!(bsec in bseen)) { bseen[bsec] = 1; border[++bcount] = bsec }
         bblock[bsec] = (bsec in bblock) ? bblock[bsec] "\n" $0 : $0
       } else if (bsec == "") {
@@ -610,7 +654,16 @@ toml_merge_local() {
       # Pass 2: the machine local.toml.
       if (is_header($0)) {
         lrootopen = ""
-        lsec = header_name($0)
+        lname = header_name($0)
+        if (lname ~ /^\[\[/) {
+          larrname = substr(lname, 3, length(lname) - 4)
+          lsec = lname
+        } else if (larrname != "" && is_ancestor(larrname, lname)) {
+          # Same grouping as pass 1, above.
+        } else {
+          larrname = ""
+          lsec = lname
+        }
         if (!(lsec in lseen)) { lseen[lsec] = 1; lorder[++lcount] = lsec }
         lblock[lsec] = (lsec in lblock) ? lblock[lsec] "\n" $0 : $0
       } else if (lsec == "") {
@@ -630,13 +683,41 @@ toml_merge_local() {
       }
       next
     }
+    # local_table_claims(path) -- true when local.toml declares a [table]
+    # (never an [[array]]: an array entry names one item, not a path other
+    # declarations can live under) whose canonical name is path itself or an
+    # ancestor of it. Drops a base root key a local table header now also
+    # names -- the shipped base has "focus-follows-mouse.enabled = false" at
+    # its root, and a local "[focus-follows-mouse]" claims that same path,
+    # so keeping both declares it twice.
+    function local_table_claims(path,    i, name) {
+      for (i = 1; i <= lcount; i++) {
+        name = lorder[i]
+        if (name ~ /^\[\[/) continue
+        if (is_ancestor(name, path)) return 1
+      }
+      return 0
+    }
+    # local_rootkey_claims(path) -- the inverse of local_table_claims: true
+    # when local.toml sets a bare root key whose canonical path is path
+    # itself or a descendant of it. Drops a whole base [table] a local root
+    # key now reaches into -- a local "gaps.inner.horizontal = 12" at the
+    # root claims the same path as the base "[gaps]" table does.
+    function local_rootkey_claims(path,    i) {
+      for (i = 1; i <= lrootn; i++) {
+        if (is_ancestor(path, lrootorder[i])) return 1
+      }
+      return 0
+    }
     END {
-      # Root: base lines, with any locally-overridden key swapped in place.
+      # Root: base lines, with any locally-overridden key swapped in place,
+      # and a base key a local [table] now names left out entirely.
       for (i = 1; i <= rootn; i++) {
         line = rootline[i]
         if (is_kv(line)) {
           k = kv_key(line)
           if (k in lrootval) { print lrootval[k]; continue }
+          if (local_table_claims(k)) continue
         }
         print line
       }
@@ -646,10 +727,12 @@ toml_merge_local() {
         k = lrootorder[i]
         if (!(k in rootkey)) print lrootval[k]
       }
-      # Every base table, local.tomls own version of it when it set one.
+      # Every base table, local.tomls own version of it when it set one, or
+      # left out entirely when a local root key already claims that path.
       for (i = 1; i <= bcount; i++) {
         name = border[i]
         if (name in lblock) print lblock[name]
+        else if (name !~ /^\[\[/ && local_rootkey_claims(name)) continue
         else print bblock[name]
       }
       # Tables only local.toml defines: appended, in local order.
@@ -659,6 +742,77 @@ toml_merge_local() {
       }
     }
   ' "$1" "$2"
+}
+
+# aerospace_config_ok <dest> <candidate>
+# The merge above is hand-written awk, not a TOML parser, and three rounds of
+# review have already found eight ways it can get a real local.toml wrong --
+# this is the backstop for the ones still to be found. AeroSpace can check a
+# config itself (`aerospace reload-config --dry-run`, verified against its
+# own command reference), but its CLI has no way to point that check at an
+# arbitrary file: reload-config always re-reads whatever is at <dest>, the
+# resolved config location. So this stages <candidate> there just long
+# enough to ask, then puts <dest> back exactly as it was -- present or
+# absent, byte for byte -- using the same mktemp-then-mv swap the rest of
+# this file uses, so <dest> is never observably anything but its old content
+# or the candidate. --dry-run only checks; AeroSpace's reference is explicit
+# that it never applies what it finds, so the brief window where <dest> holds
+# an unvalidated candidate cannot make AeroSpace act on it.
+# Returns 0 when AeroSpace accepts <candidate>, or when there is no
+# `aerospace` binary to ask (a fresh Mac before the cask lands, a MacPorts
+# machine, the Linux test harness) -- validation is skipped then, not
+# claimed. Returns 1, with AeroSpace's own error on stdout and <dest>
+# restored, when AeroSpace rejects it.
+aerospace_config_ok() {
+  local dest="$1" candidate="$2" dir stage saved="" had_dest=false out rc=0
+  have aerospace || return 0
+  dir="$(dirname "$dest")"
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    had_dest=true
+    saved="$(mktemp "$dir/.teeup_validate_old.XXXXXX" 2>/dev/null)" || {
+      warn "Could not stage a validation copy of $dest; skipping AeroSpace's own config check."
+      return 0
+    }
+    if ! cp -p "$dest" "$saved" 2>/dev/null; then
+      warn "Could not stage a validation copy of $dest; skipping AeroSpace's own config check."
+      rm -f "$saved"
+      return 0
+    fi
+  fi
+  stage="$(mktemp "$dir/.teeup_validate_new.XXXXXX" 2>/dev/null)" || {
+    warn "Could not stage $dest for AeroSpace's own config check; skipping it."
+    rm -f "$saved"
+    return 0
+  }
+  if ! cp "$candidate" "$stage" 2>/dev/null || ! mv "$stage" "$dest" 2>/dev/null; then
+    rm -f "$stage"
+    warn "Could not stage $dest for AeroSpace's own config check; skipping it."
+    rm -f "$saved"
+    return 0
+  fi
+  out="$(aerospace reload-config --dry-run --no-gui 2>&1)" || rc=$?
+  if [[ "$had_dest" == "true" ]]; then
+    # mv within the same directory should never actually fail here -- saved
+    # and dest are two files this function just made in the same place --
+    # but under bash -eu a bare "mv || cp" whose cp also failed would be a
+    # simple command that exits the whole script, leaving the unvalidated
+    # candidate in place at dest. The if/elif keeps that possibility, however
+    # remote, from ever doing that.
+    if mv "$saved" "$dest" 2>/dev/null; then
+      rm -f "$saved"
+    elif cp -p "$saved" "$dest" 2>/dev/null; then
+      rm -f "$saved"
+    else
+      warn "Could not restore $dest after checking it with AeroSpace; your original is saved at $saved."
+    fi
+  else
+    rm -f "$dest"
+  fi
+  if [[ $rc -ne 0 ]]; then
+    printf '%s\n' "$out"
+    return 1
+  fi
+  return 0
 }
 
 # --- JSON settings files ------------------------------------------------------
