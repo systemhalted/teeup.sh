@@ -161,6 +161,10 @@ test_doctor_reports_a_backend_that_is_on_path_but_unreachable() {
   out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "did not answer" || return 1
+  # Minor 3: the diagnostic text (TEEUP_DOCTOR_BACKEND_OUT, the backend's own
+  # error output) was unpinned -- blanking it out of the message was caught
+  # by no test at all.
+  assert_contains "$out" "brew: fatal error" "the backend's own error text must reach the message, not just the word 'did not answer'" || return 1
   assert_not_contains "$out" "Homebrew is installed under" || return 1
   cleanup_test_env
 }

@@ -6,6 +6,34 @@
 # that fixes it (spec section 4: "doctor - optional; exit 0 healthy, prints
 # findings", and the Verification gate "teeup doctor must exit 0 afterward").
 # Requires core.sh, state.sh, capability.sh, pkg.sh, lazy.sh.
+#
+# `teeup doctor`'s exit status is tri-state, not boolean, because what a check
+# learns is one of three things, not two: the machine is healthy, the machine
+# has a confirmed problem, or the check could not run to a verdict at all (a
+# file it needs is unreadable, the tool it has to ask is not answering). The
+# third state used to collapse into "healthy" -- a doctor script that hit it
+# called doctor_warn and moved on, and doctor never recorded that anything was
+# left unverified. `teeup doctor` then exited 0, "everything checked is
+# healthy," about a machine it never actually looked at. Three rounds of
+# review found the same bug in a new place each time, because nothing forced
+# a check that gave up to say so anywhere the exit status could see.
+#
+#   0 - doctor_verdict / doctor_summary: every check that ran reached a
+#       verdict, and none of them found a problem. This is the only exit
+#       status that means "I verified this machine is healthy."
+#   1 - at least one doctor_fail: a check ran to completion and found a real
+#       problem. Takes priority over an unrelated unknown in the same run.
+#   2 - no doctor_fail, but at least one doctor_unknown: nothing is confirmed
+#       broken, but something material could not be checked, so 0 would be a
+#       claim doctor never verified.
+#
+# doctor_warn is for the fourth thing, which is not a verdict gap at all: a
+# fact the check DID establish, that is worth a person's attention but is not
+# itself a failure (a reminder to turn on an OS permission, a note that a
+# just-created ssh-agent has not been used yet, a machine-file override that
+# is working as configured). doctor_warn never touches the exit status --
+# conflating "I checked, and here is a heads-up" with "I could not check" is
+# exactly how the false-healthy bug kept coming back.
 
 # The runner exports this. Empty means nobody is collecting, which is what a
 # doctor script run straight through `cap_run` gets: it still prints, it just
@@ -13,28 +41,32 @@
 TEEUP_DOCTOR_REPORT="${TEEUP_DOCTOR_REPORT:-}"
 export TEEUP_DOCTOR_REPORT
 
-# Failures recorded by *this* process. A doctor script runs as its own
-# `bash -eu`, so this counts that script's own findings and nothing else,
-# which is exactly what doctor_verdict needs.
+# Failures and unknowns recorded by *this* process. A doctor script runs as
+# its own `bash -eu`, so these count that script's own findings and nothing
+# else, which is exactly what doctor_verdict needs.
 TEEUP_DOCTOR_FAILURES=0
+TEEUP_DOCTOR_UNKNOWNS=0
 
 doctor_ok() { ok "$*"; }
 doctor_warn() { warn "$*"; }
 
-# doctor_record <capability> <message> <fix-command>
-# One tab-separated record per failure. A tab or a newline inside either
-# field would split the record, so both are flattened to spaces rather than
+# doctor_record <capability> <message> <fix-command> [<kind>]
+# One tab-separated record per finding. A tab or a newline inside any field
+# would split the record, so all three are flattened to spaces rather than
 # rejected: a check must never itself fail because a path it is reporting on
-# has an odd character in it.
+# has an odd character in it. <kind> is "fail" or "unknown"; it defaults to
+# "fail" so every record written before this field existed is still read
+# correctly.
 doctor_record() {
-  local cap="$1" message="$2" fix="$3"
+  local cap="$1" message="$2" fix="$3" kind="${4:-fail}"
   if [[ -z "$TEEUP_DOCTOR_REPORT" ]]; then
     return 0
   fi
-  printf '%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\n' \
     "$(printf '%s' "$cap" | tr '\t\n' '  ')" \
     "$(printf '%s' "$message" | tr '\t\n' '  ')" \
-    "$(printf '%s' "$fix" | tr '\t\n' '  ')" >> "$TEEUP_DOCTOR_REPORT"
+    "$(printf '%s' "$fix" | tr '\t\n' '  ')" \
+    "$kind" >> "$TEEUP_DOCTOR_REPORT"
   return 0
 }
 
@@ -43,22 +75,56 @@ doctor_record() {
 # for. The runner uses it directly; a doctor script goes through doctor_fail.
 _doctor_report_failure() {
   err "$2"
-  doctor_record "$1" "$2" "$3"
+  doctor_record "$1" "$2" "$3" fail
   TEEUP_DOCTOR_FAILURES=$((TEEUP_DOCTOR_FAILURES + 1))
   return 0
 }
 
+# _doctor_report_unknown <capability> <message> <fix-command>
+# The same shape as _doctor_report_failure, for a check that could not reach
+# a verdict at all rather than one that reached a bad one. Printed with its
+# own symbol so the difference is visible in real time, not just in the exit
+# status.
+_doctor_report_unknown() {
+  printf "%b %s\n" "❓" "$2" >&2
+  doctor_record "$1" "$2" "$3" unknown
+  TEEUP_DOCTOR_UNKNOWNS=$((TEEUP_DOCTOR_UNKNOWNS + 1))
+  return 0
+}
+
 # doctor_fail <message> <fix-command>
-# What a capability's doctor script calls. It returns 0 on purpose: the
-# script runs under `bash -eu` and must keep checking everything else, and
-# the exit status is decided once, at the end, by doctor_verdict.
+# What a capability's doctor script calls for a confirmed problem. It returns
+# 0 on purpose: the script runs under `bash -eu` and must keep checking
+# everything else, and the exit status is decided once, at the end, by
+# doctor_verdict.
 doctor_fail() {
   _doctor_report_failure "${TEEUP_CAP:-teeup}" "$1" "$2"
 }
 
-# The last line of every doctor script. Exit 0 healthy, as the spec requires,
-# so `bash capabilities/<cap>/doctor` is still meaningful on its own.
-doctor_verdict() { [[ "$TEEUP_DOCTOR_FAILURES" -eq 0 ]]; }
+# doctor_unknown <message> <fix-command>
+# What a capability's doctor script calls when a check could not run to a
+# verdict at all: the file it needed was unreadable, the command it needed to
+# ask did not answer. Distinct from doctor_warn (a fact the check DID
+# establish, and is not itself a failure) and from doctor_fail (a fact the
+# check DID establish, and it is a failure): doctor_unknown is for not having
+# established anything. Also returns 0, for the same reason doctor_fail does.
+doctor_unknown() {
+  _doctor_report_unknown "${TEEUP_CAP:-teeup}" "$1" "$2"
+}
+
+# The last line of every doctor script. 0 only when nothing failed AND
+# nothing was left unverified, so `bash capabilities/<cap>/doctor` is still
+# meaningful on its own: 0 healthy, 1 a confirmed problem, 2 nothing
+# confirmed broken but something could not be checked.
+doctor_verdict() {
+  if [[ "$TEEUP_DOCTOR_FAILURES" -gt 0 ]]; then
+    return 1
+  fi
+  if [[ "$TEEUP_DOCTOR_UNKNOWNS" -gt 0 ]]; then
+    return 2
+  fi
+  return 0
+}
 
 _doctor_report_lines() {
   if [[ -n "$TEEUP_DOCTOR_REPORT" && -f "$TEEUP_DOCTOR_REPORT" ]]; then
@@ -142,9 +208,9 @@ doctor_metadata_check() {
       # exit) just disproved that sentence, and saying it anyway points away
       # from the real cause (NI3).
       if have "$(pkg_backend_cmd)"; then
-        doctor_warn "teeup could not get an answer out of $(pkg_backend_cmd), so it could not check what $cap installed."
+        _doctor_report_unknown "$cap" "teeup could not get an answer out of $(pkg_backend_cmd), so it could not check what $cap installed." "teeup doctor package-manager"
       else
-        doctor_warn "$(pkg_backend_label) is not on PATH, so teeup could not check what $cap installed."
+        _doctor_report_unknown "$cap" "$(pkg_backend_label) is not on PATH, so teeup could not check what $cap installed." "teeup doctor package-manager"
       fi
     fi
   else
@@ -203,20 +269,51 @@ EOF_APPS
   return 0
 }
 
+# _doctor_unsearchable_ancestor <path> -> prints the nearest ancestor
+# directory of <path> (starting at its parent, walking up to and including
+# $HOME) that exists but cannot be searched; prints nothing and fails when
+# every ancestor up to $HOME is searchable. A negative `-e "$path"` is only
+# trustworthy once this comes back empty: permissions damage from a `sudo
+# ./bootstrap` or a bad umask lands on whichever directory a privileged
+# process created first, and that is exactly as likely to be
+# $TEEUP_STATE_DIR's own parent -- $XDG_STATE_HOME, e.g. ~/.local/state --
+# left root-owned, as $TEEUP_STATE_DIR itself (NI-C: NB3's blind spot, one
+# directory up).
+_doctor_unsearchable_ancestor() {
+  local path="$1" dir
+  dir="$(dirname "$path")"
+  while :; do
+    if [[ -e "$dir" && ! -x "$dir" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    if [[ "$dir" == "$HOME" || "$dir" == "/" || "$dir" == "." ]]; then
+      break
+    fi
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
 # doctor_state_readable -> 0 when $TEEUP_STATE_DIR/done can be listed and
 # searched, i.e. every state_done check below can be trusted. A tree left
 # root-owned by `sudo ./bootstrap`, or a bad umask, fails every `-f` test in
 # it silently and looks exactly like a bare machine; this tells the two
 # apart before doctor_targets ever asks (B4). A directory that does not
 # exist yet is a genuinely bare machine, not an unreadable one -- but that is
-# only true when its PARENT can be searched: permissions damage from a `sudo
-# ./bootstrap` or a bad umask lands on the tree root, and `[[ ! -e
-# "$TEEUP_STATE_DIR/done" ]]` succeeds for the wrong reason (a `stat` that
-# failed with EACCES) on a machine that is actually fully installed (NB3).
-# So the root is checked first, on its own: an unsearchable root fails
-# outright, whatever done/ looks like from here.
+# only true when every ancestor up to $HOME can be searched: permissions
+# damage lands on whichever directory a privileged process created first,
+# which is as often the state tree's parent as the tree root itself (NI-C),
+# and `[[ ! -e "$TEEUP_STATE_DIR/done" ]]` succeeds for the wrong reason (a
+# `stat` that failed with EACCES) on a machine that is actually fully
+# installed (NB3). So ancestors are checked first, then the root itself: an
+# unsearchable directory anywhere on the way down fails outright, whatever
+# done/ looks like from here.
 doctor_state_readable() {
   local root="$TEEUP_STATE_DIR" dir="$TEEUP_STATE_DIR/done"
+  if _doctor_unsearchable_ancestor "$root" >/dev/null; then
+    return 1
+  fi
   if [[ -e "$root" && ( ! -r "$root" || ! -x "$root" ) ]]; then
     return 1
   fi
@@ -226,11 +323,14 @@ doctor_state_readable() {
 # doctor_report_state_unreadable -> the one failure that stands in for every
 # state_done lookup this run could not trust, with a fix that addresses the
 # permissions problem it actually is rather than replacing anything. Names
-# whichever of the tree root or done/ itself is the one doctor_state_readable
-# actually failed on (NB3), rather than always pointing at done/.
+# whichever of an unsearchable ancestor, the tree root, or done/ itself is
+# the one doctor_state_readable actually failed on (NB3, NI-C), rather than
+# always pointing at done/.
 doctor_report_state_unreadable() {
-  local root="$TEEUP_STATE_DIR" target="$TEEUP_STATE_DIR/done"
-  if [[ -e "$root" && ( ! -r "$root" || ! -x "$root" ) ]]; then
+  local root="$TEEUP_STATE_DIR" target="$TEEUP_STATE_DIR/done" ancestor
+  if ancestor="$(_doctor_unsearchable_ancestor "$root")" && [[ -n "$ancestor" ]]; then
+    target="$ancestor"
+  elif [[ -e "$root" && ( ! -r "$root" || ! -x "$root" ) ]]; then
     target="$root"
   fi
   _doctor_report_failure "teeup" \
@@ -300,34 +400,71 @@ doctor_run_one() {
   return 0
 }
 
+# _doctor_print_records <record>...
+# Each <record> is one cap/message/fix line, tab-joined by the caller (never
+# containing a tab or newline itself: doctor_record already flattened both).
+_doctor_print_records() {
+  local rec cap message fix
+  for rec in "$@"; do
+    IFS=$'\t' read -r cap message fix <<<"$rec"
+    printf '  %s: %s\n' "$cap" "$message" >&2
+    printf '      fix: %s\n' "$fix" >&2
+  done
+}
+
 # doctor_summary <report-file> [checked]
 # 0 when the report is empty, which is the spec's "teeup doctor must exit 0"
-# gate. Otherwise one block per failure: what is wrong, and the one command
+# gate -- and the only exit status that means every check ran and none found
+# a problem. Otherwise one block per confirmed failure, then one block per
+# check that could not be run to a verdict at all, each with the one command
 # that fixes it. `checked` defaults to true, the case every caller with an
 # explicit or non-empty target list is in; a no-argument run that found
 # nothing to check (a bare machine, or everything installed skipped) passes
 # false so an empty report is not misread as "everything checked passed" --
 # it is silence about nothing (B4).
+#
+# Returns 1 when at least one doctor_fail record is in the report (found
+# problems -- takes priority over an unrelated unknown in the same run), 2
+# when the report holds only doctor_unknown records (nothing confirmed
+# broken, but something material could not be checked, so 0 would be a claim
+# never verified), 0 otherwise. See the header comment for the full
+# convention.
 doctor_summary() {
-  local report="$1" checked="${2:-true}" count cap message fix
-  count=0
-  if [[ -f "$report" ]]; then
-    count="$(wc -l < "$report" | tr -d ' ')"
-  fi
+  local report="$1" checked="${2:-true}" total=0 cap message fix kind
+  local -a fail_lines=() unknown_lines=()
+  local fail_count=0 unknown_count=0
   echo ""
-  if [[ "${count:-0}" -eq 0 ]]; then
+  if [[ -f "$report" ]]; then
+    total="$(wc -l < "$report" | tr -d ' ')"
+  fi
+  if [[ "${total:-0}" -eq 0 ]]; then
     if [[ "$checked" == "true" ]]; then
       ok "teeup doctor: everything checked is healthy."
     fi
     return 0
   fi
-  err "teeup doctor found $count problem(s):"
-  while IFS=$'\t' read -r cap message fix || [[ -n "$cap" ]]; do
+  while IFS=$'\t' read -r cap message fix kind || [[ -n "$cap" ]]; do
     if [[ -z "$cap" ]]; then
       continue
     fi
-    printf '  %s: %s\n' "$cap" "$message" >&2
-    printf '      fix: %s\n' "$fix" >&2
+    if [[ "${kind:-fail}" == "unknown" ]]; then
+      unknown_count=$((unknown_count + 1))
+      unknown_lines[${#unknown_lines[@]}]="$cap"$'\t'"$message"$'\t'"$fix"
+    else
+      fail_count=$((fail_count + 1))
+      fail_lines[${#fail_lines[@]}]="$cap"$'\t'"$message"$'\t'"$fix"
+    fi
   done < "$report"
-  return 1
+  if [[ "$fail_count" -gt 0 ]]; then
+    err "teeup doctor found $fail_count problem(s):"
+    _doctor_print_records "${fail_lines[@]}"
+  fi
+  if [[ "$unknown_count" -gt 0 ]]; then
+    warn "teeup doctor could not verify $unknown_count item(s); the machine may or may not be healthy where these could not be checked:"
+    _doctor_print_records "${unknown_lines[@]}"
+  fi
+  if [[ "$fail_count" -gt 0 ]]; then
+    return 1
+  fi
+  return 2
 }

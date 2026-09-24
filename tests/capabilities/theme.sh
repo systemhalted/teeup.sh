@@ -444,6 +444,45 @@ test_doctor_passes_after_a_theme_switch() {
   cleanup_test_env
 }
 
+# Without colors.toml doctor cannot tell which theme dark/env.sh actually
+# came from -- not a confirmed mismatch (it might well be right), and not
+# healthy either: something material could not be checked.
+test_doctor_reports_unknown_when_colors_toml_is_missing() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  rm -f "$TEEUP_STATE_DIR/current/theme/dark/colors.toml"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_unknown "$rc" "the dark render might still be right; teeup only could not check it against colors.toml" || return 1
+  assert_contains "$out" "colors.toml is missing" || return 1
+  cleanup_test_env
+}
+
+# A colors.toml that is there but does not parse as a valid palette (a bad
+# value, a missing mode key) means the truncation re-check below it cannot
+# run either -- again a genuine "could not check", not a confirmed problem.
+# The source theme's own dark.toml is made invalid the same way, and kept
+# byte-identical to the state copy, so the "rendered from a different theme"
+# diff still passes -- only the palette-validity question is exercised here.
+test_doctor_reports_unknown_when_colors_toml_is_invalid() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local themes_dir="$TEST_HOME/fixture-themes"
+  mkdir -p "$themes_dir"
+  cp -R "$TEEUP_PATH/themes/catppuccin" "$themes_dir/mytheme"
+  export TEEUP_THEMES_DIR="$themes_dir"
+  theme_set mytheme >/dev/null 2>&1
+  printf 'mode = "dark"\naccent = "bad;value"\n' > "$themes_dir/mytheme/dark.toml"
+  cp "$themes_dir/mytheme/dark.toml" "$TEEUP_STATE_DIR/current/theme/dark/colors.toml"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_unknown "$rc" "an invalid colors.toml means the truncation re-check could not run, not that it failed" || return 1
+  assert_contains "$out" "could not be re-checked for truncation" || return 1
+  assert_not_contains "$out" "rendered from a different theme" "source and state agree; only validity is in question here" || return 1
+  cleanup_test_env
+}
+
 test_doctor_reports_a_machine_with_no_theme() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -655,6 +694,8 @@ run_test "theme set is remembered by configure" test_theme_set_is_remembered_by_
 run_test "theme set warns about a machine pin" test_theme_set_warns_about_a_machine_pin
 run_test "a theme that cannot render fails set and configure" test_a_theme_that_cannot_render_fails_set_and_configure
 run_test "doctor passes after a theme switch" test_doctor_passes_after_a_theme_switch
+run_test "doctor reports unknown when colors.toml is missing" test_doctor_reports_unknown_when_colors_toml_is_missing
+run_test "doctor reports unknown when colors.toml is invalid" test_doctor_reports_unknown_when_colors_toml_is_invalid
 run_test "doctor reports a machine with no theme" test_doctor_reports_a_machine_with_no_theme
 run_test "doctor reports a template never rendered" test_doctor_reports_a_template_that_was_never_rendered
 run_test "doctor reports an unresolved token" test_doctor_reports_an_unresolved_token_in_a_rendered_file

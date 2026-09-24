@@ -19,10 +19,27 @@ fi
 # `mise -C / ls --global`, the same one mise_global_state falls back from --
 # directly, once, so a broken mise is its own failure rather than being
 # reported through a tool's verdict it never really produced.
+#
+# But `ls --global` itself failing is not proof mise cannot be asked at all:
+# lib/mise.sh documents, and mise_global_state (lib/mise.sh:16-58) already
+# falls back for, a mise too old to support the flag -- verified real
+# wording for that shape is "error: unexpected argument '--global' found",
+# a clap argument-parsing error that never reaches the config at all. That
+# population still answers `mise -C / where <tool>` and still has a readable
+# config file, which is exactly what the fallback reads instead (NI-B).
+# Anything else here -- a TOML parse error, a dead binary, a broken prefix --
+# is not that population: it is a mise that cannot answer *any* live call,
+# including the `mise -C / where` the fallback also depends on, so trusting
+# it would read a broken mise's silence as "not installed" again (I16/NI4).
+mise_config="${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml}"
 mise_usable=true
 mise_ls_out=""
 if ! mise_ls_out="$(mise -C / ls --global 2>&1)"; then
-  mise_usable=false
+  if printf '%s' "$mise_ls_out" | grep -qiE "unexpected argument '--global'"; then
+    mise_usable=true
+  else
+    mise_usable=false
+  fi
 fi
 if [[ "$mise_usable" == "true" ]]; then
   doctor_ok "mise is on PATH."
@@ -30,10 +47,6 @@ else
   doctor_fail "mise is on PATH but did not answer to mise -C / ls --global ($mise_ls_out), so teeup could not check what it manages." "mise doctor"
 fi
 
-# The same file mise_global_state falls back to reading, and the same
-# override order mise itself resolves: MISE_GLOBAL_CONFIG_FILE names the file
-# outright, else MISE_CONFIG_DIR, else user_config_dir()/mise.
-mise_config="${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml}"
 if [[ -f "$mise_config" ]]; then
   doctor_ok "The global mise config is at $mise_config."
 else
@@ -84,7 +97,7 @@ if [[ "$mise_usable" == "true" ]]; then
       ;;
   esac
 else
-  doctor_warn "Skipped the pre-commit check: mise is not answering, so nothing it reports can be trusted."
+  doctor_unknown "Skipped the pre-commit check: mise is not answering, so nothing it reports can be trusted." "mise doctor"
 fi
 
 # Not a health question, but the one thing people ask this capability.

@@ -68,7 +68,7 @@ if [[ "$start_count" -eq 1 && "$end_count" -eq 1 ]]; then
   if [[ ! -f "$dark_palette" && ! -f "$light_palette" ]]; then
     doctor_ok "The starship palette block is intact."
   elif { [[ -f "$dark_palette" ]] && [[ ! -r "$dark_palette" ]]; } || { [[ -f "$light_palette" ]] && [[ ! -r "$light_palette" ]]; }; then
-    doctor_warn "$dark_palette or $light_palette cannot be read, so the palette block's colours were not compared."
+    doctor_unknown "$dark_palette or $light_palette cannot be read, so the palette block's colours were not compared." "chmod u+r $dark_palette $light_palette"
   else
     expected_palette="$(mktemp)"
     for mode in dark light; do

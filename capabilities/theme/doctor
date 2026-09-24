@@ -54,7 +54,7 @@ for mode in dark light; do
   colors="$current/$mode/colors.toml"
   palette_matches_named_theme=false
   if [[ ! -f "$colors" ]]; then
-    doctor_warn "$current/$mode/colors.toml is missing, so the $mode render could not be checked against $name."
+    doctor_unknown "$current/$mode/colors.toml is missing, so the $mode render could not be checked against $name." "teeup theme set $name"
   elif [[ ! -r "$colors" ]]; then
     doctor_fail "$colors cannot be read, so teeup cannot tell which theme the $mode render came from." "chmod u+r $colors"
   else
@@ -65,7 +65,7 @@ for mode in dark light; do
     if theme_palette_load "$colors" "$mode" >/dev/null 2>&1; then
       palette_matches_named_theme=true
     else
-      doctor_warn "$colors does not hold a valid $mode palette, so its renders could not be re-checked for truncation."
+      doctor_unknown "$colors does not hold a valid $mode palette, so its renders could not be re-checked for truncation." "teeup theme set $name"
     fi
   fi
 

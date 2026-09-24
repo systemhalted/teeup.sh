@@ -59,8 +59,24 @@ _git_doctor_last_value() {
   printf '%s\n%s\n' "$result" "$unreadable"
 }
 
+# git 2.55.0, verified: an unreadable config file this one [include]s is not
+# a "could not check" situation, it is fatal -- `git config --list`, `git
+# commit`, every git command exits 128 the moment it tries to read an
+# [include]d path it cannot open (identity, teeup-generated, local are all
+# included this way; see capabilities/git/config/git/config). config itself
+# unreadable is no better: git silently drops every include under it, so
+# identity and signing are unset and `git commit` fails with "Author
+# identity unknown". So each is a doctor_fail with a chmod fix, the same
+# pattern mise and starship already use for their own unreadable files
+# (B-A) -- not a warn, and never a claim that the file "is in place" when
+# git cannot actually read it.
 if [[ ! -f "$git_dir/config" ]]; then
   doctor_fail "git has never been configured here: there is no $git_dir/config." "teeup configure git"
+  doctor_verdict
+  exit
+fi
+if [[ ! -r "$git_dir/config" ]]; then
+  doctor_fail "$git_dir/config cannot be read, so every git command fails outright (fatal: unable to access ..., verified against real git). chmod u+r $git_dir/config" "chmod u+r $git_dir/config"
   doctor_verdict
   exit
 fi
@@ -73,7 +89,7 @@ identity_file="$git_dir/identity"
 if [[ ! -f "$identity_file" ]]; then
   doctor_fail "No $identity_file, so the git identity resolves to nothing." "teeup configure git"
 elif [[ ! -r "$identity_file" ]]; then
-  doctor_warn "$identity_file cannot be read, so teeup could not check the git identity. chmod u+r $identity_file"
+  doctor_fail "$identity_file cannot be read, so every git command fails outright; it is [include]d from $git_dir/config. chmod u+r $identity_file" "chmod u+r $identity_file"
 elif grep -q '^[[:space:]]*email[[:space:]]*=[[:space:]]*"..*"' "$identity_file" 2>/dev/null; then
   doctor_ok "Identity: $(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" 2>/dev/null | head -1)"
 else
@@ -87,7 +103,7 @@ if [[ ! -f "$generated" ]]; then
   exit
 fi
 if [[ ! -r "$generated" ]]; then
-  doctor_warn "$generated cannot be read, so teeup could not check the editor, pager or signing settings. chmod u+r $generated"
+  doctor_fail "$generated cannot be read, so every git command fails outright; it is [include]d from $git_dir/config. chmod u+r $generated" "chmod u+r $generated"
   doctor_verdict
   exit
 fi
@@ -127,7 +143,7 @@ if grep -q '^[[:space:]]*gpgsign = true$' "$generated" 2>/dev/null; then
   _git_doctor_unreadable="${_git_doctor_raw#*$'\n'}"
   signing_key="${signing_key%.pub}"
   if [[ "$_git_doctor_unreadable" == "true" ]]; then
-    doctor_warn "commit.gpgsign is on but not every git config file could be read, so teeup could not check user.signingkey."
+    doctor_unknown "commit.gpgsign is on but not every git config file could be read, so teeup could not check user.signingkey." "chmod u+r $git_dir/local"
   elif [[ -z "$signing_key" ]]; then
     # What real git does here: "fatal: either user.signingkey or
     # gpg.ssh.defaultKeyCommand needs to be configured" on every commit.
@@ -169,7 +185,7 @@ if [[ "$signing_on" == "true" ]]; then
     # would be a confident pass built on a value that was never read (NI1),
     # and it would also skip the allowed-signers block below as though the
     # question did not apply.
-    doctor_warn "commit.gpgsign is on but not every git config file could be read, so teeup could not check gpg.format or gpg.ssh.allowedSignersFile."
+    doctor_unknown "commit.gpgsign is on but not every git config file could be read, so teeup could not check gpg.format or gpg.ssh.allowedSignersFile." "chmod u+r $git_dir/local"
   elif [[ "$gpg_format" != "ssh" ]]; then
     doctor_ok "Commit signing is on with gpg.format = ${gpg_format:-unset}, so the SSH allowed-signers check does not apply."
   else
@@ -208,7 +224,7 @@ if [[ "$signing_on" == "true" ]]; then
           "printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $(identity_key personal).pub)\" >> $signers_file"
       fi
     elif [[ "$signers_unreadable" == "true" ]]; then
-      doctor_warn "One of $git_dir/config, $generated or $git_dir/local could not be read, so teeup could not check gpg.ssh.allowedSignersFile."
+      doctor_unknown "One of $git_dir/config, $generated or $git_dir/local could not be read, so teeup could not check gpg.ssh.allowedSignersFile." "chmod u+r $git_dir/local"
     else
       # B2 (2026-09-23 review): a note, not a failure -- teeup does not set
       # this yet, so a clean bootstrap must still pass doctor -- and the

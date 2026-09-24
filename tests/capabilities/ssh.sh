@@ -649,6 +649,22 @@ test_doctor_passes_after_configure() {
   cleanup_test_env
 }
 
+# Without ssh-keygen on PATH, doctor cannot validate the public key -- not a
+# confirmed problem (the key pair really might be fine), and not healthy
+# either: something material could not be checked, rc=2.
+test_doctor_reports_unknown_when_ssh_keygen_is_missing() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  hide_host_commands ssh-keygen
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_unknown "$rc" "the key pair might be fine; teeup only could not fully check it" || return 1
+  assert_contains "$out" "could not fully check" || return 1
+  cleanup_test_env
+}
+
 test_doctor_reports_a_missing_key_pair() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -817,10 +833,11 @@ test_doctor_warns_about_an_unreadable_ssh_config() {
   chmod 000 "$TEST_HOME/.ssh/config"
   local rc=0 out
   out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  chmod 644 "$TEST_HOME/.ssh/config"
+  assert_unknown "$rc" "nothing here is confirmed broken, but which Host block is used could not be checked" || return 1
   assert_not_contains "$out" "teeup reset ssh" "an unreadable config is not a broken one" || return 1
   assert_not_contains "$out" "Permission denied" "a raw permission error must never reach the report" || return 1
   assert_contains "$out" "cannot be read" || return 1
-  chmod 644 "$TEST_HOME/.ssh/config"
   cleanup_test_env
 }
 
@@ -940,6 +957,7 @@ test_doctor_reports_a_malformed_public_key() {
 }
 
 run_test "doctor passes after configure" test_doctor_passes_after_configure
+run_test "doctor reports unknown when ssh-keygen is missing" test_doctor_reports_unknown_when_ssh_keygen_is_missing
 run_test "doctor reports a missing key pair" test_doctor_reports_a_missing_key_pair
 run_test "doctor reports a world-readable private key" test_doctor_reports_a_world_readable_private_key
 run_test "doctor accepts a hand-written host block" test_doctor_accepts_a_hand_written_host_block

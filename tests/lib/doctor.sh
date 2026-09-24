@@ -37,7 +37,7 @@ test_fail_prints_and_records_against_the_current_capability() {
   local out
   out="$(TEEUP_CAP=widget doctor_fail "the widget is bent" "teeup configure widget" 2>&1)"
   assert_contains "$out" "the widget is bent" || return 1
-  assert_equals "widget	the widget is bent	teeup configure widget" "$(cat "$REPORT")" || return 1
+  assert_equals "$(printf 'widget\tthe widget is bent\tteeup configure widget\tfail')" "$(cat "$REPORT")" || return 1
   cleanup_test_env
 }
 
@@ -65,6 +65,40 @@ test_verdict_is_zero_until_something_fails() {
   cleanup_test_env
 }
 
+# doctor_unknown <message> <fix-command>
+# The third outcome (lib/doctor.sh header): distinct from both doctor_ok and
+# doctor_fail, printed with its own symbol, and recorded with kind "unknown"
+# rather than silently dropped the way doctor_warn is. It must never be
+# recorded as a failure -- that would turn "I could not check this" into
+# "I checked, and it is broken", the opposite lie from the one this status
+# exists to prevent.
+test_unknown_prints_and_records_as_its_own_kind() {
+  setup
+  local out
+  out="$(TEEUP_CAP=widget doctor_unknown "could not tell" "teeup doctor widget" 2>&1)"
+  assert_contains "$out" "could not tell" || return 1
+  assert_equals "$(printf 'widget\tcould not tell\tteeup doctor widget\tunknown')" "$(cat "$REPORT")" || return 1
+  cleanup_test_env
+}
+
+# doctor_verdict is tri-state (lib/doctor.sh header): 0 healthy, 1 a
+# doctor_fail happened, 2 nothing failed but a doctor_unknown did. A fail in
+# the same run as an unknown still returns 1 -- a confirmed problem takes
+# priority over an unrelated unknown.
+test_verdict_returns_two_for_unknown_alone_and_one_when_a_failure_is_also_present() {
+  setup
+  doctor_verdict || { echo "a fresh process has no findings"; return 1; }
+  TEEUP_CAP=widget doctor_unknown "could not tell" "teeup doctor widget" >/dev/null 2>&1
+  local rc=0
+  doctor_verdict || rc=$?
+  assert_equals "2" "$rc" "an unknown alone must not read as either healthy or a confirmed problem" || return 1
+  TEEUP_CAP=widget doctor_fail "bent" "teeup configure widget" >/dev/null 2>&1
+  rc=0
+  doctor_verdict || rc=$?
+  assert_equals "1" "$rc" "a confirmed failure outranks an unrelated unknown in the same run" || return 1
+  cleanup_test_env
+}
+
 test_metadata_check_reports_a_missing_package_with_its_fix() {
   setup
   make_cap widget "ripgrep"
@@ -85,7 +119,11 @@ EOF2
 # "not installed" and "teeup could not find out" are different answers, and
 # only one of them is a problem the user can fix. Without the backend's own
 # command there is nothing to ask, so doctor must not assert the package is
-# missing -- and must not file it as a failure with a fix.
+# missing -- and must not file it as a *failure* with a fix. It is still a
+# doctor_unknown, though, not silence: a check that gives up has to say so
+# somewhere the exit status can see, or `teeup doctor` claims a machine is
+# healthy that it never actually looked at (the bug three rounds of review
+# kept finding in a new place each time). One record, kind "unknown".
 test_metadata_check_says_so_when_it_cannot_ask_the_backend() {
   setup
   make_cap widget "ripgrep"
@@ -94,7 +132,9 @@ test_metadata_check_says_so_when_it_cannot_ask_the_backend() {
   out="$(doctor_metadata_check widget 2>&1)"
   assert_contains "$out" "is not on PATH, so teeup could not check what widget installed" || return 1
   assert_not_contains "$out" "package ripgrep is not installed" || return 1
-  assert_equals "" "$(cat "$REPORT")" "an unanswerable check is not a failure with a fix" || return 1
+  assert_equals "1" "$(wc -l < "$REPORT" | tr -d ' ')" "an unanswerable check is still recorded, just not as a failure" || return 1
+  assert_contains "$(cat "$REPORT")" "$(printf '\tunknown')" "recorded with kind unknown, not fail" || return 1
+  assert_not_contains "$(cat "$REPORT")" "teeup install widget" "an unanswerable check is not a failure with an install fix" || return 1
   cleanup_test_env
 }
 
@@ -114,7 +154,8 @@ test_metadata_check_says_so_when_the_backend_is_on_path_but_broken() {
   assert_contains "$out" "teeup could not get an answer out of brew, so it could not check what widget installed" || return 1
   assert_not_contains "$out" "is not on PATH" "brew is on PATH; that sentence is the one thing just disproved" || return 1
   assert_not_contains "$out" "package ripgrep is not installed" || return 1
-  assert_equals "" "$(cat "$REPORT")" "an unanswerable check is not a failure with a fix" || return 1
+  assert_equals "1" "$(wc -l < "$REPORT" | tr -d ' ')" "an unanswerable check is still recorded, just not as a failure" || return 1
+  assert_contains "$(cat "$REPORT")" "$(printf '\tunknown')" "recorded with kind unknown, not fail" || return 1
   cleanup_test_env
 }
 
@@ -134,7 +175,31 @@ EOF2
   out="$(doctor_metadata_check widget 2>&1)"
   assert_contains "$out" "teeup could not get an answer out of brew, so it could not check what widget installed" || return 1
   assert_not_contains "$out" "package ripgrep is not installed" || return 1
-  assert_equals "" "$(cat "$REPORT")" "an unanswerable check is not a failure with a fix" || return 1
+  assert_equals "1" "$(wc -l < "$REPORT" | tr -d ' ')" "an unanswerable check is still recorded, just not as a failure" || return 1
+  assert_contains "$(cat "$REPORT")" "$(printf '\tunknown')" "recorded with kind unknown, not fail" || return 1
+  cleanup_test_env
+}
+
+# Minor 4: the backend probe folds stderr into the answer (lib/doctor.sh's
+# doctor_backend_can_answer runs `"$cmd" --version 2>&1`), on purpose --
+# package-manager/doctor's "did not answer" message wants the error text
+# even when the backend only ever writes to stderr. Pinned directly: a brew
+# that exits 0 and prints its version on stderr alone must still read as a
+# real answer, the same as one that prints it on stdout.
+test_backend_can_answer_reads_stdout_and_stderr_alike() {
+  setup
+  make_cap widget "ripgrep"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" >&2; exit 0 ;; esac
+case "$1 ${2:-} ${3:-}" in
+  "list --formula ripgrep") exit 0 ;;
+  *) exit 1 ;;
+esac
+EOF2
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "package ripgrep is installed" "a stderr-only --version must still count as an answer" || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
   cleanup_test_env
 }
 
@@ -262,6 +327,24 @@ test_state_readable_sees_an_unsearchable_parent_not_just_an_unsearchable_done() 
   cleanup_test_env
 }
 
+# NI-C: NB3's own fix still trusted a bare `-e "$TEEUP_STATE_DIR"` once the
+# root itself looked searchable -- but `-e` on the root is unsearchable for
+# the wrong reason when the root's own PARENT cannot be searched (e.g.
+# ~/.local/state left root-owned by a `sudo`-run tool, one directory above
+# teeup's own tree), and a fully installed machine read as bare again, one
+# level up from where NB3 fixed it.
+test_state_readable_sees_an_unsearchable_grandparent_not_just_an_unsearchable_root() {
+  setup
+  mkdir -p "$TEEUP_STATE_DIR/done"
+  doctor_state_readable || { echo "a fresh readable tree must pass"; return 1; }
+  local parent
+  parent="$(dirname "$TEEUP_STATE_DIR")"
+  chmod 0000 "$parent"
+  doctor_state_readable && { echo "an unsearchable parent of the state root must not pass"; chmod 0755 "$parent"; return 1; }
+  chmod 0755 "$parent"
+  cleanup_test_env
+}
+
 test_report_state_unreadable_records_a_chmod_fix_not_a_reset() {
   setup
   doctor_report_state_unreadable
@@ -284,6 +367,24 @@ test_report_state_unreadable_names_the_root_when_that_is_the_problem() {
   cleanup_test_env
 }
 
+# NI-C: the same naming discipline, one directory further up -- an
+# unsearchable parent of the state root is a third distinct problem from
+# either the root or done/, and the fix has to chmod the directory that is
+# actually broken, not the tree underneath it.
+test_report_state_unreadable_names_the_parent_when_that_is_the_problem() {
+  setup
+  mkdir -p "$TEEUP_STATE_DIR/done"
+  local parent
+  parent="$(dirname "$TEEUP_STATE_DIR")"
+  chmod 0000 "$parent"
+  doctor_report_state_unreadable
+  chmod 0755 "$parent"
+  assert_contains "$(cat "$REPORT")" "$parent could not be read" || return 1
+  assert_not_contains "$(cat "$REPORT")" "$TEEUP_STATE_DIR could not be read" || return 1
+  assert_not_contains "$(cat "$REPORT")" "$TEEUP_STATE_DIR/done could not be read" || return 1
+  cleanup_test_env
+}
+
 test_summary_names_every_failure_and_its_fix() {
   setup
   printf 'git\tno signing key\tteeup configure git\n' >> "$REPORT"
@@ -295,6 +396,42 @@ test_summary_names_every_failure_and_its_fix() {
   assert_contains "$out" "git: no signing key" || return 1
   assert_contains "$out" "fix: teeup configure git" || return 1
   assert_contains "$out" "fix: chsh -s /bin/zsh" || return 1
+  cleanup_test_env
+}
+
+# A report holding only doctor_unknown records is the case this whole status
+# exists for: nothing confirmed broken, but something material could not be
+# checked, so 0 would be a claim doctor never verified. rc=2, not 0 and not
+# 1, and the summary must say "could not verify", never "found N problem(s)"
+# (that sentence is reserved for confirmed failures).
+test_summary_reports_unknown_only_as_could_not_verify_not_healthy_or_a_problem() {
+  setup
+  printf 'git\tcould not check signingkey\tchmod u+r foo\tunknown\n' >> "$REPORT"
+  local out rc=0
+  out="$(doctor_summary "$REPORT" 2>&1)" || rc=$?
+  assert_unknown "$rc" || return 1
+  assert_not_contains "$out" "everything checked is healthy" || return 1
+  assert_not_contains "$out" "found 1 problem" "an unknown is not a confirmed problem" || return 1
+  assert_contains "$out" "could not verify 1 item" || return 1
+  assert_contains "$out" "git: could not check signingkey" || return 1
+  assert_contains "$out" "fix: chmod u+r foo" || return 1
+  cleanup_test_env
+}
+
+# A confirmed failure and an unrelated unknown in the same report: both are
+# named in the summary, but the exit status is 1 -- a real problem outranks
+# something merely unverified.
+test_summary_reports_both_a_failure_and_an_unknown_but_exits_on_the_failure() {
+  setup
+  printf 'git\tno signing key\tteeup configure git\tfail\n' >> "$REPORT"
+  printf 'github\tcould not check signed-in\tgh auth status\tunknown\n' >> "$REPORT"
+  local out rc=0
+  out="$(doctor_summary "$REPORT" 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "found 1 problem" || return 1
+  assert_contains "$out" "could not verify 1 item" || return 1
+  assert_contains "$out" "git: no signing key" || return 1
+  assert_contains "$out" "github: could not check signed-in" || return 1
   cleanup_test_env
 }
 
@@ -316,6 +453,47 @@ test_run_one_does_not_double_count_a_doctor_that_explained_itself() {
   doctor_run_one widget >/dev/null 2>&1
   assert_equals "1" "$(wc -l < "$REPORT" | tr -d ' ')" || return 1
   assert_contains "$(cat "$REPORT")" "the widget is bent" || return 1
+  cleanup_test_env
+}
+
+# A doctor script that only hits doctor_unknown exits 2 (doctor_verdict),
+# which is still non-zero -- doctor_run_one's own "exited non-zero without
+# saying why" fallback must not fire on top of it: the script DID say why,
+# it just was not a failure. Only the one unknown record belongs in the
+# report.
+test_run_one_does_not_add_a_generic_failure_on_top_of_an_unknown() {
+  setup
+  make_cap widget
+  printf '#!/usr/bin/env bash\ndoctor_unknown "could not tell" "teeup doctor widget"\ndoctor_verdict\n' > "$TEEUP_CAPS_DIR/widget/doctor"
+  mock_command brew 1 ""
+  doctor_run_one widget >/dev/null 2>&1
+  assert_equals "1" "$(wc -l < "$REPORT" | tr -d ' ')" "the unknown record, and nothing on top of it" || return 1
+  assert_contains "$(cat "$REPORT")" "could not tell" || return 1
+  assert_not_contains "$(cat "$REPORT")" "without saying why" || return 1
+  cleanup_test_env
+}
+
+# Minor 6: doctor_metadata_check only ever runs through doctor_run_one, but
+# every suite's own doctor tests call `cap_run <cap> doctor` directly, which
+# runs only the capability's own script and never reaches it -- so the
+# `--version` line added to the shared brew mock across seven suites was
+# inert for doctor purposes, and package/cask checking rested on this file's
+# synthetic `widget` fixture alone. This runs doctor_run_one against a real,
+# shipped capability with real packages and no doctor script of its own
+# (cli-tools: doctor_metadata_check is the whole of what runs), so the
+# package-check path is exercised at the doctor_run_one level against actual
+# capability metadata, not only a fixture.
+test_run_one_checks_packages_for_a_real_capability_with_no_doctor_script() {
+  setup
+  TEEUP_CAPS_DIR="$TEEUP_PATH/capabilities"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  local out
+  out="$(doctor_run_one cli-tools 2>&1)"
+  assert_contains "$out" "package ripgrep is not installed" || return 1
+  assert_contains "$(cat "$REPORT")" "package ripgrep is not installed" || return 1
+  assert_contains "$(cat "$REPORT")" "teeup install cli-tools" || return 1
   cleanup_test_env
 }
 
@@ -358,10 +536,13 @@ run_test "fail prints and records against the current capability" test_fail_prin
 run_test "fail flattens tabs and newlines" test_fail_flattens_tabs_and_newlines_so_one_failure_is_one_record
 run_test "record without a report is a no-op" test_record_without_a_report_is_a_no_op
 run_test "verdict is zero until something fails" test_verdict_is_zero_until_something_fails
+run_test "unknown prints and records as its own kind" test_unknown_prints_and_records_as_its_own_kind
+run_test "verdict returns 2 for unknown alone and 1 when a failure is also present" test_verdict_returns_two_for_unknown_alone_and_one_when_a_failure_is_also_present
 run_test "metadata check reports a missing package" test_metadata_check_reports_a_missing_package_with_its_fix
 run_test "metadata check says so when it cannot ask the backend" test_metadata_check_says_so_when_it_cannot_ask_the_backend
 run_test "metadata check says so when the backend is on PATH but broken" test_metadata_check_says_so_when_the_backend_is_on_path_but_broken
 run_test "metadata check says so when the backend answers nothing" test_metadata_check_says_so_when_the_backend_answers_nothing
+run_test "backend can answer reads stdout and stderr alike" test_backend_can_answer_reads_stdout_and_stderr_alike
 run_test "metadata check passes when listed" test_metadata_check_passes_when_the_package_manager_lists_it
 run_test "metadata check reports a missing app" test_metadata_check_reports_a_missing_app
 run_test "metadata check skips casks on macports" test_metadata_check_skips_casks_on_macports
@@ -373,10 +554,16 @@ run_test "summary says nothing when nothing was checked" test_summary_says_nothi
 run_test "state readable sees a done dir it cannot search" test_state_readable_sees_a_done_dir_it_cannot_search
 run_test "state readable treats a missing done dir as a bare machine" test_state_readable_treats_a_missing_done_dir_as_a_bare_machine
 run_test "state readable sees an unsearchable parent, not just an unsearchable done" test_state_readable_sees_an_unsearchable_parent_not_just_an_unsearchable_done
+run_test "state readable sees an unsearchable grandparent, not just an unsearchable root" test_state_readable_sees_an_unsearchable_grandparent_not_just_an_unsearchable_root
 run_test "report state unreadable records a chmod fix, not a reset" test_report_state_unreadable_records_a_chmod_fix_not_a_reset
 run_test "report state unreadable names the root when that is the problem" test_report_state_unreadable_names_the_root_when_that_is_the_problem
+run_test "report state unreadable names the parent when that is the problem" test_report_state_unreadable_names_the_parent_when_that_is_the_problem
 run_test "summary is quiet on an empty report" test_summary_is_quiet_and_zero_when_the_report_is_empty
 run_test "summary names every failure and its fix" test_summary_names_every_failure_and_its_fix
+run_test "summary reports unknown-only as could-not-verify, not healthy or a problem" test_summary_reports_unknown_only_as_could_not_verify_not_healthy_or_a_problem
+run_test "summary reports both a failure and an unknown but exits on the failure" test_summary_reports_both_a_failure_and_an_unknown_but_exits_on_the_failure
 run_test "run one records a silent non-zero doctor" test_run_one_records_a_doctor_that_exits_without_saying_why
 run_test "run one does not double count" test_run_one_does_not_double_count_a_doctor_that_explained_itself
+run_test "run one does not add a generic failure on top of an unknown" test_run_one_does_not_add_a_generic_failure_on_top_of_an_unknown
+run_test "run one checks packages for a real capability with no doctor script" test_run_one_checks_packages_for_a_real_capability_with_no_doctor_script
 print_summary

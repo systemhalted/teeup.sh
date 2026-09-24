@@ -14,7 +14,7 @@ dscl_rc=0
 dscl_out="$(dscl . -read "/Users/${USER:-$(id -un)}" UserShell 2>/dev/null)" || dscl_rc=$?
 login_shell="$(printf '%s' "$dscl_out" | awk '{print $2}')"
 if [[ "$dscl_rc" -ne 0 || -z "$login_shell" ]]; then
-  doctor_warn "Could not ask dscl what the login shell is, so teeup cannot tell whether it is zsh. Check by hand: dscl . -read /Users/${USER:-$(id -un)} UserShell"
+  doctor_unknown "Could not ask dscl what the login shell is, so teeup cannot tell whether it is zsh." "Check by hand: dscl . -read /Users/${USER:-$(id -un)} UserShell"
 else
   case "$login_shell" in
     */zsh)

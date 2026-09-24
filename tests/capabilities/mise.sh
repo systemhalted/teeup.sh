@@ -429,6 +429,67 @@ EOF2
   cleanup_test_env
 }
 
+# NI-B: lib/mise.sh documents, and mise_global_state (lib/mise.sh:16-58)
+# already falls back for, a mise too old to support `--global` at all --
+# real wording for that shape, verified: "error: unexpected argument
+# '--global' found". That population still answers `mise -C / where` and
+# still has a readable global config, exactly what the fallback reads
+# instead, so it must not be reported as a broken mise: a healthy machine
+# with a genuinely requested and genuinely installed pre-commit must still
+# pass doctor.
+test_doctor_trusts_the_fallback_for_an_old_mise_that_rejects_global() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure mise >/dev/null 2>&1
+  seed_mise_shims
+  # copy_config_once ships an empty [tools] table; the mocked `mise use -g`
+  # above wrote the request into its own fake tracking files, never into the
+  # real config.toml doctor reads -- so this pins the request into the real
+  # file directly, the way an actual old mise's `mise use -g pre-commit`
+  # would have.
+  printf 'pre-commit = "latest"\n' >> "$(user_config_dir)/mise/config.toml"
+  mock_command_script mise <<'EOF2'
+[ "$1" = "--version" ] && { echo "2024.1.0 linux-x64"; exit 0; }
+case "$*" in
+  "-C / ls --global"*) echo "error: unexpected argument '--global' found" >&2; exit 2 ;;
+  "-C / where pre-commit"*) echo "$HOME/.local/share/mise/installs/pre-commit/3.0.0"; exit 0 ;;
+esac
+exit 1
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_success "$rc" "an old-but-working mise that rejects --global must not read as broken (NI-B)" || return 1
+  assert_not_contains "$out" "did not answer to mise -C / ls --global" || return 1
+  assert_contains "$out" "pre-commit is installed through mise" || return 1
+  cleanup_test_env
+}
+
+# The mirror image: the same old mise, but pre-commit is only requested, not
+# yet installed (`mise -C / where pre-commit` fails, the same way it fails
+# for a genuinely uninstalled tool). Trusting the fallback must not paper
+# over a real gap either.
+test_doctor_trusts_the_fallback_for_an_old_mise_when_pre_commit_is_only_requested() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure mise >/dev/null 2>&1
+  seed_mise_shims
+  printf 'pre-commit = "latest"\n' >> "$(user_config_dir)/mise/config.toml"
+  mock_command_script mise <<'EOF2'
+[ "$1" = "--version" ] && { echo "2024.1.0 linux-x64"; exit 0; }
+case "$*" in
+  "-C / ls --global"*) echo "error: unexpected argument '--global' found" >&2; exit 2 ;;
+  "-C / where pre-commit"*) exit 1 ;;
+esac
+exit 1
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run mise doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "requested but not installed is still a real, reportable gap" || return 1
+  assert_not_contains "$out" "did not answer to mise -C / ls --global" || return 1
+  assert_contains "$out" "pre-commit is asked for but not installed" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/mise"
 run_test "install gets mise" test_install_gets_mise
 run_test "configure writes the config and the setting" test_configure_writes_the_config_and_the_setting
@@ -449,4 +510,6 @@ run_test "doctor reports pre-commit requested but missing" test_doctor_reports_p
 run_test "doctor reports a stale shims directory on PATH" test_doctor_reports_a_stale_shims_directory_on_path
 run_test "doctor reports an unusable mise instead of a missing tool" test_doctor_reports_an_unusable_mise_instead_of_a_missing_tool
 run_test "doctor reports an unusable mise with a broken config even though --version still works" test_doctor_reports_an_unusable_mise_with_a_broken_config_even_though_version_still_works
+run_test "doctor trusts the fallback for an old mise that rejects --global" test_doctor_trusts_the_fallback_for_an_old_mise_that_rejects_global
+run_test "doctor trusts the fallback for an old mise when pre-commit is only requested" test_doctor_trusts_the_fallback_for_an_old_mise_when_pre_commit_is_only_requested
 print_summary
