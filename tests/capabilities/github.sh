@@ -106,7 +106,14 @@ case "$1 ${2:-}" in
         exit 1
       fi
       echo "$host"
-      echo "  Logged in to $host account testuser (keyring)"
+      # NI-B: an older gh reports being signed in without the "account <name>"
+      # token this doctor reads. Seeded separately so the "could not tell
+      # which account" path is driven by real wording rather than a blank.
+      if [ -f "$HOME/gh-auth-status-no-account-token" ]; then
+        echo "  Logged in to $host (keyring)"
+      else
+        echo "  Logged in to $host account testuser (keyring)"
+      fi
       echo "  - Active account: true"
       echo "  Token scopes: $(cat "$session_file")"
       if [ "$active" = "0" ] && [ "$host" = "github.com" ] && [ -f "$HOME/gh-inactive-scopes" ]; then
@@ -1065,6 +1072,32 @@ test_doctor_does_not_match_the_key_body_against_the_title() {
 }
 
 echo "capabilities/github"
+# gh's "account <name>" token is 2.100.0 wording. An older gh omits it, and
+# an empty answer used to let the run carry on and check the keys against
+# whichever account is actually active -- a clean bill for an account teeup
+# never identified, which is the one thing per-account checking exists to
+# prevent.
+test_doctor_will_not_check_a_key_against_an_account_it_cannot_name() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  # A work identity whose account is named, so the per-account check applies.
+  seed_work_key
+  seed_machine_work "ada@work.example" "" "ada-work"
+  printf 'admin:public_key,admin:ssh_signing_key,repo\n' > "$TEST_HOME/gh-session"
+  # The personal identity is fully healthy, so the unknown below is the only
+  # finding: a confirmed problem would outrank it and mask what is under test.
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026\t1\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' >> "$TEST_HOME/gh-keys"
+  : > "$TEST_HOME/gh-auth-status-no-account-token"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_unknown "$rc" "an account teeup cannot name is not a verified one" || return 1
+  assert_contains "$out" "Could not tell which account gh is signed in as" || return 1
+  cleanup_test_env
+}
+
 run_test "install gets gh" test_install_gets_gh
 run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
 run_test "configure uploads authentication and signing keys" test_configure_uploads_authentication_and_signing_keys
@@ -1108,6 +1141,7 @@ run_test "doctor reports an invalid token as not signed in" test_doctor_reports_
 run_test "doctor reports an older gh's invalid-token wording as not signed in" test_doctor_reports_an_older_gh_wording_invalid_token_as_not_signed_in
 run_test "doctor reports a bare token-invalid message as not signed in" test_doctor_reports_a_bare_token_invalid_message_as_not_signed_in
 run_test "doctor reports a dead gh as a failure, not could-not-check" test_doctor_reports_a_dead_gh_as_a_failure_not_could_not_check
+run_test "doctor will not check a key against an account it cannot name" test_doctor_will_not_check_a_key_against_an_account_it_cannot_name
 run_test "doctor reports it could not list keys" test_doctor_reports_it_could_not_list_keys
 run_test "doctor reports a signing-only key as not ready for push" test_doctor_reports_a_signing_only_key_as_not_ready_for_push
 run_test "doctor checks the active account's scopes, not an inactive one's" test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones

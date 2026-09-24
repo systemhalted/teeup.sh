@@ -203,11 +203,23 @@ fi
 # ssh-keygen over every public key on this machine, which is more than a
 # fingerprint check earns here.
 if have ssh-add; then
-  if ssh-add -l >/dev/null 2>&1; then
-    doctor_ok "The ssh agent is holding at least one key."
-  else
-    doctor_warn "The ssh agent is holding no key yet; it fills up on first use. Run: ssh-add --apple-use-keychain $(identity_key personal)"
-  fi
+  # ssh-add -l separates the two: 1 means it reached the agent and the agent
+  # holds nothing, 2 means it could not reach one at all. Reporting the second
+  # as the first says a healthy-but-empty agent is waiting to fill on first
+  # use, and prints a fix that fails with the very error being hidden.
+  ssh_agent_rc=0
+  ssh-add -l >/dev/null 2>&1 || ssh_agent_rc=$?
+  case "$ssh_agent_rc" in
+    0)
+      doctor_ok "The ssh agent is holding at least one key."
+      ;;
+    1)
+      doctor_warn "The ssh agent is holding no key yet; it fills up on first use. Run: ssh-add --apple-use-keychain $(identity_key personal)"
+      ;;
+    *)
+      doctor_unknown "Could not reach an ssh agent (ssh-add -l exited $ssh_agent_rc), so teeup could not tell whether your key is loaded." "echo \$SSH_AUTH_SOCK, and start an agent if it is empty"
+      ;;
+  esac
 fi
 
 doctor_verdict

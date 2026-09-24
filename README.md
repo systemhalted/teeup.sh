@@ -136,7 +136,20 @@ DRY_RUN=true teeup update      # ... as a preview that changes nothing
 teeup update wezterm          # one capability: its packages, then its configure
 teeup reset starship          # the shipped starship.toml back, your copy backed up
 teeup remove cursor           # undo what a capability installed
+teeup doctor                  # is this Mac actually in the state teeup says?
+teeup doctor git              # one capability
 ```
+
+`teeup doctor` reports three outcomes, not two, and its exit status says
+which: **0** means teeup verified the machine is healthy, **1** means it
+found problems (each named with the one command that fixes it), and **2**
+means something material could not be checked at all -- an unreadable config,
+a package manager that does not answer, a GitHub host it could not reach.
+That third status exists because exiting 0 about a machine teeup could not
+look at is a claim it never verified; a check that cannot run says so rather
+than passing quietly. Advisory notes that are not verification gaps (the
+AeroSpace Accessibility step, an ssh agent holding no key yet) stay warnings
+and do not change the exit status.
 
 `teeup update` does spec section 9's list in order: `git pull --ff-only` in
 the checkout, any pending migrations, `brew update && brew upgrade && brew

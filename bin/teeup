@@ -36,6 +36,8 @@ teeup - your Mac, as a distribution
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
   teeup lazy-run <cap> <cmd> [args]  what a lazy shim runs: install <cap> on first use, then exec <cmd>
   teeup doctor [<capability>]    check what is installed, and say how to fix what is not
+                                 (exit 0 verified healthy, 1 found problems,
+                                  2 could not check something)
   teeup has <capability>         exit 0 when installed (for scripts and menus)
   teeup secret get|set|rm <name>  read, store or delete a Keychain secret
   teeup status                   package manager, answers, installed capabilities
