@@ -720,42 +720,51 @@ test_doctor_skips_verification_when_gpg_format_is_not_ssh() {
   cleanup_test_env
 }
 
-# I7: an unreadable file is "could not check", not the absence of what it
-# would have said. Both the identity file and the generated file are guarded.
+# B-A: an unreadable teeup-owned git file is not "could not check", it is
+# fatal -- verified against real git 2.55.0, every git command exits 128 the
+# moment it tries to read an [include]d path it cannot open, and an
+# unreadable config silently drops every include under it so `git commit`
+# fails with "Author identity unknown". Three rounds of review found the same
+# false-pass shape here: this used to be a warn and `teeup doctor` exited 0,
+# "everything checked is healthy," on a machine where every git command was
+# fatal. It has to be a doctor_fail with a chmod fix, the same pattern mise
+# and starship already use for their own unreadable files.
 #
 # NI1: the identity file is also where `signingkey` lives, and
 # _git_doctor_last_value's "could not read this file" flag used to be set
 # inside the `$( )` that calls it, so it never reached the caller -- the
 # branch that reads "could not check user.signingkey" was unreachable, and
 # doctor instead asserted the key was unset (chmod 000 identity used to print
-# "❌ commit.gpgsign is on but no user.signingkey is set", rc=1, even though
-# the key IS set, in the file doctor just said it could not read). Fixed,
-# this is a warn, not a failure: the key really might be fine, teeup only
-# could not tell.
-test_doctor_warns_when_identity_file_is_unreadable() {
+# "❌ commit.gpgsign is on but no user.signingkey is set", even though the
+# key IS set, in the file doctor just said it could not read). Fixed, that
+# secondary finding is a genuine "could not check" (a doctor_unknown, not a
+# second doctor_fail): the key really might be fine, teeup only could not
+# tell -- the primary fail is the unreadable file itself.
+test_doctor_fails_when_identity_file_is_unreadable() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   configure_git_with_keys
   chmod 000 "$TEST_HOME/.config/git/identity"
   local rc=0 out
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
-  assert_success "$rc" "an unreadable identity file is 'could not check', not a real missing signingkey (NI1)" || return 1
+  chmod 600 "$TEST_HOME/.config/git/identity"
+  assert_equals "1" "$rc" "an unreadable identity file must be a confirmed failure (rc=1), not merely unknown (rc=2) or healthy (B-A)" || return 1
   assert_not_contains "$out" "has no email" "an unreadable file's absent content must not be reported as its content" || return 1
   assert_not_contains "$out" "Permission denied" "a raw permission error must never reach the report" || return 1
   assert_not_contains "$out" "no user.signingkey is set" "the key is in the file doctor could not read, not actually unset (NI1)" || return 1
   assert_contains "$out" "cannot be read" || return 1
+  assert_contains "$out" "chmod u+r" || return 1
   assert_contains "$out" "could not check user.signingkey" || return 1
-  chmod 600 "$TEST_HOME/.config/git/identity"
   cleanup_test_env
 }
 
-# NI1: the same subshell-scoping bug also swallowed "could not check" for
-# gpg.format, read from $git_dir/config among others. Unreadable, doctor used
-# to assume gpg.format was unset (or read from whatever the other files said)
-# and print a confident "does not apply" pass -- skipping the
-# allowed-signers verification block entirely as though the question never
-# came up.
-test_doctor_warns_when_config_file_is_unreadable() {
+# B-A: real git treats an unreadable config exactly like a missing one --
+# every command it runs is fatal, or (per the file's own permissions) its
+# includes are silently dropped and identity/signing vanish with them. The
+# "is in place" line must never print for a file git cannot actually read,
+# and nothing downstream (gpg.format, allowed-signers) can be trusted either,
+# so the script stops here rather than reporting on values it never read.
+test_doctor_fails_when_config_file_is_unreadable() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   configure_git_with_keys
@@ -763,25 +772,52 @@ test_doctor_warns_when_config_file_is_unreadable() {
   local rc=0 out
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
   chmod 600 "$TEST_HOME/.config/git/config"
-  assert_success "$rc" "an unreadable config file is 'could not check', not broken" || return 1
+  assert_equals "1" "$rc" "an unreadable config file must be a confirmed failure (rc=1), not healthy (B-A)" || return 1
   assert_not_contains "$out" "Permission denied" || return 1
-  assert_not_contains "$out" "does not apply" "gpg.format was never actually read here (NI1)" || return 1
-  assert_contains "$out" "could not check gpg.format" || return 1
+  assert_not_contains "$out" "is in place" "a file git cannot read is not 'in place' in any sense that matters" || return 1
+  assert_not_contains "$out" "does not apply" "gpg.format was never actually read here" || return 1
+  assert_contains "$out" "cannot be read" || return 1
+  assert_contains "$out" "chmod u+r" || return 1
   cleanup_test_env
 }
 
-test_doctor_warns_when_generated_file_is_unreadable() {
+# B-A: teeup-generated is [include]d exactly like identity; unreadable, it is
+# just as fatal, not merely unchecked.
+test_doctor_fails_when_generated_file_is_unreadable() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   configure_git_with_keys
   chmod 000 "$TEST_HOME/.config/git/teeup-generated"
   local rc=0 out
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
-  assert_success "$rc" "an unreadable generated file is 'could not check', not broken" || return 1
+  chmod 600 "$TEST_HOME/.config/git/teeup-generated"
+  assert_equals "1" "$rc" "an unreadable generated file must be a confirmed failure (rc=1), not healthy (B-A)" || return 1
   assert_not_contains "$out" "commit signing is off in" "an unreadable file's absent content must not be reported as its content" || return 1
   assert_not_contains "$out" "Permission denied" || return 1
   assert_contains "$out" "cannot be read" || return 1
-  chmod 600 "$TEST_HOME/.config/git/teeup-generated"
+  assert_contains "$out" "chmod u+r" || return 1
+  cleanup_test_env
+}
+
+# git_dir/local is the third [include]d file (never written by teeup, so it
+# gets no upfront existence/readability gate of its own the way identity and
+# teeup-generated do) -- unreadable, config, identity and teeup-generated are
+# all still fine, so nothing here is a *confirmed* problem, but the
+# signingkey, gpg.format and allowed-signers questions genuinely cannot be
+# answered: a doctor_unknown for each, and rc=2 (could-not-verify), not
+# rc=0 and not rc=1.
+test_doctor_reports_unknown_when_local_file_is_unreadable() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  : > "$TEST_HOME/.config/git/local"
+  chmod 000 "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  chmod 600 "$TEST_HOME/.config/git/local"
+  assert_unknown "$rc" "nothing here is confirmed broken, but signingkey/gpg.format/allowed-signers could not be checked" || return 1
+  assert_contains "$out" "could not check user.signingkey" || return 1
+  assert_contains "$out" "could not check gpg.format" || return 1
   cleanup_test_env
 }
 
@@ -899,9 +935,10 @@ run_test "doctor warns about a missing allowed-signers file" test_doctor_warns_a
 run_test "doctor reports signing on with no signing key configured" test_doctor_reports_signing_on_with_no_signing_key_configured
 run_test "doctor reads signingkey from local, not only identity" test_doctor_reads_signingkey_from_local_not_only_identity
 run_test "doctor skips verification when gpg.format is not ssh" test_doctor_skips_verification_when_gpg_format_is_not_ssh
-run_test "doctor warns when the identity file is unreadable" test_doctor_warns_when_identity_file_is_unreadable
-run_test "doctor warns when the config file is unreadable" test_doctor_warns_when_config_file_is_unreadable
-run_test "doctor warns when the generated file is unreadable" test_doctor_warns_when_generated_file_is_unreadable
+run_test "doctor fails when the identity file is unreadable" test_doctor_fails_when_identity_file_is_unreadable
+run_test "doctor fails when the config file is unreadable" test_doctor_fails_when_config_file_is_unreadable
+run_test "doctor fails when the generated file is unreadable" test_doctor_fails_when_generated_file_is_unreadable
+run_test "doctor reports unknown when the local file is unreadable" test_doctor_reports_unknown_when_local_file_is_unreadable
 run_test "doctor requires the exact pager setting, not a stray mention of delta" test_doctor_requires_the_exact_pager_setting_not_a_stray_mention_of_delta
 run_test "doctor does not count a commented allowed-signers line" test_doctor_does_not_count_a_commented_allowed_signers_line
 run_test "doctor reports an allowed-signers path that is missing" test_doctor_reports_an_allowed_signers_path_that_is_missing

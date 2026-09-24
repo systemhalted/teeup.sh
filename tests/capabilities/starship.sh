@@ -141,6 +141,60 @@ test_doctor_passes_after_configure_then_theme_set() {
   cleanup_test_env
 }
 
+# Minor 1: an unreadable rendered palette means the colours genuinely could
+# not be compared -- not a confirmed mismatch (they might well be fine), and
+# not healthy either. Mutation testing found this branch had no test at all
+# (the "cannot be read" wording could be deleted with the suite still
+# green); this pins both the wording and the exit status.
+test_doctor_reports_unknown_when_a_rendered_palette_is_unreadable() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command starship 0 "starship 1.23.0"
+  mock_command defaults 1 ""
+  mock_command chsh 0 ""
+  export TEEUP_NO_GUM=1
+  DRY_RUN=false "$TEEUP" install starship >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" install theme >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null 2>&1
+  chmod 0000 "$TEEUP_STATE_DIR/current/theme/dark/starship-palette.toml"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  chmod 0644 "$TEEUP_STATE_DIR/current/theme/dark/starship-palette.toml"
+  assert_unknown "$rc" "an unreadable rendered palette could not be compared; it is not a confirmed mismatch" || return 1
+  assert_contains "$out" "colours were not compared" || return 1
+  cleanup_test_env
+}
+
+# Minor 2: the "no render at all => the block is intact" guard requires
+# NEITHER mode to have a rendered palette. Mutation testing found the `&&`
+# had no test pinning it against the boundary it exists for: a theme that
+# rendered only one mode must still be COMPARED (dark exists here; light
+# does not), never waved through as "intact" on the strength of the missing
+# mode alone.
+test_doctor_still_compares_when_only_one_mode_was_rendered() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command starship 0 "starship 1.23.0"
+  mock_command defaults 1 ""
+  mock_command chsh 0 ""
+  export TEEUP_NO_GUM=1
+  DRY_RUN=false "$TEEUP" install starship >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" install theme >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null 2>&1
+  rm -f "$TEEUP_STATE_DIR/current/theme/light/starship-palette.toml"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  # theme-apply wrote the config's block from BOTH modes; rebuilding the
+  # expected content from only the mode still on disk (dark) cannot equal
+  # it, so the real comparison must run and find the mismatch -- never take
+  # the "no render at all" shortcut and call it intact on the strength of
+  # one missing file alone.
+  assert_failure "$rc" "one rendered mode is not the same as no render; the real comparison must run" || return 1
+  assert_contains "$out" "does not match what the" || return 1
+  assert_not_contains "$out" "palette block is intact" "a missing light render alone must not take the no-render-at-all shortcut" || return 1
+  cleanup_test_env
+}
+
 # NI5: theme_current does a plain `cat`, which would otherwise die under
 # `bash -eu` on an unreadable theme.name before starship's own findings are
 # recorded -- the exact I19 defect, fixed in theme/doctor but not here.
@@ -308,6 +362,8 @@ run_test "reset restores the file and the current palette" test_reset_restores_t
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor passes after configure then theme set" test_doctor_passes_after_configure_then_theme_set
+run_test "doctor reports unknown when a rendered palette is unreadable" test_doctor_reports_unknown_when_a_rendered_palette_is_unreadable
+run_test "doctor still compares when only one mode was rendered" test_doctor_still_compares_when_only_one_mode_was_rendered
 run_test "doctor reports an unreadable theme name instead of dying" test_doctor_reports_an_unreadable_theme_name_instead_of_dying
 run_test "doctor reports a theme name that does not exist" test_doctor_reports_a_theme_name_that_does_not_exist
 run_test "doctor reports a missing config" test_doctor_reports_a_missing_config

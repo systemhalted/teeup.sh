@@ -575,6 +575,14 @@ cmd_launch() {
 # what this machine has installed; with one it checks that capability whether
 # or not it is installed, because "why is this not working" gets asked about
 # things that did not install properly in the first place.
+#
+# The exit status is whatever doctor_summary (lib/doctor.sh) decides from the
+# report: 0 only when every check reached a verdict and none found a
+# problem, 1 when at least one did, 2 when nothing is confirmed broken but
+# something material could not be checked at all -- see lib/doctor.sh's
+# header comment for the full convention. This function does not re-decide
+# any of that; it only collects into the report and returns what the summary
+# says.
 cmd_doctor() {
   local target="${1:-}" report targets name rc=0 checked=true
   report="$(mktemp)"

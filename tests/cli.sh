@@ -1281,6 +1281,25 @@ test_doctor_names_the_failure_and_the_command_that_fixes_it() {
   cleanup_test_env
 }
 
+# The third outcome, end to end through `teeup doctor` itself, not just
+# lib/doctor.sh's own unit tests: a capability whose doctor script could not
+# check something material (doctor_unknown) with nothing confirmed broken
+# must exit 2, distinct from both 0 (healthy) and 1 (found problems) -- the
+# whole point of giving "could not check" its own outcome.
+test_doctor_exits_two_when_nothing_failed_but_something_could_not_be_checked() {
+  setup
+  "$TEEUP" install alpha >/dev/null
+  printf '#!/usr/bin/env bash\ndoctor_unknown "could not tell about alpha" "teeup doctor alpha"\ndoctor_verdict\n' > "$TEEUP_CAPS_DIR/alpha/doctor"
+  local out rc=0
+  out="$("$TEEUP" doctor 2>&1)" || rc=$?
+  assert_equals "2" "$rc" "could-not-verify must not read as either healthy (0) or a confirmed problem (1)" || return 1
+  assert_contains "$out" "could not tell about alpha" || return 1
+  assert_contains "$out" "could not verify 1 item" || return 1
+  assert_not_contains "$out" "everything checked is healthy" || return 1
+  assert_not_contains "$out" "found 1 problem" "an unknown is not a confirmed problem" || return 1
+  cleanup_test_env
+}
+
 test_doctor_checks_one_capability_even_when_it_is_not_installed() {
   setup
   printf '#!/usr/bin/env bash\ndoctor_ok "beta looks fine"\ndoctor_verdict\n' > "$TEEUP_CAPS_DIR/beta/doctor"
@@ -1350,6 +1369,30 @@ test_doctor_reports_an_unreadable_state_dir_parent_instead_of_calling_it_empty()
   chmod 0755 "$state_root"
   assert_failure "$rc" "an unsearchable state root must not exit 0 either (NB3)" || return 1
   assert_contains "$out" "could not be read" || return 1
+  assert_not_contains "$out" "No capability is marked installed here" || return 1
+  assert_not_contains "$out" "everything checked is healthy" || return 1
+  cleanup_test_env
+}
+
+# NI-C: NB3's own fix still trusted `-e "$TEEUP_STATE_DIR"` once the root
+# itself looked searchable, but that is unsearchable for the wrong reason
+# when the root's own PARENT cannot be searched -- ~/.local/state left
+# root-owned by a `sudo`-run tool is at least as common as the teeup
+# directory under it, and permissions damage lands on whichever directory a
+# privileged process created first. A fully installed, healthy machine must
+# not read as bare one directory further up than NB3 already covers.
+test_doctor_reports_an_unreadable_state_dir_grandparent_instead_of_calling_it_empty() {
+  setup
+  "$TEEUP" install alpha >/dev/null
+  local state_root="$TEST_HOME/.local/state/teeup" state_parent="$TEST_HOME/.local/state"
+  [[ -d "$state_root/done" ]] || { echo "state dir fixture assumption broke"; return 1; }
+  chmod 0000 "$state_parent"
+  local out rc=0
+  out="$("$TEEUP" doctor 2>&1)" || rc=$?
+  chmod 0755 "$state_parent"
+  assert_failure "$rc" "an unsearchable parent of the state root must not exit 0 either (NI-C)" || return 1
+  assert_contains "$out" "could not be read" || return 1
+  assert_contains "$out" "$state_parent" "the failure must name the directory that is actually unsearchable" || return 1
   assert_not_contains "$out" "No capability is marked installed here" || return 1
   assert_not_contains "$out" "everything checked is healthy" || return 1
   cleanup_test_env
@@ -1434,9 +1477,11 @@ run_test "remove is honest when the remove script answers not-applicable" test_r
 run_test "remove refuses a not-applicable capability" test_remove_refuses_a_not_applicable_capability
 run_test "doctor is quiet and zero when healthy" test_doctor_is_quiet_and_zero_when_nothing_is_installed_is_wrong
 run_test "doctor names the failure and its fix" test_doctor_names_the_failure_and_the_command_that_fixes_it
+run_test "doctor exits 2 when nothing failed but something could not be checked" test_doctor_exits_two_when_nothing_failed_but_something_could_not_be_checked
 run_test "doctor checks an uninstalled capability" test_doctor_checks_one_capability_even_when_it_is_not_installed
 run_test "doctor separates an empty machine from a fully skipped one" test_doctor_separates_an_empty_machine_from_a_fully_skipped_one
 run_test "doctor reports an unreadable state dir instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_instead_of_calling_it_empty
 run_test "doctor reports an unreadable state dir parent instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_parent_instead_of_calling_it_empty
+run_test "doctor reports an unreadable state dir grandparent instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_grandparent_instead_of_calling_it_empty
 run_test "doctor rejects an unknown capability" test_doctor_rejects_an_unknown_capability
 print_summary

@@ -164,6 +164,20 @@ assert_failure() {
   return 1
 }
 
+# assert_unknown <exit-code> [message]
+# teeup doctor's third exit status (lib/doctor.sh): nothing confirmed
+# broken, but something material could not be checked, so 0 (healthy) and 1
+# (found problems) are both the wrong answer. A plain assert_failure would
+# pass for either 1 or 2 and hide the difference the whole point of this
+# status exists to preserve, which is exactly how "could not check" kept
+# silently reading as "found nothing wrong" across three rounds of review.
+assert_unknown() {
+  local exit_code="$1" message="${2:-Command should report could-not-verify (exit 2)}"
+  [[ "$exit_code" -eq 2 ]] && return 0
+  echo -e "${RED}FAIL: $message${RESET}\n  Exit code: $exit_code"
+  return 1
+}
+
 run_test() {
   local test_name="$1" test_func="$2"
   TESTS_RUN=$((TESTS_RUN + 1))

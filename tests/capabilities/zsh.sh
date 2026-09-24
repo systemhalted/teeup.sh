@@ -583,6 +583,7 @@ test_doctor_says_dscl_could_not_answer_when_it_fails() {
   : > "$report"
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_unknown "$rc" "dscl not answering is could-not-verify, not healthy and not a confirmed problem" || return 1
   assert_contains "$out" "Could not ask dscl" || return 1
   assert_not_contains "$out" "not zsh" || return 1
   assert_not_contains "$(cat "$report")" "chsh -s /bin/zsh" || return 1
@@ -602,6 +603,7 @@ test_doctor_says_dscl_could_not_answer_when_it_is_blank() {
   : > "$report"
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_unknown "$rc" "dscl not answering is could-not-verify, not healthy and not a confirmed problem" || return 1
   assert_contains "$out" "Could not ask dscl" || return 1
   assert_not_contains "$out" "not zsh" || return 1
   assert_not_contains "$(cat "$report")" "chsh -s /bin/zsh" || return 1

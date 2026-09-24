@@ -53,14 +53,25 @@ for identity in $(identity_list); do
     # in .../hosts.yml is invalid." (verified against the real CLI, NB1) --
     # that machine is not merely offline, `gh auth login` is exactly the fix
     # (the one `teeup configure github` runs), and reporting it as "could not
-    # check" left it silently unfixable. Anything else is a genuine transport
-    # failure, so THAT is "could not check", not "not signed in", and
-    # `teeup configure github` (an interactive `gh auth login`) is not
-    # offered for a machine that is merely offline.
-    if printf '%s' "$status_out" | grep -qiE 'not logged in|failed to log in to|token[^.]*is invalid'; then
+    # check" left it silently unfixable. gh's path always contains a dot (the
+    # hosts.yml one, or a TLD in the hostname), so a `[^.]*` gap before "is
+    # invalid" can never match real output and left older gh's own wording
+    # for this case -- "authentication failed" / "token ... is invalid" on
+    # separate lines -- unmatched (NI-A): `.*` instead, and a fourth
+    # alternative for the older phrasing.
+    if printf '%s' "$status_out" | grep -qiE 'not logged in|failed to log in to|token.*is invalid|authentication failed'; then
       doctor_fail "Not signed in to $gh_host (needed for the $identity identity)." "teeup configure github"
+    elif [[ -z "$status_out" ]]; then
+      # An offline or rate-limited gh still prints something -- "error
+      # connecting to api.github.com", a DNS failure, gh's own retry notice.
+      # No output at all, on a command that always writes something when it
+      # fails, is gh itself not answering (dead binary, broken install), the
+      # same "on PATH is not the same as working" gate lib/doctor.sh and
+      # mise's doctor already apply to their own backends (NI-D): a confirmed
+      # problem, not merely something teeup could not check.
+      doctor_fail "gh is on PATH but did not answer to gh auth status -h $gh_host (no output at all), so teeup could not check whether $identity is signed in." "gh auth status -h $gh_host"
     else
-      doctor_warn "Could not check whether $identity is signed in to $gh_host: gh auth status failed for a reason other than being signed out. Check by hand: gh auth status -h $gh_host"
+      doctor_unknown "Could not check whether $identity is signed in to $gh_host: gh auth status failed for a reason other than being signed out. Check by hand: gh auth status -h $gh_host" "gh auth status -h $gh_host"
     fi
     continue
   fi
@@ -75,7 +86,7 @@ for identity in $(identity_list); do
   if [[ -n "$gh_account" ]]; then
     active_account="$(printf '%s\n' "$status_out" | awk '{ for (i = 1; i < NF; i++) if ($i == "account") { print $(i + 1); exit } }')"
     if [[ -n "$active_account" && "$active_account" != "$gh_account" ]]; then
-      doctor_warn "Could not check the $identity key on $gh_host: gh is signed in there as $active_account, not $gh_account. Sign in as $gh_account to check it (gh auth switch --hostname $gh_host --user $gh_account)."
+      doctor_unknown "Could not check the $identity key on $gh_host: gh is signed in there as $active_account, not $gh_account. Sign in as $gh_account to check it (gh auth switch --hostname $gh_host --user $gh_account)." "gh auth switch --hostname $gh_host --user $gh_account"
       continue
     fi
   fi
@@ -98,7 +109,7 @@ for identity in $(identity_list); do
   # yield a multi-line body that can never match a listed row.
   body="$(awk 'NR == 1 { print $2 }' "$pub")"
   if [[ -z "$body" ]]; then
-    doctor_warn "$pub does not look like a public key, so teeup could not check whether it is on GitHub."
+    doctor_unknown "$pub does not look like a public key, so teeup could not check whether it is on GitHub." "teeup configure ssh"
     continue
   fi
   # `|| true` used to swallow every failure -- offline, DNS, a rate limit, a
@@ -124,7 +135,7 @@ for identity in $(identity_list); do
       fi
     done
   else
-    doctor_warn "Could not list SSH keys on $gh_host (gh ssh-key list failed), so teeup could not check whether the $identity key is uploaded."
+    doctor_unknown "Could not list SSH keys on $gh_host (gh ssh-key list failed), so teeup could not check whether the $identity key is uploaded." "gh ssh-key list -h $gh_host"
   fi
 done
 

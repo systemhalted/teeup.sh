@@ -45,6 +45,15 @@ case "$1 ${2:-}" in
     if [ -n "$host" ]; then
       session_file="$HOME/gh-session"
       [ "$host" = "github.com" ] || session_file="$HOME/gh-session-$host"
+      # A seeded control file simulates gh itself not answering at all (NI-D):
+      # on PATH, exits non-zero, prints nothing -- a dead binary or a broken
+      # install, not the offline machine the transport-failure branch below is
+      # for (real offline gh always prints something).
+      dead_file="$HOME/gh-auth-status-dead"
+      [ "$host" = "github.com" ] || dead_file="$HOME/gh-auth-status-dead-$host"
+      if [ -f "$dead_file" ]; then
+        exit 1
+      fi
       # A seeded control file simulates a transport failure (offline, DNS, a
       # rate limit) -- a real gh failure that is NOT "signed out", and whose
       # wording never contains gh's own "not logged into" phrase.
@@ -67,6 +76,28 @@ case "$1 ${2:-}" in
         echo "  - Active account: true" >&2
         echo "  - The token in /Users/test/.config/gh/hosts.yml is invalid." >&2
         echo "  - To re-authenticate, run: gh auth login -h $host" >&2
+        exit 1
+      fi
+      # NI-A: an older gh's own wording for the same invalid-token state --
+      # "authentication failed", never "Failed to log in to" and never
+      # naming the token file, so it pins that alternative alone.
+      old_invalid_file="$HOME/gh-auth-status-old-invalid-token"
+      [ "$host" = "github.com" ] || old_invalid_file="$HOME/gh-auth-status-old-invalid-token-$host"
+      if [ -f "$old_invalid_file" ]; then
+        echo "X $host: authentication failed" >&2
+        exit 1
+      fi
+      # NI-A: the other half of the same older wording, seeded separately so
+      # neither alternative rides on the other -- "The token in <path> is
+      # invalid." alone, with no "authentication failed" and no "Failed to
+      # log in to" anywhere in the output. The path always contains a dot (a
+      # real hosts.yml path, or the host's own TLD), so a `[^.]*` gap before
+      # "is invalid" can never match it; this is exactly the shape that
+      # lesson was about.
+      token_invalid_only_file="$HOME/gh-auth-status-token-invalid-only"
+      [ "$host" = "github.com" ] || token_invalid_only_file="$HOME/gh-auth-status-token-invalid-only-$host"
+      if [ -f "$token_invalid_only_file" ]; then
+        echo "The token in /Users/test/.config/gh/hosts.yml is invalid." >&2
         exit 1
       fi
       if [ ! -f "$session_file" ]; then
@@ -823,7 +854,7 @@ test_doctor_reports_it_could_not_check_a_work_key_on_the_wrong_account() {
   printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' >> "$TEST_HOME/gh-keys"
   local rc=0 out
   out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
-  assert_success "$rc" || return 1
+  assert_unknown "$rc" "an unchecked identity is could-not-verify, not healthy" || return 1
   assert_contains "$out" "Could not check the work key on github.enterprise.example.com" || return 1
   assert_contains "$out" "signed in there as testuser, not ada-corp" || return 1
   assert_not_contains "$out" "work public key is not on GitHub" "an unchecked identity must not be reported as failed" || return 1
@@ -844,7 +875,7 @@ test_doctor_reports_a_transport_failure_as_could_not_check() {
   : > "$TEST_HOME/gh-auth-status-error"
   local rc=0 out
   out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
-  assert_success "$rc" "a transport failure is not the same as being signed out" || return 1
+  assert_unknown "$rc" "a transport failure is could-not-verify, not healthy and not a confirmed problem" || return 1
   assert_contains "$out" "Could not check whether personal is signed in to github.com" || return 1
   assert_not_contains "$out" "Not signed in to github.com" "a network failure must not be reported as signed out" || return 1
   cleanup_test_env
@@ -877,6 +908,78 @@ test_doctor_reports_an_invalid_token_as_not_signed_in() {
   cleanup_test_env
 }
 
+# NI-A: NB1's fix rested entirely on gh 2.100.0's literal "Failed to log in
+# to" phrase, and its own safety net -- `token[^.]*is invalid` -- could never
+# fire against real output (gh always names the token's file, and a path
+# always contains a dot). An older gh reports the same revoked-token state
+# with "X <host>: authentication failed" instead, which did not match
+# either, and that machine landed back in "could not check", for a state
+# that is exactly as fixable as NB1's. Seeded with no "Failed to log in to"
+# and no "token ... is invalid" text anywhere, so this pins the
+# "authentication failed" alternative on its own.
+test_doctor_reports_an_older_gh_wording_invalid_token_as_not_signed_in() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  : > "$TEST_HOME/gh-auth-status-old-invalid-token"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_equals "1" "$rc" "an older gh's own wording for an invalid token must be a confirmed failure (rc=1), not merely unknown (rc=2) or healthy (NI-A)" || return 1
+  assert_contains "$out" "Not signed in to github.com" || return 1
+  assert_not_contains "$out" "Could not check whether personal is signed in" "an invalid token is fixable; it must not be reported as merely unknowable" || return 1
+  assert_contains "$(cat "$report")" "teeup configure github" || return 1
+  cleanup_test_env
+}
+
+# NI-A: the other alternative added for NI-A, pinned on its own -- "The
+# token in <path> is invalid." with no "Failed to log in to" and no
+# "authentication failed" anywhere in the output. A path always contains a
+# dot, so the old `token[^.]*is invalid` gap could never match this, in gh
+# of any version.
+test_doctor_reports_a_bare_token_invalid_message_as_not_signed_in() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  : > "$TEST_HOME/gh-auth-status-token-invalid-only"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_equals "1" "$rc" "a bare 'token ... is invalid' message must be a confirmed failure (rc=1), not merely unknown (rc=2) or healthy (NI-A)" || return 1
+  assert_contains "$out" "Not signed in to github.com" || return 1
+  assert_not_contains "$out" "Could not check whether personal is signed in" "an invalid token is fixable; it must not be reported as merely unknowable" || return 1
+  assert_contains "$(cat "$report")" "teeup configure github" || return 1
+  cleanup_test_env
+}
+
+# NI-D: "on PATH is not the same as working" is the lesson lib/doctor.sh and
+# mise's doctor already apply to their own backends; github/doctor did not.
+# A gh that is on PATH but dead (exits non-zero, prints nothing at all on
+# EVERY call, not just this one) is not the offline machine the "could not
+# check" branch was written for -- real offline gh always prints something
+# ("error connecting to ..."). No output at all is gh itself not answering, a
+# confirmed problem.
+test_doctor_reports_a_dead_gh_as_a_failure_not_could_not_check() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  : > "$TEST_HOME/gh-auth-status-dead"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_equals "1" "$rc" "a gh that never answers must be a confirmed failure (rc=1), not merely unknown (rc=2) (NI-D)" || return 1
+  assert_contains "$out" "did not answer" || return 1
+  assert_not_contains "$out" "Could not check whether personal is signed in" "a dead gh is not the offline-and-transport-failed shape" || return 1
+  assert_contains "$(cat "$report")" "gh auth status" || return 1
+  cleanup_test_env
+}
+
 # I12: `gh ssh-key list` failing (offline, a rate limit, a revoked token)
 # used to be swallowed (`|| true`) and read as an empty, successful listing
 # -- the key reported simply not there. It must be "could not check".
@@ -889,7 +992,7 @@ test_doctor_reports_it_could_not_list_keys() {
   : > "$TEST_HOME/gh-keys-list-fail"
   local rc=0 out
   out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
-  assert_success "$rc" "gh ssh-key list failing is not the same as the key being missing" || return 1
+  assert_unknown "$rc" "gh ssh-key list failing is could-not-verify, not the key being missing and not healthy" || return 1
   assert_contains "$out" "Could not list SSH keys on github.com" || return 1
   assert_not_contains "$out" "is not on GitHub" "an unlistable key list must not be reported as the key being absent" || return 1
   cleanup_test_env
@@ -1002,6 +1105,9 @@ run_test "doctor reports a second host that needs signing in" test_doctor_report
 run_test "doctor reports it could not check a work key on the wrong account" test_doctor_reports_it_could_not_check_a_work_key_on_the_wrong_account
 run_test "doctor reports a transport failure as could not check" test_doctor_reports_a_transport_failure_as_could_not_check
 run_test "doctor reports an invalid token as not signed in" test_doctor_reports_an_invalid_token_as_not_signed_in
+run_test "doctor reports an older gh's invalid-token wording as not signed in" test_doctor_reports_an_older_gh_wording_invalid_token_as_not_signed_in
+run_test "doctor reports a bare token-invalid message as not signed in" test_doctor_reports_a_bare_token_invalid_message_as_not_signed_in
+run_test "doctor reports a dead gh as a failure, not could-not-check" test_doctor_reports_a_dead_gh_as_a_failure_not_could_not_check
 run_test "doctor reports it could not list keys" test_doctor_reports_it_could_not_list_keys
 run_test "doctor reports a signing-only key as not ready for push" test_doctor_reports_a_signing_only_key_as_not_ready_for_push
 run_test "doctor checks the active account's scopes, not an inactive one's" test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones
