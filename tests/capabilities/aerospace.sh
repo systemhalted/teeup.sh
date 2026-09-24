@@ -524,6 +524,71 @@ test_configure_fails_when_the_generated_config_cannot_be_written() {
   cleanup_test_env
 }
 
+# The backstop: toml_merge_local is hand-written awk, not a TOML parser, and
+# review keeps finding ways it can get a real local.toml wrong. Where
+# AeroSpace itself is available to ask (`aerospace reload-config --dry-run`),
+# it gets the last word before anything is installed, so a config it rejects
+# never reaches ~/.config/aerospace/aerospace.toml and AeroSpace is never
+# left to silently load nothing.
+test_backstop_leaves_the_config_untouched_when_aerospace_rejects_it() {
+  setup
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  local before local_toml
+  before="$(cat "$AERO")"
+  local_toml="$TEST_HOME/.config/aerospace/local.toml"
+  printf '\nstart-at-login = false\n' >> "$local_toml"
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  reload-config) echo "aerospace: config error: unexpected key on line 12" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
+  assert_failure "$rc" "a config AeroSpace rejects must fail the capability" || return 1
+  assert_equals "$before" "$(cat "$AERO")" "the file already there must be left exactly as it was" || return 1
+  assert_contains "$out" "$local_toml" "the message must name the file that could not be merged" || return 1
+  assert_contains "$out" "unexpected key on line 12" "AeroSpace's own error must reach the user" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "aerospace reload-config" "must actually have asked AeroSpace" || return 1
+  cleanup_test_env
+}
+
+test_backstop_installs_normally_when_aerospace_accepts_it() {
+  setup
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
+  printf '\nstart-at-login = false\n' >> "$local_toml"
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  reload-config) exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
+  assert_success "$rc" "a config AeroSpace accepts must configure normally" || return 1
+  assert_contains "$(cat "$AERO")" "start-at-login = false" "the merge AeroSpace accepted must actually be installed" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "aerospace reload-config" "must actually have asked AeroSpace" || return 1
+  cleanup_test_env
+}
+
+# No `aerospace` binary at all (a fresh Mac before the cask lands, a
+# MacPorts machine, this Linux test box) has to skip the check, not fail it
+# -- every other test in this suite relies on exactly that -- and skipping
+# must not be reported as if AeroSpace had actually looked at the config.
+test_backstop_skips_without_claiming_success_when_there_is_no_aerospace_binary() {
+  setup
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
+  printf '\nstart-at-login = false\n' >> "$local_toml"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
+  assert_success "$rc" "no aerospace binary must not block the install" || return 1
+  assert_contains "$(cat "$AERO")" "start-at-login = false" "no aerospace binary must not block the install" || return 1
+  assert_not_contains "$out" "AeroSpace said" "skipping validation must not be reported as having validated" || return 1
+  cleanup_test_env
+}
+
 run_test "install taps then installs the cask" test_install_taps_then_installs_the_cask
 run_test "install skips the tap when present" test_install_skips_the_tap_when_present
 run_test "install is skipped on macports" test_install_is_skipped_on_macports
@@ -534,6 +599,9 @@ run_test "install at the macOS minimum marks done as before" test_install_at_the
 run_test "install runs as usual at the macOS minimum" test_install_runs_as_usual_at_the_macos_minimum
 run_test "configure copies the config and prints the manual step" test_configure_copies_the_config_and_prints_the_manual_step
 run_test "configure fails when the generated config cannot be written" test_configure_fails_when_the_generated_config_cannot_be_written
+run_test "backstop leaves the config untouched when AeroSpace rejects it" test_backstop_leaves_the_config_untouched_when_aerospace_rejects_it
+run_test "backstop installs normally when AeroSpace accepts it" test_backstop_installs_normally_when_aerospace_accepts_it
+run_test "backstop skips without claiming success when there is no aerospace binary" test_backstop_skips_without_claiming_success_when_there_is_no_aerospace_binary
 run_test "reset leaves the local override alone" test_reset_leaves_the_local_override_alone
 run_test "configure writes the tuned defaults" test_configure_writes_the_tuned_defaults
 run_test "shipped defaults do not force a monitor layout" test_shipped_defaults_do_not_force_a_monitor_layout

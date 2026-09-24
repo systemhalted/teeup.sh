@@ -40,6 +40,21 @@ else
   AEROSPACE_RENDERED="$(mktemp)"
   toml_merge_local "$TEEUP_CAP_DIR/config/aerospace/aerospace.toml" "$AEROSPACE_LOCAL_SRC" > "$AEROSPACE_RENDERED"
   AEROSPACE_DISPLAY_SRC="$TEEUP_CAP_DIR/config/aerospace/aerospace.toml (plus $AEROSPACE_LOCAL_TOML)"
+  # toml_merge_local is hand-written awk, not a TOML parser, and review has
+  # already found it wrong in ways that only show up once AeroSpace tries to
+  # load the result. Where AeroSpace itself is available to ask, it gets the
+  # last word before anything is installed: a config it rejects must never
+  # reach $AEROSPACE_DEST_TOML, so a future gap here fails loudly instead of
+  # leaving AeroSpace running on no config at all. Skipped under DRY_RUN,
+  # which must never touch $AEROSPACE_DEST_TOML even to stage a check.
+  if [[ "$DRY_RUN" != "true" ]]; then
+    AEROSPACE_VALIDATION_ERR=""
+    if ! AEROSPACE_VALIDATION_ERR="$(aerospace_config_ok "$AEROSPACE_DEST_TOML" "$AEROSPACE_RENDERED")"; then
+      rm -f "$AEROSPACE_RENDERED"
+      err "teeup could not merge $AEROSPACE_LOCAL_TOML into AeroSpace's config, so $AEROSPACE_DEST_TOML was not changed. AeroSpace said: $AEROSPACE_VALIDATION_ERR"
+      exit 1
+    fi
+  fi
   if [[ -n "${TEEUP_RESET:-}" && "$TEEUP_RESET" == "${TEEUP_CAP:-}" ]]; then
     # Cleared for the call, the way copy_config_once clears it for its own
     # nested refresh_config: refresh_config falls back to copy_config_once
