@@ -116,7 +116,12 @@ for identity in $(identity_list); do
   fi
   # NR == 1: a .pub is one line, but a stray second line would otherwise
   # yield a multi-line body that can never match a listed row.
-  body="$(awk 'NR == 1 { print $2 }' "$pub")"
+  # The trailing CR matters: ssh-keygen writes neither CRLF nor a key without
+  # a comment, but a key copied in by hand can have both, and then the body
+  # carries a CR that matches no row GitHub lists. The doctor would report the
+  # key as absent and offer `teeup configure github`, which re-uploads the
+  # same key and clears nothing.
+  body="$(awk 'NR == 1 { sub(/\r$/, "", $0); print $2 }' "$pub")"
   if [[ -z "$body" ]]; then
     doctor_unknown "$pub does not look like a public key, so teeup could not check whether it is on GitHub." "teeup configure ssh"
     continue

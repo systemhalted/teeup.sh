@@ -987,6 +987,29 @@ test_doctor_reports_a_dead_gh_as_a_failure_not_could_not_check() {
   cleanup_test_env
 }
 
+# A .pub with CRLF line endings and no trailing comment. ssh-keygen writes
+# neither, so this is a key somebody copied in by hand -- narrow, but the
+# consequence is a finding that can never clear: the body carries a trailing
+# CR, so it matches no listed row, the doctor says the key is not on GitHub,
+# and the suggested `teeup configure github` re-uploads the same key and
+# changes nothing.
+test_doctor_reads_a_pub_with_crlf_and_no_comment() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'ssh-ed25519 AAAAPERSONALKEY\r\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  printf 'admin:public_key,admin:ssh_signing_key\n' > "$TEST_HOME/gh-session"
+  # GitHub really does have both rows for this key, so the ONLY thing that
+  # can make them fail to match is the CR in the body teeup read.
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'laptop (signing)\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:34Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "is not on GitHub" "a CR is not a different key" || return 1
+  cleanup_test_env
+}
+
 # I12: `gh ssh-key list` failing (offline, a rate limit, a revoked token)
 # used to be swallowed (`|| true`) and read as an empty, successful listing
 # -- the key reported simply not there. It must be "could not check".
@@ -1150,6 +1173,7 @@ run_test "doctor reports an older gh's invalid-token wording as not signed in" t
 run_test "doctor reports a bare token-invalid message as not signed in" test_doctor_reports_a_bare_token_invalid_message_as_not_signed_in
 run_test "doctor reports a dead gh as a failure, not could-not-check" test_doctor_reports_a_dead_gh_as_a_failure_not_could_not_check
 run_test "doctor will not check a key against an account it cannot name" test_doctor_will_not_check_a_key_against_an_account_it_cannot_name
+run_test "doctor reads a pub with CRLF and no comment" test_doctor_reads_a_pub_with_crlf_and_no_comment
 run_test "doctor reports it could not list keys" test_doctor_reports_it_could_not_list_keys
 run_test "doctor reports a signing-only key as not ready for push" test_doctor_reports_a_signing_only_key_as_not_ready_for_push
 run_test "doctor checks the active account's scopes, not an inactive one's" test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones
