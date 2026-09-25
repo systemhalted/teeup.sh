@@ -416,6 +416,28 @@ cmd_theme() {
   [[ $# -gt 0 ]] && shift
   case "$op" in
     set)
+      # With no name, ask. This is what the menu's Theme row runs, so the
+      # list always covers whatever themes/ holds today, including any a
+      # later phase adds. Backing out of the picker leaves the current theme
+      # alone and is not an error.
+      if [[ -z "${1:-}" ]]; then
+        menu_validate_picker_env
+        local names name
+        names=()
+        while IFS= read -r name; do
+          names[${#names[@]}]="$name"
+        done < <(theme_list)
+        # bash 3.2 under `set -u` treats the expansion of an EMPTY array as
+        # an unbound variable, so the count is checked before "${names[@]}".
+        if [[ ${#names[@]} -eq 0 ]]; then
+          die "No themes found. Look in $TEEUP_PATH/themes and $TEEUP_CONFIG_DIR/themes."
+        fi
+        set -- "$(menu_pick "Theme" "${names[@]}")" || true
+        if [[ -z "${1:-}" ]]; then
+          log "Keeping the current theme: $(theme_current)"
+          return 0
+        fi
+      fi
       [[ -n "${1:-}" ]] || die "Usage: teeup theme set <name>"
       # A name typed here is strict. theme_set's catppuccin fallback exists for
       # configure reading a stale answer during bootstrap; on the command line a
