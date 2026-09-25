@@ -368,17 +368,29 @@ test_doctor_names_the_root_palette_selected() {
 # The defect this suite shipped once: four doctor tests never mocked starship,
 # so `have starship` in capabilities/starship/doctor was answered by whatever
 # was in the developer's /usr/bin. They passed on a machine with starship
-# installed and failed on all three CI runners, which have none. Hiding the
-# host copy here proves no test in this file is still asking the host.
+# installed and failed on all three CI runners, which have none. setup hides
+# the host copy; this asserts the EFFECT of that, which is the only thing that
+# holds on both kinds of machine.
+#
+# Asserting the evidence instead -- that TEEUP_TEST_MISSING names starship --
+# is what the first version of this test did, and it failed on CI for the very
+# reason the hiding exists: hide_host_commands records only copies it actually
+# finds, so on a runner with no starship it recorded nothing and the assertion
+# had nothing to see.
 test_no_doctor_test_depends_on_a_host_starship() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
-  assert_contains " ${TEEUP_TEST_MISSING:-} " "starship" "setup must hide the host starship from every test in this file" || return 1
-  mock_command starship 0 "starship 1.23.0"
   DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
-  local rc=0 out
+  # No mock: the doctor must say starship is absent. On a machine that has one
+  # in /usr/bin that is only true because setup hid it.
+  local out rc=0
   out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
-  assert_success "$rc" "the doctor must pass on its own mock, not on the host's starship" || return 1
+  assert_contains "$out" "starship is not on PATH" "the host's starship must not be visible to this suite" || return 1
+  # And with its own mock, the same doctor passes.
+  mock_command starship 0 "starship 1.23.0"
+  rc=0
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_success "$rc" "the doctor must pass on the mock this test installed" || return 1
   assert_contains "$out" "starship is on PATH." || return 1
   cleanup_test_env
 }
