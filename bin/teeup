@@ -618,11 +618,24 @@ _config_key_known() {
 # KEY=value with no spaces -- because bash -n alone accepts
 # `TEEUP_NAME=Ada Lovelace`, which is valid shell that *runs* Lovelace as a
 # command every time answers_load sources the file (R7.4); bash -n then
-# catches anything the shape check cannot see (unbalanced quotes, unmatched
-# parens, ...).
+# catches anything the shape check cannot see (unbalanced parens in a bare
+# value, ...).
+#
+# The quoted form must accept exactly what answers_set (lib/answers.sh)
+# itself writes, or every answer that has ever contained a quote breaks
+# `teeup config edit` for good: answers_set backslash-escapes ", \, $ and `
+# in the value, so the content between the quotes here is any run of chars
+# that are none of those four, or one of those four preceded by a backslash.
+# An UNescaped ", $ or ` inside the quotes is exactly what would let the
+# line run a command when answers_load sources it, so it is refused, not
+# waved through because bash -n alone finds it syntactically valid.
+#
+# Output is tagged shape:... or syntax:... so the caller can say which gate
+# failed -- a shape failure is a file bash would parse just fine, so calling
+# it unparseable would be a lie.
 _config_edit_error() {
-  local f="$1" line lineno=0 quoted_pat bare_pat
-  quoted_pat='^TEEUP_[A-Z0-9_]+="[^"]*"$'
+  local f="$1" line lineno=0 quoted_pat bare_pat syntax_error
+  quoted_pat='^TEEUP_[A-Z0-9_]+="([^"\$`]|\\[\"$`])*"$'
   bare_pat='^TEEUP_[A-Z0-9_]+=[^[:space:]"]+$'
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -630,10 +643,13 @@ _config_edit_error() {
     if [[ "$line" =~ ^[[:space:]]*# ]]; then continue; fi
     if [[ "$line" =~ $quoted_pat ]]; then continue; fi
     if [[ "$line" =~ $bare_pat ]]; then continue; fi
-    printf 'line %d does not read KEY="value": %s\n' "$lineno" "$line"
+    printf 'shape:line %d does not read KEY="value": %s\n' "$lineno" "$line"
     return 0
   done < "$f"
-  bash -n "$f" 2>&1
+  syntax_error="$(bash -n "$f" 2>&1)"
+  if [[ -n "$syntax_error" ]]; then
+    printf 'syntax:%s\n' "$syntax_error"
+  fi
   return 0
 }
 
@@ -763,7 +779,21 @@ cmd_config() {
         cp "$backup" "$f"
         chmod 600 "$f"
         rm -f "$backup"
-        die "The edited $f would not parse as shell, so your edit was rolled back. Every line has to read KEY=\"value\". ($parse_error)"
+        # A shape failure is a file bash would source without a syntax
+        # complaint at all -- the danger is what it would run, not that it
+        # fails to parse -- so it gets its own wording rather than the
+        # "would not parse" text that only fits a real bash -n failure.
+        case "$parse_error" in
+          shape:*)
+            die "The edited $f was rolled back: ${parse_error#shape:}. Every line has to read KEY=\"value\", with any \", \\, \$ or \` inside the value backslash-escaped."
+            ;;
+          syntax:*)
+            die "The edited $f would not parse as shell, so your edit was rolled back. Every line has to read KEY=\"value\". (${parse_error#syntax:})"
+            ;;
+          *)
+            die "The edited $f was rolled back. Every line has to read KEY=\"value\". ($parse_error)"
+            ;;
+        esac
       fi
       ;;
     *) die "Usage: teeup config get [<KEY>] | set <KEY> <value> | edit" ;;

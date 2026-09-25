@@ -1897,6 +1897,49 @@ EOF2
   cleanup_test_env
 }
 
+# Fix round 1 (Important): the quoted-value gate must accept exactly what
+# answers_set itself writes -- backslash-escaped ", \, $ and ` -- or any
+# answer that has ever held one of those characters breaks `teeup config
+# edit` for good. Round-trips a value through the real `teeup config set`
+# escaping, then edits a different line, and the tricky value must survive
+# untouched rather than being rolled back as unsafe.
+test_config_edit_accepts_a_value_answers_set_itself_escaped() {
+  setup
+  seed_config_answers
+  local tricky='Grace "Ace" \both$ways`here`'
+  "$TEEUP" config set TEEUP_NAME "$tricky" >/dev/null
+  assert_equals "$tricky" "$("$TEEUP" config get TEEUP_NAME)" "sanity: the value round-trips through set/get" || return 1
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_EMAIL="grace@example.com"\n' >> "$1"
+EOF2
+  local out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "Saved" || return 1
+  assert_equals "$tricky" "$("$TEEUP" config get TEEUP_NAME)" "the tricky value must survive an edit to a different line" || return 1
+  assert_equals "grace@example.com" "$("$TEEUP" config get TEEUP_EMAIL)" || return 1
+  cleanup_test_env
+}
+
+# Fix round 1 (Important): an UNescaped $(...) inside quotes is exactly what
+# would let the line run a command when answers_load sources it, so it must
+# still be rejected even though it is syntactically valid shell (bash -n
+# alone would accept it) -- and the die message must not call this a parse
+# failure, since the file does parse.
+test_config_edit_rejects_unescaped_command_substitution_in_a_quoted_value() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_NAME="$(id)"\n' >> "$1"
+EOF2
+  local rc=0 out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "rolled back" || return 1
+  assert_not_contains "$out" "would not parse as shell" "a shape failure must not be reported as a parse failure" || return 1
+  assert_equals "Ada Lovelace" "$("$TEEUP" config get TEEUP_NAME)" || return 1
+  cleanup_test_env
+}
+
 test_config_edit_passes_flags_in_the_editor_variable() {
   setup
   seed_config_answers
@@ -2031,6 +2074,8 @@ run_test "config get header lists both machine files" test_config_get_header_lis
 run_test "config edit keeps a good edit" test_config_edit_runs_the_editor_and_keeps_a_good_edit
 run_test "config edit rolls back a broken edit" test_config_edit_rolls_back_an_edit_that_will_not_parse
 run_test "config edit rolls back a line that would run as a command" test_config_edit_rolls_back_a_line_that_would_run_as_a_command
+run_test "config edit accepts a value answers_set itself escaped" test_config_edit_accepts_a_value_answers_set_itself_escaped
+run_test "config edit rejects unescaped command substitution" test_config_edit_rejects_unescaped_command_substitution_in_a_quoted_value
 run_test "config edit passes flags in EDITOR" test_config_edit_passes_flags_in_the_editor_variable
 run_test "config edit dry run creates and touches nothing" test_config_edit_dry_run_creates_and_touches_nothing
 print_summary
