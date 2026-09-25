@@ -863,6 +863,75 @@ test_doctor_rejects_an_unreadable_allowed_signers_file() {
   cleanup_test_env
 }
 
+# Codex P2s on the gpgsign fix: the effective value is git's own answer --
+# its include order (a line after the last include beats local), its boolean
+# parser (a bare key is true, garbage is an error), and an unreadable
+# include is not a value.
+test_doctor_lets_a_later_top_level_gpgsign_beat_local() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[commit]\n\tgpgsign = false\n' > "$TEST_HOME/.config/git/local"
+  printf '[commit]\n\tgpgsign = true\n' >> "$TEST_HOME/.config/git/config"
+  assert_equals "true" "$(git config -f "$TEST_HOME/.config/git/config" --includes --type=bool --get commit.gpgsign)" "fixture: git sees signing on" || return 1
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "Commit signing is on" || return 1
+  assert_not_contains "$out" "turns commit signing off" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reads_a_bare_gpgsign_key_as_true() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[commit]\n\tgpgsign\n' > "$TEST_HOME/.config/git/local"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "Commit signing is on" "git reads a bare key as true" || return 1
+  cleanup_test_env
+}
+
+test_doctor_fails_on_a_gpgsign_value_git_rejects() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[commit]\n\tgpgsign = maybe\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "git refuses every command with a bad boolean" || return 1
+  assert_contains "$out" "not a value git accepts" || return 1
+  assert_not_contains "$out" "Commit signing is on" || return 1
+  cleanup_test_env
+}
+
+# Codex P2s on the allowed-signers fix: the printed repair must actually
+# clear the finding -- with the key git signs with, and a path that survives
+# being pasted into a shell.
+test_doctor_signers_repair_works_for_a_custom_key_and_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  mv "$TEST_HOME/.ssh/id_ed25519_personal" "$TEST_HOME/.ssh/id_other"
+  mv "$TEST_HOME/.ssh/id_ed25519_personal.pub" "$TEST_HOME/.ssh/id_other.pub"
+  local signers="$TEST_HOME/my signers"
+  : > "$signers"
+  printf '[user]\n\tsigningkey = "%s"\n[gpg "ssh"]\n\tallowedSignersFile = "%s"\n' \
+    "$TEST_HOME/.ssh/id_other.pub" "$signers" > "$TEST_HOME/.config/git/local"
+  local rc=0 out fix report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_contains "$out" "names no signer" || return 1
+  fix="$(grep 'names no signer' "$report" | cut -f3)"
+  assert_contains "$fix" "id_other.pub" "the repair trusts the key git signs with" || return 1
+  (cd "$TEST_HOME" && bash -c "$fix") || { echo "the printed repair failed: $fix"; return 1; }
+  : > "$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "signatures can be verified" "running the printed repair must clear the finding" || return 1
+  cleanup_test_env
+}
+
 # A tilde path that really is missing is still a failure, so the expansion is
 # not a way of skipping the check.
 test_doctor_still_reports_a_missing_tilde_allowed_signers_file() {
@@ -962,7 +1031,9 @@ test_doctor_fails_when_identity_file_is_unreadable() {
   assert_not_contains "$out" "no user.signingkey is set" "the key is in the file doctor could not read, not actually unset (NI1)" || return 1
   assert_contains "$out" "cannot be read" || return 1
   assert_contains "$out" "chmod u+r" || return 1
-  assert_contains "$out" "could not check user.signingkey" || return 1
+  # git cannot read the included identity, so whether signing is even on is
+  # unknown -- reported once, before any signing-key claim.
+  assert_contains "$out" "could not tell whether commit signing is on" || return 1
   cleanup_test_env
 }
 
@@ -1023,9 +1094,11 @@ test_doctor_reports_unknown_when_local_file_is_unreadable() {
   local rc=0 out
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
   chmod 600 "$TEST_HOME/.config/git/local"
-  assert_unknown "$rc" "nothing here is confirmed broken, but signingkey/gpg.format/allowed-signers could not be checked" || return 1
-  assert_contains "$out" "could not check user.signingkey" || return 1
-  assert_contains "$out" "could not check gpg.format" || return 1
+  assert_unknown "$rc" "nothing here is confirmed broken, but whether signing is on could not be checked" || return 1
+  # local is included last and could turn signing off, so "on" is a claim
+  # teeup has not established (Codex P2 on the gpgsign fix).
+  assert_not_contains "$out" "Commit signing is on" || return 1
+  assert_contains "$out" "could not tell whether commit signing is on" || return 1
   cleanup_test_env
 }
 
@@ -1094,6 +1167,10 @@ run_test "doctor honours signing turned off in local" test_doctor_honours_signin
 run_test "doctor honours signing turned on in local" test_doctor_honours_signing_turned_on_in_local
 run_test "doctor rejects an empty allowed-signers file" test_doctor_rejects_an_empty_allowed_signers_file
 run_test "doctor rejects an unreadable allowed-signers file" test_doctor_rejects_an_unreadable_allowed_signers_file
+run_test "doctor lets a later top-level gpgsign beat local" test_doctor_lets_a_later_top_level_gpgsign_beat_local
+run_test "doctor reads a bare gpgsign key as true" test_doctor_reads_a_bare_gpgsign_key_as_true
+run_test "doctor fails on a gpgsign value git rejects" test_doctor_fails_on_a_gpgsign_value_git_rejects
+run_test "doctor signers repair works for a custom key and path" test_doctor_signers_repair_works_for_a_custom_key_and_path
 run_test "signing turns on once the key exists" test_signing_turns_on_once_the_key_exists
 run_test "generated include is read after the defaults" test_generated_include_is_read_after_the_defaults
 run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_configure_renders_include_paths_for_a_custom_xdg_config_home
