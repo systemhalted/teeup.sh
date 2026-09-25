@@ -185,7 +185,22 @@ elif [[ -s "$personal_key" && -s "$personal_key.pub" ]]; then
 else
   keys_present=false
 fi
-if grep -q '^[[:space:]]*gpgsign = true$' "$generated" 2>/dev/null; then
+# Whether signing is on is read the way git reads it: config (whose includes
+# pull in identity and teeup-generated), then local, which is included last
+# and wins. Reading teeup-generated alone reported "signing is on" for a
+# machine whose local override turns it off, and called signing "off" on one
+# whose local turns it back on (Codex, PR #32).
+_git_doctor_raw="$(_git_doctor_last_value commit.gpgsign "$git_dir/config" "$generated" "$git_dir/local")"
+gpgsign="$(printf '%s' "${_git_doctor_raw%%$'\n'*}" | tr '[:upper:]' '[:lower:]')"
+gpgsign_unknown="${_git_doctor_raw#*$'\n'}"
+case "$gpgsign" in
+  true | yes | on | 1) gpgsign=true ;;
+  *) gpgsign=false ;;
+esac
+# Where it was switched off decides what that means: off in teeup-generated
+# is teeup's own call and can go stale, off in local is the owner's choice.
+gpgsign_local="$(git_doctor_read "$git_dir/local" commit.gpgsign | tr '[:upper:]' '[:lower:]')"
+if [[ "$gpgsign" == "true" ]]; then
   # Signing on with the key gone is worse than signing off: every `git commit`
   # fails outright, and the doctor that reported full health is the reason
   # nobody looked here first. The identity file is where configure writes
@@ -209,6 +224,12 @@ if grep -q '^[[:space:]]*gpgsign = true$' "$generated" 2>/dev/null; then
     doctor_ok "Commit signing is on."
   fi
   signing_on=true
+elif [[ "$gpgsign_unknown" == "true" ]]; then
+  doctor_unknown "Commit signing looks off, but not every git config file could be read, so teeup could not tell whether it is." "chmod u+r $git_dir/local"
+  signing_on=false
+elif [[ -n "$gpgsign_local" ]]; then
+  doctor_warn "$git_dir/local turns commit signing off, so git signs nothing. That file is yours; remove the commit.gpgsign line there to sign again."
+  signing_on=false
 elif [[ "$keys_present" == "true" ]]; then
   doctor_fail "git has every key it needs on disk but commit signing is off in $generated." "teeup configure git"
   signing_on=false
