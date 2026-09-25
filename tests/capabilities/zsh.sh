@@ -662,6 +662,95 @@ test_env_survives_errexit_without_nvim() {
   cleanup_test_env
 }
 
+# The last of the chezmoi repo's ~/.config/shell/envs. Sourced rather than
+# grepped, because what matters is the value a shell ends up with, and the
+# PATH helpers only add a directory that exists.
+test_env_layer_carries_the_cargo_and_go_paths() {
+  setup
+  local env_file="$TEEUP_PATH/capabilities/zsh/default/env"
+  mkdir -p "$TEST_HOME/.cargo/bin" "$TEST_HOME/Development/GoWorkspace/bin"
+  local out
+  out="$(HOME="$TEST_HOME" PATH="/usr/bin:/bin" bash -c 'set -eu; . "$1"; printf "%s\n%s\n" "$PATH" "${GOPATH:-unset}"' _ "$env_file")"
+  assert_contains "$out" "$TEST_HOME/.cargo/bin" "cargo install puts binaries there and no shim covers them" || return 1
+  assert_contains "$out" "$TEST_HOME/Development/GoWorkspace" "GOPATH pins a location rather than taking Go's ~/go default" || return 1
+  cleanup_test_env
+}
+
+# ~/.local/bin must still win over ~/.cargo/bin: teeup's own wrappers live
+# there, and a cargo-installed binary of the same name must not shadow one.
+test_env_layer_keeps_local_bin_ahead_of_cargo() {
+  setup
+  local env_file="$TEEUP_PATH/capabilities/zsh/default/env"
+  mkdir -p "$TEST_HOME/.cargo/bin" "$TEST_HOME/.local/bin"
+  local path_out local_pos cargo_pos
+  path_out="$(HOME="$TEST_HOME" PATH="/usr/bin:/bin" bash -c 'set -eu; . "$1"; printf "%s" "$PATH"' _ "$env_file")"
+  local_pos="$(printf '%s' "$path_out" | awk -v p="$TEST_HOME/.local/bin" '{print index($0, p)}')"
+  cargo_pos="$(printf '%s' "$path_out" | awk -v p="$TEST_HOME/.cargo/bin" '{print index($0, p)}')"
+  [[ "$local_pos" -gt 0 && "$cargo_pos" -gt 0 ]] || { echo "both directories must be on PATH"; return 1; }
+  # The tildes are prose in a failure message, not paths to expand.
+  # shellcheck disable=SC2088
+  [[ "$local_pos" -lt "$cargo_pos" ]] || { echo "~/.local/bin must come before ~/.cargo/bin"; return 1; }
+  cleanup_test_env
+}
+
+# The teeup shims stay last on PATH -- capabilities/teeup-runtime/doctor
+# checks exactly that -- so anything added here has to go above them.
+test_env_layer_keeps_the_shims_last() {
+  setup
+  local env_file="$TEEUP_PATH/capabilities/zsh/default/env"
+  mkdir -p "$TEST_HOME/.cargo/bin" "$TEST_HOME/Development/GoWorkspace/bin" \
+           "$TEST_HOME/.local/state/teeup/shims"
+  local path_out
+  path_out="$(HOME="$TEST_HOME" PATH="/usr/bin:/bin" bash -c 'set -eu; . "$1"; printf "%s" "$PATH"' _ "$env_file")"
+  case "$path_out" in
+    *"$TEST_HOME/.local/state/teeup/shims") ;;
+    *) echo "the teeup shims must be the final PATH entry; got: $path_out"; return 1 ;;
+  esac
+  cleanup_test_env
+}
+
+# Self-maintained Emacs packages. The live chezmoi repo resolves each variable
+# independently across the candidate roots and only stops once all three are
+# found -- a machine with the checkouts split across two roots still gets all
+# of them. Breaking at the first root that exists would silently lose the rest.
+test_env_layer_finds_emacs_packages_across_two_roots() {
+  setup
+  local env_file="$TEEUP_PATH/capabilities/zsh/default/env"
+  mkdir -p "$TEST_HOME/Work/environment/emacs/packages/sdkman.el"
+  mkdir -p "$TEST_HOME/Work/products/emacs-packages/trustrail.el"
+  mkdir -p "$TEST_HOME/Work/products/emacs-packages/wordwise.el"
+  local out
+  out="$(HOME="$TEST_HOME" PATH="/usr/bin:/bin" bash -c 'set -eu; . "$1"; printf "%s\n%s\n%s\n" "${SDKMAN_EL_DIR:-unset}" "${TRUSTRAIL_EL_DIR:-unset}" "${WORDWISE_EL_DIR:-unset}"' _ "$env_file")"
+  assert_contains "$out" "$TEST_HOME/Work/environment/emacs/packages/sdkman.el" || return 1
+  assert_contains "$out" "$TEST_HOME/Work/products/emacs-packages/trustrail.el" "a variable must keep looking past the first root that exists" || return 1
+  assert_contains "$out" "$TEST_HOME/Work/products/emacs-packages/wordwise.el" || return 1
+  cleanup_test_env
+}
+
+# With no checkout anywhere, every variable stays unset and the Emacs config
+# installs the packages from GitHub instead.
+test_env_layer_leaves_emacs_package_variables_unset_without_a_checkout() {
+  setup
+  local env_file="$TEEUP_PATH/capabilities/zsh/default/env"
+  local out
+  out="$(HOME="$TEST_HOME" PATH="/usr/bin:/bin" bash -c 'set -eu; . "$1"; printf "%s\n%s\n%s\n" "${SDKMAN_EL_DIR:-unset}" "${TRUSTRAIL_EL_DIR:-unset}" "${WORDWISE_EL_DIR:-unset}"' _ "$env_file")"
+  assert_equals "unset
+unset
+unset" "$out" || return 1
+  cleanup_test_env
+}
+
+test_alias_layer_carries_the_last_chezmoi_aliases() {
+  setup
+  local alias_file="$TEEUP_PATH/capabilities/zsh/default/aliases"
+  assert_contains "$(cat "$alias_file")" "cd.." || return 1
+  # The colima aliases are guarded on colima being there, so the guard is what
+  # is asserted rather than the aliases being defined unconditionally.
+  assert_contains "$(cat "$alias_file")" "colima-start" || return 1
+  assert_contains "$(cat "$alias_file")" 'command -v colima' "they must not be defined on a machine with no colima" || return 1
+  cleanup_test_env
+}
+
 run_test "doctor requires an active source not just the path" test_doctor_requires_an_active_source_not_just_the_path
 run_test "doctor accepts the shipped two-line source" test_doctor_accepts_the_shipped_two_line_source
 run_test "install gets the plugins and switches the login shell" test_install_gets_the_plugins_and_switches_the_login_shell
@@ -701,4 +790,10 @@ run_test "doctor reports a missing home file" test_doctor_reports_a_missing_home
 run_test "doctor reports an unreadable home file, not a replaceable one" test_doctor_reports_an_unreadable_home_file_not_a_replaceable_one
 run_test "doctor says dscl could not answer when it fails" test_doctor_says_dscl_could_not_answer_when_it_fails
 run_test "doctor says dscl could not answer when it is blank" test_doctor_says_dscl_could_not_answer_when_it_is_blank
+run_test "env layer carries the cargo and go paths" test_env_layer_carries_the_cargo_and_go_paths
+run_test "env layer keeps local bin ahead of cargo" test_env_layer_keeps_local_bin_ahead_of_cargo
+run_test "env layer keeps the shims last" test_env_layer_keeps_the_shims_last
+run_test "env layer finds emacs packages across two roots" test_env_layer_finds_emacs_packages_across_two_roots
+run_test "env layer leaves emacs package variables unset without a checkout" test_env_layer_leaves_emacs_package_variables_unset_without_a_checkout
+run_test "alias layer carries the last chezmoi aliases" test_alias_layer_carries_the_last_chezmoi_aliases
 print_summary

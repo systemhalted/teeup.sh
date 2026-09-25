@@ -91,8 +91,10 @@
 	l = log --oneline
 	lf = log --name-only
 	lfo = log --name-only --oneline
+	lfs = log --stat --oneline
 	lg = log --color --graph --pretty=format:'%C(bold white)%h%Creset -%C(bold green)%d%Creset %s %C(bold green)(%cr)%Creset %C(bold blue)<%an>%Creset' --abbrev-commit --date=relative
 	ll = log --oneline --graph --decorate
+	llg = log --color --graph --pretty=format:'%C(bold white)%H %d%Creset%n%s%n%+b%C(bold blue)%an <%ae>%Creset %C(bold green)%cr (%ci)' --abbrev-commit
 	ls-ignored = ls-files --others --exclude-from=.git/info/exclude
 	r = remote
 	ra = remote add
