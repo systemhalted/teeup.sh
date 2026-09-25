@@ -26,7 +26,7 @@
 # warning there, and a stopped AeroSpace skips the reload-config check -- so
 # the version the binary reports is the one fact this migration can trust.
 # Too old, or unreadable, and it stops unapplied, so the next `teeup update`
-# (after the upgrade has gone through) tries again. No binary at all is a
+# (after the upgrade has gone through) tries again. No CLI and no app is a
 # machine with nothing to break: migration_refresh decides from the markers.
 # The gate asks only where migration_refresh would write -- installed, not
 # skipped, not not-applicable -- so a capability the owner opted out of with
@@ -39,23 +39,60 @@ aerospace_version_ok() {
   a=($have_v)
   # shellcheck disable=SC2206
   b=($need_v)
+  # 10#: a leading zero is otherwise octal, and 09 is an arithmetic error
+  # that made both tests false and fell through to "new enough".
   for i in 0 1 2; do
-    if [[ "${a[$i]:-0}" -gt "${b[$i]:-0}" ]]; then return 0; fi
-    if [[ "${a[$i]:-0}" -lt "${b[$i]:-0}" ]]; then return 1; fi
+    if (( 10#${a[$i]:-0} > 10#${b[$i]:-0} )); then return 0; fi
+    if (( 10#${a[$i]:-0} < 10#${b[$i]:-0} )); then return 1; fi
   done
   return 0
 }
+
+# aerospace_installed_version -> the version, "" when it cannot be read, or
+# "none" when there is no AeroSpace here to read a config at all.
+# The CLI first. Failing that, the app itself: the cask links the CLI
+# separately, so a stripped PATH or a hand-installed app has no `aerospace`
+# to ask, and it is the app that reads the config anyway.
+aerospace_installed_version() {
+  local app="${TEEUP_APPS_DIR:-/Applications}/AeroSpace.app" raw=""
+  if have aerospace; then
+    # "aerospace CLI client version: 0.20.0-Beta 1a2b3c4"
+    raw="$(aerospace --version 2>/dev/null | sed -n 's/^aerospace CLI client version: //p' | head -1 || true)"
+  elif [[ -d "$app" ]]; then
+    raw="$(defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)"
+  else
+    echo none
+    return 0
+  fi
+  # 0.20.0-Beta -> 0.20.0
+  printf '%s\n' "$raw" | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\(\.[0-9][0-9]*\)*\).*/\1/p' | head -1 || true
+}
+
+# aerospace_refresh_would_write -> 0 when migration_refresh would put the new
+# file in place. Mirrors capabilities/aerospace/configure and
+# refresh_if_pristine: a ~/.aerospace.toml means configure installs nothing;
+# a missing destination is installed; a pristine one that differs from the
+# shipped file is replaced; an edited one is left alone. Where nothing would
+# be written, an old AeroSpace has nothing to choke on, and blocking every
+# later migration and `teeup update` over it would be all cost.
+aerospace_refresh_would_write() {
+  local dest src
+  dest="$(user_config_dir)/aerospace/aerospace.toml"
+  src="$TEEUP_PATH/capabilities/aerospace/config/aerospace/aerospace.toml"
+  [[ -e "$HOME/.aerospace.toml" ]] && return 1
+  [[ -e "$dest" || -L "$dest" ]] || return 0
+  config_is_pristine "$dest" && ! cmp -s "$src" "$dest"
+}
+
 if cap_exists aerospace; then
-  if have aerospace && state_done check cap-aerospace && ! cap_skipped aerospace &&
-    ! state_na check cap-aerospace; then
-    # "aerospace CLI client version: 0.20.0-Beta 1a2b3c4" -> 0.20.0
-    aerospace_v="$(aerospace --version 2>/dev/null |
-      sed -n 's/^aerospace CLI client version: \([0-9][0-9]*\.[0-9][0-9]*\(\.[0-9][0-9]*\)*\).*/\1/p' | head -1 || true)"
+  if state_done check cap-aerospace && ! cap_skipped aerospace &&
+    ! state_na check cap-aerospace && aerospace_refresh_would_write; then
+    aerospace_v="$(aerospace_installed_version)"
     if [[ -z "$aerospace_v" ]]; then
-      err "Could not read AeroSpace's version from 'aerospace --version', so its new config (which needs $AEROSPACE_MIN_VERSION or later) was not installed. Check that AeroSpace runs, then run: teeup update"
+      err "Could not read the installed AeroSpace's version, so its new config (which needs $AEROSPACE_MIN_VERSION or later) was not installed. Check that AeroSpace runs, then run: teeup update"
       exit 1
     fi
-    if ! aerospace_version_ok "$aerospace_v" "$AEROSPACE_MIN_VERSION"; then
+    if [[ "$aerospace_v" != "none" ]] && ! aerospace_version_ok "$aerospace_v" "$AEROSPACE_MIN_VERSION"; then
       err "AeroSpace $aerospace_v is installed, but its new config needs $AEROSPACE_MIN_VERSION or later, so the config was left as it is. Upgrade AeroSpace (brew upgrade --cask aerospace), then run: teeup update"
       exit 1
     fi
