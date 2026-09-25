@@ -1,4 +1,16 @@
-# ~/.config/aerospace/aerospace.toml - yours, copied once by teeup.
+# ~/.config/aerospace/aerospace.toml
+#
+# teeup copies this file into place once and then it is YOURS: edit it freely.
+# teeup only replaces it while it is still byte-for-byte what teeup last
+# wrote, so an edited file is never overwritten. When teeup ships a new
+# version of this file and yours has been edited, `teeup configure aerospace`
+# says so and leaves yours alone; `teeup reset aerospace` takes teeup's new
+# version and backs yours up first.
+#
+# AeroSpace has no include mechanism and reads exactly one config file, so
+# there is no separate per-machine file: machine-specific settings go here.
+# The commented block at the end of this root section is the usual one.
+#
 # Reference: https://nikitabobko.github.io/AeroSpace/guide
 #
 # i3 muscle memory on macOS: alt is the modifier, hjkl moves focus,
@@ -34,12 +46,26 @@ automatically-unhide-macos-hidden-apps = false
 focus-follows-mouse.enabled = false
 
 # Workspaces 1-9 always exist, so alt+<n> never creates one implicitly.
-# Which monitor each belongs to is not set here -- that's a fact about one
-# desk's monitor layout, not a teeup default. Put a
-# [workspace-to-monitor-force-assignment] block in local.toml for that.
 # (This has to stay above [key-mapping]/[gaps] below: a bare key after a
 # [table] header belongs to that table in TOML, not to the root.)
 persistent-workspaces = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+
+# Which monitor each workspace belongs to. Commented out on purpose: this is a
+# fact about one desk, and forcing a monitor layout onto a single-monitor Mac
+# would be dead weight. Uncomment and edit on a machine that wants it -- the
+# example is a three-monitor layout, workspaces 1-3 on the main display, 4-6
+# on the second, 7-9 on the third. It has to stay above the [table] headers
+# below, like every other root-level setting.
+# [workspace-to-monitor-force-assignment]
+# 1 = 'main'
+# 2 = 'main'
+# 3 = 'main'
+# 4 = '2'
+# 5 = '2'
+# 6 = '2'
+# 7 = '3'
+# 8 = '3'
+# 9 = '3'
 
 [key-mapping]
 preset = 'qwerty'

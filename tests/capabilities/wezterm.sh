@@ -611,7 +611,30 @@ test_teeup_path_and_state_dir_survive_special_bytes() {
   cleanup_test_env
 }
 
+# local.lua holds this machine's own settings. Someone runs `teeup reset
+# wezterm` because the managed config is broken, not to lose the overrides
+# they wrote by hand, so copy_config_once skips a local.* destination during a
+# reset. This test used to live in the aerospace suite, which shipped a
+# local.toml; aerospace no longer has one (its owner edits aerospace.toml
+# directly), and wezterm, zsh and emacs still do -- so the rule needs its
+# coverage here.
+test_reset_leaves_the_local_override_alone() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure wezterm >/dev/null 2>&1
+  local local_lua
+  local_lua="$(user_config_dir)/wezterm/local.lua"
+  assert_file_exists "$local_lua" || return 1
+  printf 'return { font_size = 99 }\n' > "$local_lua"
+  local out
+  out="$(DRY_RUN=false TEEUP_RESET=wezterm cap_run wezterm configure 2>&1)"
+  assert_contains "$out" "leaves the local override file alone" || return 1
+  assert_contains "$(cat "$local_lua")" "font_size = 99" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/wezterm"
+run_test "reset leaves the local override alone" test_reset_leaves_the_local_override_alone
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install falls back to a port on macports" test_install_falls_back_to_a_port_on_macports
 run_test "configure installs both user files" test_configure_installs_both_user_files

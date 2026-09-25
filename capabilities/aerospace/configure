@@ -8,76 +8,48 @@ if [[ "${aerospace_macos_major:-99}" -lt 13 ]] 2>/dev/null; then
 fi
 unset aerospace_macos_major
 
-# AeroSpace has no include mechanism of its own, so a per-machine override
-# lives in local.toml (shipped once and never touched again, the same model
-# wezterm/zsh/git use for theirs) and is folded onto teeup's shipped base at
-# configure time by toml_merge_local (lib/files.sh); see local.toml's own
-# header for the merge rules. The result is ~/.config/aerospace/aerospace.toml
-# -- a file teeup generates and regenerates on every configure, but only
-# while it is still exactly what teeup last wrote there. Edit it by hand and
-# it is yours from then on; teeup leaves it alone (`teeup reset aerospace`
-# takes a fresh generated version over a hand-edited one).
+# AeroSpace has no include mechanism and reads exactly one config file, so
+# there is no per-machine overlay to fold in: teeup copies its aerospace.toml
+# into place once and the machine's owner edits that file directly. The
+# stock-checksum rule in copy_config_once/refresh_if_pristine is what makes
+# that safe -- teeup replaces the file only while it is still byte-for-byte
+# what teeup last wrote, and an edited one is reported and left alone.
+#
+# This replaced a merge that folded a local.toml onto the shipped base. Six
+# review rounds found twelve defects in it, several of which produced a config
+# AeroSpace would not load, and hand-modelling TOML in awk was the wrong tool
+# for the job. Copy-once has no parser to get wrong.
+#
 # AeroSpace also reads ~/.aerospace.toml, the location its own guide suggests,
 # and reports a config in both places as ambiguous. An existing one is the
-# user's working setup, so teeup's generated copy is not installed next to it.
+# user's working setup, so teeup's copy is not installed next to it.
 HOME_AERO="$HOME/.aerospace.toml"
 AEROSPACE_CFG_DIR="$(user_config_dir)/aerospace"
-AEROSPACE_LOCAL_TOML="$AEROSPACE_CFG_DIR/local.toml"
 AEROSPACE_DEST_TOML="$AEROSPACE_CFG_DIR/aerospace.toml"
-
-# Shipped regardless of the ambiguity check below, so it is there and ready
-# even on a machine currently using ~/.aerospace.toml instead.
-copy_config_once "$TEEUP_CAP_DIR/config/aerospace/local.toml" "$AEROSPACE_LOCAL_TOML"
+AEROSPACE_SRC_TOML="$TEEUP_CAP_DIR/config/aerospace/aerospace.toml"
 
 if [[ -e "$HOME_AERO" ]]; then
-  log "Keeping your $HOME_AERO; teeup's aerospace.toml was not generated, because AeroSpace reports two configs as ambiguous. To use teeup's, move $HOME_AERO aside and run: teeup configure aerospace"
+  log "Keeping your $HOME_AERO; teeup's aerospace.toml was not installed, because AeroSpace reports two configs as ambiguous. To use teeup's, move $HOME_AERO aside and run: teeup configure aerospace"
 else
-  # In a dry run copy_config_once above only prints what it would do, so
-  # $AEROSPACE_LOCAL_TOML may not exist on disk yet; the shipped template it
-  # would have installed is the same content, so merge against that instead.
-  AEROSPACE_LOCAL_SRC="$AEROSPACE_LOCAL_TOML"
-  [[ -f "$AEROSPACE_LOCAL_SRC" ]] || AEROSPACE_LOCAL_SRC="$TEEUP_CAP_DIR/config/aerospace/local.toml"
-  AEROSPACE_RENDERED="$(mktemp)"
-  toml_merge_local "$TEEUP_CAP_DIR/config/aerospace/aerospace.toml" "$AEROSPACE_LOCAL_SRC" > "$AEROSPACE_RENDERED"
-  AEROSPACE_DISPLAY_SRC="$TEEUP_CAP_DIR/config/aerospace/aerospace.toml (plus $AEROSPACE_LOCAL_TOML)"
-  # toml_merge_local is hand-written awk, not a TOML parser, and review has
-  # already found it wrong in ways that only show up once AeroSpace tries to
-  # load the result. Where AeroSpace itself is available to ask, it gets the
-  # last word before anything is installed: a config it rejects must never
-  # reach $AEROSPACE_DEST_TOML, so a future gap here fails loudly instead of
-  # leaving AeroSpace running on no config at all. Skipped under DRY_RUN,
-  # which must never touch $AEROSPACE_DEST_TOML even to stage a check.
+  # Where AeroSpace is running it gets the last word before anything is
+  # installed: a config it rejects must never reach $AEROSPACE_DEST_TOML.
+  # The file being shipped is teeup's own and is expected to pass, so a
+  # failure here means teeup's shipped config is broken -- worth failing
+  # loudly rather than installing. Skipped under DRY_RUN, which must never
+  # touch $AEROSPACE_DEST_TOML even to stage a check.
   if [[ "$DRY_RUN" != "true" ]]; then
     AEROSPACE_VALIDATION_ERR=""
-    if ! AEROSPACE_VALIDATION_ERR="$(aerospace_config_ok "$AEROSPACE_DEST_TOML" "$AEROSPACE_RENDERED")"; then
-      rm -f "$AEROSPACE_RENDERED"
-      err "teeup could not merge $AEROSPACE_LOCAL_TOML into AeroSpace's config, so $AEROSPACE_DEST_TOML was not changed. AeroSpace said: $AEROSPACE_VALIDATION_ERR"
+    if ! AEROSPACE_VALIDATION_ERR="$(aerospace_config_ok "$AEROSPACE_DEST_TOML" "$AEROSPACE_SRC_TOML")"; then
+      err "AeroSpace rejected teeup's own aerospace.toml, so $AEROSPACE_DEST_TOML was not changed. AeroSpace said: $AEROSPACE_VALIDATION_ERR"
       exit 1
     fi
   fi
-  if [[ -n "${TEEUP_RESET:-}" && "$TEEUP_RESET" == "${TEEUP_CAP:-}" ]]; then
-    # Cleared for the call, the way copy_config_once clears it for its own
-    # nested refresh_config: refresh_config falls back to copy_config_once
-    # when $AEROSPACE_DEST_TOML is missing, and that would loop right back
-    # here otherwise.
-    TEEUP_RESET="" refresh_config "$AEROSPACE_RENDERED" "$AEROSPACE_DEST_TOML" "$AEROSPACE_DISPLAY_SRC"
-  else
-    AEROSPACE_REFRESH_RC=0
-    refresh_if_pristine "$AEROSPACE_RENDERED" "$AEROSPACE_DEST_TOML" "$AEROSPACE_DISPLAY_SRC" || AEROSPACE_REFRESH_RC=$?
-    if [[ "$AEROSPACE_REFRESH_RC" -eq 1 ]]; then
-      log "For machine-specific tweaks, edit $AEROSPACE_LOCAL_TOML, or run: teeup reset aerospace"
-    elif [[ "$AEROSPACE_REFRESH_RC" -ne 0 ]]; then
-      # 2 is "teeup could not write it" (a read-only file, a full disk), not
-      # "you edited it". The old file is still in place and does not carry the
-      # local.toml settings this run just merged, so finishing quietly would
-      # mark aerospace configured over a config that is not what teeup says it
-      # is. refresh_if_pristine has already said why.
-      rm -f "$AEROSPACE_RENDERED"
-      err "$AEROSPACE_DEST_TOML was not updated, so AeroSpace is still on its previous configuration."
-      exit 1
-    fi
+  AEROSPACE_REFRESH_RC=0
+  copy_config_once "$AEROSPACE_SRC_TOML" "$AEROSPACE_DEST_TOML" || AEROSPACE_REFRESH_RC=$?
+  if [[ "$AEROSPACE_REFRESH_RC" -ne 0 ]]; then
+    err "$AEROSPACE_DEST_TOML was not updated, so AeroSpace is still on its previous configuration."
+    exit 1
   fi
-  rm -f "$AEROSPACE_RENDERED"
 fi
 
 if [[ -d "${TEEUP_APPS_DIR:-/Applications}/AeroSpace.app" ]]; then

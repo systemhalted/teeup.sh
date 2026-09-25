@@ -166,120 +166,54 @@ test_configure_writes_the_tuned_defaults() {
 }
 
 # A monitor layout is a fact about one desk, not a teeup default -- shipping
-# it in the base would force a three-monitor layout onto every machine,
-# including a single-monitor one. It belongs in local.toml instead (see the
-# next two tests).
+# it live would force a three-monitor layout onto every machine, including a
+# single-monitor one. It ships commented out, so the owner of a machine that
+# wants it uncomments it in place.
 test_shipped_defaults_do_not_force_a_monitor_layout() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
-  # A real [table] header, not just teeup's own comment mentioning the name
-  # (which the file does have, pointing at local.toml).
+  # A real [table] header at the start of a line, not teeup's own commented
+  # example, which the file does carry.
   assert_not_contains "$(cat "$AERO")" "
 [workspace-to-monitor-force-assignment]
-" "monitor layout is per-machine, not a teeup default" || return 1
+" "monitor layout must not be live in the shipped defaults" || return 1
+  assert_contains "$(cat "$AERO")" "# [workspace-to-monitor-force-assignment]" "the commented example is what a machine uncomments" || return 1
   cleanup_test_env
 }
 
-# local.toml is copy_config_once'd (never touched again once installed), so
-# a fresh machine gets it shipped with every entry commented out.
-test_configure_installs_local_toml() {
-  setup
-  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
-  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  assert_file_exists "$local_toml" || return 1
-  assert_contains "$(cat "$local_toml")" "workspace-to-monitor-force-assignment" || return 1
-  cleanup_test_env
-}
-
-# The merge rule's first two cases: a bare top-level key in local.toml
-# replaces teeup's same key, and a [table] in local.toml replaces teeup's
-# table of that name entirely rather than merging key by key.
-test_local_toml_overrides_a_key_and_replaces_a_table() {
-  setup
-  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
-  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  cat >> "$local_toml" <<'EOF'
-
-start-at-login = false
-
-[gaps]
-inner.horizontal = 12
-inner.vertical = 12
-EOF
-  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
-  local content
-  content="$(cat "$AERO")"
-  assert_contains "$content" "start-at-login = false" || return 1
-  assert_not_contains "$content" "start-at-login = true" || return 1
-  assert_contains "$content" "inner.horizontal = 12" || return 1
-  assert_not_contains "$content" "inner.horizontal = 0" "redefining [gaps] should replace the whole table, not merge into it" || return 1
-  assert_not_contains "$content" "outer.right" "keys the local.toml [gaps] block did not repeat should be gone, not kept from the base table" || return 1
-  cleanup_test_env
-}
-
-# The merge rule's third case: a [table] local.toml defines that teeup's
-# base never mentions is appended, not dropped. workspace-to-monitor is the
-# example teeup itself ships commented out in local.toml.
-test_local_toml_monitor_assignment_lands_in_the_generated_file() {
-  setup
-  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
-  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  cat >> "$local_toml" <<'EOF'
-
-[workspace-to-monitor-force-assignment]
-1 = 'main'
-4 = '2'
-7 = '3'
-EOF
-  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
-  local content
-  content="$(cat "$AERO")"
-  assert_contains "$content" "[workspace-to-monitor-force-assignment]" || return 1
-  assert_contains "$content" "4 = '2'" || return 1
-  cleanup_test_env
-}
-
-# A machine with no overrides in local.toml (the shipped, all-commented
-# stub) gets teeup's base back unchanged.
-test_configure_with_no_local_overrides_gets_the_base_unchanged() {
+# The installed file is teeup's shipped file, byte for byte: there is nothing
+# generated or merged any more.
+test_configure_installs_the_shipped_file_unchanged() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
   assert_equals "$(cat "$TEEUP_PATH/capabilities/aerospace/config/aerospace/aerospace.toml")" "$(cat "$AERO")" || return 1
   cleanup_test_env
 }
 
-# aerospace.toml used to be the user's own copy-once file, so some machines
-# have hand edits in it; those must survive a re-configure even when
-# local.toml changed too, and the run should say why and point the way out.
-test_hand_edited_aerospace_toml_is_not_regenerated() {
+# aerospace.toml is the owner's file once it is installed. This is the whole
+# safety model now that there is no merge: an edited file is never replaced,
+# and the run says so and names the way to take teeup's new version.
+test_hand_edited_aerospace_toml_is_not_replaced() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
   printf '\n# my own tweak, not from teeup\n' >> "$AERO"
-  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  printf '\nstart-at-login = false\n' >> "$local_toml"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure aerospace)"
-  assert_contains "$out" "Keeping your edited $AERO" || return 1
-  assert_contains "$out" "$local_toml" "should point at local.toml for machine tweaks" || return 1
-  assert_contains "$out" "teeup reset aerospace" || return 1
+  assert_contains "$out" "$AERO" || return 1
   local content
   content="$(cat "$AERO")"
-  assert_contains "$content" "# my own tweak, not from teeup" "the hand edit must survive" || return 1
-  assert_not_contains "$content" "start-at-login = false" "must not have regenerated over the hand-edited file" || return 1
+  assert_contains "$content" "# my own tweak, not from teeup" "the hand edit must survive a re-configure" || return 1
   cleanup_test_env
 }
 
-test_configure_dry_run_writes_nothing_even_with_local_overrides() {
+test_configure_dry_run_writes_nothing() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
-  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  printf '\nstart-at-login = false\n' >> "$local_toml"
-  local before_aero before_local
+  printf '\n# my own tweak\n' >> "$AERO"
+  local before_aero
   before_aero="$(cat "$AERO")"
-  before_local="$(cat "$local_toml")"
   DRY_RUN=true "$TEEUP" configure aerospace >/dev/null
-  assert_equals "$before_aero" "$(cat "$AERO")" "a dry run must not regenerate aerospace.toml" || return 1
-  assert_equals "$before_local" "$(cat "$local_toml")" "a dry run must not touch local.toml either" || return 1
+  assert_equals "$before_aero" "$(cat "$AERO")" "a dry run must not touch aerospace.toml" || return 1
   cleanup_test_env
 }
 
@@ -399,11 +333,7 @@ test_configure_is_idempotent() {
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null
   local out
   out="$(DRY_RUN=false "$TEEUP" configure aerospace)"
-  # aerospace.toml is generated (base + local.toml), not copied, so a second
-  # run says it is still at the version teeup generated rather than
-  # "Already installed" (that wording is local.toml's own, still copy-once).
-  assert_contains "$out" "Already at the shipped version: $AERO" || return 1
-  assert_contains "$out" "Already installed: $TEST_HOME/.config/aerospace/local.toml" || return 1
+  assert_contains "$out" "Already installed: $AERO" || return 1
   cleanup_test_env
 }
 
@@ -478,65 +408,20 @@ EOF2
 }
 
 echo "capabilities/aerospace"
-# local.toml holds this machine's own settings -- the monitor assignment, for
-# one. Someone runs `teeup reset aerospace` because the managed config is
-# broken, not to lose the overrides they wrote by hand.
-test_reset_leaves_the_local_override_alone() {
-  setup
-  source "$TEEUP_PATH/lib/all.sh"
-  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
-  local local_toml
-  local_toml="$(user_config_dir)/aerospace/local.toml"
-  assert_file_exists "$local_toml" || return 1
-  printf "[workspace-to-monitor-force-assignment]\n1 = 'main'\n" > "$local_toml"
-  local out
-  out="$(DRY_RUN=false TEEUP_RESET=aerospace cap_run aerospace configure 2>&1)"
-  assert_contains "$out" "leaves the local override file alone" || return 1
-  assert_contains "$(cat "$local_toml")" "workspace-to-monitor-force-assignment" || return 1
-  cleanup_test_env
-}
 
-# refresh_if_pristine returns 2 when teeup could not write the file at all (a
-# read-only aerospace.toml, a full disk). The old file is then still in place
-# and does not carry the local.toml settings this run merged, so finishing
-# quietly would mark aerospace configured over a config that is not what teeup
-# says it is.
-test_configure_fails_when_the_generated_config_cannot_be_written() {
-  setup
-  source "$TEEUP_PATH/lib/all.sh"
-  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
-  local dest
-  dest="$(user_config_dir)/aerospace/aerospace.toml"
-  assert_file_exists "$dest" || return 1
-  # Change local.toml so the next run has something new to write, then make
-  # the destination unwritable.
-  printf "[gaps]\ninner.horizontal = 42\n" >> "$(user_config_dir)/aerospace/local.toml"
-  chmod 0444 "$dest"
-  local rc=0 out
-  out="$(DRY_RUN=false cap_run aerospace configure 2>&1)" || rc=$?
-  chmod 0644 "$dest"
-  assert_failure "$rc" "a config teeup could not write is not a configured capability" || return 1
-  assert_contains "$out" "still on its previous configuration" || return 1
-  if printf '%s\n' "$out" | grep -q 'inner.horizontal = 42'; then
-    echo "claimed to have written settings it could not write"
-    return 1
-  fi
-  cleanup_test_env
-}
 
-# The backstop: toml_merge_local is hand-written awk, not a TOML parser, and
-# review keeps finding ways it can get a real local.toml wrong. Where
-# AeroSpace itself is available to ask (`aerospace reload-config --dry-run`),
-# it gets the last word before anything is installed, so a config it rejects
-# never reaches ~/.config/aerospace/aerospace.toml and AeroSpace is never
-# left to silently load nothing.
+# The backstop: where AeroSpace itself is available to ask
+# (`aerospace reload-config --dry-run`), it gets the last word before anything
+# is installed, so a config it rejects never reaches
+# ~/.config/aerospace/aerospace.toml and AeroSpace is never left silently
+# loading nothing. The file being checked is teeup's own now that there is no
+# merge, so a rejection means teeup's shipped config is broken -- still worth
+# refusing to install rather than discovering it on the machine.
 test_backstop_leaves_the_config_untouched_when_aerospace_rejects_it() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
-  local before local_toml
+  local before
   before="$(cat "$AERO")"
-  local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  printf '\nstart-at-login = false\n' >> "$local_toml"
   mock_command_script aerospace <<'EOF2'
 case "$1" in
   reload-config) echo "aerospace: config error: unexpected key on line 12" >&2; exit 1 ;;
@@ -547,7 +432,7 @@ EOF2
   out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
   assert_failure "$rc" "a config AeroSpace rejects must fail the capability" || return 1
   assert_equals "$before" "$(cat "$AERO")" "the file already there must be left exactly as it was" || return 1
-  assert_contains "$out" "$local_toml" "the message must name the file that could not be merged" || return 1
+  assert_contains "$out" "$AERO" "the message must name the config that was not changed" || return 1
   assert_contains "$out" "unexpected key on line 12" "AeroSpace's own error must reach the user" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "aerospace reload-config" "must actually have asked AeroSpace" || return 1
   cleanup_test_env
@@ -571,7 +456,6 @@ test_backstop_never_writes_through_a_symlinked_config() {
   printf 'config-version = 2\n# managed elsewhere\n' > "$store"
   rm -f "$AERO"
   ln -s "$store" "$AERO"
-  printf '\nstart-at-login = false\n' >> "$TEST_HOME/.config/aerospace/local.toml"
   # A running AeroSpace, so the backstop would otherwise stage through it.
   mock_command_script aerospace <<'EOF2'
 case "$1" in
@@ -590,8 +474,8 @@ EOF2
 test_backstop_skips_when_aerospace_is_not_running() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
-  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  printf '\nstart-at-login = false\n' >> "$local_toml"
+  # A fresh install is what the backstop guards, so clear the installed file.
+  rm -f "$AERO"
   # An installed AeroSpace whose server is not up: every command that needs
   # it fails, reload-config included.
   mock_command_script aerospace <<'EOF2'
@@ -604,7 +488,7 @@ EOF2
   local rc=0 out
   out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
   assert_success "$rc" "an AeroSpace that is not running is not a rejected config" || return 1
-  assert_contains "$(cat "$AERO")" "start-at-login = false" "the merged config must still be installed" || return 1
+  assert_contains "$(cat "$AERO")" "persistent-workspaces" "the config must still be installed" || return 1
   assert_contains "$out" "not running yet" || return 1
   # And it must not claim the config was checked.
   assert_not_contains "$(cat "$MOCK_LOG")" "aerospace reload-config" "there is nobody to ask, so it must not ask" || return 1
@@ -614,8 +498,7 @@ EOF2
 test_backstop_installs_normally_when_aerospace_accepts_it() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
-  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  printf '\nstart-at-login = false\n' >> "$local_toml"
+  rm -f "$AERO"
   mock_command_script aerospace <<'EOF2'
 case "$1" in
   reload-config) exit 0 ;;
@@ -625,7 +508,7 @@ EOF2
   local rc=0 out
   out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
   assert_success "$rc" "a config AeroSpace accepts must configure normally" || return 1
-  assert_contains "$(cat "$AERO")" "start-at-login = false" "the merge AeroSpace accepted must actually be installed" || return 1
+  assert_contains "$(cat "$AERO")" "persistent-workspaces" "the config AeroSpace accepted must actually be installed" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "aerospace reload-config" "must actually have asked AeroSpace" || return 1
   cleanup_test_env
 }
@@ -637,12 +520,11 @@ EOF2
 test_backstop_skips_without_claiming_success_when_there_is_no_aerospace_binary() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
-  local local_toml="$TEST_HOME/.config/aerospace/local.toml"
-  printf '\nstart-at-login = false\n' >> "$local_toml"
+  rm -f "$AERO"
   local rc=0 out
   out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
   assert_success "$rc" "no aerospace binary must not block the install" || return 1
-  assert_contains "$(cat "$AERO")" "start-at-login = false" "no aerospace binary must not block the install" || return 1
+  assert_contains "$(cat "$AERO")" "persistent-workspaces" "no aerospace binary must not block the install" || return 1
   assert_not_contains "$out" "AeroSpace said" "skipping validation must not be reported as having validated" || return 1
   cleanup_test_env
 }
@@ -656,21 +538,16 @@ run_test "install below the macOS minimum leaves no done marker" test_install_be
 run_test "install at the macOS minimum marks done as before" test_install_at_the_macos_minimum_marks_done_as_before
 run_test "install runs as usual at the macOS minimum" test_install_runs_as_usual_at_the_macos_minimum
 run_test "configure copies the config and prints the manual step" test_configure_copies_the_config_and_prints_the_manual_step
-run_test "configure fails when the generated config cannot be written" test_configure_fails_when_the_generated_config_cannot_be_written
 run_test "backstop leaves the config untouched when AeroSpace rejects it" test_backstop_leaves_the_config_untouched_when_aerospace_rejects_it
 run_test "backstop never writes through a symlinked config" test_backstop_never_writes_through_a_symlinked_config
 run_test "backstop skips when aerospace is not running" test_backstop_skips_when_aerospace_is_not_running
 run_test "backstop installs normally when AeroSpace accepts it" test_backstop_installs_normally_when_aerospace_accepts_it
 run_test "backstop skips without claiming success when there is no aerospace binary" test_backstop_skips_without_claiming_success_when_there_is_no_aerospace_binary
-run_test "reset leaves the local override alone" test_reset_leaves_the_local_override_alone
 run_test "configure writes the tuned defaults" test_configure_writes_the_tuned_defaults
 run_test "shipped defaults do not force a monitor layout" test_shipped_defaults_do_not_force_a_monitor_layout
-run_test "configure installs local.toml" test_configure_installs_local_toml
-run_test "local.toml overrides a key and replaces a table" test_local_toml_overrides_a_key_and_replaces_a_table
-run_test "local.toml monitor assignment lands in the generated file" test_local_toml_monitor_assignment_lands_in_the_generated_file
-run_test "configure with no local overrides gets the base unchanged" test_configure_with_no_local_overrides_gets_the_base_unchanged
-run_test "hand-edited aerospace.toml is not regenerated" test_hand_edited_aerospace_toml_is_not_regenerated
-run_test "configure dry run writes nothing even with local overrides" test_configure_dry_run_writes_nothing_even_with_local_overrides
+run_test "configure installs the shipped file unchanged" test_configure_installs_the_shipped_file_unchanged
+run_test "hand-edited aerospace.toml is not replaced" test_hand_edited_aerospace_toml_is_not_replaced
+run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "configure skips below the macOS minimum" test_configure_skips_below_the_macos_minimum
 run_test "configure skips below the macOS minimum in dry run too" test_configure_skips_below_the_macos_minimum_in_dry_run_too
 run_test "configure runs as usual at the macOS minimum" test_configure_runs_as_usual_at_the_macos_minimum
