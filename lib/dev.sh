@@ -208,8 +208,8 @@ _dev_check_menu_file() {
   out1="$(menu_check "$cache")" || rc=1
   out2="$(_dev_check_menu_rows "$cache")" || rc=1
   rm -f "$cache"
-  [[ -n "$out1" ]] && printf '%s\n' "$out1"
-  [[ -n "$out2" ]] && printf '%s\n' "$out2"
+  if [[ -n "$out1" ]]; then printf '%s\n' "$out1"; fi
+  if [[ -n "$out2" ]]; then printf '%s\n' "$out2"; fi
   if [[ $rc -ne 0 ]]; then
     return 1
   fi
