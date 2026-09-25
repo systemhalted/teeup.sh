@@ -715,6 +715,43 @@ test_doctor_reads_signingkey_from_local_not_only_identity() {
   cleanup_test_env
 }
 
+# Codex P1 on PR #32: commit.gpgsign was read from teeup-generated alone,
+# but ~/.config/git/local is included last and wins. An override there must
+# decide the verdict in both directions, as it does for git itself.
+test_doctor_honours_signing_turned_off_in_local() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[commit]\n\tgpgsign = false\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_equals "false" "$(git config -f "$TEST_HOME/.config/git/config" --includes --get commit.gpgsign)" "fixture: git itself sees signing off" || return 1
+  assert_not_contains "$out" "Commit signing is on" "local turned signing off, so git signs nothing" || return 1
+  assert_contains "$out" "turns commit signing off" || return 1
+  assert_success "$rc" "switching signing off in local is the owner's choice, not a fault" || return 1
+  cleanup_test_env
+}
+
+test_doctor_honours_signing_turned_on_in_local() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  # teeup-generated says off (no key at configure time); the key arrives and
+  # the owner turns signing on by hand in local, pointing at it.
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY personal\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  printf '[commit]\n\tgpgsign = true\n[user]\n\tsigningkey = "%s.pub"\n' "$TEST_HOME/.ssh/id_ed25519_personal" \
+    > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "commit signing is off" "local turned signing on, so it is not off" || return 1
+  assert_contains "$out" "Commit signing is on" || return 1
+  assert_success "$rc" || return 1
+  cleanup_test_env
+}
+
 # I6: a claim about gpg.format that was never read. Once the format is
 # something other than ssh, the whole SSH-signature verification check does
 # not apply, and the message must say what format actually is.
@@ -998,8 +1035,11 @@ test_doctor_separates_an_unreadable_ssh_dir_from_a_missing_key() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   configure_git_with_keys
-  # Signing off, keys unreachable rather than absent.
-  grep -v 'gpgsign' "$TEST_HOME/.config/git/teeup-generated" > "$TEST_HOME/tg" && mv "$TEST_HOME/tg" "$TEST_HOME/.config/git/teeup-generated"
+  # Signing off, keys unreachable rather than absent. Off means the line says
+  # false: deleting it would let the shipped config's gpgsign = true through,
+  # which is signing ON as far as git is concerned.
+  sed 's/gpgsign = true/gpgsign = false/' "$TEST_HOME/.config/git/teeup-generated" > "$TEST_HOME/tg" && mv "$TEST_HOME/tg" "$TEST_HOME/.config/git/teeup-generated"
+  assert_equals "false" "$(git config -f "$TEST_HOME/.config/git/config" --includes --get commit.gpgsign)" "fixture: git itself sees signing off" || return 1
   chmod 0000 "$TEST_HOME/.ssh"
   local rc=0 out
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
@@ -1017,6 +1057,8 @@ run_test "configure without answers warns and writes no identity" test_configure
 run_test "configure ships the config and the editor" test_configure_ships_the_config_and_the_editor
 run_test "signing and delta are enabled once they exist" test_signing_and_delta_are_enabled_once_they_exist
 run_test "signing stays off when a private key is missing" test_signing_stays_off_when_a_private_key_is_missing
+run_test "doctor honours signing turned off in local" test_doctor_honours_signing_turned_off_in_local
+run_test "doctor honours signing turned on in local" test_doctor_honours_signing_turned_on_in_local
 run_test "signing turns on once the key exists" test_signing_turns_on_once_the_key_exists
 run_test "generated include is read after the defaults" test_generated_include_is_read_after_the_defaults
 run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_configure_renders_include_paths_for_a_custom_xdg_config_home
