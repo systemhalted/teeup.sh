@@ -76,7 +76,49 @@ test_readme_remove_script_count_matches_the_tree() {
   return 0
 }
 
+# Every `teeup <verb>` the README shows in a command block has to be a verb
+# bin/teeup actually accepts. The README is the page somebody reads before
+# trusting a command that deletes things, and documenting a verb the CLI
+# rejects with "Unknown verb" is the fastest way to lose that trust. Prose
+# ("teeup ships", "teeup replaced") is not checked -- only fenced code blocks,
+# where a line really is something to type.
+#
+# This exists because the migration section was written against `teeup doctor`
+# while the doctor branch had not merged, and nothing would have caught it.
+teeup_verbs() {
+  awk '/^case "\$verb" in/,/^esac/' "$TEEUP_PATH/bin/teeup" \
+    | grep -oE '^  [a-z|_-]+\)' | tr -d ' )' | tr '|' '\n' | sort -u
+}
+
+test_readme_only_shows_verbs_that_exist() {
+  local in_block=false line word verbs bad=""
+  verbs=" $(teeup_verbs | tr '\n' ' ') "
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      '```'*) if [[ "$in_block" == "true" ]]; then in_block=false; else in_block=true; fi; continue ;;
+    esac
+    [[ "$in_block" == "true" ]] || continue
+    # A command line starting with teeup, or one behind a DRY_RUN= prefix.
+    case "$line" in
+      teeup\ *|DRY_RUN=*\ teeup\ *) ;;
+      *) continue ;;
+    esac
+    word="$(printf '%s\n' "$line" | sed -e 's/^DRY_RUN=[^ ]* //' -e 's/^teeup  *//' -e 's/[ #].*$//')"
+    [[ -n "$word" ]] || continue
+    case "$verbs" in
+      *" $word "*) ;;
+      *) bad="$bad $word" ;;
+    esac
+  done < "$TEEUP_PATH/README.md"
+  if [[ -n "$bad" ]]; then
+    echo "README shows commands bin/teeup does not accept:$bad"
+    return 1
+  fi
+  return 0
+}
+
 echo "docs"
+run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
 run_test "README's remove count matches the tree" test_readme_remove_count_matches_the_tree
 run_test "README's remove-script count matches the tree" test_readme_remove_script_count_matches_the_tree

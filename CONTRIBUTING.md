@@ -608,3 +608,23 @@ Happy contributing! 🚀
     `theme-set` (`TEEUP_HOOK_EVENTS` in `lib/hooks.sh`); adding one means a
     new `.sample` under `capabilities/teeup-runtime/default/hooks/` and a
     `hook_run <event> [args]` call where it fires.
+25. Nothing in `teeup migrate legacy` deletes a path it was given. Every
+    removal names a KEY, and `migrate_target` is the closed list of five that
+    maps keys to paths -- so no caller anywhere can point a deletion at
+    `~/Work/environment/dotfiles`. Adding a key means adding it there, and
+    adding a refusal test with it.
+26. `chezmoi` is only ever run through `chezmoi_ro`, which accepts `managed`,
+    `source-path` and `--version` and dies on anything else. `chezmoi purge`
+    removes the source directory, so it must stay unreachable; a test in
+    `tests/lib/migrate.sh` greps `bin/`, `lib/` and `capabilities/` for a
+    second call site and fails the build if one appears.
+27. A test in this area may never name a path outside `$TEST_HOME`. The
+    stand-in for the sibling chezmoi checkout is created under `$TEST_HOME`
+    with the same shape, so nothing can reach the real one even if a gate
+    were broken. A test that only passes on a developer's machine is a defect.
+28. Use `disable_matching_lines` rather than editing a shell file by hand. It
+    backs the file up first (and refuses to touch it when that backup could
+    not be written), refuses a file it cannot write, leaves a symlink alone,
+    and neutralises a matching line with `: #` rather than `#` -- an `if`
+    whose whole body is commented out is a syntax error, and a line that
+    opens a block is reported rather than broken.

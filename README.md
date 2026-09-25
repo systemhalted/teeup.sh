@@ -32,6 +32,7 @@ teeup install font "Fira Code"    # switch every tool to another Nerd Font
 teeup secret set <name>   # store a secret in the macOS Keychain
 teeup launch cursor       # open an app, installing its cask on first use
 teeup install dev-env go  # install a language runtime through mise
+teeup migrate legacy      # retire the old teeup and chezmoi wiring on this Mac
 ```
 
 ~/.local/bin joins your PATH through the shell layer the zsh capability installs, so teeup is spelled ~/.local/bin/teeup until you open a new terminal.
@@ -201,6 +202,50 @@ pull and the package manager warn and the rest still runs, which makes
   after `teeup update <cap>`) and `theme-set` (with the theme name). Each
   directory holds an `example.sample` that documents it; `.sample` files
   never run. A hook that fails prints a warning and nothing is aborted.
+
+### Migrating a Mac that already had teeup or chezmoi
+
+```bash
+DRY_RUN=true teeup migrate legacy   # read what it would do first
+teeup migrate legacy
+teeup status                        # what is installed afterwards
+```
+
+`teeup migrate legacy` retires the two things this teeup replaced. It removes
+what the old monolithic `teeup.sh` left in your home directory -- `~/.teeup.common`,
+`~/.config/mac-setup`, and the `~/.teeupshrc` and `~/.shellrc.common` symlinks --
+and neutralises the shell lines that loaded them, along with the Oh My Zsh,
+Powerlevel10k and Antigen lines teeup's own zsh layer and starship replace. It
+disables the SDKMAN, rbenv and pyenv init lines that would otherwise shadow
+mise, and leaves those toolchains on disk: they hold versions you may still
+want, and it is the shell lines, not the directories, that make them win.
+
+Then the chezmoi half. Files chezmoi manages in your home directory are
+**moved aside**, never deleted, as `<name>.teeup_backup_<timestamp>` beside the
+original, so teeup can install its own version into the gap and you can lift
+anything personal out of the backup. Before moving anything it lists them in
+two groups -- the ones teeup ships a config for and will reinstall, and the
+ones it does not, which only the backup copy will hold -- and asks once. The
+default is no, and a run with no terminal attached moves nothing at all.
+
+What it will never do:
+
+- delete the chezmoi source directory, or anything inside it. On these machines
+  that is `~/Work/environment/dotfiles`, which still serves Linux.
+- run `chezmoi purge`, which would delete exactly that. Every chezmoi call in
+  teeup goes through a wrapper that accepts only `managed`, `source-path` and
+  `--version`; a test fails the build if a second call site appears anywhere.
+- delete anything inside any git checkout under your home directory, or
+  anything outside your home directory, whatever a config says.
+- move your shell rc files aside when teeup's own zsh layer is not installed
+  here -- that would leave you with no `~/.zshrc` at all. It says so and stops.
+
+The one thing it can delete is `~/.config/chezmoi`, the config that points
+chezmoi at its source, and only after asking, defaulting to no. The checkout
+itself stays.
+
+Every step runs to the end. A refusal is reported and never stops the rest,
+and the exit status is non-zero when anything was left alone.
 
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
