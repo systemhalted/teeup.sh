@@ -428,6 +428,17 @@ migrate_chezmoi() {
     log "chezmoi is installed but reports no source directory here; nothing to take over."
     return 0
   fi
+  # The rc files are the whole risk here. This step moves ~/.zshrc, ~/.zshenv
+  # and ~/.zprofile aside so teeup's own stubs can take over -- but teeup
+  # installs those in `configure zsh`, and if that never ran on this machine
+  # the move leaves the user with no shell startup files at all. They find out
+  # by opening a terminal. So the marker that says teeup's shell layer is
+  # actually here gates this half, and the message names the one command that
+  # makes it safe.
+  if ! state_done check "cap-zsh"; then
+    warn "teeup's zsh layer is not configured on this machine, so moving chezmoi's files aside would leave you with no ~/.zshrc at all. Run 'teeup install zsh' first, then re-run this."
+    return 1
+  fi
   log "chezmoi manages this home from $src"
   log "That checkout still serves Linux, so teeup never deletes it, never runs 'chezmoi purge', and never writes to it."
   managed="$(mktemp)"

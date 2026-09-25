@@ -857,6 +857,169 @@ test_update_runs_migrations_before_configuring() {
   cleanup_test_env
 }
 
+# `teeup migrate legacy` end to end. The fixture capability tree here has no
+# real zsh capability, so cap-zsh is marked done by hand where the migration
+# is expected to proceed -- see the shell-safety test below for why that
+# marker gates the chezmoi half at all.
+migrate_setup() {
+  export XDG_CONFIG_HOME="$TEST_HOME/.config"
+  export TEEUP_TEST_MISSING="chezmoi"
+  export TEEUP_TEST_TTY=no
+}
+
+test_migrate_requires_a_known_target() {
+  setup
+  migrate_setup
+  local rc=0 out
+  out="$("$TEEUP" migrate 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Usage: teeup migrate legacy" || return 1
+  rc=0
+  out="$("$TEEUP" migrate nonsense 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Unknown migration target" || return 1
+  cleanup_test_env
+}
+
+test_migrate_legacy_runs_every_step_and_closes_with_a_real_command() {
+  setup
+  migrate_setup
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-zsh
+  printf 'x\n' > "$TEST_HOME/.teeup.common"
+  printf 'source "$HOME/.teeup.common"\neval "$(rbenv init -)"\nexport KEEP=1\n' > "$TEST_HOME/.zshrc"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" migrate legacy 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  [[ ! -e "$TEST_HOME/.teeup.common" ]] || { echo "the legacy file survived"; return 1; }
+  local content
+  content="$(cat "$TEST_HOME/.zshrc")"
+  assert_contains "$content" "replaced by teeup" || return 1
+  assert_contains "$content" "rbenv replaced by mise" || return 1
+  assert_contains "$content" "export KEEP=1" || return 1
+  assert_contains "$out" "nothing to take over" "no chezmoi here" || return 1
+  # T6.1: the closing line must name a verb that exists. teeup doctor does
+  # not yet; teeup update does.
+  assert_contains "$out" "teeup update" || return 1
+  assert_not_contains "$out" "teeup doctor" "the migration must not close by naming a verb bin/teeup rejects" || return 1
+  cleanup_test_env
+}
+
+# T6.2, Important. The migration moves the shell rc files aside so teeup's own
+# can take over. If teeup's zsh layer was never configured on this machine,
+# that leaves no .zshrc, .zshenv or .zprofile at all -- the user opens a new
+# terminal and has nothing. The chezmoi half is what moves those files, so it
+# is what has to be gated.
+test_migrate_legacy_refuses_the_chezmoi_half_without_teeups_zsh_layer() {
+  setup
+  migrate_setup
+  source "$TEEUP_PATH/lib/all.sh"
+  # cap-zsh deliberately NOT marked: teeup's shell layer is not installed.
+  unset TEEUP_TEST_MISSING
+  export TEEUP_TEST_TTY=yes
+  local sibling="$TEST_HOME/dotfiles"
+  mkdir -p "$sibling"
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_SRC="$sibling"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  mock_command_script chezmoi <<'EOF2'
+case "$1" in
+  source-path) printf '%s\n' "$TEEUP_TEST_CHEZMOI_SRC" ;;
+  managed) cat "${TEEUP_TEST_CHEZMOI_MANAGED:-/dev/null}" ;;
+  --version) echo "chezmoi version v2.66.0" ;;
+  *) exit 1 ;;
+esac
+EOF2
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  local out rc=0
+  out="$(printf 'y\ny\n' | DRY_RUN=false "$TEEUP" migrate legacy 2>&1)" || rc=$?
+  assert_equals "mine" "$(cat "$TEST_HOME/.zshrc")" "without teeup's zsh layer the rc file must stay put" || return 1
+  assert_contains "$out" "teeup install zsh" "it has to say how to make this safe" || return 1
+  assert_equals "0" "$(find "$TEST_HOME" -name '*.teeup_backup_*' | wc -l | tr -d ' ')" || return 1
+  cleanup_test_env
+}
+
+# And with the layer installed, the same run proceeds.
+test_migrate_legacy_proceeds_with_teeups_zsh_layer_installed() {
+  setup
+  migrate_setup
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-zsh
+  unset TEEUP_TEST_MISSING
+  export TEEUP_TEST_TTY=yes
+  local sibling="$TEST_HOME/dotfiles"
+  mkdir -p "$sibling"
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_SRC="$sibling"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  mock_command_script chezmoi <<'EOF2'
+case "$1" in
+  source-path) printf '%s\n' "$TEEUP_TEST_CHEZMOI_SRC" ;;
+  managed) cat "${TEEUP_TEST_CHEZMOI_MANAGED:-/dev/null}" ;;
+  --version) echo "chezmoi version v2.66.0" ;;
+  *) exit 1 ;;
+esac
+EOF2
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  printf 'n\n' > /dev/null
+  local out
+  out="$(printf 'y\nn\n' | DRY_RUN=false "$TEEUP" migrate legacy 2>&1)" || true
+  assert_equals "1" "$(find "$TEST_HOME" -name '.zshrc.teeup_backup_*' | wc -l | tr -d ' ')" "with the layer installed the move proceeds" || return 1
+  cleanup_test_env
+}
+
+test_migrate_legacy_dry_run_changes_nothing() {
+  setup
+  migrate_setup
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-zsh
+  printf 'x\n' > "$TEST_HOME/.teeup.common"
+  printf 'eval "$(rbenv init -)"\n' > "$TEST_HOME/.zshrc"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" migrate legacy 2>&1)"
+  assert_file_exists "$TEST_HOME/.teeup.common" "a dry run must delete nothing" || return 1
+  assert_equals 'eval "$(rbenv init -)"' "$(cat "$TEST_HOME/.zshrc")" "a dry run must edit nothing" || return 1
+  assert_not_contains "$out" "✅ Removed" "a dry run must not claim a removal" || return 1
+  cleanup_test_env
+}
+
+test_migrate_legacy_exits_non_zero_when_it_refused_something() {
+  setup
+  migrate_setup
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-zsh
+  unset TEEUP_TEST_MISSING
+  local sibling="$TEST_HOME/dotfiles"
+  mkdir -p "$sibling/dot_config"
+  export TEEUP_TEST_CHEZMOI_SRC="$sibling"
+  export TEEUP_TEST_CHEZMOI_MANAGED=/dev/null
+  mock_command_script chezmoi <<'EOF2'
+case "$1" in
+  source-path) printf '%s\n' "$TEEUP_TEST_CHEZMOI_SRC" ;;
+  managed) cat "${TEEUP_TEST_CHEZMOI_MANAGED:-/dev/null}" ;;
+  --version) echo "chezmoi version v2.66.0" ;;
+  *) exit 1 ;;
+esac
+EOF2
+  # ~/.config symlinked into the checkout, so mac-setup resolves inside it.
+  rm -rf "$XDG_CONFIG_HOME"
+  ln -s "$sibling/dot_config" "$XDG_CONFIG_HOME"
+  mkdir -p "$sibling/dot_config/mac-setup"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" migrate legacy 2>&1)" || rc=$?
+  assert_failure "$rc" "a refusal must reach the exit status" || return 1
+  assert_contains "$out" "refused to touch something" || return 1
+  assert_contains "$out" "Nothing was lost" || return 1
+  assert_dir_exists "$sibling/dot_config/mac-setup" "the refused path must be untouched" || return 1
+  cleanup_test_env
+}
+
+test_migrate_appears_in_help() {
+  setup
+  assert_contains "$("$TEEUP" help)" "teeup migrate legacy" || return 1
+  cleanup_test_env
+}
+
 test_update_walks_every_step_in_order() {
   setup
   mock_update_world
@@ -1531,4 +1694,11 @@ run_test "doctor reports an unreadable state dir instead of calling it empty" te
 run_test "doctor reports an unreadable state dir parent instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_parent_instead_of_calling_it_empty
 run_test "doctor reports an unreadable state dir grandparent instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_grandparent_instead_of_calling_it_empty
 run_test "doctor rejects an unknown capability" test_doctor_rejects_an_unknown_capability
+run_test "migrate requires a known target" test_migrate_requires_a_known_target
+run_test "migrate legacy runs every step and closes with a real command" test_migrate_legacy_runs_every_step_and_closes_with_a_real_command
+run_test "migrate legacy refuses the chezmoi half without teeup's zsh layer" test_migrate_legacy_refuses_the_chezmoi_half_without_teeups_zsh_layer
+run_test "migrate legacy proceeds with teeup's zsh layer installed" test_migrate_legacy_proceeds_with_teeups_zsh_layer_installed
+run_test "migrate legacy dry run changes nothing" test_migrate_legacy_dry_run_changes_nothing
+run_test "migrate legacy exits non-zero when it refused something" test_migrate_legacy_exits_non_zero_when_it_refused_something
+run_test "migrate appears in help" test_migrate_appears_in_help
 print_summary
