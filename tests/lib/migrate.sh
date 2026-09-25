@@ -96,7 +96,11 @@ test_chezmoi_ro_refuses_purge_and_every_other_subcommand() {
 test_nothing_outside_chezmoi_ro_runs_chezmoi() {
   setup
   local offenders
-  offenders="$(grep -rnE '(^|[^_[:alnum:]])chezmoi[ \t]' \
+  # Command positions only. Matching the bare word anywhere also matched
+  # prose -- bin/teeup's own usage line, "retire the old teeup and chezmoi
+  # wiring" -- and a guard that cries wolf gets deleted by whoever hits it
+  # next. These are the shapes an actual second call site would take.
+  offenders="$(grep -rnE '(^|[;&|({]|[$][(]|&&|[|][|])[ \t]*chezmoi[ \t]' \
     "$TEEUP_PATH/bin" "$TEEUP_PATH/lib" "$TEEUP_PATH/capabilities" 2>/dev/null \
     | grep -v 'lib/migrate.sh' \
     | grep -vE '^[^:]+:[0-9]+:[ \t]*#' \
@@ -482,6 +486,9 @@ test_migrate_teeup_ships_knows_what_it_will_reinstall() {
 # what it will not, because those are two very different risks.
 test_migrate_chezmoi_asks_before_moving_anything() {
   setup
+  # teeup's shell layer is what replaces the rc files this half moves aside;
+  # without it the step refuses, which has its own test.
+  state_done mark cap-zsh
   mock_chezmoi
   export TEEUP_TEST_TTY=yes
   printf '%s\n%s\n' "$TEST_HOME/.zshrc" "$TEST_HOME/.tmux.conf" > "$TEST_HOME/managed.txt"
@@ -502,6 +509,9 @@ test_migrate_chezmoi_asks_before_moving_anything() {
 
 test_migrate_chezmoi_moves_the_files_when_told_to() {
   setup
+  # teeup's shell layer is what replaces the rc files this half moves aside;
+  # without it the step refuses, which has its own test.
+  state_done mark cap-zsh
   mock_chezmoi
   export TEEUP_TEST_TTY=yes
   printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
@@ -519,6 +529,9 @@ test_migrate_chezmoi_moves_the_files_when_told_to() {
 # of the user's home is not something to do on an unattended `teeup update`.
 test_migrate_chezmoi_moves_nothing_without_a_tty() {
   setup
+  # teeup's shell layer is what replaces the rc files this half moves aside;
+  # without it the step refuses, which has its own test.
+  state_done mark cap-zsh
   mock_chezmoi
   export TEEUP_TEST_TTY=no
   printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
@@ -537,6 +550,9 @@ test_migrate_chezmoi_moves_nothing_without_a_tty() {
 # home aside. DRY_RUN=true is the step the README tells people to take first.
 test_migrate_chezmoi_dry_run_claims_no_moves() {
   setup
+  # teeup's shell layer is what replaces the rc files this half moves aside;
+  # without it the step refuses, which has its own test.
+  state_done mark cap-zsh
   mock_chezmoi
   export TEEUP_TEST_TTY=yes
   printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
@@ -574,6 +590,9 @@ test_migrate_backup_separates_a_refusal_from_a_failure() {
 
 test_migrate_chezmoi_says_which_happened() {
   setup
+  # teeup's shell layer is what replaces the rc files this half moves aside;
+  # without it the step refuses, which has its own test.
+  state_done mark cap-zsh
   mock_chezmoi
   export TEEUP_TEST_TTY=yes
   printf '%s\n' "$SIBLING/dot_zshrc" > "$TEST_HOME/managed.txt"
@@ -601,6 +620,9 @@ test_migrate_chezmoi_does_nothing_without_chezmoi() {
 # after asking, with no as the default.
 test_migrate_chezmoi_asks_before_removing_the_chezmoi_config() {
   setup
+  # teeup's shell layer is what replaces the rc files this half moves aside;
+  # without it the step refuses, which has its own test.
+  state_done mark cap-zsh
   mock_chezmoi
   export TEEUP_TEST_TTY=yes
   : > "$TEST_HOME/managed.txt"
