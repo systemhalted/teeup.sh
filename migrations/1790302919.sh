@@ -54,11 +54,18 @@ aerospace_version_ok() {
 # separately, so a stripped PATH or a hand-installed app has no `aerospace`
 # to ask, and it is the app that reads the config anyway.
 aerospace_installed_version() {
-  local app="${TEEUP_APPS_DIR:-/Applications}/AeroSpace.app" raw=""
+  local app="" dir raw=""
+  # The places app_installed (lib/lazy.sh) looks, in its order.
+  for dir in "${TEEUP_APPS_DIR:-/Applications}" "$HOME/Applications"; do
+    [[ -d "$dir/AeroSpace.app" ]] && { app="$dir/AeroSpace.app"; break; }
+  done
+  if [[ -z "$app" && "$(pkg_backend)" == "macports" && -d "$(macports_apps_dir)/AeroSpace.app" ]]; then
+    app="$(macports_apps_dir)/AeroSpace.app"
+  fi
   if have aerospace; then
     # "aerospace CLI client version: 0.20.0-Beta 1a2b3c4"
     raw="$(aerospace --version 2>/dev/null | sed -n 's/^aerospace CLI client version: //p' | head -1 || true)"
-  elif [[ -d "$app" ]]; then
+  elif [[ -n "$app" ]]; then
     raw="$(defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)"
   else
     echo none

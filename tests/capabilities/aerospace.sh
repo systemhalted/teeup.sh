@@ -604,6 +604,22 @@ test_the_migration_gate_asks_the_app_when_the_cli_is_missing() {
   cleanup_test_env
 }
 
+# The same places app_installed looks: a cask can put the app in
+# ~/Applications, and doctor already finds it there.
+test_the_migration_gate_finds_the_app_in_home_applications() {
+  setup
+  aerospace_migration_fixture
+  export TEEUP_APPS_DIR="$TEST_HOME/EmptyApplications"
+  mkdir -p "$TEEUP_APPS_DIR" "$HOME/Applications/AeroSpace.app/Contents"
+  export TEEUP_TEST_MISSING="${TEEUP_TEST_MISSING:-} aerospace"
+  mock_command defaults 0 "0.19.2-Beta"
+  local rc=0
+  DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" "an old app in ~/Applications still cannot read config-version 2" || return 1
+  assert_equals '# the previous shipped file' "$(cat "$AERO")" || return 1
+  cleanup_test_env
+}
+
 # Where the refresh would write nothing, there is nothing for an old
 # AeroSpace to choke on, and blocking every later migration and `teeup
 # update` over it is all cost.
@@ -854,6 +870,7 @@ run_test "the migration waits for an aerospace that can read it" test_the_migrat
 run_test "the migration runs once aerospace is new enough" test_the_migration_runs_once_aerospace_is_new_enough
 run_test "the migration gate leaves a skipped aerospace alone" test_the_migration_gate_leaves_a_skipped_aerospace_alone
 run_test "the migration gate asks the app when the cli is missing" test_the_migration_gate_asks_the_app_when_the_cli_is_missing
+run_test "the migration gate finds the app in ~/Applications" test_the_migration_gate_finds_the_app_in_home_applications
 run_test "the migration gate ignores an edited config" test_the_migration_gate_ignores_an_edited_config
 run_test "the migration gate ignores a home config" test_the_migration_gate_ignores_a_home_config
 run_test "the migration gate reads a leading zero as decimal" test_the_migration_gate_reads_a_leading_zero_as_decimal
