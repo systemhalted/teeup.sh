@@ -144,7 +144,12 @@ for identity in $(identity_list); do
       fi
     done
   else
-    doctor_unknown "Could not list SSH keys on $gh_host (gh ssh-key list failed), so teeup could not check whether the $identity key is uploaded." "gh ssh-key list -h $gh_host"
+    # The suggested command has to run the check that failed. `gh ssh-key
+    # list -h <host>` does not: gh has no hostname flag on this subcommand and
+    # reads -h as --help, so it prints usage and exits 0 -- a remediation that
+    # looks like it worked while telling the user nothing. GH_HOST is what the
+    # check above used, so it is what the fix names.
+    doctor_unknown "Could not list SSH keys on $gh_host (gh ssh-key list failed), so teeup could not check whether the $identity key is uploaded." "GH_HOST=$gh_host gh ssh-key list"
   fi
 done
 

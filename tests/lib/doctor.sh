@@ -562,11 +562,36 @@ test_run_one_checks_packages_for_a_real_capability_with_no_doctor_script() {
   mock_command_script brew <<'EOF2'
 case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
 EOF2
+  # cli-tools declares a command for every package, so "not installed" is only
+  # true when the command is absent too -- and on a developer's own machine
+  # rg, fd and friends usually are present, which would answer this test from
+  # the host instead of the fixture. Hide them, the way a fresh Mac has none.
+  hide_host_commands rg fd fzf bat eza zoxide jq yq btop tree wget curl gpg tldr dust
   local out
   out="$(doctor_run_one cli-tools 2>&1)"
   assert_contains "$out" "package ripgrep is not installed" || return 1
   assert_contains "$(cat "$REPORT")" "package ripgrep is not installed" || return 1
   assert_contains "$(cat "$REPORT")" "teeup install cli-tools" || return 1
+  cleanup_test_env
+}
+
+# The other half, and the reason cli-tools declares those commands at all: the
+# system's own curl satisfies `pkg_install curl curl`, so Homebrew is skipped
+# on purpose and the package check must not call that machine broken.
+test_run_one_accepts_a_real_capability_whose_commands_are_on_path() {
+  setup
+  TEEUP_CAPS_DIR="$TEEUP_PATH/capabilities"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  local cmd
+  for cmd in rg fd fzf bat eza zoxide jq yq btop tree wget curl gpg tldr dust; do
+    mock_command "$cmd" 0 ""
+  done
+  local out
+  out="$(doctor_run_one cli-tools 2>&1)"
+  assert_not_contains "$out" "is not installed" "every tool is on PATH, which is what install accepted" || return 1
+  assert_equals "" "$(cat "$REPORT")" "nothing here is a finding the user must act on" || return 1
   cleanup_test_env
 }
 
@@ -642,5 +667,6 @@ run_test "summary reports both a failure and an unknown but exits on the failure
 run_test "run one records a silent non-zero doctor" test_run_one_records_a_doctor_that_exits_without_saying_why
 run_test "run one does not double count" test_run_one_does_not_double_count_a_doctor_that_explained_itself
 run_test "run one does not add a generic failure on top of an unknown" test_run_one_does_not_add_a_generic_failure_on_top_of_an_unknown
+run_test "run one accepts a real capability whose commands are on PATH" test_run_one_accepts_a_real_capability_whose_commands_are_on_path
 run_test "run one checks packages for a real capability with no doctor script" test_run_one_checks_packages_for_a_real_capability_with_no_doctor_script
 print_summary

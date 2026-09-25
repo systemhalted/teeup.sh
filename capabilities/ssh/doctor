@@ -8,6 +8,48 @@ ssh_dir="$HOME/.ssh"
 # because its -f means something else entirely, BSD stat second.
 mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || printf 'unknown\n'; }
 
+# ssh_host_block_applies <alias> <pattern>...
+# ssh's own Host matching, including negation. A pattern list is a set of
+# globs, any of which may be negated with a leading "!". ssh applies the block
+# when at least one positive pattern matches AND no negated pattern matches:
+# `Host * !github.com` means every host EXCEPT github.com, so a loop that
+# stops at the first positive hit marks the alias matched on `*` and never
+# unmarks it -- reporting a block OpenSSH does not apply, and crediting the
+# key named inside it, while the alias resolves to nothing and every push
+# fails.
+#
+# ssh -G would answer this with ssh's own semantics and is what lib/answers.sh
+# uses, but it cannot be used here: teeup's shipped config sets UseKeychain,
+# which OpenSSH outside macOS rejects outright ("Bad configuration option",
+# exit 255), so the resolver cannot read teeup's own config on the Linux CI
+# runner and every check would be permanently "could not check" there.
+# One definition, used everywhere this file needs the question answered.
+ssh_host_block_applies() {
+  local want="$1" tok positive=false
+  shift
+  for tok in "$@"; do
+    case "$tok" in
+      "!"*)
+        # shellcheck disable=SC2254  # a glob from the config, matched as one
+        case "$want" in
+          ${tok#!}) return 1 ;;
+        esac
+        ;;
+      *)
+        if [[ "$tok" == "$want" ]]; then
+          positive=true
+        else
+          # shellcheck disable=SC2254  # a glob from the config, matched as one
+          case "$want" in
+            $tok) positive=true ;;
+          esac
+        fi
+        ;;
+    esac
+  done
+  [[ "$positive" == "true" ]]
+}
+
 # ssh_doctor_identity_files <config-file> <alias>
 # Prints, one per line, every IdentityFile value from every Host block in
 # <config-file> whose pattern list matches <alias> the way ssh itself
@@ -34,19 +76,9 @@ ssh_doctor_identity_files() {
     shift
     if [[ "$kw" == "host" ]]; then
       in_block=false
-      for tok in "$@"; do
-        if [[ "$tok" == "$want" ]]; then
-          in_block=true
-        else
-          # $tok is deliberately used unquoted here: it is a glob pattern
-          # from the config file (Host github.com-*), matched the way ssh
-          # itself matches it, not a literal string.
-          # shellcheck disable=SC2254
-          case "$want" in
-            $tok) in_block=true ;;
-          esac
-        fi
-      done
+      if ssh_host_block_applies "$want" "$@"; then
+        in_block=true
+      fi
       continue
     fi
     if [[ "$in_block" == "true" && "$kw" == "identityfile" ]]; then
@@ -127,36 +159,42 @@ else
   # comment. A hand-written config using any of that would otherwise fail an
   # exact, case-sensitive, whitespace-only match -- and be offered `teeup
   # reset ssh`, which would not change a thing.
-  host_patterns="$(awk '
+  # One Host LINE at a time, not every pattern in the file flattened into one
+  # list. Negation is per block -- `Host * !github.com` excludes that block
+  # only -- so flattening loses which patterns belonged together and a
+  # negation in one block would wrongly veto a different block that really
+  # does apply. ssh reads Host case-insensitively, allows leading whitespace,
+  # `Key=Value` as well as `Key Value`, several patterns on one line, and
+  # ignores a trailing comment; a hand-written config using any of that must
+  # not be called broken and offered a `teeup reset ssh` that changes nothing.
+  host_lines="$(awk '
       { line = $0; sub(/#.*/, "", line) }
       { sub(/^[[:space:]]*[Hh][Oo][Ss][Tt][[:space:]]*=[[:space:]]*/, "Host ", line) }
       { n = split(line, f) }
       n >= 2 && tolower(f[1]) == "host" {
-        for (i = 2; i <= n; i++) print f[i]
+        out = ""
+        for (i = 2; i <= n; i++) out = (out == "") ? f[i] : out " " f[i]
+        print out
       }
     ' "$ssh_dir/config" 2>/dev/null)"
   for identity in $(identity_list); do
     alias_name="$(ssh_host_alias "$identity")"
     matched=false
-    while IFS= read -r pattern; do
-      if [[ -z "$pattern" ]]; then
+    while IFS= read -r host_line; do
+      if [[ -z "$host_line" ]]; then
         continue
       fi
-      if [[ "$pattern" == "$alias_name" ]]; then
+      # Tokenize without letting the shell expand the globs against $PWD.
+      set -f
+      # shellcheck disable=SC2086
+      set -- $host_line
+      set +f
+      if ssh_host_block_applies "$alias_name" "$@"; then
         matched=true
-      else
-        # ssh's own glob matching (Host github.com-* github.*): a literal
-        # alias never itself contains a glob character, so this only ever
-        # fires for a pattern the user wrote. $pattern is deliberately
-        # unquoted, to match as a glob.
-        # shellcheck disable=SC2254
-        case "$alias_name" in
-          $pattern) matched=true ;;
-        esac
       fi
-    done <<EOF_HOST_PATTERNS
-$host_patterns
-EOF_HOST_PATTERNS
+    done <<EOF_HOST_LINES
+$host_lines
+EOF_HOST_LINES
     if [[ "$matched" == "true" ]]; then
       doctor_ok "$ssh_dir/config declares Host $alias_name."
       # A Host block that exists but names a key that is not on this

@@ -13,6 +13,79 @@ EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
 }
 
+# The whole point of `pkg_install <pkg> <command>`: the system already
+# provides curl, so install deliberately skips Homebrew's formula. A doctor
+# that asks only the package manager then fails a machine working exactly as
+# designed -- and `teeup doctor` is the post-bootstrap gate, so it fails it
+# loudly. Every one of these fifteen packages is installed with a command
+# fallback, so every one needs the mapping.
+test_doctor_accepts_tools_the_system_already_provides() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  # A brew that answers --version (so the backend counts as reachable) and
+  # says no to every package: nothing came from Homebrew.
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
+case "$1" in list) exit 1 ;; *) exit 0 ;; esac
+EOF2
+  # ...but every tool is on PATH, which is what install accepted.
+  unset TEEUP_TEST_MISSING
+  local cmd
+  for cmd in rg fd fzf bat eza zoxide jq yq btop tree wget curl gpg tldr dust; do
+    mock_command "$cmd" 0 ""
+  done
+  state_done mark cap-cli-tools
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" doctor cli-tools 2>&1)" || rc=$?
+  assert_success "$rc" "a machine whose tools are all on PATH is healthy" || return 1
+  assert_not_contains "$out" "is not installed" "the backend not having them is not a problem when they are on PATH" || return 1
+  cleanup_test_env
+}
+
+# The mapping is not a way to stop checking: a tool that is neither installed
+# nor on PATH is still a real failure.
+test_doctor_still_reports_a_tool_that_is_missing_everywhere() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
+case "$1" in list) exit 1 ;; *) exit 0 ;; esac
+EOF2
+  local cmd
+  for cmd in rg fd fzf bat eza zoxide jq yq btop tree wget curl gpg tldr; do
+    mock_command "$cmd" 0 ""
+  done
+  # dust is nowhere: not from brew, not on PATH.
+  export TEEUP_TEST_MISSING="dust"
+  state_done mark cap-cli-tools
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" doctor cli-tools 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "package dust is not installed" || return 1
+  cleanup_test_env
+}
+
+# The pairs have one home. They used to be written out twice -- once in the
+# install script's loop, once nowhere -- which is how the doctor came to
+# disagree with install about what counts as installed. install reads them
+# from the metadata now, so the two cannot drift apart.
+test_install_reads_its_pairs_from_the_metadata() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local declared pkg
+  declared="$(cap_meta_get cli-tools package_commands)"
+  for pkg in $(cap_meta_get cli-tools packages); do
+    case " $declared " in
+      *" $pkg:"*) ;;
+      *) echo "package $pkg has no command mapping, so doctor cannot ask what install asked"; return 1 ;;
+    esac
+  done
+  # The two that differ from their package name are the reason this exists.
+  assert_contains "$declared" "ripgrep:rg" || return 1
+  assert_contains "$declared" "gnupg:gpg" || return 1
+  cleanup_test_env
+}
+
 test_install_uses_package_and_command_pairs() {
   setup
   local out
@@ -72,6 +145,9 @@ test_configure_is_idempotent() {
 }
 
 echo "capabilities/cli-tools"
+run_test "doctor accepts tools the system already provides" test_doctor_accepts_tools_the_system_already_provides
+run_test "doctor still reports a tool that is missing everywhere" test_doctor_still_reports_a_tool_that_is_missing_everywhere
+run_test "install reads its pairs from the metadata" test_install_reads_its_pairs_from_the_metadata
 run_test "install uses package and command pairs" test_install_uses_package_and_command_pairs
 run_test "install skips tools already on PATH" test_install_skips_tools_already_on_path
 run_test "install warns but survives a missing port" test_install_warns_but_survives_a_missing_port

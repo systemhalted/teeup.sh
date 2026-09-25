@@ -90,10 +90,24 @@ if [[ ! -f "$identity_file" ]]; then
   doctor_fail "No $identity_file, so the git identity resolves to nothing." "teeup configure git"
 elif [[ ! -r "$identity_file" ]]; then
   doctor_fail "$identity_file cannot be read, so every git command fails outright; it is [include]d from $git_dir/config. chmod u+r $identity_file" "chmod u+r $identity_file"
-elif grep -q '^[[:space:]]*email[[:space:]]*=[[:space:]]*"..*"' "$identity_file" 2>/dev/null; then
-  doctor_ok "Identity: $(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" 2>/dev/null | head -1)"
 else
-  doctor_fail "$identity_file has no email, so commits would be unattributed." "teeup configure git"
+  # Both fields, not just the email. The shipped config sets
+  # `useConfigOnly = true` so git never guesses an identity from the
+  # hostname, which makes a missing name fatal rather than cosmetic: git
+  # refuses every commit with "fatal: no name was given and auto-detection is
+  # disabled". Reporting that machine healthy is the worst kind of wrong,
+  # because the gate people check before starting work says it is fine.
+  identity_name="$(sed -n 's/^[[:space:]]*name[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" 2>/dev/null | head -1)"
+  identity_email="$(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" 2>/dev/null | head -1)"
+  if [[ -z "$identity_name" && -z "$identity_email" ]]; then
+    doctor_fail "$identity_file sets no name and no email, so git refuses every commit (useConfigOnly is on, so it will not guess one)." "teeup configure git"
+  elif [[ -z "$identity_name" ]]; then
+    doctor_fail "$identity_file has no name, so git refuses every commit: useConfigOnly is on, so it will not guess one from the hostname." "teeup configure git"
+  elif [[ -z "$identity_email" ]]; then
+    doctor_fail "$identity_file has no email, so commits would be unattributed." "teeup configure git"
+  else
+    doctor_ok "Identity: $identity_name <$identity_email>"
+  fi
 fi
 
 generated="$git_dir/teeup-generated"

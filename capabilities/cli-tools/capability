@@ -4,6 +4,7 @@ tier=core
 requires="package-manager"
 provides=""
 packages="ripgrep fd fzf bat eza zoxide jq yq btop tree wget curl gnupg tldr dust"
+package_commands="ripgrep:rg fd:fd fzf:fzf bat:bat eza:eza zoxide:zoxide jq:jq yq:yq btop:btop tree:tree wget:wget curl:curl gnupg:gpg tldr:tldr dust:dust"
 casks=""
 apps=""
 interactive=false
