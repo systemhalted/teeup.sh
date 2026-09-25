@@ -5,6 +5,24 @@
 # wrong here.
 git_dir="$(user_config_dir)/git"
 
+# git_doctor_read <file> <key> -> the value git resolves for <key> in <file>
+# Asked of git, never grepped: a line-oriented search is not section aware --
+# its last-match-wins picks up an identically-named key in a later, unrelated
+# section -- and it does not follow [include], which is how people keep a work
+# identity in its own file.
+#
+# Isolated from the system and global config. `-f` pins which file the VALUE
+# comes from but git still loads the others, so one unreadable file anywhere
+# in that chain makes the whole invocation exit 128 -- and teeup's own
+# ~/.config/git/config [include]s ~/.config/git/local, which is exactly the
+# file a user may have chmod'ed. Without this, an unreadable `local` made
+# every lookup return nothing and the doctor reported a perfectly good
+# identity as absent.
+git_doctor_read() {
+  GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git config -f "$1" --includes --get "$2" 2>/dev/null || true
+}
+
 # git_doctor_path <value> -> the path git itself would open
 # git treats certain config values as pathnames and expands a leading ~ or
 # ~user against the home directory (`git config --path --get` shows it).
@@ -46,7 +64,7 @@ git_doctor_path() {
 # stdout, alongside the value, and letting the caller (never itself inside a
 # `$( )`) split the two lines apart is the only way the flag survives.
 _git_doctor_last_value() {
-  local key="$1" f line value result="" unreadable=false
+  local key="$1" f value result="" unreadable=false
   shift
   for f in "$@"; do
     [[ -f "$f" ]] || continue
@@ -54,24 +72,14 @@ _git_doctor_last_value() {
       unreadable=true
       continue
     fi
-    line="$(grep -iE "^[[:space:]]*${key}[[:space:]]*=" "$f" 2>/dev/null | tail -1)"
-    if [[ -n "$line" ]]; then
-      value="${line#*=}"
-      value="${value#"${value%%[![:space:]]*}"}"
-      if [[ "$value" == \"* ]]; then
-        # A quoted value keeps everything up to its closing quote; a
-        # trailing comment after that (git allows one) is dropped with it.
-        # The unquoted else-branch below is for the shipped config's own
-        # `format = ssh  # ...` line.
-        value="${value#\"}"
-        value="\"${value%%\"*}\""
-      else
-        value="${value%%#*}"
-        value="${value%%;*}"
-      fi
-      value="${value%\"}"
-      value="${value#\"}"
-      value="${value%"${value##*[![:space:]]}"}"
+    # git, not a grep. A line-oriented search is not section aware -- its own
+    # last-match-wins picks up an identically-named key in a later, unrelated
+    # section -- and it does not follow [include], which is how people keep a
+    # work identity in a separate file. git answers both correctly, and
+    # handles quoting, case and line continuation while it is at it.
+    # --includes is NOT the default for -f, so it is asked for explicitly.
+    value="$(git_doctor_read "$f" "$key")"
+    if [[ -n "$value" ]]; then
       result="$value"
     fi
   done
@@ -116,8 +124,14 @@ else
   # refuses every commit with "fatal: no name was given and auto-detection is
   # disabled". Reporting that machine healthy is the worst kind of wrong,
   # because the gate people check before starting work says it is fine.
-  identity_name="$(sed -n 's/^[[:space:]]*name[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" 2>/dev/null | head -1)"
-  identity_email="$(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/p' "$identity_file" 2>/dev/null | head -1)"
+  # git, not sed: the sed form matched a quoted value on its own line and
+  # nothing else, so it missed an unquoted one, a key in a subsection, and
+  # most importantly an [include] -- which is how people keep a work identity
+  # in its own file, and which git follows. Reporting "sets no name and no
+  # email" on a config git reads perfectly is the failure this check exists
+  # to avoid making.
+  identity_name="$(git_doctor_read "$identity_file" user.name)"
+  identity_email="$(git_doctor_read "$identity_file" user.email)"
   if [[ -z "$identity_name" && -z "$identity_email" ]]; then
     doctor_fail "$identity_file sets no name and no email, so git refuses every commit (useConfigOnly is on, so it will not guess one)." "teeup configure git"
   elif [[ -z "$identity_name" ]]; then
@@ -179,7 +193,7 @@ if grep -q '^[[:space:]]*gpgsign = true$' "$generated" 2>/dev/null; then
   # local instead, so all three are read, last value wins.
   # One command substitution, one subshell; the split into value and flag
   # below happens back in this shell, where the assignment sticks (NI1).
-  _git_doctor_raw="$(_git_doctor_last_value signingkey "$identity_file" "$generated" "$git_dir/local")"
+  _git_doctor_raw="$(_git_doctor_last_value user.signingkey "$identity_file" "$generated" "$git_dir/local")"
   signing_key="${_git_doctor_raw%%$'\n'*}"
   _git_doctor_unreadable="${_git_doctor_raw#*$'\n'}"
   signing_key="${signing_key%.pub}"
@@ -220,7 +234,7 @@ if [[ "$signing_on" == "true" ]]; then
   # switched to GPG signing (or turned SSH signing off) does not owe teeup an
   # allowedSignersFile, and the message above must say what format actually
   # is rather than assuming the shipped default is still in effect.
-  _git_doctor_raw="$(_git_doctor_last_value format "$git_dir/config" "$generated" "$git_dir/local")"
+  _git_doctor_raw="$(_git_doctor_last_value gpg.format "$git_dir/config" "$generated" "$git_dir/local")"
   gpg_format="${_git_doctor_raw%%$'\n'*}"
   _git_doctor_unreadable="${_git_doctor_raw#*$'\n'}"
   if [[ "$_git_doctor_unreadable" == "true" ]]; then
