@@ -826,7 +826,7 @@ test_toml_merge_local_keeps_a_key_shaped_line_inside_a_value() {
   [[ -n "$PY_BIN" ]] || { cleanup_test_env; return 0; }
   # The base settings must all survive, and the string must still hold its
   # inner line rather than it becoming a real key.
-  "$PY_BIN" - "$out" <<'EOF_PY'
+  if ! "$PY_BIN" - "$out" <<'EOF_PY'
 import sys, tomllib
 with open(sys.argv[1], "rb") as fh:
     d = tomllib.load(fh)
@@ -834,6 +834,64 @@ assert d.get("accordion-padding") == 30, "a base setting was swallowed into the 
 assert d.get("keep-me") == "yes", "a base setting between the split halves was lost"
 assert "accordion-padding = 99" in d.get("after-startup-command", ""), "the value lost its own inner line"
 EOF_PY
+  then
+    return 1
+  fi
+  cleanup_test_env
+}
+
+# A multiline value may contain a line that reads exactly like a table
+# header. Treating it as one opens a section mid-value, so every base setting
+# emitted afterwards lands inside the still-open string and the real table it
+# names is never merged. The file can still parse, so AeroSpace loads a config
+# that quietly turned settings into command text and the validation backstop
+# sees nothing wrong.
+test_toml_merge_local_keeps_a_header_shaped_line_inside_a_value() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'start-at-login = true\n\n[gaps]\ninner = 8\n' > "$base"
+  printf 'after-startup-command = """\n[gaps]\ninner = 99\n"""\nstart-at-login = false\n' > "$TEST_HOME/hdr.toml"
+  toml_merge_local "$base" "$TEST_HOME/hdr.toml" > "$out"
+  merge_parses "$out" || { echo "a header-shaped continuation produced invalid TOML"; return 1; }
+  [[ -n "$PY_BIN" ]] || { cleanup_test_env; return 0; }
+  if ! "$PY_BIN" - "$out" <<'EOF_PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    d = tomllib.load(fh)
+assert d.get("start-at-login") is False, "the override after the value was lost: %r" % d.get("start-at-login")
+cmd = d.get("after-startup-command", "")
+assert "[gaps]" in cmd, "the value lost its own header-shaped line"
+assert isinstance(d.get("gaps"), dict), "the real [gaps] table was swallowed into the string"
+assert d["gaps"].get("inner") == 8, "the base table was not merged: %r" % d.get("gaps")
+EOF_PY
+  then
+    return 1
+  fi
+  cleanup_test_env
+}
+
+# TOML permits a quoted key, and AeroSpace's own docs use them. Accepting only
+# bare keys means a valid override is dropped rather than applied: the merged
+# file is still valid, so nothing reports that the setting the user asked for
+# was silently ignored.
+test_toml_merge_local_accepts_a_quoted_root_key() {
+  setup
+  local base="$TEST_HOME/base.toml" out="$TEST_HOME/out.toml"
+  printf 'start-at-login = true\nkeep-me = "yes"\n' > "$base"
+  printf '"start-at-login" = false\n' > "$TEST_HOME/q.toml"
+  toml_merge_local "$base" "$TEST_HOME/q.toml" > "$out"
+  merge_parses "$out" || { echo "a quoted key produced invalid TOML"; return 1; }
+  [[ -n "$PY_BIN" ]] || { cleanup_test_env; return 0; }
+  if ! "$PY_BIN" - "$out" <<'EOF_PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    d = tomllib.load(fh)
+assert d.get("start-at-login") is False, "the quoted override was ignored: %r" % d.get("start-at-login")
+assert d.get("keep-me") == "yes", "an unrelated base key was lost"
+EOF_PY
+  then
+    return 1
+  fi
   cleanup_test_env
 }
 
@@ -1005,6 +1063,8 @@ run_test "toml_merge_local handles whitespace and CRLF headers" test_toml_merge_
 run_test "toml_merge_local with nothing to merge" test_toml_merge_local_with_nothing_to_merge
 run_test "toml_merge_local appends a table the base never had" test_toml_merge_local_appends_a_table_the_base_never_had
 run_test "toml_merge_local keeps a multiline root value whole" test_toml_merge_local_keeps_a_multiline_root_value_whole
+run_test "toml_merge_local keeps a header-shaped line inside a value" test_toml_merge_local_keeps_a_header_shaped_line_inside_a_value
+run_test "toml_merge_local accepts a quoted root key" test_toml_merge_local_accepts_a_quoted_root_key
 run_test "toml_merge_local keeps a key-shaped line inside a value" test_toml_merge_local_keeps_a_key_shaped_line_inside_a_value
 run_test "toml_merge_local keeps array-of-table entries" test_toml_merge_local_keeps_array_of_table_entries
 run_test "toml_merge_local keeps array entries together with their subtables" test_toml_merge_local_keeps_array_entries_together_with_their_subtables

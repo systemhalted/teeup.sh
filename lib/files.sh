@@ -544,6 +544,7 @@ replace_literal() {
 # different passes" without needing gawk's FILENAME/ARGIND.
 toml_merge_local() {
   awk '
+    BEGIN { lvalclosed = 1; lsecval = "" }
     # TOML allows whitespace around a table header and around a key, and a
     # file edited on another machine can arrive with CRLF line endings. A
     # header this does not recognise is swallowed into the previous table,
@@ -589,12 +590,20 @@ toml_merge_local() {
     # "gaps" and "gaps.inner"; comparing the raw header or key text instead
     # of this canonical form misses that, and both survive into the merged
     # file as two declarations of the same path.
-    function canon_path(path,    n, i, parts, out) {
+    function canon_path(path,    n, i, parts, out, first, last) {
       n = split(path, parts, ".")
       out = ""
       for (i = 1; i <= n; i++) {
         gsub(/^[ \t]+/, "", parts[i])
         gsub(/[ \t]+$/, "", parts[i])
+        # "gaps" and gaps name the same path, so the quotes come off before
+        # anything is compared; otherwise the two spellings merge as two
+        # separate declarations of one path and the result will not parse.
+        first = substr(parts[i], 1, 1)
+        last = substr(parts[i], length(parts[i]), 1)
+        if (length(parts[i]) > 1 && first == last && (first == "\"" || first == sq())) {
+          parts[i] = substr(parts[i], 2, length(parts[i]) - 2)
+        }
         out = (i == 1) ? parts[i] : out "." parts[i]
       }
       return out
@@ -617,7 +626,21 @@ toml_merge_local() {
       sub(/\]$/, "", s)
       return canon_path(s)
     }
-    function is_kv(line) { return trim(line) ~ /^[A-Za-z0-9_.-]+[ \t]*=/ }
+    # TOML keys may be bare, "quoted" or 'literal-quoted', and a dotted key
+    # may mix the three. Accepting only bare names meant a valid override such
+    # as `"start-at-login" = false` was neither matched as a key nor kept as a
+    # continuation -- it was dropped, and the merged file stayed valid, so
+    # nothing reported that the setting the user asked for was ignored.
+    # An apostrophe cannot appear in this awk program (see the note above the
+    # here-doc): the shell would end the quoted string. sq() supplies one from
+    # its character code.
+    function sq() { return sprintf("%c", 39) }
+    function is_kv(line,   s, q, one) {
+      s = trim(line)
+      q = sq()
+      one = "([A-Za-z0-9_-]+|\"[^\"]*\"|" q "[^" q "]*" q ")"
+      return s ~ ("^" one "([ \t]*[.][ \t]*" one ")*[ \t]*=")
+    }
     # value_is_closed(text) -- has this assignment finished on the text so far?
     # It is still open while a [ or { is unbalanced, or a triple quote is
     # unpaired. A # outside a string starts a comment, so its brackets do not
@@ -629,11 +652,11 @@ toml_merge_local() {
       for (i = 1; i <= n; i++) {
         c = substr(text, i, 1)
         rest = substr(text, i, 3)
-        if (!inbasic && !inlit && (rest == "\"\"\"" || rest == "'\''")) { ml3 = !ml3; i += 2; continue }
+        if (!inbasic && !inlit && (rest == "\"\"\"" || rest == sq() sq() sq())) { ml3 = !ml3; i += 2; continue }
         if (ml3) continue
         if (inbasic && c == "\\") { i++; continue }
         if (!inlit && c == "\"") { inbasic = !inbasic; continue }
-        if (!inbasic && c == "'\''") { inlit = !inlit; continue }
+        if (!inbasic && c == sq()) { inlit = !inlit; continue }
         if (inbasic || inlit) continue
         if (c == "#") break
         if (c == "[" || c == "{") depth++
@@ -675,9 +698,31 @@ toml_merge_local() {
     }
     {
       # Pass 2: the machine local.toml.
+      #
+      # An open value owns every line until its own delimiter closes, and
+      # that has to be settled BEFORE the line is looked at in any other way.
+      # A multiline value may legitimately contain a line reading exactly
+      # like a table header -- an after-startup-command string with [gaps] on
+      # a line of its own -- and opening a section there puts every base
+      # setting emitted afterwards inside the still-open string, while the
+      # real table it names is never merged. The file can still parse, so
+      # AeroSpace loads a config that quietly turned settings into command
+      # text and the validation backstop has nothing to catch.
+      if (lvalclosed == 0) {
+        if (lsec == "") {
+          lrootval[lrootopen] = lrootval[lrootopen] "\n" $0
+          lvalclosed = value_is_closed(lrootval[lrootopen])
+        } else {
+          lblock[lsec] = lblock[lsec] "\n" $0
+          lsecval = lsecval "\n" $0
+          lvalclosed = value_is_closed(lsecval)
+        }
+        next
+      }
       if (is_header($0)) {
         lrootopen = ""
         lvalclosed = 1
+        lsecval = ""
         lname = header_name($0)
         if (lname ~ /^\[\[/) {
           larrname = substr(lname, 3, length(lname) - 4)
@@ -715,6 +760,10 @@ toml_merge_local() {
         }
       } else {
         lblock[lsec] = lblock[lsec] "\n" $0
+        if (is_kv($0)) {
+          lsecval = $0
+          lvalclosed = value_is_closed($0)
+        }
       }
       next
     }
