@@ -1616,6 +1616,315 @@ test_doctor_rejects_an_unknown_capability() {
   cleanup_test_env
 }
 
+seed_config_answers() {
+  mkdir -p "$TEST_HOME/.config/teeup"
+  {
+    printf 'TEEUP_EMAIL="ada@example.com"\n'
+    printf 'TEEUP_NAME="Ada Lovelace"\n'
+    printf 'TEEUP_THEME="catppuccin"\n'
+  } > "$TEST_HOME/.config/teeup/answers"
+}
+
+pin_machine() {
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf '%s\n' "$1" > "$TEEUP_MACHINES_DIR/testmac.conf"
+}
+
+test_config_get_lists_every_key_and_marks_the_pinned_ones() {
+  setup
+  seed_config_answers
+  pin_machine 'TEEUP_THEME="nord"'
+  local out
+  out="$("$TEEUP" config get)"
+  assert_contains "$out" "TEEUP_NAME" || return 1
+  assert_contains "$out" "Ada Lovelace" || return 1
+  assert_contains "$out" "[pinned by testmac.conf]" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_config_get_prints_the_effective_value() {
+  setup
+  seed_config_answers
+  assert_equals "catppuccin" "$("$TEEUP" config get TEEUP_THEME)" || return 1
+  pin_machine 'TEEUP_THEME="nord"'
+  assert_equals "nord" "$("$TEEUP" config get TEEUP_THEME)" "the machine file wins" || return 1
+  local rc=0 out
+  out="$("$TEEUP" config get TEEUP_NOPE 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No answer named TEEUP_NOPE" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+# R7.2: get must not present a runtime variable as though it were an answer,
+# even though it is exported into this very shell by setup() / answers_load.
+test_config_get_refuses_a_runtime_variable_that_is_not_an_answer() {
+  setup
+  seed_config_answers
+  local rc=0 out
+  out="$("$TEEUP" config get TEEUP_CAPS_DIR 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No answer named TEEUP_CAPS_DIR" || return 1
+  cleanup_test_env
+}
+
+test_config_set_writes_the_answers_file() {
+  setup
+  seed_config_answers
+  "$TEEUP" config set TEEUP_NAME Grace Hopper >/dev/null
+  assert_equals "Grace Hopper" "$("$TEEUP" config get TEEUP_NAME)" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_NAME="Grace Hopper"' || return 1
+  cleanup_test_env
+}
+
+test_config_set_says_when_the_machine_file_makes_the_write_pointless() {
+  setup
+  seed_config_answers
+  pin_machine 'TEEUP_THEME="nord"'
+  local out
+  out="$("$TEEUP" config set TEEUP_THEME catppuccin 2>&1)"
+  assert_contains "$out" "pins TEEUP_THEME=nord" || return 1
+  assert_contains "$out" "will have no effect" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_THEME="catppuccin"' "the answers file is still written" || return 1
+  assert_equals "nord" "$("$TEEUP" config get TEEUP_THEME)" "and the pin still wins" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_config_set_rejects_a_key_that_is_not_an_answer() {
+  setup
+  seed_config_answers
+  local rc=0 out
+  out="$("$TEEUP" config set PATH /tmp 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "must look like TEEUP_NAME" || return 1
+  cleanup_test_env
+}
+
+# R7.1: any TEEUP_WORK_* key is refused outright, and told which file to
+# edit instead -- the personal overlay this host would use, never the
+# answers file, since work_get never reads the answers file at all.
+test_config_set_refuses_any_work_key() {
+  setup
+  seed_config_answers
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  local rc=0 out
+  out="$("$TEEUP" config set TEEUP_WORK_EMAIL boss@corp.example 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TEST_HOME/machines/testmac.conf" "names the file to edit" || return 1
+  assert_contains "$out" "example.conf.sample" || return 1
+
+  rc=0
+  out="$("$TEEUP" config set TEEUP_WORK_GH_HOST github.enterprise.example.com 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+
+  rc=0
+  out="$("$TEEUP" config set TEEUP_WORK_GH_ACCOUNT ada-work 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+
+  assert_not_contains "$(cat "$TEST_HOME/.config/teeup/answers")" "TEEUP_WORK" "the answers file must never gain a work key" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_config_set_dry_run_does_not_claim_success_or_write() {
+  setup
+  seed_config_answers
+  local out
+  out="$(DRY_RUN=true "$TEEUP" config set TEEUP_NAME "Grace Hopper" 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would set TEEUP_NAME" || return 1
+  assert_not_contains "$out" "✅" || return 1
+  assert_equals "Ada Lovelace" "$("$TEEUP" config get TEEUP_NAME)" "a dry run must not write" || return 1
+  cleanup_test_env
+}
+
+test_config_set_says_the_git_identity_needs_reconfiguring() {
+  setup
+  seed_config_answers
+  local out
+  out="$("$TEEUP" config set TEEUP_EMAIL grace@example.com 2>&1)"
+  assert_contains "$out" "teeup configure git" || return 1
+  cleanup_test_env
+}
+
+test_config_set_says_emacs_needs_reconfiguring() {
+  setup
+  seed_config_answers
+  local out
+  out="$("$TEEUP" config set TEEUP_EMACS_FLAVOR doom 2>&1)"
+  assert_contains "$out" "teeup configure emacs" || return 1
+  cleanup_test_env
+}
+
+test_config_set_says_daily_needs_a_fresh_bootstrap() {
+  setup
+  seed_config_answers
+  local out
+  out="$("$TEEUP" config set TEEUP_DAILY true 2>&1)"
+  assert_contains "$out" "./bootstrap" || return 1
+  cleanup_test_env
+}
+
+# R7.5: TEEUP_THEME is redirected to the verb that actually validates the
+# name and re-renders every themed tool, rather than just noting that a
+# raw write happened.
+test_config_set_redirects_theme_to_theme_set() {
+  setup
+  seed_config_answers
+  local out
+  out="$("$TEEUP" config set TEEUP_THEME nord 2>&1)"
+  assert_contains "$out" "teeup theme set nord" || return 1
+  assert_equals "nord" "$("$TEEUP" config get TEEUP_THEME)" || return 1
+  cleanup_test_env
+}
+
+test_config_set_warns_about_package_manager_before_it_is_installed() {
+  setup
+  seed_config_answers
+  local out
+  out="$("$TEEUP" config set TEEUP_PACKAGE_MANAGER macports 2>&1)"
+  assert_contains "$out" "only takes effect" || return 1
+  assert_equals "macports" "$("$TEEUP" config get TEEUP_PACKAGE_MANAGER)" || return 1
+  cleanup_test_env
+}
+
+test_config_set_refuses_package_manager_once_it_is_installed() {
+  setup
+  seed_config_answers
+  mkdir -p "$TEST_HOME/.local/state/teeup/done"
+  : > "$TEST_HOME/.local/state/teeup/done/cap-package-manager"
+  local rc=0 out
+  out="$("$TEEUP" config set TEEUP_PACKAGE_MANAGER macports 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "package-manager is already installed" || return 1
+  assert_not_contains "$(cat "$TEST_HOME/.config/teeup/answers")" "TEEUP_PACKAGE_MANAGER" "must refuse before writing" || return 1
+  cleanup_test_env
+}
+
+test_config_set_warns_when_nothing_known_applies_the_change() {
+  setup
+  seed_config_answers
+  local out
+  out="$("$TEEUP" config set TEEUP_CUSTOM_FLAG yes 2>&1)"
+  assert_contains "$out" "not one of the answers" || return 1
+  assert_equals "yes" "$("$TEEUP" config get TEEUP_CUSTOM_FLAG)" "the write itself still happens" || return 1
+  cleanup_test_env
+}
+
+# R7.6: _config_keys must see an `export KEY=value` line too, or a key that
+# exists only that way in a hand-written machine file stays invisible.
+test_config_keys_accepts_an_exported_machine_line() {
+  setup
+  seed_config_answers
+  pin_machine 'export TEEUP_ONLY_IN_MACHINE="pinned"'
+  assert_equals "pinned" "$("$TEEUP" config get TEEUP_ONLY_IN_MACHINE)" || return 1
+  local out
+  out="$("$TEEUP" config get)"
+  assert_contains "$out" "TEEUP_ONLY_IN_MACHINE" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+# R7.6: when both the personal overlay and the checkout's machine file
+# exist, the header names both and says which one wins, rather than
+# leaving the shadowed one invisible.
+test_config_get_header_lists_both_machine_files_when_both_exist() {
+  setup
+  seed_config_answers
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR" "$TEST_HOME/.config/teeup/machines"
+  printf 'TEEUP_THEME="nord"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  printf 'TEEUP_THEME="dracula"\n' > "$TEST_HOME/.config/teeup/machines/testmac.conf"
+  local out
+  out="$("$TEEUP" config get 2>/dev/null)"
+  assert_contains "$out" "$TEST_HOME/.config/teeup/machines/testmac.conf" || return 1
+  assert_contains "$out" "$TEEUP_MACHINES_DIR/testmac.conf" || return 1
+  assert_contains "$out" "wins" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_config_edit_runs_the_editor_and_keeps_a_good_edit() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_EMAIL="grace@example.com"\n' >> "$1"
+EOF2
+  VISUAL=fakeed "$TEEUP" config edit >/dev/null
+  assert_equals "grace@example.com" "$("$TEEUP" config get TEEUP_EMAIL)" || return 1
+  local mode
+  mode="$(stat -c '%a' "$TEST_HOME/.config/teeup/answers" 2>/dev/null || stat -f '%Lp' "$TEST_HOME/.config/teeup/answers")"
+  assert_equals "600" "$mode" || return 1
+  cleanup_test_env
+}
+
+test_config_edit_rolls_back_an_edit_that_will_not_parse() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_NAME="unterminated\n' >> "$1"
+EOF2
+  local rc=0 out
+  # VISUAL is emptied, not merely unset: it is a real variable in a real
+  # developer's environment and would otherwise win over EDITOR here.
+  out="$(VISUAL="" EDITOR=fakeed "$TEEUP" config edit 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "rolled back" || return 1
+  assert_equals "Ada Lovelace" "$("$TEEUP" config get TEEUP_NAME)" || return 1
+  cleanup_test_env
+}
+
+# R7.4: a line that passes bash -n but is not the shape answers_set writes
+# (an unquoted value with a space) must be rolled back too, because sourcing
+# it does not fail -- it silently runs the second word as a command.
+test_config_edit_rolls_back_a_line_that_would_run_as_a_command() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_NAME=Alan Turing\n' >> "$1"
+EOF2
+  local rc=0 out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "rolled back" || return 1
+  assert_equals "Ada Lovelace" "$("$TEEUP" config get TEEUP_NAME)" "the original answer must survive the rollback" || return 1
+  local mode
+  mode="$(stat -c '%a' "$TEST_HOME/.config/teeup/answers" 2>/dev/null || stat -f '%Lp' "$TEST_HOME/.config/teeup/answers")"
+  assert_equals "600" "$mode" "the restored file keeps its mode" || return 1
+  cleanup_test_env
+}
+
+test_config_edit_passes_flags_in_the_editor_variable() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf '%s\n' "$*" > "$HOME/editor-args"
+EOF2
+  VISUAL="fakeed --wait" "$TEEUP" config edit >/dev/null
+  assert_equals "--wait $TEST_HOME/.config/teeup/answers" "$(cat "$TEST_HOME/editor-args")" || return 1
+  cleanup_test_env
+}
+
+# R7.3: a dry run previews only. It must not create the answers file, and
+# must not invoke the editor at all (nothing on PATH answers to "fakeed"
+# here, so a regression that reaches run_cmd would fail loudly).
+test_config_edit_dry_run_creates_and_touches_nothing() {
+  setup
+  local out rc=0
+  out="$(DRY_RUN=true VISUAL=fakeed "$TEEUP" config edit 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "[DRY-RUN] Would open fakeed on $TEST_HOME/.config/teeup/answers" || return 1
+  if [[ -f "$TEST_HOME/.config/teeup/answers" ]]; then
+    echo "the answers file must not be created under a dry run"
+    return 1
+  fi
+  cleanup_test_env
+}
+
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
@@ -1702,4 +2011,26 @@ run_test "migrate legacy proceeds with teeup's zsh layer installed" test_migrate
 run_test "migrate legacy dry run changes nothing" test_migrate_legacy_dry_run_changes_nothing
 run_test "migrate legacy exits non-zero when it refused something" test_migrate_legacy_exits_non_zero_when_it_refused_something
 run_test "migrate appears in help" test_migrate_appears_in_help
+run_test "config get lists every key and marks pins" test_config_get_lists_every_key_and_marks_the_pinned_ones
+run_test "config get prints the effective value" test_config_get_prints_the_effective_value
+run_test "config get refuses a runtime variable" test_config_get_refuses_a_runtime_variable_that_is_not_an_answer
+run_test "config set writes the answers file" test_config_set_writes_the_answers_file
+run_test "config set says when a pin makes it pointless" test_config_set_says_when_the_machine_file_makes_the_write_pointless
+run_test "config set rejects a non-answer key" test_config_set_rejects_a_key_that_is_not_an_answer
+run_test "config set refuses any work key" test_config_set_refuses_any_work_key
+run_test "config set dry run changes and claims nothing" test_config_set_dry_run_does_not_claim_success_or_write
+run_test "config set names teeup configure git for name/email" test_config_set_says_the_git_identity_needs_reconfiguring
+run_test "config set names teeup configure emacs for emacs flavor" test_config_set_says_emacs_needs_reconfiguring
+run_test "config set names ./bootstrap for daily" test_config_set_says_daily_needs_a_fresh_bootstrap
+run_test "config set redirects theme to teeup theme set" test_config_set_redirects_theme_to_theme_set
+run_test "config set warns about package manager before install" test_config_set_warns_about_package_manager_before_it_is_installed
+run_test "config set refuses package manager once installed" test_config_set_refuses_package_manager_once_it_is_installed
+run_test "config set warns when nothing known applies the change" test_config_set_warns_when_nothing_known_applies_the_change
+run_test "config keys accepts an exported machine line" test_config_keys_accepts_an_exported_machine_line
+run_test "config get header lists both machine files" test_config_get_header_lists_both_machine_files_when_both_exist
+run_test "config edit keeps a good edit" test_config_edit_runs_the_editor_and_keeps_a_good_edit
+run_test "config edit rolls back a broken edit" test_config_edit_rolls_back_an_edit_that_will_not_parse
+run_test "config edit rolls back a line that would run as a command" test_config_edit_rolls_back_a_line_that_would_run_as_a_command
+run_test "config edit passes flags in EDITOR" test_config_edit_passes_flags_in_the_editor_variable
+run_test "config edit dry run creates and touches nothing" test_config_edit_dry_run_creates_and_touches_nothing
 print_summary

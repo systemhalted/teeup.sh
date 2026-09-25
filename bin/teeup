@@ -38,6 +38,7 @@ teeup - your Mac, as a distribution
   teeup doctor [<capability>]    check what is installed, and say how to fix what is not
                                  (exit 0 verified healthy, 1 found problems,
                                   2 could not check something)
+  teeup config get|set|edit      read or change the answers file
   teeup has <capability>         exit 0 when installed (for scripts and menus)
   teeup secret get|set|rm <name>  read, store or delete a Keychain secret
   teeup status                   package manager, answers, installed capabilities
@@ -581,6 +582,194 @@ cmd_launch() {
   run_cmd open -a "$app"
 }
 
+# _config_keys -> every TEEUP_* key either file names, sorted, once each.
+# The machine file is included, so a key that exists only as a pin is still
+# listed rather than being invisible until something breaks. Accepts a plain
+# KEY="value" line (what answers_set writes) or an `export KEY=value` line
+# (what a hand-written machine file may use), since machine_file's whole
+# reason to exist is a file nobody but a person ever writes.
+_config_keys() {
+  local f
+  for f in "$(answers_file)" "$(machine_file)"; do
+    [[ -f "$f" ]] || continue
+    sed -n \
+      -e 's/^\(TEEUP_[A-Z0-9_]*\)=.*/\1/p' \
+      -e 's/^export[[:space:]][[:space:]]*\(TEEUP_[A-Z0-9_]*\)=.*/\1/p' \
+      "$f"
+  done | sort -u
+}
+
+# _config_key_known <KEY> -> true when KEY is named by the answers file or
+# the machine file (R7.2): teeup config get must never present a runtime
+# variable (TEEUP_PATH, TEEUP_CAPS_DIR, ...) as though it were an answer.
+_config_key_known() {
+  local key="$1" k
+  for k in $(_config_keys); do
+    if [[ "$k" == "$key" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# _config_edit_error <file> -> prints why <file> would be unsafe to keep as
+# the answers file, or nothing when it is fine. Two gates: every live line
+# must have the shape answers_set itself writes -- KEY="value" or a bare
+# KEY=value with no spaces -- because bash -n alone accepts
+# `TEEUP_NAME=Ada Lovelace`, which is valid shell that *runs* Lovelace as a
+# command every time answers_load sources the file (R7.4); bash -n then
+# catches anything the shape check cannot see (unbalanced quotes, unmatched
+# parens, ...).
+_config_edit_error() {
+  local f="$1" line lineno=0 quoted_pat bare_pat
+  quoted_pat='^TEEUP_[A-Z0-9_]+="[^"]*"$'
+  bare_pat='^TEEUP_[A-Z0-9_]+=[^[:space:]"]+$'
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    if [[ "$line" =~ ^[[:space:]]*$ ]]; then continue; fi
+    if [[ "$line" =~ ^[[:space:]]*# ]]; then continue; fi
+    if [[ "$line" =~ $quoted_pat ]]; then continue; fi
+    if [[ "$line" =~ $bare_pat ]]; then continue; fi
+    printf 'line %d does not read KEY="value": %s\n' "$lineno" "$line"
+    return 0
+  done < "$f"
+  bash -n "$f" 2>&1
+  return 0
+}
+
+# teeup config get [<KEY>] | set <KEY> <value> | edit
+# Over the answers file only (spec section 7). answers_load has already
+# layered machines/<hostname>.conf on top, so `get` prints what the rest of
+# teeup will actually see. `set` writes the answers file and never the
+# machine file -- and says so when the machine file is about to make the
+# write pointless, because that is the one thing about this precedence that
+# is impossible to notice on your own.
+cmd_config() {
+  local op="${1:-}" key value f pinned editor backup parse_error
+  local host user_machine repo_machine
+  if [[ $# -gt 0 ]]; then
+    shift
+  fi
+  case "$op" in
+    get)
+      key="${1:-}"
+      if [[ -n "$key" ]]; then
+        if [[ "$key" =~ ^TEEUP_[A-Z0-9_]+$ ]] && _config_key_known "$key"; then
+          printf '%s\n' "${!key:-}"
+          return 0
+        fi
+        die "No answer named $key. List what there is with: teeup config get"
+      fi
+      f="$(answers_file)"
+      if answers_exist; then
+        echo "Answers: $f"
+      else
+        echo "Answers: $f (the wizard has not run here; ./bootstrap writes it)"
+      fi
+      # Name both machine files when both exist (R7.6): the generic
+      # shadowed-machine-file notice from answers_load lands on stderr, and
+      # this header is the one place that says so on stdout, where a user
+      # reading `teeup config get` will actually see it.
+      host="$(hostname -s 2>/dev/null || hostname)"
+      user_machine="$TEEUP_CONFIG_DIR/machines/$host.conf"
+      repo_machine="$TEEUP_MACHINES_DIR/$host.conf"
+      if [[ -f "$user_machine" && -f "$repo_machine" && "$user_machine" != "$repo_machine" ]]; then
+        echo "Machine: $user_machine  (sourced last, so it wins; $repo_machine also exists and is ignored)"
+      elif [[ -f "$(machine_file)" ]]; then
+        echo "Machine: $(machine_file)  (sourced last, so it wins)"
+      fi
+      for key in $(_config_keys); do
+        if machine_get "$key" >/dev/null; then
+          printf '  %-26s %s   [pinned by %s]\n' "$key" "${!key:-}" "$(basename "$(machine_file)")"
+        else
+          printf '  %-26s %s\n' "$key" "${!key:-}"
+        fi
+      done
+      ;;
+    set)
+      if [[ $# -lt 2 ]]; then
+        die "Usage: teeup config set <KEY> <value>"
+      fi
+      key="$1"
+      shift
+      # Joined, so `teeup config set TEEUP_NAME Ada Lovelace` needs no quotes.
+      value="$*"
+      # Checked before anything else touches $key with `${!key}` or
+      # machine_get (R7.2): an invalid variable name there is a raw bash
+      # "bad substitution" error, not a teeup message.
+      if ! [[ "$key" =~ ^TEEUP_[A-Z0-9_]+$ ]]; then
+        die "Key must look like TEEUP_NAME, got '$key'. teeup config only changes TEEUP_* answers."
+      fi
+      case "$key" in
+        TEEUP_WORK_*)
+          die "$key is a work identity setting; work_get reads it from machines/<hostname>.conf only, never the answers file, so writing it here would change nothing (R7.1). Edit $(machine_file) instead (copy $TEEUP_PATH/machines/example.conf.sample for the shape)."
+          ;;
+      esac
+      if [[ "$key" == "TEEUP_PACKAGE_MANAGER" ]] && state_done check "cap-package-manager"; then
+        die "$key picks which package manager teeup drives, and package-manager is already installed on this Mac; teeup config cannot switch that safely after the fact. Run teeup remove package-manager first, or edit $(machine_file) to pin it."
+      fi
+      if pinned="$(machine_get "$key")"; then
+        if [[ "$pinned" != "$value" ]]; then
+          warn "$(machine_file) pins $key=${pinned:-<empty>}, which is sourced after the answers file, so this write will have no effect until that line changes."
+        fi
+      fi
+      # answers_set validates the key shape and refuses a newline in the value.
+      answers_set "$key" "$value"
+      ok_unless_dry "Set $key in $(answers_file)"
+      # R7.5: name the one command that actually applies the change. Nothing
+      # here re-reads $key elsewhere, so this list is deliberately narrow --
+      # only the answers the wizard itself writes.
+      if [[ "$DRY_RUN" != "true" ]]; then
+        case "$key" in
+          TEEUP_NAME|TEEUP_EMAIL) log "Run: teeup configure git -- that is what reads $key." ;;
+          TEEUP_EMACS_FLAVOR) log "Run: teeup configure emacs -- that is what reads $key." ;;
+          TEEUP_DAILY) log "Run: ./bootstrap -- that is what reads $key." ;;
+          TEEUP_THEME) log "Run: teeup theme set $value -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
+          TEEUP_PACKAGE_MANAGER) warn "$key only takes effect the next time ./bootstrap or teeup install package-manager runs; nothing on this machine changed yet." ;;
+          *) warn "$key is not one of the answers ./bootstrap writes (TEEUP_NAME, TEEUP_EMAIL, TEEUP_EMACS_FLAVOR, TEEUP_DAILY, TEEUP_PACKAGE_MANAGER, TEEUP_THEME); teeup config cannot say what, if anything, reads it." ;;
+        esac
+      fi
+      ;;
+    edit)
+      f="$(answers_file)"
+      editor="${VISUAL:-${EDITOR:-vi}}"
+      if [[ "$DRY_RUN" == "true" ]]; then
+        printf "%b %s\n" "🔍" "[DRY-RUN] Would open $editor on $f"
+        return 0
+      fi
+      if [[ ! -f "$f" ]]; then
+        mkdir -p "$(dirname "$f")"
+        : > "$f"
+        chmod 600 "$f"
+      fi
+      backup="$(mktemp)"
+      cp "$f" "$backup"
+      # Run through `bash -c` with the path as $1, so an EDITOR that carries
+      # flags ("code -w", "emacsclient -t") works and a path with spaces or
+      # metacharacters in it is still one argument.
+      if ! run_cmd bash -c "$editor \"\$1\"" bash "$f"; then
+        rm -f "$backup"
+        die "$editor did not finish; $f is unchanged."
+      fi
+      # teeup sources this file at the start of every command, so a syntax
+      # error -- or a line that merely *looks* like an assignment -- breaks
+      # every verb including the one that would fix it.
+      parse_error="$(_config_edit_error "$f")"
+      if [[ -z "$parse_error" ]]; then
+        chmod 600 "$f"
+        rm -f "$backup"
+        ok "Saved $f"
+      else
+        cp "$backup" "$f"
+        chmod 600 "$f"
+        rm -f "$backup"
+        die "The edited $f would not parse as shell, so your edit was rolled back. Every line has to read KEY=\"value\". ($parse_error)"
+      fi
+      ;;
+    *) die "Usage: teeup config get [<KEY>] | set <KEY> <value> | edit" ;;
+  esac
+}
+
 # teeup doctor [<capability>]
 # Exit 0 when healthy: the spec's release gate is "a real bootstrap on a
 # clean macOS VM, then teeup doctor must exit 0". With no argument it checks
@@ -784,6 +973,7 @@ case "$verb" in
   launch) cmd_launch "$@" ;;
   lazy-run) cmd_lazy_run "$@" ;;
   doctor) cmd_doctor "$@" ;;
+  config) cmd_config "$@" ;;
   has) cmd_has "$@" ;;
   secret) cmd_secret "$@" ;;
   status) cmd_status ;;
