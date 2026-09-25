@@ -4,6 +4,7 @@ tier=core
 requires="ssh"
 provides=""
 packages="gh"
+package_commands="gh:gh"
 casks=""
 apps=""
 interactive=true

@@ -4,6 +4,7 @@ tier=lazy
 requires="package-manager"
 provides="docker colima"
 packages="colima docker docker-compose"
+package_commands="colima:colima docker:docker docker-compose:docker-compose"
 casks=""
 apps=""
 interactive=false

@@ -4,6 +4,7 @@ tier=lazy
 requires="package-manager"
 provides="herdr"
 packages="herdr"
+package_commands="herdr:herdr"
 casks=""
 apps=""
 interactive=false

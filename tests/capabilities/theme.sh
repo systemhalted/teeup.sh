@@ -576,6 +576,34 @@ test_doctor_reports_a_themed_directory_it_cannot_read() {
   cleanup_test_env
 }
 
+# A user template under $TEEUP_CONFIG_DIR/themed shadows the shipped one of
+# the same basename: theme_set renders the override and skips the shipped
+# file on purpose. theme_templates still lists both, so a doctor that walks
+# it raw validates the override, then re-renders the SHADOWED shipped
+# template against the same output path and finds it different -- reporting
+# any override that actually changes something as truncated or hand-edited,
+# with a fix (`teeup theme set`) that can never clear it because theme_set
+# will go on rendering the override. The doctor has to skip what theme_set
+# skips.
+test_doctor_accepts_a_user_template_that_shadows_a_shipped_one() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local real_tpl base
+  real_tpl="$(theme_templates | head -1)"
+  [[ -n "$real_tpl" ]] || { echo "fixture: no templates"; return 1; }
+  base="$(basename "$real_tpl")"
+  mkdir -p "$TEEUP_CONFIG_DIR/themed"
+  # An override whose content really differs from the shipped template, which
+  # is the whole point of overriding and the case that breaks.
+  printf '# mine\ncolor = "{{ accent }}"\n' > "$TEEUP_CONFIG_DIR/themed/$base"
+  theme_set catppuccin >/dev/null 2>&1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_success "$rc" "an override that changes the file is not a broken render" || return 1
+  assert_not_contains "$out" "looks truncated or hand-edited" || return 1
+  cleanup_test_env
+}
+
 # A template edited after the last render leaves the tool on colours teeup no
 # longer ships, and `teeup update` does not re-render on its own.
 #
@@ -721,6 +749,7 @@ run_test "doctor reports an unresolved token" test_doctor_reports_an_unresolved_
 run_test "doctor reports an empty rendered file" test_doctor_reports_an_empty_rendered_file
 run_test "doctor reports a themed dir it cannot read" test_doctor_reports_a_themed_directory_it_cannot_read
 run_test "doctor reports a template it could not re-render" test_doctor_reports_a_template_it_could_not_re_render
+run_test "doctor accepts a user template that shadows a shipped one" test_doctor_accepts_a_user_template_that_shadows_a_shipped_one
 run_test "doctor warns when a template is newer than its render" test_doctor_warns_when_a_template_is_newer_than_its_render
 run_test "doctor reports a theme name that does not match the render" test_doctor_reports_a_theme_name_that_does_not_match_the_render
 run_test "doctor reports a theme name that does not exist" test_doctor_reports_a_theme_name_that_does_not_exist

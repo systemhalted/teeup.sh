@@ -4,6 +4,7 @@ tier=lazy
 requires="package-manager git cli-tools"
 provides="nvim"
 packages="neovim"
+package_commands="neovim:nvim"
 casks=""
 apps=""
 interactive=false

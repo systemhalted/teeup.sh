@@ -4,6 +4,7 @@ tier=lazy
 requires="package-manager"
 provides="tmux"
 packages="tmux"
+package_commands="tmux:tmux"
 casks=""
 apps=""
 interactive=false

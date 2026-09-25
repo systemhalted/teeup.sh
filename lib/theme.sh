@@ -189,6 +189,63 @@ theme_templates() {
   return 0
 }
 
+# theme_templates_effective -> the templates theme_set actually renders, one
+# absolute path per line.
+#
+# theme_templates lists everything that exists; this lists what survives the
+# two skips theme_set applies. A user template under $TEEUP_CONFIG_DIR/themed
+# shadows a shipped one of the same basename (that is the override feature),
+# and where two capabilities ship the same basename only the first is
+# rendered (cap_check fails on that collision separately). Anything walking
+# the template list to check what was RENDERED has to skip the same files, or
+# it compares a render of the override against the template it shadowed and
+# reports every working override as broken -- with a fix that can never clear
+# it, since theme_set will go on rendering the override. One definition, so
+# the renderer and its checks cannot drift apart.
+# _theme_report_collisions
+# Names every capability template theme_templates_effective drops because
+# another capability already claimed its basename. A user override dropping a
+# shipped template is deliberate and says nothing; this is the case
+# `teeup commands --check` also reports, and it is worth saying out loud
+# because the losing tool silently keeps whatever colours it had.
+_theme_report_collisions() {
+  local tpl base cap_bases="/"
+  while IFS= read -r tpl; do
+    if [[ -z "$tpl" ]]; then continue; fi
+    if [[ "${tpl%/*}" == "$TEEUP_CONFIG_DIR/themed" ]]; then continue; fi
+    base="$(basename "$tpl" .tpl)"
+    case "$cap_bases" in
+      *"/$base/"*)
+        warn "$tpl was not rendered: another capability ships $base.tpl (teeup commands --check names both)"
+        continue
+        ;;
+    esac
+    cap_bases="$cap_bases$base/"
+  done <<EOF_TPL
+$(theme_templates)
+EOF_TPL
+  return 0
+}
+
+theme_templates_effective() {
+  local tpl base user_bases="/" cap_bases="/"
+  while IFS= read -r tpl; do
+    if [[ -z "$tpl" ]]; then continue; fi
+    base="$(basename "$tpl" .tpl)"
+    if [[ "${tpl%/*}" == "$TEEUP_CONFIG_DIR/themed" ]]; then
+      user_bases="$user_bases$base/"
+    else
+      case "$cap_bases" in *"/$base/"*) continue ;; esac
+      cap_bases="$cap_bases$base/"
+      case "$user_bases" in *"/$base/"*) continue ;; esac
+    fi
+    printf '%s\n' "$tpl"
+  done <<EOF_TPL
+$(theme_templates)
+EOF_TPL
+  return 0
+}
+
 # _theme_set_abort <next> <name>
 # Every failure after staging starts ends here: the half-rendered staging dir
 # and the sed table go, and the theme in current/ is never touched.
@@ -217,7 +274,7 @@ TEEUP_THEME_FALLBACK="catppuccin"
 export TEEUP_THEME_FALLBACK
 
 theme_set() {
-  local name="$1" dir mode tpl base out current next failed=0 missing user_bases cap_bases
+  local name="$1" dir mode tpl base out current next failed=0 missing
   if ! dir="$(theme_dir "$name")"; then
     if [[ "$name" == "$TEEUP_THEME_FALLBACK" ]]; then
       if [[ -n "${TEEUP_COLOR_SED:-}" ]]; then rm -f "$TEEUP_COLOR_SED"; fi
@@ -244,29 +301,19 @@ theme_set() {
       return 1
     fi
     run_cmd mkdir -p "$next/$mode"
-    # Rendered files share one flat namespace per mode. A user template
-    # overriding a shipped one of the same basename is the feature and stays
+    # Rendered files share one flat namespace per mode, and which template
+    # wins is decided in one place: theme_templates_effective. Every check
+    # that inspects the rendered files walks the same list, so the renderer
+    # and its doctor cannot disagree about what was supposed to be there.
+    # A user template overriding a shipped one is the feature and stays
     # quiet; two capabilities shipping one basename is a collision (cap_check
     # fails on it), so the one that loses is named, once rather than per mode.
-    user_bases="/"
-    cap_bases="/"
+    if [[ "$mode" == "dark" ]]; then
+      _theme_report_collisions
+    fi
     while IFS= read -r tpl; do
       base="$(basename "$tpl" .tpl)"
       out="$next/$mode/$base"
-      if [[ "${tpl%/*}" == "$TEEUP_CONFIG_DIR/themed" ]]; then
-        user_bases="$user_bases$base/"
-      else
-        case "$cap_bases" in
-          *"/$base/"*)
-            if [[ "$mode" == "dark" ]]; then
-              warn "$tpl was not rendered: another capability ships $base.tpl (teeup commands --check names both)"
-            fi
-            continue
-            ;;
-        esac
-        cap_bases="$cap_bases$base/"
-        case "$user_bases" in *"/$base/"*) continue ;; esac
-      fi
       if ! theme_render "$tpl" "$out"; then
         warn "Could not render $tpl"
         failed=1
@@ -277,7 +324,7 @@ theme_set() {
         warn "$tpl: the $name $mode palette has no value for: ${missing:-a malformed token}"
         failed=1
       fi
-    done < <(theme_templates)
+    done < <(theme_templates_effective)
     if [[ "$DRY_RUN" != "true" ]]; then
       cp "$dir/$mode.toml" "$next/$mode/colors.toml"
     fi

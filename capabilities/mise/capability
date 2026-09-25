@@ -4,6 +4,7 @@ tier=core
 requires="package-manager"
 provides=""
 packages="mise"
+package_commands="mise:mise"
 casks=""
 apps=""
 interactive=false

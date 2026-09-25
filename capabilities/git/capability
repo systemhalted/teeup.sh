@@ -4,6 +4,7 @@ tier=core
 requires="dev-dirs cli-tools"
 provides=""
 packages="git git-delta git-lfs lazygit"
+package_commands="git-delta:delta git-lfs:git-lfs lazygit:lazygit"
 casks=""
 apps=""
 interactive=false

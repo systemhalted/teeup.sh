@@ -196,8 +196,23 @@ doctor_backend_can_answer() {
   return 1
 }
 
+# _doctor_package_command <capability> <package>
+# The command `pkg_install <package> <command>` would have accepted for this
+# capability, from its package_commands metadata ("pkg:command", space
+# separated), or nothing when the capability declares none for it. Kept
+# separate so the parsing has one home and one set of tests.
+_doctor_package_command() {
+  local cap="$1" want="$2" pair
+  for pair in $(cap_meta_get "$cap" package_commands); do
+    case "$pair" in
+      "$want":?*) printf '%s\n' "${pair#*:}"; return 0 ;;
+    esac
+  done
+  return 0
+}
+
 doctor_metadata_check() {
-  local cap="$1" item candidate found app
+  local cap="$1" item candidate found app command_name
   # Without the backend's own command there is no way to ask whether anything
   # is installed, and "not installed" would be teeup asserting something it
   # never checked. Say what is actually true: the check could not run.
@@ -224,6 +239,22 @@ doctor_metadata_check() {
       done
       if [[ "$found" == "true" ]]; then
         doctor_ok "package $item is installed."
+        continue
+      fi
+      # `pkg_install <pkg> <command>` treats a command already on PATH as
+      # satisfying the package and skips the formula on purpose: zsh/install
+      # does exactly that for the zsh macOS ships, so `brew list --formula
+      # zsh` is false on a machine that is working as designed. Asking only
+      # the backend therefore fails a healthy Mac -- and `teeup doctor` is
+      # the post-bootstrap gate, so it fails it loudly. package_commands
+      # declares the command install would have accepted, and the check asks
+      # the same question install did. The command name is often not the
+      # package name (git-delta provides delta), which is why it is declared
+      # rather than guessed, and a package with no entry keeps the stricter
+      # answer: the fallback exists only where install really offers one.
+      command_name="$(_doctor_package_command "$cap" "$item")"
+      if [[ -n "$command_name" ]] && have "$command_name"; then
+        doctor_ok "$command_name is on PATH, so $item is provided (not by $(pkg_backend_label))."
       else
         _doctor_report_failure "$cap" "package $item is not installed." "teeup install $cap"
       fi
