@@ -2051,6 +2051,26 @@ test_menu_cancel_inside_a_submenu_goes_back_a_level() {
   cleanup_test_env
 }
 
+test_theme_set_without_a_name_opens_the_picker() {
+  setup
+  # Two complete palettes, copied from the one theme the repo ships, so the
+  # render really succeeds; theme_list sorts, so the second is choice 2.
+  export TEEUP_THEMES_DIR="$TEST_HOME/themes"
+  mkdir -p "$TEEUP_THEMES_DIR"
+  cp -R "$TEEUP_PATH/themes/catppuccin" "$TEEUP_THEMES_DIR/aaa-first"
+  cp -R "$TEEUP_PATH/themes/catppuccin" "$TEEUP_THEMES_DIR/zzz-second"
+  local out
+  out="$(printf '2\n' | "$TEEUP" theme set 2>&1)"
+  assert_contains "$out" "2) zzz-second" || return 1
+  assert_equals "zzz-second" "$("$TEEUP" theme current)" || return 1
+  local rc=0
+  out="$(printf '\n' | "$TEEUP" theme set 2>&1)" || rc=$?
+  assert_success "$rc" "backing out of the picker is not an error" || return 1
+  assert_contains "$out" "Keeping the current theme" || return 1
+  assert_equals "zzz-second" "$("$TEEUP" theme current)" "backing out changes nothing" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
@@ -2136,6 +2156,7 @@ run_test "menu takes a route and offers a way back" test_menu_takes_a_route_and_
 run_test "menu rejects an unknown route" test_menu_rejects_an_unknown_route
 run_test "menu dry run prints the action" test_menu_dry_run_prints_the_action_instead_of_running_it
 run_test "menu cancel inside a submenu goes back a level" test_menu_cancel_inside_a_submenu_goes_back_a_level
+run_test "theme set without a name opens the picker" test_theme_set_without_a_name_opens_the_picker
 run_test "migrate requires a known target" test_migrate_requires_a_known_target
 run_test "migrate legacy runs every step and closes with a real command" test_migrate_legacy_runs_every_step_and_closes_with_a_real_command
 run_test "migrate legacy refuses the chezmoi half without teeup's zsh layer" test_migrate_legacy_refuses_the_chezmoi_half_without_teeups_zsh_layer
