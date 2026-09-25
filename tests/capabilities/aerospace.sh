@@ -533,6 +533,64 @@ test_the_shipped_migration_refreshes_a_pristine_config() {
   cleanup_test_env
 }
 
+# The staging swap puts the candidate at $dest to ask AeroSpace about it and
+# then puts the original back. If that restore fails, the candidate is left
+# sitting at $dest -- and the function warned and returned SUCCESS, so
+# configure carried on. copy_config_once then compares that candidate against
+# the stock record, sees a hash it does not recognise, concludes the user
+# edited the file, and leaves it exactly where it is. The user's real config
+# stays stranded in a .teeup_validate_old.XXXXXX beside it and configure
+# reports success. A failed restore has to stop the capability.
+test_backstop_fails_when_the_original_cannot_be_restored() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  printf '# my own config\n' > "$AERO"
+  local before
+  before="$(cat "$AERO")"
+  # A running AeroSpace that accepts the candidate, so the only thing that
+  # can go wrong is the restore.
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  list-monitors) echo "monitor 1"; exit 0 ;;
+  reload-config) exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  # Make the restore fail, and only the restore. The staging step names the
+  # same .teeup_validate_old. path as its DESTINATION (cp -p $dest $saved),
+  # so matching anywhere in the arguments breaks staging instead and the
+  # check is skipped entirely -- a different path that proves nothing. The
+  # restore is the direction where that path is the SOURCE.
+  mock_command_script mv <<'EOF2'
+src="$1"
+case "$src" in
+  -*) src="$2" ;;
+esac
+case "$src" in
+  *.teeup_validate_old.*) exit 1 ;;
+esac
+exec /bin/mv "$@"
+EOF2
+  mock_command_script cp <<'EOF2'
+src="$1"
+case "$src" in
+  -*) src="$2" ;;
+esac
+case "$src" in
+  *.teeup_validate_old.*) exit 1 ;;
+esac
+exec /bin/cp "$@"
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
+  assert_failure "$rc" "a config teeup could not put back is not a configured capability" || return 1
+  assert_contains "$out" "restore" || return 1
+  # And the candidate must not have been quietly adopted as the user's file.
+  assert_not_contains "$out" "Already installed" || return 1
+  cleanup_test_env
+}
+
 test_backstop_validates_on_a_fresh_machine_with_no_config_dir() {
   setup
   local cfg_dir
@@ -623,6 +681,7 @@ run_test "backstop leaves the config untouched when AeroSpace rejects it" test_b
 run_test "backstop never writes through a symlinked config" test_backstop_never_writes_through_a_symlinked_config
 run_test "backstop skips when aerospace is not running" test_backstop_skips_when_aerospace_is_not_running
 run_test "the shipped migration refreshes a pristine config" test_the_shipped_migration_refreshes_a_pristine_config
+run_test "backstop fails when the original cannot be restored" test_backstop_fails_when_the_original_cannot_be_restored
 run_test "backstop validates on a fresh machine with no config dir" test_backstop_validates_on_a_fresh_machine_with_no_config_dir
 run_test "backstop installs nothing on a fresh machine when AeroSpace rejects it" test_backstop_installs_nothing_on_a_fresh_machine_when_aerospace_rejects_it
 run_test "backstop installs normally when AeroSpace accepts it" test_backstop_installs_normally_when_aerospace_accepts_it

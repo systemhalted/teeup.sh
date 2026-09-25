@@ -39,7 +39,18 @@ else
   # touch $AEROSPACE_DEST_TOML even to stage a check.
   if [[ "$DRY_RUN" != "true" ]]; then
     AEROSPACE_VALIDATION_ERR=""
-    if ! AEROSPACE_VALIDATION_ERR="$(aerospace_config_ok "$AEROSPACE_DEST_TOML" "$AEROSPACE_SRC_TOML")"; then
+    AEROSPACE_VALIDATION_RC=0
+    AEROSPACE_VALIDATION_ERR="$(aerospace_config_ok "$AEROSPACE_DEST_TOML" "$AEROSPACE_SRC_TOML")" || AEROSPACE_VALIDATION_RC=$?
+    if [[ "$AEROSPACE_VALIDATION_RC" -eq 2 ]]; then
+      # The check could not put the previous config back, so what is at
+      # $AEROSPACE_DEST_TOML right now is the candidate, not the user's file.
+      # Installing on top of that would let copy_config_once mistake the
+      # candidate for a hand edit and keep it. Stop, and say where the
+      # original is: aerospace_config_ok has already named the saved copy.
+      err "teeup could not put $AEROSPACE_DEST_TOML back after checking it with AeroSpace. It was not changed further; restore the saved copy named above before running this again."
+      exit 1
+    fi
+    if [[ "$AEROSPACE_VALIDATION_RC" -ne 0 ]]; then
       err "AeroSpace rejected teeup's own aerospace.toml, so $AEROSPACE_DEST_TOML was not changed. AeroSpace said: $AEROSPACE_VALIDATION_ERR"
       exit 1
     fi

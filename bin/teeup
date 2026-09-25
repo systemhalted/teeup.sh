@@ -336,13 +336,22 @@ cmd_update() {
   if [[ $rc -eq 2 ]]; then exit 1; fi
   if [[ $rc -ne 0 ]]; then failed=1; fi
 
-  # A later migration is written against the state an earlier one leaves, so
-  # a failure stops here rather than configuring on top of it.
-  migrations_run_pending || exit 1
-
   pkg_update || { warn "$(pkg_backend_label) could not refresh its index."; failed=1; }
   pkg_upgrade_all || { warn "$(pkg_backend_label) could not upgrade everything."; failed=1; }
   mise_upgrade || failed=1
+
+  # After the upgrades, before the configures. A migration exists to adjust a
+  # config for a NEW version of a tool, so it has to see the version this
+  # update just installed -- running it first deadlocks the update on a
+  # machine whose old binary rejects the new config: the migration's refresh
+  # validates against the binary still installed, fails, and the exit below
+  # stops the update before the upgrade that would have fixed it. Every time.
+  # (Concretely: the migration that moves aerospace.toml to config-version 2,
+  # which capabilities/aerospace/configure asks the running AeroSpace to
+  # validate.) Still ahead of the configure loop, because a later migration is
+  # written against the state an earlier one leaves and a configure must never
+  # run on top of a migration that has not been applied.
+  migrations_run_pending || exit 1
 
   # core.list only (spec section 9). A capability this machine never installed
   # has no configuration to re-run, and a lazy capability's configure can
