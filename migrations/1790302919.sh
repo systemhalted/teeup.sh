@@ -92,19 +92,33 @@ aerospace_refresh_would_write() {
 }
 
 if cap_exists aerospace; then
-  if state_done check cap-aerospace && ! cap_skipped aerospace &&
-    ! state_na check cap-aerospace && aerospace_refresh_would_write; then
-    aerospace_v="$(aerospace_installed_version)"
-    if [[ -z "$aerospace_v" ]]; then
-      err "Could not read the installed AeroSpace's version, so its new config (which needs $AEROSPACE_MIN_VERSION or later) was not installed. Check that AeroSpace runs, then run: teeup update"
-      exit 1
+  if ! aerospace_refresh_would_write; then
+    # Not just the gate: the refresh itself is skipped. It runs configure,
+    # which asks a running AeroSpace to validate the new file before
+    # refresh_if_pristine gets to leave an edited one alone -- an old
+    # AeroSpace rejects it and the update stays blocked over a file that was
+    # never going to change (Codex, #34).
+    if [[ -e "$HOME/.aerospace.toml" ]]; then
+      log "AeroSpace reads your ~/.aerospace.toml, so teeup's new defaults were not installed. What changed: $TEEUP_PATH/capabilities/aerospace/config/aerospace/aerospace.toml"
+    elif ! config_is_pristine "$(user_config_dir)/aerospace/aerospace.toml"; then
+      log "Your edited $(user_config_dir)/aerospace/aerospace.toml was left alone, so teeup's new defaults were not installed. What changed: $TEEUP_PATH/capabilities/aerospace/config/aerospace/aerospace.toml"
     fi
-    if [[ "$aerospace_v" != "none" ]] && ! aerospace_version_ok "$aerospace_v" "$AEROSPACE_MIN_VERSION"; then
-      err "AeroSpace $aerospace_v is installed, but its new config needs $AEROSPACE_MIN_VERSION or later, so the config was left as it is. Upgrade AeroSpace (brew upgrade --cask aerospace), then run: teeup update"
-      exit 1
+    # Otherwise it already is the shipped file: nothing to say.
+  else
+    if state_done check cap-aerospace && ! cap_skipped aerospace &&
+      ! state_na check cap-aerospace; then
+      aerospace_v="$(aerospace_installed_version)"
+      if [[ -z "$aerospace_v" ]]; then
+        err "Could not read the installed AeroSpace's version, so its new config (which needs $AEROSPACE_MIN_VERSION or later) was not installed. Check that AeroSpace runs, then run: teeup update"
+        exit 1
+      fi
+      if [[ "$aerospace_v" != "none" ]] && ! aerospace_version_ok "$aerospace_v" "$AEROSPACE_MIN_VERSION"; then
+        err "AeroSpace $aerospace_v is installed, but its new config needs $AEROSPACE_MIN_VERSION or later, so the config was left as it is. Upgrade AeroSpace (brew upgrade --cask aerospace), then run: teeup update"
+        exit 1
+      fi
     fi
+    migration_refresh aerospace
   fi
-  migration_refresh aerospace
 fi
 
 # local.toml is no longer read by anything. It is the user's file, so it is
