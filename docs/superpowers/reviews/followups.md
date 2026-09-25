@@ -9,6 +9,10 @@ here and done once the current phase of work is finished.
 
 | Raised on | Finding | Status |
 | --- | --- | --- |
+| Phase 5a task 7 (Opus P2) | `git doctor` matches `~/.gitconfig.local` by literal origin text; a relative include or a C-quoted non-ASCII home reads as "nothing includes it". Use `--show-origin -z` and compare resolved paths | Open |
+| Phase 5a task 7 (Opus P2) | `git config -f ~/.gitconfig.local` exiting 128 (a parse error) reads as "no leftover [user] block" | Open |
+| Phase 5a task 7 (Opus P2) | A failing `chezmoi source-path` reads as "configured here but has no source directory"; report could-not-check | Open |
+| Phase 5a task 7 (Opus P3) | `--remove-section user` leaves `[user "x"]` subsections, and writes through a symlinked `~/.gitconfig.local`; an unreadable included file should fail, not be unknown; the rc>1 "fix" only diagnoses; a git doctor comment sits away from the checks it describes | Open |
 | PR #32 (Codex P2) | `git doctor` accepted an empty or unreadable `gpg.ssh.allowedSignersFile` as able to verify signatures | Fixed on `fix/doctor-followups` |
 | PR #32 gpgsign fix (local Codex P2) | `commit.gpgsign` re-read file by file lost git's include order: a line after the last include was overridden by `local` | Fixed on `fix/doctor-followups` |
 | PR #32 gpgsign fix (local Codex P2) | Only four spellings of true were accepted; a bare key or `2` read as off, and an invalid value passed silently | Fixed on `fix/doctor-followups` |
