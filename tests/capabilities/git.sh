@@ -1412,6 +1412,58 @@ test_doctor_separates_an_unreadable_ssh_dir_from_a_missing_key() {
   cleanup_test_env
 }
 
+# The last two aliases from the chezmoi repo's gitconfig. Asked of real git
+# rather than grepped out of the file, so a syntax error in the config or a
+# value git parses differently than it reads shows up here.
+test_configure_ships_the_last_two_chezmoi_aliases() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  local cfg="$TEST_HOME/.config/git/config" out
+  out="$(command -p git config -f "$cfg" --get alias.lfs 2>&1)" || { echo "alias.lfs is not set: $out"; return 1; }
+  assert_contains "$out" "log --stat --oneline" || return 1
+  out="$(command -p git config -f "$cfg" --get alias.llg 2>&1)" || { echo "alias.llg is not set: $out"; return 1; }
+  assert_contains "$out" "--graph" || return 1
+  assert_contains "$out" "%an <%ae>" "llg's format is the whole point of it" || return 1
+  cleanup_test_env
+}
+
+# capabilities/git/config/git/config is copy-once, so a machine that
+# installed git before the two aliases were ported keeps its old file
+# forever: "Already installed" is the correct answer to copy_config_once, and
+# nothing in a normal `teeup update` revisits it. The shipped migration is
+# what delivers it, by the stock-checksum rule -- pristine copies refreshed,
+# edited ones left exactly as they are.
+test_the_shipped_migration_refreshes_a_pristine_git_config() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  state_done mark cap-git
+  local cfg="$TEST_HOME/.config/git/config"
+  # A machine that installed git before this change: an older shipped file
+  # whose stock record matches it, so it reads as pristine.
+  printf '[alias]\n\ts = status\n' > "$cfg"
+  stock_record "$cfg" "$(file_sha "$cfg")"
+  # T8.2: the name comes from ./bin/teeup dev add-migration, never a number
+  # written into a test.
+  local mig
+  mig="$(cd "$TEEUP_PATH" && ls migrations/*.sh 2>/dev/null | tail -1)"
+  mig="$(basename "${mig:-none}")"
+  [[ "$mig" != "none" ]] || { echo "fixture: no migration is shipped"; return 1; }
+  DRY_RUN=false migration_run "$mig" >/dev/null 2>&1 || { echo "the migration failed"; return 1; }
+  assert_contains "$(cat "$cfg")" "llg = log --color --graph" "a pristine copy must be refreshed to the new shipped version" || return 1
+  # And an edited copy survives untouched: that is the rule that lets anyone
+  # edit this file at all.
+  printf '[alias]\n\tmine = status\n' > "$cfg"
+  rm -f "$TEEUP_STATE_DIR/migrations/$mig"
+  DRY_RUN=false migration_run "$mig" >/dev/null 2>&1 || true
+  assert_equals '[alias]
+	mine = status' "$(cat "$cfg")" "an edited config must survive the migration" || return 1
+  cleanup_test_env
+}
+
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
 run_test "a configured work identity does not change the git identity" test_a_configured_work_identity_does_not_change_the_git_identity
@@ -1543,4 +1595,6 @@ run_test "configure dry run leaves a symlinked config alone" test_configure_dry_
 run_test "configure repairs nothing on a fresh machine" test_configure_repairs_nothing_on_a_fresh_machine
 run_test "configure twice after the repair changes nothing" test_configure_twice_after_the_repair_changes_nothing
 run_test "configure dry run repairs nothing" test_configure_dry_run_repairs_nothing
+run_test "the shipped migration refreshes a pristine git config" test_the_shipped_migration_refreshes_a_pristine_git_config
+run_test "configure ships the last two chezmoi aliases" test_configure_ships_the_last_two_chezmoi_aliases
 print_summary

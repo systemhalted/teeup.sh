@@ -120,7 +120,23 @@ else
 fi
 unset _teeup_backend _teeup_brew _teeup_prefix_root
 
+# Cargo's own bin directory. mise's rust backend is rustup, which installs
+# into ~/.rustup and ~/.cargo, and anything `cargo install` puts in
+# ~/.cargo/bin is covered by no shim. Ported from the chezmoi repo's
+# ~/.config/shell/envs; prepended BEFORE ~/.local/bin so that one still wins
+# -- teeup's own wrappers live there and a cargo-installed binary of the same
+# name must not shadow one.
+path_prepend "$HOME/.cargo/bin"
 path_prepend "$HOME/.local/bin"
+
+# Go's workspace, ported from the same file: it pins a location rather than
+# taking Go's own ~/go default. path_append adds only a directory that exists,
+# so a machine without Go gains the variable and nothing else. This has to
+# stay ABOVE the two shims lines below -- they are appended last on purpose,
+# and the teeup shims must remain the final PATH entry (checked by
+# capabilities/teeup-runtime/doctor).
+export GOPATH="${GOPATH:-$HOME/Development/GoWorkspace}"
+path_append "$GOPATH/bin"
 # mise's own shims let shells without `mise activate` find mise tools. mise
 # itself resolves its data root from MISE_DATA_DIR, then XDG_DATA_HOME, then
 # ~/.local/share (in that order), so this has to match or the shims directory
@@ -181,3 +197,38 @@ if command -v bat >/dev/null 2>&1; then
   export MANROFFOPT="-c"
   export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 fi
+
+# Self-maintained Emacs packages, ported from the chezmoi repo's
+# ~/.config/shell/envs: point the Emacs configuration at local checkouts when
+# there are any. The preferred single-root layout is
+# ~/Work/environment/emacs/packages; ~/Work/emacs/packages remains as a
+# migration fallback, and the three older paths stay so existing machines
+# still resolve.
+#
+# Each variable is resolved independently and the loop stops only once all
+# three are set, so checkouts split across two roots are all found. Breaking
+# at the first root that exists would silently lose the rest. With no checkout
+# anywhere every variable stays unset and the Emacs configuration installs the
+# packages from GitHub instead.
+for _teeup_pkg_dir in "$HOME/Work/environment/emacs/packages" \
+                      "$HOME/Work/emacs/packages" \
+                      "$HOME/Work/products/emacs-packages" \
+                      "$HOME/Workspaces/Palak/products/emacs-packages" \
+                      "$HOME/Workspaces/Personal/products/emacs-packages"; do
+  [ -d "$_teeup_pkg_dir" ] || continue
+  if [ -z "${SDKMAN_EL_DIR:-}" ] && [ -d "$_teeup_pkg_dir/sdkman.el" ]; then
+    export SDKMAN_EL_DIR="$_teeup_pkg_dir/sdkman.el"
+  fi
+  if [ -z "${TRUSTRAIL_EL_DIR:-}" ] && [ -d "$_teeup_pkg_dir/trustrail.el" ]; then
+    export TRUSTRAIL_EL_DIR="$_teeup_pkg_dir/trustrail.el"
+  fi
+  if [ -z "${WORDWISE_EL_DIR:-}" ] && [ -d "$_teeup_pkg_dir/wordwise.el" ]; then
+    export WORDWISE_EL_DIR="$_teeup_pkg_dir/wordwise.el"
+  fi
+  if [ -n "${SDKMAN_EL_DIR:-}" ] &&
+     [ -n "${TRUSTRAIL_EL_DIR:-}" ] &&
+     [ -n "${WORDWISE_EL_DIR:-}" ]; then
+    break
+  fi
+done
+unset _teeup_pkg_dir
