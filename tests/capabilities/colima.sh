@@ -295,7 +295,37 @@ test_remove_when_colima_is_not_installed_is_quiet() {
   cleanup_test_env
 }
 
+# MacPorts' docker-compose port is the retired Python 1.x tool; the CLI
+# plugin is the docker-compose-plugin port, which is what
+# capabilities/colima/install actually installs there. The plugin lives in
+# docker's cli-plugins directory, not on PATH, so neither the package name in
+# the metadata nor the command fallback could find it -- a correctly installed
+# Colima was reported broken, and the suggested reinstall could not clear it.
+test_doctor_finds_the_macports_compose_plugin() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  export TEEUP_PKG_BACKEND=macports
+  mock_command_script port <<'EOF2'
+case "$1" in
+  version) echo "Version: 2.9.3" ;;
+  installed)
+    case "$2" in
+      colima|docker|docker-compose-plugin) echo "  $2 @1.0_0 (active)" ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  *) exit 0 ;;
+esac
+EOF2
+  state_done mark cap-colima
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" doctor colima 2>&1)" || rc=$?
+  assert_not_contains "$out" "package docker-compose is not installed" "the plugin port is what is installed there" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/colima"
+run_test "doctor finds the macports compose plugin" test_doctor_finds_the_macports_compose_plugin
 run_test "install dry run gets colima, docker and compose" test_install_dry_run_gets_colima_docker_and_compose
 run_test "install on macports gets the compose plugin port" test_install_on_macports_gets_the_compose_plugin_port
 run_test "configure links the compose plugin once" test_configure_links_the_compose_plugin_once

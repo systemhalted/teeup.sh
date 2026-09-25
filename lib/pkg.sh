@@ -166,6 +166,14 @@ package_candidates() {
     homebrew:bash-completion) echo "bash-completion@2 bash-completion" ;;
     macports:gnupg) echo "gnupg2 gnupg" ;;
     macports:gh) echo "gh" ;;
+    # MacPorts' own `docker-compose` port is the retired Python 1.x tool; the
+    # docker CLI plugin -- what Compose v2 actually is -- is the
+    # docker-compose-plugin port. capabilities/colima/install installs that
+    # one there, so it has to be what `pkg_installed` looks for too, or a
+    # correctly installed Colima reads as broken. The plugin lives in docker's
+    # cli-plugins directory rather than on PATH, so no command fallback can
+    # stand in for asking the port system.
+    macports:docker-compose) echo "docker-compose-plugin" ;;
     # `tldr` itself is not a MacPorts port; tealdeer is the only candidate,
     # because its binary is named `tldr`, matching the `tldr:tldr`
     # package:command pair cli-tools installs it under. tlrc, the
