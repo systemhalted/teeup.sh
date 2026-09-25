@@ -794,3 +794,102 @@ json_set_key() { _json_edit set "$1" "$2" "$3"; }
 # <json-object> does not name (Zed's auto_install_extensions gains one entry
 # and keeps the user's).
 json_merge_key() { _json_edit merge "$1" "$2" "$3"; }
+
+# --- retiring a predecessor's shell lines -------------------------------------
+
+# disable_matching_lines <file> <pattern> <reason>
+# Neutralise every line of <file> matching the awk ERE <pattern> by rewriting
+# it as ": # Disabled by teeup (<reason>): <the original line>".
+#
+# The ":" matters. These init lines usually sit inside an `if ...; then` block,
+# and an `if` whose entire body is commented out is a syntax error -- the `fi`
+# below it has nothing to close. ":" is the shell's no-op builtin, so the line
+# stays a command wherever it is while carrying its old text along as a
+# comment. For the same reason a matching line that OPENS a block (ends in
+# "then", "do" or "in", or in "{", "(", "\", "&&" or "||") is left exactly as
+# it is and reported: neutralising an opener would orphan its terminator. Its
+# body is neutralised instead, and a bare test with a dead body does nothing.
+#
+# Ported from legacy/teeup.sh with the pattern and the reason reaching awk
+# through ENVIRON rather than -v: awk expands escape sequences inside a -v
+# assignment, so the legacy call's '\.pyenv' arrived as '.pyenv' -- any
+# character followed by "pyenv" -- and disabled unrelated lines.
+#
+# A missing file is nothing to do. A symlink belongs to whatever put it there
+# (a dotfile manager writing through it would see teeup's edit as a local
+# change), so it is left alone with a line saying so, and -L is tested before
+# -f so a dangling one is reported rather than passed over in silence.
+#
+# The rewrite goes through a temp file that is cat'ed back rather than moved
+# over the original, so the inode survives for anything watching or
+# hard-linking the file. Always returns 0: a file this cannot edit is reported
+# and the migration carries on.
+disable_matching_lines() {
+  local file="$1" pattern="$2" reason="$3" tmp backup
+  # -L first: a dangling symlink is still a symlink, and reporting it is the
+  # point -- returning silently leaves nobody knowing why the line survived.
+  if [[ -L "$file" ]]; then
+    log "Not editing the symlink $file; whatever manages it owns its contents."
+    return 0
+  fi
+  if [[ ! -f "$file" ]]; then
+    return 0
+  fi
+  if ! TEEUP_DML_PATTERN="$pattern" awk '
+    $0 ~ ENVIRON["TEEUP_DML_PATTERN"] && $0 !~ /^[ \t]*[:#]/ { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$file"; then
+    return 0
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would disable matching lines in $file: $reason"
+    return 0
+  fi
+  # A file teeup cannot write is a refusal, not a success: without this the
+  # rewrite below fails and the user is told their pyenv init is gone while
+  # their next shell proves otherwise.
+  if [[ ! -w "$file" ]]; then
+    warn "$file is not writable, so its $reason lines were left alone."
+    return 0
+  fi
+  # backup_copy returns 1 when its cp failed. Rewriting anyway would leave the
+  # user's rc file edited with no copy of the original anywhere, which is the
+  # one outcome this whole step exists to prevent.
+  if ! backup="$(backup_copy "$file")"; then
+    warn "No backup of $file could be written, so it was left alone."
+    return 0
+  fi
+  tmp="$(mktemp)" || { warn "Could not create a temp file, so $file was left alone."; return 0; }
+  if ! TEEUP_DML_PATTERN="$pattern" TEEUP_DML_REASON="$reason" awk '
+    $0 ~ ENVIRON["TEEUP_DML_PATTERN"] && $0 !~ /^[ \t]*[:#]/ {
+      # A line that opens a block keeps its terminator company; its body is
+      # what actually runs the init, and that gets neutralised below.
+      if ($0 ~ /(then|do|in)[ \t]*$/ || $0 ~ /[{(\\][ \t]*$/ || $0 ~ /(&&|\|\|)[ \t]*$/) {
+        openers = openers "\n" $0
+        print
+        next
+      }
+      print ": # Disabled by teeup (" ENVIRON["TEEUP_DML_REASON"] "): " $0
+      next
+    }
+    { print }
+    END { if (openers != "") printf "%s", openers > "/dev/stderr" }
+  ' "$file" > "$tmp" 2> "$tmp.openers"; then
+    warn "Could not rewrite $file, so it was left alone; your backup is $backup."
+    rm -f "$tmp" "$tmp.openers"
+    return 0
+  fi
+  if ! cat "$tmp" > "$file"; then
+    warn "Could not write $file, so it may be incomplete; your backup is $backup."
+    rm -f "$tmp" "$tmp.openers"
+    return 0
+  fi
+  if [[ -s "$tmp.openers" ]]; then
+    warn "Left the block-opening lines in $file alone (commenting one out would orphan its fi or done):"
+    while IFS= read -r _dml_line; do
+      if [[ -n "$_dml_line" ]]; then warn "  $_dml_line"; fi
+    done < "$tmp.openers"
+  fi
+  rm -f "$tmp" "$tmp.openers"
+  ok "Disabled $reason lines in $file"
+}
