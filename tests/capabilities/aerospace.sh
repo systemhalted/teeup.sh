@@ -533,6 +533,81 @@ test_the_shipped_migration_refreshes_a_pristine_config() {
   cleanup_test_env
 }
 
+# Codex P1 on PR #31: pkg_upgrade_all swallows a failed cask upgrade, and a
+# stopped AeroSpace skips validation, so the migration used to install the
+# config-version 2 file over an AeroSpace too old to read it (support landed
+# in 0.20.0-Beta). The migration must ask the installed binary its version
+# and stay pending until the upgrade has actually happened.
+aerospace_migration_fixture() {
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  state_done mark cap-aerospace
+  printf '# the previous shipped file\n' > "$AERO"
+  stock_record "$AERO" "$(file_sha "$AERO")"
+  MIG="$(cd "$TEEUP_PATH" && ls migrations/*.sh | head -1)"
+  MIG="$(basename "$MIG")"
+}
+
+mock_aerospace_version() {
+  mock_command_script aerospace <<EOF2
+case "\$1" in
+  --version) printf '%s\\n' "$1" 'AeroSpace.app server version: Unknown. The server is not responding' ;;
+  *) exit 1 ;;
+esac
+EOF2
+}
+
+test_the_migration_waits_for_an_aerospace_that_can_read_it() {
+  setup
+  aerospace_migration_fixture
+  mock_aerospace_version 'aerospace CLI client version: 0.19.2-Beta 1a2b3c4'
+  local rc=0 out
+  out="$(DRY_RUN=false migration_run "$MIG" 2>&1)" || rc=$?
+  assert_failure "$rc" "an AeroSpace that cannot read config-version 2 must not get it" || return 1
+  assert_equals '# the previous shipped file' "$(cat "$AERO")" "the old config stays until AeroSpace is upgraded" || return 1
+  assert_contains "$out" "0.19.2" "say which version is installed" || return 1
+  assert_contains "$out" "0.20.0" "say which version is needed" || return 1
+  [[ ! -e "$TEEUP_STATE_DIR/migrations/$MIG" ]] || { echo "the migration was marked applied"; return 1; }
+  cleanup_test_env
+}
+
+# Codex P1 on the gate itself: an installed AeroSpace later put in
+# TEEUP_SKIP keeps its done marker, and migration_refresh leaves a skipped
+# capability alone -- so the gate must too, or an old CLI the owner has
+# opted out of blocks every `teeup update` for good.
+test_the_migration_gate_leaves_a_skipped_aerospace_alone() {
+  setup
+  aerospace_migration_fixture
+  mock_aerospace_version 'aerospace CLI client version: 0.19.2-Beta 1a2b3c4'
+  local rc=0
+  TEEUP_SKIP=aerospace DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "a skipped capability has nothing to refresh, so nothing to gate" || return 1
+  assert_equals '# the previous shipped file' "$(cat "$AERO")" "a skipped capability's config is not touched" || return 1
+  cleanup_test_env
+}
+
+test_the_migration_runs_once_aerospace_is_new_enough() {
+  setup
+  aerospace_migration_fixture
+  mock_aerospace_version 'aerospace CLI client version: 0.20.0-Beta 1a2b3c4'
+  local rc=0
+  DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$(cat "$AERO")" "persistent-workspaces" || return 1
+  cleanup_test_env
+}
+
+test_the_migration_refuses_a_version_it_cannot_read() {
+  setup
+  aerospace_migration_fixture
+  mock_aerospace_version 'something else entirely'
+  local rc=0
+  DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" "an unknown version is not a new enough one" || return 1
+  assert_equals '# the previous shipped file' "$(cat "$AERO")" || return 1
+  cleanup_test_env
+}
+
 # The staging swap puts the candidate at $dest to ask AeroSpace about it and
 # then puts the original back. If that restore fails, the candidate is left
 # sitting at $dest -- and the function warned and returned SUCCESS, so
@@ -719,6 +794,10 @@ run_test "backstop leaves the config untouched when AeroSpace rejects it" test_b
 run_test "backstop never writes through a symlinked config" test_backstop_never_writes_through_a_symlinked_config
 run_test "backstop skips when aerospace is not running" test_backstop_skips_when_aerospace_is_not_running
 run_test "the shipped migration refreshes a pristine config" test_the_shipped_migration_refreshes_a_pristine_config
+run_test "the migration waits for an aerospace that can read it" test_the_migration_waits_for_an_aerospace_that_can_read_it
+run_test "the migration runs once aerospace is new enough" test_the_migration_runs_once_aerospace_is_new_enough
+run_test "the migration gate leaves a skipped aerospace alone" test_the_migration_gate_leaves_a_skipped_aerospace_alone
+run_test "the migration refuses a version it cannot read" test_the_migration_refuses_a_version_it_cannot_read
 run_test "backstop fails when a rejected candidate cannot be removed" test_backstop_fails_when_a_rejected_candidate_cannot_be_removed
 run_test "backstop fails when the original cannot be restored" test_backstop_fails_when_the_original_cannot_be_restored
 run_test "backstop validates on a fresh machine with no config dir" test_backstop_validates_on_a_fresh_machine_with_no_config_dir
