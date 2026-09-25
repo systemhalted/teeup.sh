@@ -983,6 +983,131 @@ test_doctor_signers_repair_uses_a_top_level_signing_key() {
   cleanup_test_env
 }
 
+# Review findings on #35 (Opus).
+# git can print a warning before the fatal line; the diagnosis is the fatal.
+test_doctor_diagnoses_the_fatal_line_not_a_warning_before_it() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  mkdir -p "$TEST_HOME/adir"
+  printf '[include]\n\tpath = %s\n[commit]\n\tgpgsign = maybe\n' "$TEST_HOME/adir" > "$TEST_HOME/.config/git/local"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  # git 2.55's fatal line here is "bad config line 2 in file .../local";
+  # the warning before it names the directory, and is not the failure.
+  assert_contains "$out" "bad config line" "report git's fatal line" || return 1
+  assert_not_contains "$out" "Is a directory" "not the warning printed before it" || return 1
+  cleanup_test_env
+}
+
+# A quote in the unreadable path must survive into the message and the fix.
+test_doctor_keeps_a_quote_in_an_unreadable_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  local inc="$TEST_HOME/it's dir/x"
+  mkdir -p "$TEST_HOME/it's dir"
+  printf '[commit]\n\tgpgsign = true\n' > "$inc"
+  chmod 000 "$inc"
+  printf '[include]\n\tpath = "%s"\n' "$inc" > "$TEST_HOME/.config/git/local"
+  local out report="$TEST_HOME/report" fix
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  fix="$(grep 'could not tell whether commit signing' "$report" | cut -f3)"
+  (cd "$TEST_HOME" && bash -c "$fix") || { chmod 600 "$inc"; echo "the printed fix failed: $fix"; return 1; }
+  [[ -r "$inc" ]] || { chmod 600 "$inc"; echo "the fix did not make $inc readable: $fix"; return 1; }
+  assert_contains "$out" "it's dir/x" || return 1
+  cleanup_test_env
+}
+
+# An unsearchable parent directory is fixed on the directory, not the file.
+test_doctor_fixes_an_unsearchable_parent_directory() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  mkdir -p "$TEST_HOME/sub"
+  printf '[commit]\n\tgpgsign = true\n' > "$TEST_HOME/sub/x"
+  printf '[include]\n\tpath = %s\n' "$TEST_HOME/sub/x" > "$TEST_HOME/.config/git/local"
+  chmod 000 "$TEST_HOME/sub"
+  local report="$TEST_HOME/report" fix
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  DRY_RUN=false cap_run git doctor >/dev/null 2>&1 || true
+  fix="$(grep 'could not tell whether commit signing' "$report" | cut -f3)"
+  (cd "$TEST_HOME" && bash -c "$fix") || true
+  local ok=true
+  [[ -r "$TEST_HOME/sub/x" ]] || ok=false
+  chmod 755 "$TEST_HOME/sub"
+  [[ "$ok" == "true" ]] || { echo "the fix did not make the include readable: $fix"; return 1; }
+  cleanup_test_env
+}
+
+# The note names the file that turned signing off.
+test_doctor_names_the_included_file_that_turned_signing_off() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[commit]\n\tgpgsign = false\n' > "$TEST_HOME/nosign.inc"
+  printf '[commit]\n\tgpgsign = true\n[include]\n\tpath = %s\n' "$TEST_HOME/nosign.inc" > "$TEST_HOME/.config/git/local"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "$TEST_HOME/nosign.inc turns commit signing off" || return 1
+  cleanup_test_env
+}
+
+# Keys git accepts that are not files on disk.
+test_doctor_accepts_a_literal_ssh_signing_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[user]\n\tsigningkey = "key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYpersonal"\n' > "$TEST_HOME/.config/git/local"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_not_contains "$out" "not on this machine" "git signs with a key:: literal as written" || return 1
+  assert_contains "$out" "Commit signing is on" || return 1
+  cleanup_test_env
+}
+
+test_doctor_accepts_a_gpg_key_id_under_openpgp() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[gpg]\n\tformat = openpgp\n[user]\n\tsigningkey = 0xDEADBEEF\n' > "$TEST_HOME/.config/git/local"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_not_contains "$out" "not on this machine" "a GPG key id is not a path" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_a_signing_key_under_a_missing_home() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[user]\n\tsigningkey = ~nosuchuser_teeup/k.pub\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "no user.signingkey is set" "it is set, to a path git cannot expand" || return 1
+  assert_contains "$out" "nosuchuser_teeup" || return 1
+  assert_failure "$rc" || return 1
+  cleanup_test_env
+}
+
+# allowedSignersFile is git's effective value too: a later top-level line wins.
+test_doctor_reads_the_effective_allowed_signers_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '%s\n' "ada@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYpersonal" > "$TEST_HOME/good_signers"
+  printf '[gpg "ssh"]\n\tallowedSignersFile = %s\n' "$TEST_HOME/missing_signers" > "$TEST_HOME/.config/git/local"
+  printf '[gpg "ssh"]\n\tallowedSignersFile = %s\n' "$TEST_HOME/good_signers" >> "$TEST_HOME/.config/git/config"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "signatures can be verified" || return 1
+  assert_not_contains "$out" "missing_signers" || return 1
+  cleanup_test_env
+}
+
 # A tilde path that really is missing is still a failure, so the expansion is
 # not a way of skipping the check.
 test_doctor_still_reports_a_missing_tilde_allowed_signers_file() {
@@ -1225,6 +1350,14 @@ run_test "doctor signers repair works for a custom key and path" test_doctor_sig
 run_test "doctor names a config git cannot parse" test_doctor_names_a_config_git_cannot_parse
 run_test "doctor honours signing turned off by a file local includes" test_doctor_honours_signing_turned_off_by_a_file_local_includes
 run_test "doctor signers repair uses a top-level signing key" test_doctor_signers_repair_uses_a_top_level_signing_key
+run_test "doctor diagnoses the fatal line not a warning before it" test_doctor_diagnoses_the_fatal_line_not_a_warning_before_it
+run_test "doctor keeps a quote in an unreadable path" test_doctor_keeps_a_quote_in_an_unreadable_path
+run_test "doctor fixes an unsearchable parent directory" test_doctor_fixes_an_unsearchable_parent_directory
+run_test "doctor names the included file that turned signing off" test_doctor_names_the_included_file_that_turned_signing_off
+run_test "doctor accepts a literal ssh signing key" test_doctor_accepts_a_literal_ssh_signing_key
+run_test "doctor accepts a gpg key id under openpgp" test_doctor_accepts_a_gpg_key_id_under_openpgp
+run_test "doctor reports a signing key under a missing home" test_doctor_reports_a_signing_key_under_a_missing_home
+run_test "doctor reads the effective allowed signers file" test_doctor_reads_the_effective_allowed_signers_file
 run_test "signing turns on once the key exists" test_signing_turns_on_once_the_key_exists
 run_test "generated include is read after the defaults" test_generated_include_is_read_after_the_defaults
 run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_configure_renders_include_paths_for_a_custom_xdg_config_home
