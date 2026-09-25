@@ -222,8 +222,12 @@ test_doctor_reports_no_recorded_backend_when_the_answers_file_is_empty() {
 # check is asking about.
 test_doctor_accepts_a_machine_file_pin_as_the_record() {
   setup
+  # Never the checkout's machines/: other suites run in parallel against the
+  # same checkout, and one that loads machines/testmac.conf while this test
+  # writes or deletes it sees a half-written or vanished file and dies with
+  # "not valid shell" (seen on the macOS CI runner, #39).
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
   source "$TEEUP_PATH/lib/all.sh"
-  mkdir -p "$TEEUP_PATH/machines" 2>/dev/null || true
   local machine
   machine="$(machine_file)"
   mkdir -p "$(dirname "$machine")"
@@ -251,6 +255,7 @@ EOF2
 # really is re-detected on every run, and that is still a finding.
 test_doctor_still_reports_a_backend_nobody_recorded() {
   setup
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
   source "$TEEUP_PATH/lib/all.sh"
   local machine
   machine="$(machine_file)"
