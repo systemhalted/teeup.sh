@@ -48,7 +48,15 @@ for f in .zshenv .zprofile .zshrc; do
   # `# DISABLED: . "$TEEUP_PATH/capabilities/zsh/default/rc"` left behind
   # while debugging still contains the marker, and a substring match would
   # call that shell healthy while none of teeup's layer loads.
-  elif grep -v '^[[:space:]]*#' "$zsh_home_dir/$f" 2>/dev/null | grep -qF 'capabilities/zsh/default/'; then
+  # An uncommented line that actually SOURCES it, not just one naming the
+  # path. teeup's own stub spans two lines -- a guard naming the path, then
+  # the dot command under it -- so commenting out only the second leaves an
+  # uncommented line containing the path while nothing loads the layer. The
+  # dangling `&&` attaches to whatever follows, so the shell stays valid and
+  # there is no error to notice. `.` or `source`, at the start of a command,
+  # is what makes it a load.
+  elif grep -v '^[[:space:]]*#' "$zsh_home_dir/$f" 2>/dev/null \
+       | grep -qE '(^|[;&|]|&&|\|\|)[[:space:]]*(\.|source)[[:space:]]+[^#]*capabilities/zsh/default/'; then
     doctor_ok "$zsh_home_dir/$f loads teeup's shell layer."
   else
     doctor_fail "$zsh_home_dir/$f does not source teeup's default layer, so teeup's shell configuration never loads." "teeup reset zsh"

@@ -189,12 +189,27 @@ for identity in $(identity_list); do
   if ! head -1 "$key" 2>/dev/null | grep -q 'PRIVATE KEY'; then
     doctor_fail "$key does not look like a private key, so ssh cannot use the $identity identity." "teeup configure ssh"
   elif have ssh-keygen; then
-    # The public half only: `-l -f` on a private key can still work, but it
-    # is never worth the risk of a passphrase prompt hanging doctor, or of
-    # any private key byte reaching a subprocess whose output this script
-    # then has to be careful never to echo.
     if ! ssh-keygen -l -f "$key.pub" >/dev/null 2>&1; then
       doctor_fail "$key.pub is not a valid public key, so ssh cannot use the $identity key pair." "teeup configure ssh"
+    # The header is not the key. A private key truncated or corrupted after
+    # its first line still starts with "-----BEGIN OPENSSH PRIVATE KEY-----",
+    # and both files stay non-empty, so `teeup configure ssh` skips
+    # regenerating them too -- the pair reads as healthy while ssh cannot
+    # load it at all.
+    #
+    # `-y -P '' -f <key> </dev/null` asks ssh-keygen to derive the public half.
+    # Verified against a real ssh-keygen: 0 on an unencrypted key, non-zero on
+    # a damaged one, and non-zero on an encrypted one, with no prompt in any
+    # case -- the empty passphrase is rejected outright rather than waited on,
+    # and stdin is closed as well. Only the PUBLIC half is ever printed, and
+    # that goes to /dev/null.
+    #
+    # A failure cannot distinguish "encrypted" from "damaged" without the
+    # passphrase, and teeup does not have it. That is a could-not-check, not a
+    # confirmed fault -- but it is not healthy either, which is the whole
+    # point: the old check said healthy.
+    elif ! ssh-keygen -y -P '' -f "$key" </dev/null >/dev/null 2>&1; then
+      doctor_unknown "teeup could not read $key: it is either protected by a passphrase or damaged, and without the passphrase there is no telling which. Check by hand: ssh-keygen -y -f $key" "ssh-keygen -y -f $key"
     fi
   else
     doctor_unknown "ssh-keygen is not on PATH, so teeup could not fully check the $identity key pair." "Check by hand: which ssh-keygen"
