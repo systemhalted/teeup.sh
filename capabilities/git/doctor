@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Read the config files rather than asking `git config`: the files are what
-# `teeup configure git` owns, and reading them says which of the three layers
-# (shipped, generated, yours) a value came from, which is the thing that goes
-# wrong here.
+# Settings are asked of git itself, against the files `teeup configure git`
+# owns and isolated from the system and global config: git's own include
+# order, type parsing and path expansion are the answer, and --show-origin
+# says which layer (shipped, generated, yours) a value came from.
 git_dir="$(user_config_dir)/git"
 
 # git_doctor_read <file> <key> -> the value git resolves for <key> in <file>
@@ -33,30 +33,33 @@ git_doctor_effective() {
     git config -f "$git_dir/config" --includes "$@" 2>/dev/null
 }
 
-# git_doctor_effective_error <git-config options...> -> the first line git
-# printed on stderr for the same query: what it could not read or parse.
+# git_doctor_effective_error <git-config options...> -> git's fatal line for
+# the same query: what it could not read or parse. The first `fatal:` line,
+# not the first line: git can warn about something else first (an include
+# that is a directory, say), and that is not why it failed.
 git_doctor_effective_error() {
   LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
-    git config -f "$git_dir/config" --includes "$@" 2>&1 >/dev/null | head -1 || true
+    git config -f "$git_dir/config" --includes "$@" 2>&1 >/dev/null |
+    awk '/^fatal: / { print; found = 1; exit } NR == 1 { first = $0 } END { if (!found) print first }' || true
 }
 
-# git_doctor_path <value> -> the path git itself would open
-# git treats certain config values as pathnames and expands a leading ~ or
-# ~user against the home directory (`git config --path --get` shows it).
-# Testing the raw string reports a usable file as missing, and a fix that
-# names the raw string writes somewhere git never looks -- so following the
-# advice changes nothing and the finding never clears. Only the leading tilde
-# form is expanded here, which is the one a person actually writes; anything
-# else is already a path.
-git_doctor_path() {
-  # The literal "~/" is the token being matched, not a path to expand: this is
-  # the raw string git read out of a config file.
-  # shellcheck disable=SC2088
-  case "$1" in
-    "~/"*) printf '%s/%s\n' "$HOME" "${1#\~/}" ;;
-    "~") printf '%s\n' "$HOME" ;;
-    *) printf '%s\n' "$1" ;;
-  esac
+# git_doctor_access_fix <path> -> the command that lets git open <path>:
+# chmod u+x on every ancestor directory git cannot search, or u+r on the file
+# when the directories are fine. git names the file either way.
+git_doctor_access_fix() {
+  local path="$1" dir dirs=""
+  dir="$(dirname "$path")"
+  while [[ -n "$dir" && "$dir" != "/" && "$dir" != "." ]]; do
+    if [[ -d "$dir" && ! -x "$dir" ]]; then
+      dirs="$(printf '%q' "$dir") $dirs"
+    fi
+    dir="$(dirname "$dir")"
+  done
+  if [[ -n "$dirs" ]]; then
+    printf 'chmod u+x %s\n' "${dirs% }"
+  else
+    printf 'chmod u+r %s\n' "$(printf '%q' "$path")"
+  fi
 }
 
 # git 2.55.0, verified: an unreadable config file this one [include]s is not
@@ -187,9 +190,11 @@ case "$gpgsign_rc" in
     case "$gpgsign_err" in
       "unable to access '"*)
         gpgsign_unknown=true
+        # "unable to access '<path>': <reason>". The suffix is stripped
+        # rather than cutting at the next quote, which a path can contain.
         gpgsign_err="${gpgsign_err#unable to access \'}"
-        gpgsign_err="${gpgsign_err%%\'*}" # the path git could not open
-        gpgsign_fix="chmod u+r $(printf '%q' "$gpgsign_err")"
+        gpgsign_err="${gpgsign_err%\': *}"
+        gpgsign_fix="$(git_doctor_access_fix "$gpgsign_err")"
         ;;
       "bad boolean config value"*) gpgsign_invalid=true ;;
       *) gpgsign_broken=true ;;
@@ -223,12 +228,25 @@ elif [[ "$gpgsign" == "true" ]]; then
   # nobody looked here first. The key is the one git signs with: its answer
   # from the whole graph, which also reaches a signingkey set after the last
   # include (Codex, #33). The graph was just read, so it is readable.
-  signing_key="$(git_doctor_effective --path --get user.signingkey || true)"
+  # What the key is depends on gpg.format (git's default, unset, is
+  # openpgp): under ssh a path or a `key::` literal, under openpgp or x509
+  # an ID the GPG tooling resolves -- not a file teeup can look for.
+  gpg_format="$(git_doctor_effective --get gpg.format || true)"
+  signing_key_raw="$(git_doctor_effective --get user.signingkey || true)"
+  signing_key_rc=0
+  signing_key="$(git_doctor_effective --path --get user.signingkey)" || signing_key_rc=$?
   signing_key="${signing_key%.pub}"
-  if [[ -z "$signing_key" ]]; then
+  if [[ -z "$signing_key_raw" ]]; then
     # What real git does here: "fatal: either user.signingkey or
     # gpg.ssh.defaultKeyCommand needs to be configured" on every commit.
     doctor_fail "commit.gpgsign is on but no user.signingkey is set, so every git commit fails." "teeup configure git"
+  elif [[ $signing_key_rc -ne 0 ]]; then
+    # --path could not expand it: a ~user whose home does not exist.
+    doctor_fail "Commit signing is on with user.signingkey = $signing_key_raw, a path git cannot expand, so every git commit fails." "teeup configure git"
+  elif [[ "$gpg_format" != "ssh" ]]; then
+    doctor_ok "Commit signing is on with gpg.format = ${gpg_format:-openpgp} and key $signing_key_raw; teeup checks SSH keys only."
+  elif [[ "$signing_key_raw" == key::* ]]; then
+    doctor_ok "Commit signing is on with a literal SSH key in user.signingkey."
   elif [[ ! -s "$signing_key" ]]; then
     doctor_fail "Commit signing is on with user.signingkey = $signing_key, but that key is not on this machine, so every git commit fails." "teeup configure ssh"
   else
@@ -236,7 +254,9 @@ elif [[ "$gpgsign" == "true" ]]; then
   fi
   signing_on=true
 elif [[ "$gpgsign_local" == "true" ]]; then
-  doctor_warn "$git_dir/local turns commit signing off, so git signs nothing. That file is yours; remove the commit.gpgsign line there to sign again."
+  # Name the file that decided: local itself, or a file local includes.
+  gpgsign_from="${gpgsign_origin#file:}"
+  doctor_warn "$gpgsign_from turns commit signing off, so git signs nothing. That file is yours; remove the commit.gpgsign line there to sign again."
   signing_on=false
 elif [[ "$keys_present" == "true" ]]; then
   doctor_fail "git has every key it needs on disk but commit signing is off in $generated." "teeup configure git"
@@ -263,47 +283,32 @@ if [[ "$signing_on" == "true" ]]; then
   # switched to GPG signing (or turned SSH signing off) does not owe teeup an
   # allowedSignersFile, and the message above must say what format actually
   # is rather than assuming the shipped default is still in effect.
-  gpg_format="$(git_doctor_effective --get gpg.format || true)"
+  # gpg.format was read with the key, above, from the same graph.
   if [[ "$gpg_format" != "ssh" ]]; then
-    doctor_ok "Commit signing is on with gpg.format = ${gpg_format:-unset}, so the SSH allowed-signers check does not apply."
+    doctor_ok "Commit signing is on with gpg.format = ${gpg_format:-openpgp}, so the SSH allowed-signers check does not apply."
   else
-    # An assignment, not a mention: the word can appear in a comment, a
-    # half-written TODO or a commented-out line, and counting that as
-    # configuration reports verification working when nothing is set. The
-    # value is read too, because a path set to a file that is not there
-    # verifies nothing. (Read from the files rather than asked of `git
-    # config --get`: these are teeup's own files, and the answer must not
-    # depend on which git happens to be on PATH.)
-    signers_set=false
-    signers_file=""
-    signers_unreadable=false
-    for f in "$git_dir/config" "$generated" "$git_dir/local"; do
-      [[ -f "$f" ]] || continue
-      if [[ ! -r "$f" ]]; then
-        signers_unreadable=true
-        continue
-      fi
-      line="$(grep -iE '^[[:space:]]*allowedSignersFile[[:space:]]*=' "$f" 2>/dev/null | tail -1)"
-      if [[ -n "$line" ]]; then
-        signers_set=true
-        signers_file="${line#*=}"
-        signers_file="${signers_file#"${signers_file%%[![:space:]]*}"}"
-        signers_file="${signers_file%\"}"
-        signers_file="${signers_file#\"}"
-      fi
-    done
-    if [[ "$signers_set" == "true" ]]; then
+    # git's effective value, like every other signing setting: its include
+    # order (a later top-level line beats local), section awareness, and
+    # --path expansion of a leading ~.
+    signers_rc=0
+    signers_file="$(git_doctor_effective --path --get gpg.ssh.allowedSignersFile)" || signers_rc=$?
+    # The public key the repairs trust: the one git signs with. A key::
+    # literal is the key itself; anything else is a key file.
+    if [[ "$signing_key_raw" == key::* ]]; then
+      signer_pub="$(printf '%q' "${signing_key_raw#key::}")"
+    else
+      signer_pub="\"\$(cat $(printf '%q' "${signing_key:-$(identity_key personal)}.pub"))\""
+    fi
+    if [[ $signers_rc -eq 0 ]]; then
       # Set is not the same as usable: a path that is not there verifies
       # nothing, and git says so only at the moment you read a signature.
-      signers_file="$(git_doctor_path "$signers_file")"
       # There, readable, and naming at least one signer: an empty file or
       # one of comments only leaves every signature untrusted, and one git
       # cannot open verifies nothing either (Codex P2, PR #32).
-      # The repairs trust the key git actually signs with (resolved above),
-      # and every path in them is shell-quoted: they are printed to be pasted,
-      # and a path with a space would otherwise split (Codex, follow-up).
+      # Every path in the repairs is shell-quoted: they are printed to be
+      # pasted, and a path with a space would otherwise split.
       signers_q="$(printf '%q' "$signers_file")"
-      signers_add="printf '%s %s\\n' \"\$(git config user.email)\" \"\$(cat $(printf '%q' "${signing_key:-$(identity_key personal)}.pub"))\" >> $signers_q"
+      signers_add="printf '%s %s\\n' \"\$(git config user.email)\" $signer_pub >> $signers_q"
       if [[ -f "$signers_file" && ! -r "$signers_file" ]]; then
         doctor_fail "gpg.ssh.allowedSignersFile points at $signers_file, which cannot be read, so git can verify no signature." "chmod u+r $signers_q"
       elif [[ -f "$signers_file" ]] && ! grep -qE '^[[:space:]]*[^#[:space:]]' "$signers_file"; then
@@ -313,16 +318,16 @@ if [[ "$signing_on" == "true" ]]; then
       else
         doctor_fail "gpg.ssh.allowedSignersFile points at $signers_file, which does not exist, so git can verify no signature." "$signers_add"
       fi
-    elif [[ "$signers_unreadable" == "true" ]]; then
-      doctor_unknown "One of $git_dir/config, $generated or $git_dir/local could not be read, so teeup could not check gpg.ssh.allowedSignersFile." "chmod u+r $git_dir/local"
+    elif [[ $signers_rc -ne 1 ]]; then
+      # Set, but git could not expand it (a ~user with no home).
+      doctor_fail "gpg.ssh.allowedSignersFile is set to a path git cannot expand, so git can verify no signature." "git config -f $(printf '%q' "$git_dir/config") --includes --show-origin --get gpg.ssh.allowedSignersFile"
     else
       # B2 (2026-09-23 review): a note, not a failure -- teeup does not set
       # this yet, so a clean bootstrap must still pass doctor -- and the
       # instructions add a line to $git_dir/local, never to ~/.gitconfig
       # (the section below warns that file overrides teeup's own config).
       signers="$git_dir/allowed_signers"
-      personal_pub="$(identity_key personal).pub"
-      doctor_warn "Commit signing is on with gpg.format = ssh, but gpg.ssh.allowedSignersFile is not set, so git cannot verify its own signatures yet (git log --show-signature calls them unknown). teeup does not set this yet. To enable verification: printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $personal_pub)\" >> $signers, then add gpg.ssh.allowedSignersFile = $signers to $git_dir/local (never ~/.gitconfig)."
+      doctor_warn "Commit signing is on with gpg.format = ssh, but gpg.ssh.allowedSignersFile is not set, so git cannot verify its own signatures yet (git log --show-signature calls them unknown). teeup does not set this yet. To enable verification: printf '%s %s\n' \"\$(git config user.email)\" $signer_pub >> $(printf '%q' "$signers"), then add gpg.ssh.allowedSignersFile = $signers to $git_dir/local (never ~/.gitconfig)."
     fi
   fi
 fi
