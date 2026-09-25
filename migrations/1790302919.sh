@@ -19,7 +19,47 @@
 # The cap_exists guard matters: several `teeup update` tests run migrations
 # against a fixture capability tree with no aerospace, where migration_refresh
 # would error.
+#
+# The new file says config-version = 2, which AeroSpace reads from
+# 0.20.0-Beta on; 0.19.x rejects the key and loads nothing. `teeup update`
+# runs migrations after the upgrades, but a failed cask upgrade is only a
+# warning there, and a stopped AeroSpace skips the reload-config check -- so
+# the version the binary reports is the one fact this migration can trust.
+# Too old, or unreadable, and it stops unapplied, so the next `teeup update`
+# (after the upgrade has gone through) tries again. No binary at all is a
+# machine with nothing to break: migration_refresh decides from the markers.
+# The gate asks only where migration_refresh would write -- installed, not
+# skipped, not not-applicable -- so a capability the owner opted out of with
+# TEEUP_SKIP can never block `teeup update`.
+AEROSPACE_MIN_VERSION="0.20.0"
+aerospace_version_ok() {
+  local have_v="$1" need_v="$2" a b i
+  local IFS=.
+  # shellcheck disable=SC2206 # splitting on dots is the point
+  a=($have_v)
+  # shellcheck disable=SC2206
+  b=($need_v)
+  for i in 0 1 2; do
+    if [[ "${a[$i]:-0}" -gt "${b[$i]:-0}" ]]; then return 0; fi
+    if [[ "${a[$i]:-0}" -lt "${b[$i]:-0}" ]]; then return 1; fi
+  done
+  return 0
+}
 if cap_exists aerospace; then
+  if have aerospace && state_done check cap-aerospace && ! cap_skipped aerospace &&
+    ! state_na check cap-aerospace; then
+    # "aerospace CLI client version: 0.20.0-Beta 1a2b3c4" -> 0.20.0
+    aerospace_v="$(aerospace --version 2>/dev/null |
+      sed -n 's/^aerospace CLI client version: \([0-9][0-9]*\.[0-9][0-9]*\(\.[0-9][0-9]*\)*\).*/\1/p' | head -1 || true)"
+    if [[ -z "$aerospace_v" ]]; then
+      err "Could not read AeroSpace's version from 'aerospace --version', so its new config (which needs $AEROSPACE_MIN_VERSION or later) was not installed. Check that AeroSpace runs, then run: teeup update"
+      exit 1
+    fi
+    if ! aerospace_version_ok "$aerospace_v" "$AEROSPACE_MIN_VERSION"; then
+      err "AeroSpace $aerospace_v is installed, but its new config needs $AEROSPACE_MIN_VERSION or later, so the config was left as it is. Upgrade AeroSpace (brew upgrade --cask aerospace), then run: teeup update"
+      exit 1
+    fi
+  fi
   migration_refresh aerospace
 fi
 
