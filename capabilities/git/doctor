@@ -87,6 +87,32 @@ git_doctor_access_fix() {
 # pattern mise and starship already use for their own unreadable files
 # (B-A) -- not a warn, and never a claim that the file "is in place" when
 # git cannot actually read it.
+# A leftover from the chezmoi era (spec section 10). That gitconfig ended with
+# `[include] path = ~/.gitconfig.local`, so a [user] block there outranks the
+# identity teeup wrote -- but only while something still includes it. Both
+# questions are asked of git: whether the file sets user.*, and whether the
+# global config git actually reads reaches it. A grep for the file's name
+# would count a comment as an include. Checked before the early exit below,
+# because a stale identity matters whether or not teeup has configured git.
+gitconfig_local="$HOME/.gitconfig.local"
+if [[ ! -f "$gitconfig_local" ]]; then
+  doctor_ok "No leftover $gitconfig_local."
+elif [[ ! -r "$gitconfig_local" ]]; then
+  doctor_unknown "$gitconfig_local cannot be read, so teeup could not tell whether it still sets a git identity." "chmod u+r $(printf '%q' "$gitconfig_local")"
+elif ! LC_ALL=C GIT_CONFIG_NOSYSTEM=1 git config -f "$gitconfig_local" --get-regexp '^user\.' >/dev/null 2>&1; then
+  doctor_ok "No leftover [user] block in $gitconfig_local."
+else
+  gitconfig_local_rc=0
+  gitconfig_local_origins="$(LC_ALL=C GIT_CONFIG_NOSYSTEM=1 git config --global --includes --show-origin --get-regexp '^user\.' 2>/dev/null)" || gitconfig_local_rc=$?
+  if [[ $gitconfig_local_rc -gt 1 ]]; then
+    doctor_unknown "$gitconfig_local has a [user] block, and git could not read its global config to tell whether anything still includes it." "git config --global --includes --show-origin --list"
+  elif printf '%s\n' "$gitconfig_local_origins" | grep -qF "file:$gitconfig_local"$'\t'; then
+    doctor_fail "$gitconfig_local has a [user] block and is still included, so its name and email win over the identity teeup wrote." "git config --file $(printf '%q' "$gitconfig_local") --remove-section user"
+  else
+    doctor_warn "$gitconfig_local has a [user] block, but nothing includes it any more. Move anything you still want into $git_dir/local and delete it."
+  fi
+fi
+
 if [[ ! -f "$git_dir/config" ]]; then
   doctor_fail "git has never been configured here: there is no $git_dir/config." "teeup configure git"
   doctor_verdict

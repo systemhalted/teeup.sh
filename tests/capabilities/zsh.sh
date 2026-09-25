@@ -646,6 +646,99 @@ test_doctor_accepts_the_shipped_two_line_source() {
   cleanup_test_env
 }
 
+# Leftovers from what teeup replaced (spec section 10; phase 5a task 7).
+test_doctor_flags_oh_my_zsh_p10k_files_and_a_live_rc_line() {
+  setup
+  export TEEUP_TEST_MISSING="chezmoi"
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  mkdir -p "$TEST_HOME/.oh-my-zsh"
+  printf '# p10k\n' > "$TEST_HOME/.p10k.zsh"
+  printf 'source "$HOME/.p10k.zsh"\n' >> "$TEST_HOME/.zshrc"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TEST_HOME/.oh-my-zsh is still on disk" || return 1
+  assert_contains "$out" "Powerlevel10k files are still here" || return 1
+  assert_contains "$out" "still load something teeup replaced" || return 1
+  assert_contains "$(cat "$report")" "teeup migrate legacy" || return 1
+  cleanup_test_env
+}
+
+# The printed fixes are pasted into a shell, so a home with a space in it
+# must survive them: run the fix, and the finding is gone.
+test_doctor_leftover_fixes_survive_a_home_with_a_space() {
+  setup
+  export TEEUP_TEST_MISSING="chezmoi"
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  local home="$TEST_HOME/my home"
+  mkdir -p "$home"
+  export HOME="$home"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  mkdir -p "$home/.oh-my-zsh"
+  printf '# p10k\n' > "$home/.p10k.zsh"
+  local report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  DRY_RUN=false cap_run zsh doctor >/dev/null 2>&1 || true
+  local fix
+  while IFS= read -r fix; do
+    (cd "$TEST_HOME" && bash -c "$fix") || { echo "the printed fix failed: $fix"; return 1; }
+  done < <(grep -E 'oh-my-zsh|p10k' "$report" | cut -f3)
+  [[ ! -e "$home/.oh-my-zsh" && ! -e "$home/.p10k.zsh" ]] || { echo "the fixes did not remove the leftovers"; return 1; }
+  cleanup_test_env
+}
+
+test_doctor_stops_flagging_leftovers_once_migrate_has_neutralised_them() {
+  setup
+  export TEEUP_NO_GUM=1
+  # No chezmoi here: this test is about the shell leftovers, and a host
+  # chezmoi on the runner would drag its own source directory in.
+  export TEEUP_TEST_MISSING="chezmoi"
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  printf '%s\n' 'source "$HOME/.teeup.common"' 'source "$HOME/.p10k.zsh"' >> "$TEST_HOME/.zshrc"
+  DRY_RUN=false "$TEEUP" migrate legacy >/dev/null 2>&1 || return 1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_success "$rc" "a migrated home must come up clean" || return 1
+  assert_contains "$out" "No Oh My Zsh directory." || return 1
+  assert_contains "$out" "No Powerlevel10k files." || return 1
+  assert_contains "$out" "No shell file loads a predecessor of teeup." || return 1
+  cleanup_test_env
+}
+
+test_doctor_flags_a_chezmoi_source_directory_that_still_points_here() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  local sibling="$TEST_HOME/Work/environment/dotfiles"
+  mkdir -p "$sibling" "$TEST_HOME/.config/chezmoi"
+  export TEEUP_TEST_CHEZMOI_SRC="$sibling"
+  mock_command_script chezmoi <<'EOF2'
+case "$1" in
+  source-path) printf '%s\n' "$TEEUP_TEST_CHEZMOI_SRC" ;;
+  *) echo "mock chezmoi: unexpected subcommand $1" >&2; exit 1 ;;
+esac
+EOF2
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "chezmoi still points at $sibling" || return 1
+  assert_contains "$(cat "$report")" "teeup migrate legacy" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "chezmoi purge" || return 1
+  assert_dir_exists "$sibling" "a doctor script never changes anything" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zsh"
 test_env_survives_errexit_without_nvim() {
   setup
@@ -796,4 +889,8 @@ run_test "env layer keeps the shims last" test_env_layer_keeps_the_shims_last
 run_test "env layer finds emacs packages across two roots" test_env_layer_finds_emacs_packages_across_two_roots
 run_test "env layer leaves emacs package variables unset without a checkout" test_env_layer_leaves_emacs_package_variables_unset_without_a_checkout
 run_test "alias layer carries the last chezmoi aliases" test_alias_layer_carries_the_last_chezmoi_aliases
+run_test "doctor flags Oh My Zsh, p10k files and a live rc line" test_doctor_flags_oh_my_zsh_p10k_files_and_a_live_rc_line
+run_test "doctor leftover fixes survive a home with a space" test_doctor_leftover_fixes_survive_a_home_with_a_space
+run_test "doctor is clean once migrate has run" test_doctor_stops_flagging_leftovers_once_migrate_has_neutralised_them
+run_test "doctor flags a chezmoi source directory" test_doctor_flags_a_chezmoi_source_directory_that_still_points_here
 print_summary
