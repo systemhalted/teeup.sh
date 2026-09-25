@@ -495,6 +495,87 @@ EOF2
   cleanup_test_env
 }
 
+# The commonest case of all, and the one the backstop was defeated in: a
+# genuinely fresh machine where ~/.config/aerospace does not exist yet. The
+# staging mktemp lands in that directory, so it failed, the function warned
+# and returned 0 -- a skip reported as success -- and copy_config_once then
+# created the directory and installed the config without AeroSpace ever
+# being asked. The backstop existed and did nothing exactly where it was
+# needed most.
+# The upgrade path. copy_config_once sees a checksum recorded for the
+# already-installed file and says "Already installed", even when that pristine
+# file is the PREVIOUS shipped version -- so a machine that installed aerospace
+# before this change would never receive any of the new defaults. Copy-once is
+# the right model (wezterm and starship use it), but it only half works
+# without a migration: the shipped migration is what calls migration_refresh,
+# which replaces the copies nobody edited and leaves edited ones alone.
+test_the_shipped_migration_refreshes_a_pristine_config() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
+  state_done mark cap-aerospace
+  # A machine that installed aerospace before this change: an older shipped
+  # file whose stock record matches it, so it reads as pristine.
+  printf 'config-version = 2\n# the previous shipped file\n' > "$AERO"
+  stock_record "$AERO" "$(file_sha "$AERO")"
+  local mig
+  mig="$(cd "$TEEUP_PATH" && ls migrations/*.sh 2>/dev/null | head -1)"
+  mig="$(basename "${mig:-none}")"
+  [[ "$mig" != "none" ]] || { echo "fixture: no migration is shipped"; return 1; }
+  DRY_RUN=false migration_run "$mig" >/dev/null 2>&1 || { echo "the migration failed"; return 1; }
+  assert_contains "$(cat "$AERO")" "persistent-workspaces" "a pristine copy must be refreshed to the new shipped version" || return 1
+  # And an edited copy is left exactly as it is: that is the stock-checksum
+  # rule, and the reason the owner can edit this file at all.
+  printf '# mine, do not touch\n' > "$AERO"
+  rm -f "$TEEUP_STATE_DIR/migrations/$mig"
+  DRY_RUN=false migration_run "$mig" >/dev/null 2>&1 || true
+  assert_equals '# mine, do not touch' "$(cat "$AERO")" "an edited config must survive the migration" || return 1
+  cleanup_test_env
+}
+
+test_backstop_validates_on_a_fresh_machine_with_no_config_dir() {
+  setup
+  local cfg_dir
+  cfg_dir="$(dirname "$AERO")"
+  rm -rf "$cfg_dir"
+  [[ ! -d "$cfg_dir" ]] || { echo "fixture: the config dir must not exist"; return 1; }
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  list-monitors) echo "monitor 1"; exit 0 ;;
+  reload-config) exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local rc=0
+  DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "aerospace reload-config" "AeroSpace must be asked on a fresh machine, not skipped" || return 1
+  assert_file_exists "$AERO" || return 1
+  cleanup_test_env
+}
+
+# And the rejection has to bite there too: on a fresh machine a config
+# AeroSpace refuses must leave nothing behind.
+test_backstop_installs_nothing_on_a_fresh_machine_when_aerospace_rejects_it() {
+  setup
+  local cfg_dir
+  cfg_dir="$(dirname "$AERO")"
+  rm -rf "$cfg_dir"
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  list-monitors) echo "monitor 1"; exit 0 ;;
+  reload-config) echo "aerospace: config error: unexpected key on line 12" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
+  assert_failure "$rc" "a config AeroSpace rejects must fail the capability" || return 1
+  [[ ! -e "$AERO" ]] || { echo "a rejected config was installed anyway"; return 1; }
+  assert_contains "$out" "unexpected key on line 12" || return 1
+  cleanup_test_env
+}
+
 test_backstop_installs_normally_when_aerospace_accepts_it() {
   setup
   DRY_RUN=false "$TEEUP" configure aerospace >/dev/null 2>&1
@@ -541,6 +622,9 @@ run_test "configure copies the config and prints the manual step" test_configure
 run_test "backstop leaves the config untouched when AeroSpace rejects it" test_backstop_leaves_the_config_untouched_when_aerospace_rejects_it
 run_test "backstop never writes through a symlinked config" test_backstop_never_writes_through_a_symlinked_config
 run_test "backstop skips when aerospace is not running" test_backstop_skips_when_aerospace_is_not_running
+run_test "the shipped migration refreshes a pristine config" test_the_shipped_migration_refreshes_a_pristine_config
+run_test "backstop validates on a fresh machine with no config dir" test_backstop_validates_on_a_fresh_machine_with_no_config_dir
+run_test "backstop installs nothing on a fresh machine when AeroSpace rejects it" test_backstop_installs_nothing_on_a_fresh_machine_when_aerospace_rejects_it
 run_test "backstop installs normally when AeroSpace accepts it" test_backstop_installs_normally_when_aerospace_accepts_it
 run_test "backstop skips without claiming success when there is no aerospace binary" test_backstop_skips_without_claiming_success_when_there_is_no_aerospace_binary
 run_test "configure writes the tuned defaults" test_configure_writes_the_tuned_defaults

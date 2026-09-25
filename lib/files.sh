@@ -573,26 +573,40 @@ aerospace_config_ok() {
     return 0
   fi
   dir="$(dirname "$dest")"
+  # Every mktemp below lands in $dir, so on a genuinely fresh machine -- where
+  # ~/.config/aerospace does not exist yet -- they all failed, this function
+  # warned and returned 0, and the caller read that skip as success and
+  # installed the config unasked. The backstop was inert in precisely the case
+  # it exists for, since a fresh machine is where an unloadable config is
+  # worst: AeroSpace comes up on nothing with no message. The directory the
+  # config is about to be written into is teeup's to create either way --
+  # copy_config_once would make it moments later.
+  if [[ ! -d "$dir" ]]; then
+    if ! mkdir -p "$dir" 2>/dev/null; then
+      warn "Could not create $dir, so AeroSpace's own config check was skipped." >&2
+      return 0
+    fi
+  fi
   if [[ -e "$dest" ]]; then
     had_dest=true
     saved="$(mktemp "$dir/.teeup_validate_old.XXXXXX" 2>/dev/null)" || {
-      warn "Could not stage a validation copy of $dest; skipping AeroSpace's own config check."
+      warn "Could not stage a validation copy of $dest; skipping AeroSpace's own config check." >&2
       return 0
     }
     if ! cp -p "$dest" "$saved" 2>/dev/null; then
-      warn "Could not stage a validation copy of $dest; skipping AeroSpace's own config check."
+      warn "Could not stage a validation copy of $dest; skipping AeroSpace's own config check." >&2
       rm -f "$saved"
       return 0
     fi
   fi
   stage="$(mktemp "$dir/.teeup_validate_new.XXXXXX" 2>/dev/null)" || {
-    warn "Could not stage $dest for AeroSpace's own config check; skipping it."
+    warn "Could not stage $dest for AeroSpace's own config check; skipping it." >&2
     rm -f "$saved"
     return 0
   }
   if ! cp "$candidate" "$stage" 2>/dev/null || ! mv "$stage" "$dest" 2>/dev/null; then
     rm -f "$stage"
-    warn "Could not stage $dest for AeroSpace's own config check; skipping it."
+    warn "Could not stage $dest for AeroSpace's own config check; skipping it." >&2
     rm -f "$saved"
     return 0
   fi
@@ -609,7 +623,7 @@ aerospace_config_ok() {
     elif cp -p "$saved" "$dest" 2>/dev/null; then
       rm -f "$saved"
     else
-      warn "Could not restore $dest after checking it with AeroSpace; your original is saved at $saved."
+      warn "Could not restore $dest after checking it with AeroSpace; your original is saved at $saved." >&2
     fi
   else
     rm -f "$dest"
