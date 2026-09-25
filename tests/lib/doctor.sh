@@ -105,6 +105,58 @@ test_verdict_returns_two_for_unknown_alone_and_one_when_a_failure_is_also_presen
 # on a machine that is working as designed, and the post-bootstrap `teeup
 # doctor` gate exits 1 on a healthy Mac. package_commands names the command
 # install would have accepted, so the check can ask the same question.
+# MacPorts has no casks, so a capability whose app comes from a cask never
+# gets that app installed there -- deliberately: capabilities/emacs/install
+# takes the terminal `emacs` port instead, and ollama falls back to its
+# formula. Asserting the app anyway fails a machine that is exactly as it
+# should be, and `teeup install <cap>` only repeats the same CLI-only
+# install, so the finding can never be cleared. Every capability in the tree
+# that declares apps also declares casks, so this made the whole doctor gate
+# unusable on a backend the project explicitly supports.
+test_metadata_check_does_not_require_an_app_a_cask_would_have_installed() {
+  setup
+  make_cap widget "" "widget-app" "Widget"
+  mock_command_script port <<'EOF2'
+case "$1" in version) echo "Version: 2.9.3" ;; *) exit 1 ;; esac
+EOF2
+  export TEEUP_PKG_BACKEND=macports
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "casks are not available" "the cask line already says why" || return 1
+  assert_not_contains "$out" "Widget.app is installed" "it was never installed, so it must not be reported present" || return 1
+  assert_equals "" "$(cat "$REPORT")" "an app this backend cannot install is not a finding the user can act on" || return 1
+  cleanup_test_env
+}
+
+# On a backend that does have casks, a missing app is still a real failure.
+test_metadata_check_still_requires_an_app_where_casks_work() {
+  setup
+  make_cap widget "" "widget-app" "Widget"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "Widget.app is not installed" || return 1
+  assert_contains "$(cat "$REPORT")" "teeup install widget" || return 1
+  cleanup_test_env
+}
+
+# An app that does NOT come from a cask has to be checked on every backend:
+# nothing else would ever report it missing.
+test_metadata_check_requires_an_app_with_no_cask_behind_it() {
+  setup
+  make_cap widget "" "" "Widget"
+  mock_command_script port <<'EOF2'
+case "$1" in version) echo "Version: 2.9.3" ;; *) exit 1 ;; esac
+EOF2
+  export TEEUP_PKG_BACKEND=macports
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "Widget.app is not installed" "no cask explains this one away" || return 1
+  cleanup_test_env
+}
+
 test_metadata_check_accepts_a_package_the_system_already_provides() {
   setup
   make_cap widget "zsh" "" "" "" "zsh:zsh"
@@ -636,6 +688,9 @@ run_test "record without a report is a no-op" test_record_without_a_report_is_a_
 run_test "verdict is zero until something fails" test_verdict_is_zero_until_something_fails
 run_test "unknown prints and records as its own kind" test_unknown_prints_and_records_as_its_own_kind
 run_test "verdict returns 2 for unknown alone and 1 when a failure is also present" test_verdict_returns_two_for_unknown_alone_and_one_when_a_failure_is_also_present
+run_test "metadata check does not require an app a cask would have installed" test_metadata_check_does_not_require_an_app_a_cask_would_have_installed
+run_test "metadata check still requires an app where casks work" test_metadata_check_still_requires_an_app_where_casks_work
+run_test "metadata check requires an app with no cask behind it" test_metadata_check_requires_an_app_with_no_cask_behind_it
 run_test "metadata check accepts a package the system already provides" test_metadata_check_accepts_a_package_the_system_already_provides
 run_test "metadata check still fails when neither the backend nor PATH has it" test_metadata_check_still_fails_when_neither_the_backend_nor_path_has_it
 run_test "metadata check uses the declared command not the package name" test_metadata_check_uses_the_declared_command_not_the_package_name

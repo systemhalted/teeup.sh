@@ -278,6 +278,21 @@ doctor_metadata_check() {
     fi
   done
   # App names can contain spaces, so they arrive one per line, never as words.
+  #
+  # An app that would have come from a cask is not expected on a backend with
+  # no casks. MacPorts has none, and the capabilities know it:
+  # capabilities/emacs/install takes the terminal `emacs` port instead, ollama
+  # falls back to its formula. Asserting the app anyway fails a machine that is
+  # working as designed, and `teeup install <cap>` only repeats the same
+  # CLI-only install, so the finding can never be cleared. Every capability in
+  # the tree that declares apps also declares casks, so this made the doctor
+  # gate unusable on a backend the project deliberately supports. The cask loop
+  # above has already said casks are unavailable; a second message per app
+  # would be noise. An app with no cask behind it is still checked everywhere,
+  # because nothing else would ever report it missing.
+  if [[ -n "$(cap_meta_get "$cap" casks)" ]] && ! casks_supported; then
+    return 0
+  fi
   while IFS= read -r app; do
     if [[ -z "$app" ]]; then
       continue

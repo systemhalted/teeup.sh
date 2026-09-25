@@ -701,6 +701,28 @@ test_doctor_reports_a_truncated_rendered_file() {
   cleanup_test_env
 }
 
+# $TEEUP_CONFIG_DIR/themed holds the user's own overrides, and
+# theme_templates reads it first. If that directory exists but cannot be read
+# or searched, every template in it is skipped in silence -- so a uniquely
+# named override vanishes from both verification loops and the doctor reports
+# the theme healthy without ever checking what that tool renders. The
+# readability guard looked only at capability-owned themed/ directories.
+test_doctor_reports_an_unreadable_user_template_directory() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  theme_set catppuccin >/dev/null 2>&1
+  mkdir -p "$TEEUP_CONFIG_DIR/themed"
+  printf 'color = "{{ accent }}"\n' > "$TEEUP_CONFIG_DIR/themed/mine.conf.tpl"
+  chmod 0000 "$TEEUP_CONFIG_DIR/themed"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  chmod 0755 "$TEEUP_CONFIG_DIR/themed"
+  assert_failure "$rc" "a directory of overrides teeup cannot read is not a verified theme" || return 1
+  assert_contains "$out" "cannot be read" || return 1
+  assert_contains "$out" "$TEEUP_CONFIG_DIR/themed" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/theme"
 # A template teeup cannot read is skipped by the truncation re-check. Doing
 # that in silence leaves the tool behind it unchecked with nothing said at
@@ -766,6 +788,7 @@ run_test "doctor reports a template never rendered" test_doctor_reports_a_templa
 run_test "doctor reports an unresolved token" test_doctor_reports_an_unresolved_token_in_a_rendered_file
 run_test "doctor reports an empty rendered file" test_doctor_reports_an_empty_rendered_file
 run_test "doctor reports a themed dir it cannot read" test_doctor_reports_a_themed_directory_it_cannot_read
+run_test "doctor reports an unreadable user template directory" test_doctor_reports_an_unreadable_user_template_directory
 run_test "doctor reports a template it could not re-render" test_doctor_reports_a_template_it_could_not_re_render
 run_test "doctor accepts a user template that shadows a shipped one" test_doctor_accepts_a_user_template_that_shadows_a_shipped_one
 run_test "doctor warns when a template is newer than its render" test_doctor_warns_when_a_template_is_newer_than_its_render

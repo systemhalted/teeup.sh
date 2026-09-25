@@ -97,11 +97,14 @@ EOF_TPL
   fi
 done
 
-# A capability's themed/ directory that cannot be read makes theme_templates
-# skip its templates in silence, and every tool behind it would then go
-# unmentioned below -- the doctor would report a clean bill for a theme it
-# never actually checked.
-for themed_dir in "$TEEUP_CAPS_DIR"/*/themed; do
+# A themed/ directory that cannot be read makes theme_templates skip its
+# templates in silence, and every tool behind it would then go unmentioned
+# below -- the doctor would report a clean bill for a theme it never actually
+# checked. The user's own override directory counts: theme_templates reads it
+# FIRST, so an unreadable one loses a uniquely named override from both loops
+# below, and loses the override that shadows a shipped template in a way that
+# then looks like a mismatch against the shipped one.
+for themed_dir in "$TEEUP_CONFIG_DIR/themed" "$TEEUP_CAPS_DIR"/*/themed; do
   [[ -d "$themed_dir" ]] || continue
   if [[ ! -r "$themed_dir" || ! -x "$themed_dir" ]]; then
     doctor_fail "$themed_dir cannot be read, so its templates were not checked at all." "chmod u+rx $themed_dir"

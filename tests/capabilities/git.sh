@@ -721,6 +721,45 @@ test_doctor_skips_verification_when_gpg_format_is_not_ssh() {
   cleanup_test_env
 }
 
+# git treats gpg.ssh.allowedSignersFile as a pathname: `~/allowed_signers`
+# is expanded to $HOME/allowed_signers, and `git config --path --get` shows
+# it. Testing the raw string with -f therefore reports a perfectly usable
+# trust file as missing -- and the suggested fix appends to the EXPANDED path,
+# so following it changes nothing that later runs can see and the finding
+# never clears.
+test_doctor_expands_a_tilde_in_the_allowed_signers_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  local signers="$TEST_HOME/allowed_signers"
+  printf '%s ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYpersonal\n' "ada@example.com" > "$signers"
+  # Written the way a person would write it, not the way a script would.
+  printf '[gpg "ssh"]\n\tallowedSignersFile = "~/allowed_signers"\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "which does not exist" "the file is there; git expands the tilde and so must teeup" || return 1
+  assert_contains "$out" "signatures can be verified" || return 1
+  assert_success "$rc" || return 1
+  cleanup_test_env
+}
+
+# A tilde path that really is missing is still a failure, so the expansion is
+# not a way of skipping the check.
+test_doctor_still_reports_a_missing_tilde_allowed_signers_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[gpg "ssh"]\n\tallowedSignersFile = "~/not_there"\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "which does not exist" || return 1
+  # And the path it names must be the expanded one, so the suggested command
+  # writes where git will look.
+  assert_contains "$out" "$TEST_HOME/not_there" || return 1
+  cleanup_test_env
+}
+
 # The shipped config sets `useConfigOnly = true` so git never guesses an
 # identity from the hostname. That makes a missing user.name fatal, not
 # cosmetic: git refuses every commit with "fatal: no name was given and
@@ -1005,6 +1044,8 @@ run_test "doctor warns about a missing allowed-signers file" test_doctor_warns_a
 run_test "doctor reports signing on with no signing key configured" test_doctor_reports_signing_on_with_no_signing_key_configured
 run_test "doctor reads signingkey from local, not only identity" test_doctor_reads_signingkey_from_local_not_only_identity
 run_test "doctor skips verification when gpg.format is not ssh" test_doctor_skips_verification_when_gpg_format_is_not_ssh
+run_test "doctor expands a tilde in the allowed signers path" test_doctor_expands_a_tilde_in_the_allowed_signers_path
+run_test "doctor still reports a missing tilde allowed signers file" test_doctor_still_reports_a_missing_tilde_allowed_signers_file
 run_test "doctor fails when the identity has no name" test_doctor_fails_when_the_identity_has_no_name
 run_test "doctor fails when the identity has no email" test_doctor_fails_when_the_identity_has_no_email
 run_test "doctor names a complete identity" test_doctor_names_a_complete_identity

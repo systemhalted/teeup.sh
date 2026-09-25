@@ -5,6 +5,25 @@
 # wrong here.
 git_dir="$(user_config_dir)/git"
 
+# git_doctor_path <value> -> the path git itself would open
+# git treats certain config values as pathnames and expands a leading ~ or
+# ~user against the home directory (`git config --path --get` shows it).
+# Testing the raw string reports a usable file as missing, and a fix that
+# names the raw string writes somewhere git never looks -- so following the
+# advice changes nothing and the finding never clears. Only the leading tilde
+# form is expanded here, which is the one a person actually writes; anything
+# else is already a path.
+git_doctor_path() {
+  # The literal "~/" is the token being matched, not a path to expand: this is
+  # the raw string git read out of a config file.
+  # shellcheck disable=SC2088
+  case "$1" in
+    "~/"*) printf '%s/%s\n' "$HOME" "${1#\~/}" ;;
+    "~") printf '%s\n' "$HOME" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
 # _git_doctor_last_value <key> <file>...
 # Prints two lines: the value of the last <key> = ... assignment found across
 # the given files, read in the order git itself reads them (so a later
@@ -242,6 +261,7 @@ if [[ "$signing_on" == "true" ]]; then
     if [[ "$signers_set" == "true" ]]; then
       # Set is not the same as usable: a path that is not there verifies
       # nothing, and git says so only at the moment you read a signature.
+      signers_file="$(git_doctor_path "$signers_file")"
       if [[ -f "$signers_file" ]]; then
         doctor_ok "gpg.ssh.allowedSignersFile is set, so signatures can be verified."
       else
