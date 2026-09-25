@@ -621,7 +621,9 @@ test_doctor_warns_when_a_template_is_newer_than_its_render() {
   [[ -n "$real_tpl" ]] || { echo "fixture: no templates"; return 1; }
   base="$(basename "$real_tpl")"
   mkdir -p "$TEEUP_CONFIG_DIR/themed"
-  cp "$real_tpl" "$TEEUP_CONFIG_DIR/themed/$base"
+  # Checked: an unnoticed cp failure leaves no user template, so the warning
+  # this test is about cannot appear and the failure says nothing about why.
+  cp "$real_tpl" "$TEEUP_CONFIG_DIR/themed/$base" || { echo "fixture: could not copy $real_tpl"; return 1; }
   local rc=0 out
   out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
   assert_success "$rc" "a stale render is a warning, not a failure" || return 1
@@ -703,16 +705,32 @@ echo "capabilities/theme"
 # A template teeup cannot read is skipped by the truncation re-check. Doing
 # that in silence leaves the tool behind it unchecked with nothing said at
 # all -- the directory-level case is already reported, a single file was not.
+#
+# This used to chmod 0000 the first REAL template in the checkout
+# (capabilities/emacs/themed/emacs.el.tpl) and chmod it back to a hardcoded
+# 0644 -- the same "no test writes into the checkout" rule the directory case
+# above was already fixed for, broken again one level down. It cost a red
+# macos-14 run: while this test held that file unreadable, a suite running in
+# parallel hit `sed: .../emacs.el.tpl: Permission denied` and its own
+# theme_set failed, and a later test in THIS file could no longer copy the
+# file it needed. A throwaway fixture tree under $TEST_HOME reproduces the
+# defect with nothing shared.
 test_doctor_reports_a_template_it_could_not_re_render() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   theme_set catppuccin >/dev/null 2>&1
-  local tpl
-  tpl="$(theme_templates | head -1)"
-  [[ -n "$tpl" ]] || { echo "fixture: no templates"; return 1; }
+  local fixture_caps="$TEST_HOME/fixture-caps" tpl
+  mkdir -p "$fixture_caps"
+  cp -R "$TEEUP_PATH/capabilities/theme" "$fixture_caps/theme"
+  mkdir -p "$fixture_caps/throwaway/themed"
+  tpl="$fixture_caps/throwaway/themed/unreadable.conf.tpl"
+  printf 'color = "{{ accent }}"\n' > "$tpl"
+  # The render has to exist for the re-check to reach the template at all.
+  printf 'color = "#000000"\n' > "$TEEUP_STATE_DIR/current/theme/dark/unreadable.conf"
+  printf 'color = "#ffffff"\n' > "$TEEUP_STATE_DIR/current/theme/light/unreadable.conf"
   chmod 0000 "$tpl"
   local rc=0 out
-  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  out="$(TEEUP_CAPS_DIR="$fixture_caps" DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
   chmod 0644 "$tpl"
   assert_unknown "$rc" "a template teeup could not read is not a verified one" || return 1
   assert_contains "$out" "Could not re-render" || return 1
