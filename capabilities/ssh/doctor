@@ -8,6 +8,74 @@ ssh_dir="$HOME/.ssh"
 # because its -f means something else entirely, BSD stat second.
 mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || printf 'unknown\n'; }
 
+# ssh_expand_includes <file> [depth]
+# The config as ssh reads it: every root-level `Include` replaced by the
+# contents of the files it names, recursively. ssh resolves a relative pattern
+# against ~/.ssh (verified against a real `ssh -G`), accepts several patterns
+# on one line, and globs each of them.
+#
+# Not following Include is a false NEGATIVE with teeth: a `Host github.com`
+# block in ~/.ssh/conf.d/ is a supported layout -- lib/answers.sh says in so
+# many words that it asks ssh rather than parsing because "Include was not
+# followed at all" -- so identity_key adopts a key from an included file on
+# the very machine this doctor then calls broken, and `teeup reset ssh` cannot
+# repair a config the user owns.
+#
+# Two deliberate limits. An Include that sits INSIDE a Host block is
+# conditional in ssh and is not expanded here; the conventional position, and
+# the one ssh's own documentation recommends, is at the top. And a depth cap
+# stops a circular include from hanging the doctor -- ssh has one too.
+ssh_expand_includes() {
+  local file="$1" depth="${2:-0}" raw line kw tok pattern f_inc seen_host=false
+  [[ -r "$file" ]] || return 0
+  if [[ "$depth" -ge 16 ]]; then
+    return 0
+  fi
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    line="${raw%%#*}"
+    line="${line/=/ }"
+    set -f
+    # shellcheck disable=SC2086
+    set -- $line
+    set +f
+    if [[ $# -ge 1 ]]; then
+      kw="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+      if [[ "$kw" == "host" || "$kw" == "match" ]]; then
+        seen_host=true
+      fi
+      if [[ "$kw" == "include" && "$seen_host" != "true" ]]; then
+        shift
+        for tok in "$@"; do
+          # No ${var/pattern/} here: bash 3.2 mis-parses a quoted pattern
+          # containing a slash inside one, which is why lib/files.sh carries
+          # replace_literal at all. A case and a substring do the same job
+          # with no parser involved.
+          # The "~/" here is a literal token out of the config file, not a
+          # path for the shell to expand.
+          # shellcheck disable=SC2088
+          case "$tok" in
+            /*) pattern="$tok" ;;
+            "~/"*) pattern="$HOME/${tok#\~/}" ;;
+            *) pattern="$HOME/.ssh/$tok" ;;
+          esac
+          # Deliberate glob expansion of a pattern from the config -- ssh
+          # globs these itself -- with an unmatched pattern expanding to
+          # itself, which the -f test below then rejects.
+          # shellcheck disable=SC2231
+          for f_inc in $pattern; do
+            if [[ -f "$f_inc" ]]; then
+              ssh_expand_includes "$f_inc" "$((depth + 1))"
+            fi
+          done
+        done
+        continue
+      fi
+    fi
+    printf '%s\n' "$raw"
+  done < "$file"
+  return 0
+}
+
 # ssh_host_block_applies <alias> <pattern>...
 # ssh's own Host matching, including negation. A pattern list is a set of
 # globs, any of which may be negated with a leading "!". ssh applies the block
@@ -84,7 +152,9 @@ ssh_doctor_identity_files() {
     if [[ "$in_block" == "true" && "$kw" == "identityfile" ]]; then
       printf '%s\n' "$*"
     fi
-  done < "$file"
+  done <<EOF_SSH_CFG
+$(ssh_expand_includes "$file")
+EOF_SSH_CFG
 }
 
 if [[ ! -d "$ssh_dir" ]]; then
@@ -176,7 +246,10 @@ else
         for (i = 2; i <= n; i++) out = (out == "") ? f[i] : out " " f[i]
         print out
       }
-    ' "$ssh_dir/config" 2>/dev/null)"
+    ' <<EOF_SSH_ROOT 2>/dev/null
+$(ssh_expand_includes "$ssh_dir/config")
+EOF_SSH_ROOT
+)"
   for identity in $(identity_list); do
     alias_name="$(ssh_host_alias "$identity")"
     matched=false

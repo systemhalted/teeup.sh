@@ -49,6 +49,13 @@ done
 # it, because the offending chmod names a path the test computed at runtime, so
 # the modes of the tree are recorded before the run and compared after. Every
 # test must work inside $TEST_HOME; the checkout is read-only to all of them.
+# Records the mode AND the presence of every file, because a test can damage
+# the checkout in two ways: by changing what is there, and by leaving
+# something new behind. The second slipped past the first version of this
+# guard -- tests that exercise machines/<hostname>.conf write a file into the
+# checkout and delete it again, which leaves nothing to compare unless the
+# run is interrupted or the test fails early, and then it is a stray config
+# that changes what every later run resolves.
 _mode_snapshot() {
   find "$(dirname "$TESTS_DIR")" \
     -name .git -prune -o \
@@ -134,9 +141,9 @@ fi
 _mode_snapshot > "$modes_after"
 if ! diff -q "$modes_before" "$modes_after" >/dev/null 2>&1; then
   echo ""
-  echo "A test changed a file mode inside the checkout. Suites run in parallel,"
-  echo "so this breaks whichever other suite was reading that file. Point the"
-  echo "test at a throwaway tree under \$TEST_HOME instead:"
+  echo "A test changed the checkout: a file mode, or a file added or removed."
+  echo "Suites run in parallel, so this breaks whichever other suite was"
+  echo "reading it. Point the test at a throwaway tree under \$TEST_HOME:"
   diff "$modes_before" "$modes_after" | sed -n 's/^[<>] /  /p' | LC_ALL=C sort -u
   rm -f "$modes_before" "$modes_after"
   exit 1
