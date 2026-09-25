@@ -932,6 +932,57 @@ test_doctor_signers_repair_works_for_a_custom_key_and_path() {
   cleanup_test_env
 }
 
+# Codex P2s on #33. A syntax error anywhere in the include graph also makes
+# git exit 128; it is not a bad boolean, and the diagnosis must say what git
+# said.
+test_doctor_names_a_config_git_cannot_parse() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[commit\n' > "$TEST_HOME/broken.inc"
+  printf '[include]\n\tpath = %s\n' "$TEST_HOME/broken.inc" > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_not_contains "$out" "not a value git accepts" "the value is fine; a file is malformed" || return 1
+  assert_contains "$out" "bad config line 1 in file $TEST_HOME/broken.inc" "say what git said" || return 1
+  cleanup_test_env
+}
+
+# A false in a file that local includes is still the owner's local choice.
+test_doctor_honours_signing_turned_off_by_a_file_local_includes() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[commit]\n\tgpgsign = false\n' > "$TEST_HOME/nosign.inc"
+  printf '[include]\n\tpath = %s\n' "$TEST_HOME/nosign.inc" > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_contains "$out" "turns commit signing off" || return 1
+  assert_not_contains "$out" "commit signing is off in" "teeup-generated did not decide this" || return 1
+  assert_success "$rc" || return 1
+  cleanup_test_env
+}
+
+# The key git signs with is the effective one: a user.signingkey after the
+# last include in the top-level config beats identity.
+test_doctor_signers_repair_uses_a_top_level_signing_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf 'PRIVATE\n' > "$TEST_HOME/.ssh/id_top"
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYtop top\n' > "$TEST_HOME/.ssh/id_top.pub"
+  : > "$TEST_HOME/.config/git/allowed_signers"
+  printf '[gpg "ssh"]\n\tallowedSignersFile = "%s"\n' "$TEST_HOME/.config/git/allowed_signers" > "$TEST_HOME/.config/git/local"
+  printf '[user]\n\tsigningkey = "%s"\n' "$TEST_HOME/.ssh/id_top.pub" >> "$TEST_HOME/.config/git/config"
+  local out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$(grep 'names no signer' "$report" | cut -f3)" "id_top.pub" "trust the key git signs with" || return 1
+  cleanup_test_env
+}
+
 # A tilde path that really is missing is still a failure, so the expansion is
 # not a way of skipping the check.
 test_doctor_still_reports_a_missing_tilde_allowed_signers_file() {
@@ -1171,6 +1222,9 @@ run_test "doctor lets a later top-level gpgsign beat local" test_doctor_lets_a_l
 run_test "doctor reads a bare gpgsign key as true" test_doctor_reads_a_bare_gpgsign_key_as_true
 run_test "doctor fails on a gpgsign value git rejects" test_doctor_fails_on_a_gpgsign_value_git_rejects
 run_test "doctor signers repair works for a custom key and path" test_doctor_signers_repair_works_for_a_custom_key_and_path
+run_test "doctor names a config git cannot parse" test_doctor_names_a_config_git_cannot_parse
+run_test "doctor honours signing turned off by a file local includes" test_doctor_honours_signing_turned_off_by_a_file_local_includes
+run_test "doctor signers repair uses a top-level signing key" test_doctor_signers_repair_uses_a_top_level_signing_key
 run_test "signing turns on once the key exists" test_signing_turns_on_once_the_key_exists
 run_test "generated include is read after the defaults" test_generated_include_is_read_after_the_defaults
 run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_configure_renders_include_paths_for_a_custom_xdg_config_home

@@ -23,6 +23,23 @@ git_doctor_read() {
     git config -f "$1" --includes --get "$2" 2>/dev/null || true
 }
 
+# git_doctor_effective <git-config options...>
+# Asks git itself, of the top-level config with its includes (configure
+# renders them to $git_dir), so the answer follows git's own include order,
+# its type parsing and its path expansion. Prints git's answer; the exit
+# status is git's (0 found, 1 unset, 128 git could not read the graph).
+git_doctor_effective() {
+  LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git config -f "$git_dir/config" --includes "$@" 2>/dev/null
+}
+
+# git_doctor_effective_error <git-config options...> -> the first line git
+# printed on stderr for the same query: what it could not read or parse.
+git_doctor_effective_error() {
+  LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git config -f "$git_dir/config" --includes "$@" 2>&1 >/dev/null | head -1 || true
+}
+
 # git_doctor_path <value> -> the path git itself would open
 # git treats certain config values as pathnames and expands a leading ~ or
 # ~user against the home directory (`git config --path --get` shows it).
@@ -40,50 +57,6 @@ git_doctor_path() {
     "~") printf '%s\n' "$HOME" ;;
     *) printf '%s\n' "$1" ;;
   esac
-}
-
-# _git_doctor_last_value <key> <file>...
-# Prints two lines: the value of the last <key> = ... assignment found across
-# the given files, read in the order git itself reads them (so a later
-# file's value wins, matching git's own "last value read wins" rule), then
-# whether any of them existed but could not be read (true/false). The value
-# comes first and the flag second, always non-empty, on purpose: a `$( )`
-# strips every trailing newline, and a naive flag-then-value ordering loses
-# the separator entirely whenever the value is empty (the exact "no
-# signingkey line" case this function exists to report on), collapsing both
-# fields into one and handing the caller the word "false" as the value. A
-# file that does not exist is skipped. The match is a bare `grep`, not
-# section-aware, so it can be fooled by an identically-named key in an
-# unrelated section -- the same shortcut the allowedSignersFile search
-# already took.
-#
-# The unreadable flag used to be a global (_git_doctor_unreadable) set from
-# inside this function -- but every caller invokes it as `$( )`, which runs
-# the whole function in a subshell, so that assignment died with the
-# substitution and the caller's copy never changed (NI1). Putting the flag on
-# stdout, alongside the value, and letting the caller (never itself inside a
-# `$( )`) split the two lines apart is the only way the flag survives.
-_git_doctor_last_value() {
-  local key="$1" f value result="" unreadable=false
-  shift
-  for f in "$@"; do
-    [[ -f "$f" ]] || continue
-    if [[ ! -r "$f" ]]; then
-      unreadable=true
-      continue
-    fi
-    # git, not a grep. A line-oriented search is not section aware -- its own
-    # last-match-wins picks up an identically-named key in a later, unrelated
-    # section -- and it does not follow [include], which is how people keep a
-    # work identity in a separate file. git answers both correctly, and
-    # handles quoting, case and line continuation while it is at it.
-    # --includes is NOT the default for -f, so it is asked for explicitly.
-    value="$(git_doctor_read "$f" "$key")"
-    if [[ -n "$value" ]]; then
-      result="$value"
-    fi
-  done
-  printf '%s\n%s\n' "$result" "$unreadable"
 }
 
 # git 2.55.0, verified: an unreadable config file this one [include]s is not
@@ -194,53 +167,65 @@ fi
 # machine whose local override turns it off (Codex, PR #32); reading the
 # files one by one got the order and the booleans wrong (Codex, follow-up).
 gpgsign_rc=0
-gpgsign_raw="$(GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
-  git config -f "$git_dir/config" --includes --show-origin --type=bool --get commit.gpgsign 2>/dev/null)" || gpgsign_rc=$?
+gpgsign_raw="$(git_doctor_effective --show-origin --type=bool --get commit.gpgsign)" || gpgsign_rc=$?
 gpgsign_origin="${gpgsign_raw%%$'\t'*}"
 gpgsign="${gpgsign_raw##*$'\t'}"
 gpgsign_unknown=false
 gpgsign_invalid=false
+gpgsign_broken=false
+gpgsign_err=""
+gpgsign_fix=""
 case "$gpgsign_rc" in
   0) ;;
   1) gpgsign=false ;; # unset: git's default is off
   *)
-    # 128: git could not read an included file, or rejected the value. The
-    # earlier checks already stopped on an unreadable config or
-    # teeup-generated and failed an unreadable identity; local is the one
-    # left, and teeup never writes it.
-    if [[ -f "$git_dir/local" && ! -r "$git_dir/local" ]] || [[ -f "$identity_file" && ! -r "$identity_file" ]]; then
-      gpgsign_unknown=true
-    else
-      gpgsign_invalid=true
-    fi
+    # 128 is git failing anywhere in the include graph, not only on this
+    # value, so what went wrong is read from git's own message (Codex, #33):
+    # a file it cannot open, a value it rejects, or a file it cannot parse.
+    gpgsign_err="$(git_doctor_effective_error --type=bool --get commit.gpgsign)"
+    gpgsign_err="${gpgsign_err#fatal: }"
+    case "$gpgsign_err" in
+      "unable to access '"*)
+        gpgsign_unknown=true
+        gpgsign_err="${gpgsign_err#unable to access \'}"
+        gpgsign_err="${gpgsign_err%%\'*}" # the path git could not open
+        gpgsign_fix="chmod u+r $(printf '%q' "$gpgsign_err")"
+        ;;
+      "bad boolean config value"*) gpgsign_invalid=true ;;
+      *) gpgsign_broken=true ;;
+    esac
     gpgsign=false
     ;;
 esac
 # Off in teeup-generated is teeup's own call and can go stale; off in local
-# is the owner's choice.
+# is the owner's choice -- including in any file local itself includes, so
+# the question is whether the deciding line is one local's own graph
+# reaches, not whether it sits in local itself (Codex, #33).
 gpgsign_local=false
-[[ "$gpgsign_origin" == "file:$git_dir/local" ]] && gpgsign_local=true
+if [[ "$gpgsign_rc" -eq 0 && -r "$git_dir/local" ]]; then
+  local_raw="$(LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git config -f "$git_dir/local" --includes --show-origin --get commit.gpgsign 2>/dev/null || true)"
+  local_origin="${local_raw%%$'\t'*}"
+  [[ -n "$local_raw" && ( "$local_origin" == "$gpgsign_origin" || "$gpgsign_origin" == "file:$git_dir/local" ) ]] && gpgsign_local=true
+fi
 if [[ "$gpgsign_unknown" == "true" ]]; then
-  doctor_unknown "Not every git config file could be read, so teeup could not tell whether commit signing is on." "chmod u+r $(printf '%q' "$git_dir/local")"
+  doctor_unknown "git cannot read $gpgsign_err, so teeup could not tell whether commit signing is on." "$gpgsign_fix"
   signing_on=false
 elif [[ "$gpgsign_invalid" == "true" ]]; then
   doctor_fail "commit.gpgsign is set to something that is not a value git accepts, so every git commit fails (fatal: bad boolean config value)." "git config -f $(printf '%q' "$git_dir/config") --includes --show-origin --get-all commit.gpgsign"
   signing_on=false
+elif [[ "$gpgsign_broken" == "true" ]]; then
+  doctor_fail "git cannot read its configuration: ${gpgsign_err:-it exited without saying why}. Every git command that reads config fails until that file is fixed." "git config -f $(printf '%q' "$git_dir/config") --includes --list"
+  signing_on=false
 elif [[ "$gpgsign" == "true" ]]; then
   # Signing on with the key gone is worse than signing off: every `git commit`
   # fails outright, and the doctor that reported full health is the reason
-  # nobody looked here first. The identity file is where configure writes
-  # signingkey, but a hand edit could have put it in teeup-generated or
-  # local instead, so all three are read, last value wins.
-  # One command substitution, one subshell; the split into value and flag
-  # below happens back in this shell, where the assignment sticks (NI1).
-  _git_doctor_raw="$(_git_doctor_last_value user.signingkey "$identity_file" "$generated" "$git_dir/local")"
-  signing_key="${_git_doctor_raw%%$'\n'*}"
-  _git_doctor_unreadable="${_git_doctor_raw#*$'\n'}"
+  # nobody looked here first. The key is the one git signs with: its answer
+  # from the whole graph, which also reaches a signingkey set after the last
+  # include (Codex, #33). The graph was just read, so it is readable.
+  signing_key="$(git_doctor_effective --path --get user.signingkey || true)"
   signing_key="${signing_key%.pub}"
-  if [[ "$_git_doctor_unreadable" == "true" ]]; then
-    doctor_unknown "commit.gpgsign is on but not every git config file could be read, so teeup could not check user.signingkey." "chmod u+r $git_dir/local"
-  elif [[ -z "$signing_key" ]]; then
+  if [[ -z "$signing_key" ]]; then
     # What real git does here: "fatal: either user.signingkey or
     # gpg.ssh.defaultKeyCommand needs to be configured" on every commit.
     doctor_fail "commit.gpgsign is on but no user.signingkey is set, so every git commit fails." "teeup configure git"
@@ -278,17 +263,8 @@ if [[ "$signing_on" == "true" ]]; then
   # switched to GPG signing (or turned SSH signing off) does not owe teeup an
   # allowedSignersFile, and the message above must say what format actually
   # is rather than assuming the shipped default is still in effect.
-  _git_doctor_raw="$(_git_doctor_last_value gpg.format "$git_dir/config" "$generated" "$git_dir/local")"
-  gpg_format="${_git_doctor_raw%%$'\n'*}"
-  _git_doctor_unreadable="${_git_doctor_raw#*$'\n'}"
-  if [[ "$_git_doctor_unreadable" == "true" ]]; then
-    # Not every file that decides gpg.format could be read, so neither "ssh"
-    # nor "unset" is something teeup actually established -- saying either
-    # would be a confident pass built on a value that was never read (NI1),
-    # and it would also skip the allowed-signers block below as though the
-    # question did not apply.
-    doctor_unknown "commit.gpgsign is on but not every git config file could be read, so teeup could not check gpg.format or gpg.ssh.allowedSignersFile." "chmod u+r $git_dir/local"
-  elif [[ "$gpg_format" != "ssh" ]]; then
+  gpg_format="$(git_doctor_effective --get gpg.format || true)"
+  if [[ "$gpg_format" != "ssh" ]]; then
     doctor_ok "Commit signing is on with gpg.format = ${gpg_format:-unset}, so the SSH allowed-signers check does not apply."
   else
     # An assignment, not a mention: the word can appear in a comment, a
