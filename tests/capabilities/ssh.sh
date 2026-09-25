@@ -723,6 +723,100 @@ EOF2
   cleanup_test_env
 }
 
+# ssh_config's Include, which the doctor's scan did not follow. This is not a
+# hypothetical layout: lib/answers.sh:322 says in so many words that it asks
+# ssh instead of parsing because "Include was not followed at all", so
+# identity_key can adopt a key from an included file on the very machine the
+# doctor then rejects. `teeup reset ssh` cannot repair it either, because the
+# config is the user's.
+#
+# Four shapes, all legal, checked separately rather than as one happy case.
+test_doctor_follows_an_absolute_include() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  mkdir -p "$TEST_HOME/.ssh/conf.d"
+  printf 'Include %s/.ssh/conf.d/10-gh\n' "$TEST_HOME" > "$TEST_HOME/.ssh/config"
+  printf 'Host github.com\n    IdentityFile %s\n' "$TEST_HOME/.ssh/id_ed25519_personal" \
+    > "$TEST_HOME/.ssh/conf.d/10-gh"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_contains "$out" "declares Host github.com" "an included Host block is still a Host block" || return 1
+  assert_success "$rc" || return 1
+  cleanup_test_env
+}
+
+# ssh resolves a relative Include against ~/.ssh, not the current directory.
+test_doctor_follows_a_relative_include_with_a_glob() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  mkdir -p "$TEST_HOME/.ssh/conf.d"
+  printf 'Include conf.d/*\n' > "$TEST_HOME/.ssh/config"
+  printf 'Host github.com\n    IdentityFile %s\n' "$TEST_HOME/.ssh/id_ed25519_personal" \
+    > "$TEST_HOME/.ssh/conf.d/10-gh"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_contains "$out" "declares Host github.com" || return 1
+  assert_success "$rc" || return 1
+  cleanup_test_env
+}
+
+# Several patterns on one Include line, and an Include inside an included
+# file: both legal, and a config split by topic uses them.
+test_doctor_follows_nested_and_multi_pattern_includes() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  mkdir -p "$TEST_HOME/.ssh/conf.d" "$TEST_HOME/.ssh/extra"
+  printf 'Include conf.d/none-such conf.d/10-first\n' > "$TEST_HOME/.ssh/config"
+  printf 'Include %s/.ssh/extra/20-gh\n' "$TEST_HOME" > "$TEST_HOME/.ssh/conf.d/10-first"
+  printf 'Host github.com\n    IdentityFile %s\n' "$TEST_HOME/.ssh/id_ed25519_personal" \
+    > "$TEST_HOME/.ssh/extra/20-gh"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_contains "$out" "declares Host github.com" || return 1
+  assert_success "$rc" || return 1
+  cleanup_test_env
+}
+
+# The key named in an included block is the key to check for, so a missing one
+# is still reported rather than the whole block being skipped.
+test_doctor_reports_a_missing_key_named_in_an_included_block() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  mkdir -p "$TEST_HOME/.ssh/conf.d"
+  printf 'Include conf.d/*\n' > "$TEST_HOME/.ssh/config"
+  printf 'Host github.com\n    IdentityFile %s/.ssh/not_there\n' "$TEST_HOME" \
+    > "$TEST_HOME/.ssh/conf.d/10-gh"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "names an IdentityFile that is not on this machine" || return 1
+  cleanup_test_env
+}
+
+# A cycle must not hang the doctor.
+test_doctor_survives_a_circular_include() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  mkdir -p "$TEST_HOME/.ssh/conf.d"
+  printf 'Include conf.d/a\nHost github.com\n    IdentityFile %s\n' "$TEST_HOME/.ssh/id_ed25519_personal" > "$TEST_HOME/.ssh/config"
+  printf 'Include conf.d/b\n' > "$TEST_HOME/.ssh/conf.d/a"
+  printf 'Include conf.d/a\n' > "$TEST_HOME/.ssh/conf.d/b"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_contains "$out" "declares Host github.com" "the root file's own block must still be found" || return 1
+  cleanup_test_env
+}
+
 run_test "configure generates one key on a machine with no work identity" test_configure_generates_one_key_on_a_machine_with_no_work_identity
 run_test "configure generates both keys when the machine file configures work" test_configure_generates_both_keys_when_the_machine_file_configures_work
 run_test "a stale work email answer generates no second key" test_a_stale_work_email_answer_generates_no_second_key
@@ -1031,6 +1125,11 @@ run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor reports unknown when ssh-keygen is missing" test_doctor_reports_unknown_when_ssh_keygen_is_missing
 run_test "doctor reports a missing key pair" test_doctor_reports_a_missing_key_pair
 run_test "doctor reports a world-readable private key" test_doctor_reports_a_world_readable_private_key
+run_test "doctor follows an absolute include" test_doctor_follows_an_absolute_include
+run_test "doctor follows a relative include with a glob" test_doctor_follows_a_relative_include_with_a_glob
+run_test "doctor follows nested and multi-pattern includes" test_doctor_follows_nested_and_multi_pattern_includes
+run_test "doctor reports a missing key named in an included block" test_doctor_reports_a_missing_key_named_in_an_included_block
+run_test "doctor survives a circular include" test_doctor_survives_a_circular_include
 run_test "doctor honours a negated host pattern" test_doctor_honours_a_negated_host_pattern
 run_test "doctor does not credit a key from an excluded block" test_doctor_does_not_credit_a_key_from_an_excluded_block
 run_test "doctor accepts a hand-written host block" test_doctor_accepts_a_hand_written_host_block

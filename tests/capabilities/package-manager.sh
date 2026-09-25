@@ -211,6 +211,59 @@ test_doctor_reports_no_recorded_backend_when_the_answers_file_is_empty() {
   cleanup_test_env
 }
 
+# machines/<hostname>.conf pinning TEEUP_PACKAGE_MANAGER is the documented
+# way to keep an old Intel laptop on MacPorts, and it is a supported
+# configuration the doctor could never pass. capabilities/package-manager/
+# configure asks answers_get, which already has the machine file layered on
+# top, so with a pin and no answers entry it sees a value, takes the "already
+# recorded" branch, and writes nothing. This check read the answers file alone,
+# found it empty, and failed -- offering `teeup configure package-manager`,
+# which repeats the same no-op. The backend is stably pinned; that is what the
+# check is asking about.
+test_doctor_accepts_a_machine_file_pin_as_the_record() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mkdir -p "$TEEUP_PATH/machines" 2>/dev/null || true
+  local machine
+  machine="$(machine_file)"
+  mkdir -p "$(dirname "$machine")"
+  printf 'TEEUP_PACKAGE_MANAGER="macports"\n' > "$machine"
+  # No answers entry at all: the pin is the only source.
+  mkdir -p "$(dirname "$(answers_file)")"
+  : > "$(answers_file)"
+  # A MacPorts that is actually there, so the only thing this test can fail
+  # on is the record check. Without it the doctor fails for the unrelated and
+  # entirely correct reason that MacPorts is not installed.
+  mock_command_script port <<'EOF2'
+case "$1" in version) echo "Version: 2.9.3" ;; *) exit 0 ;; esac
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
+  rm -f "$machine"
+  assert_contains "$out" "pinned by" "a machine-file pin IS the backend being recorded" || return 1
+  assert_contains "$out" "macports" || return 1
+  assert_not_contains "$out" "No TEEUP_PACKAGE_MANAGER in the answers file" || return 1
+  assert_success "$rc" "a supported, stably pinned machine must be able to pass" || return 1
+  cleanup_test_env
+}
+
+# With neither the machine file nor the answers file naming one, the backend
+# really is re-detected on every run, and that is still a finding.
+test_doctor_still_reports_a_backend_nobody_recorded() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local machine
+  machine="$(machine_file)"
+  rm -f "$machine"
+  mkdir -p "$(dirname "$(answers_file)")"
+  : > "$(answers_file)"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run package-manager doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No TEEUP_PACKAGE_MANAGER in the answers file" || return 1
+  cleanup_test_env
+}
+
 test_doctor_says_when_the_machine_file_pins_another_backend() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -236,6 +289,8 @@ run_test "doctor names the prefix the backend is really at" test_doctor_names_th
 run_test "doctor reports a backend that is on PATH but unreachable" test_doctor_reports_a_backend_that_is_on_path_but_unreachable
 run_test "doctor does not offer the Homebrew prefix fix on MacPorts" test_doctor_does_not_offer_the_homebrew_prefix_fix_on_macports
 run_test "doctor reports no recorded backend when the answers file is empty" test_doctor_reports_no_recorded_backend_when_the_answers_file_is_empty
+run_test "doctor accepts a machine file pin as the record" test_doctor_accepts_a_machine_file_pin_as_the_record
+run_test "doctor still reports a backend nobody recorded" test_doctor_still_reports_a_backend_nobody_recorded
 run_test "doctor says when the machine file pins another backend" test_doctor_says_when_the_machine_file_pins_another_backend
 run_test "configure dry run does not claim the backend was recorded" test_configure_dry_run_does_not_claim_the_backend_was_recorded
 run_test "configure real-run wording is unchanged" test_configure_real_run_wording_is_unchanged
