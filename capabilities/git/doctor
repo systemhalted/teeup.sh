@@ -44,22 +44,32 @@ git_doctor_effective_error() {
 }
 
 # git_doctor_access_fix <path> -> the command that lets git open <path>:
-# chmod u+x on every ancestor directory git cannot search, or u+r on the file
-# when the directories are fine. git names the file either way.
+# chmod u+r on the file, preceded by chmod u+x on every directory from the
+# outermost one git cannot search down to the file's own. Nothing below a
+# blocked directory can be inspected -- an unsearchable directory hides
+# whether the ones inside it are searchable -- so the whole chain is
+# included; u+x on a directory that already has it changes nothing.
 git_doctor_access_fix() {
-  local path="$1" dir dirs=""
+  local path="$1" dir chain="" blocked=""
   dir="$(dirname "$path")"
   while [[ -n "$dir" && "$dir" != "/" && "$dir" != "." ]]; do
+    chain="$dir"$'\n'"$chain"
     if [[ -d "$dir" && ! -x "$dir" ]]; then
-      dirs="$(printf '%q' "$dir") $dirs"
+      blocked="$dir"
     fi
     dir="$(dirname "$dir")"
   done
-  if [[ -n "$dirs" ]]; then
-    printf 'chmod u+x %s\n' "${dirs% }"
-  else
+  if [[ -z "$blocked" ]]; then
     printf 'chmod u+r %s\n' "$(printf '%q' "$path")"
+    return 0
   fi
+  local dirs="" d started=false
+  while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    [[ "$d" == "$blocked" ]] && started=true
+    [[ "$started" == "true" ]] && dirs="$dirs $(printf '%q' "$d")"
+  done <<< "$chain"
+  printf 'chmod u+x%s && chmod u+r %s\n' "$dirs" "$(printf '%q' "$path")"
 }
 
 # git 2.55.0, verified: an unreadable config file this one [include]s is not
@@ -243,10 +253,35 @@ elif [[ "$gpgsign" == "true" ]]; then
   elif [[ $signing_key_rc -ne 0 ]]; then
     # --path could not expand it: a ~user whose home does not exist.
     doctor_fail "Commit signing is on with user.signingkey = $signing_key_raw, a path git cannot expand, so every git commit fails." "teeup configure git"
+  elif [[ -n "$gpg_format" && "$gpg_format" != "openpgp" && "$gpg_format" != "x509" && "$gpg_format" != "ssh" ]]; then
+    # `git config --get` does not check the enum; `git commit` does, and
+    # refuses ("invalid value for 'gpg.format'") every time.
+    doctor_fail "gpg.format = $gpg_format is not a format git knows (openpgp, x509, ssh), so every signed commit fails." "git config -f $(printf '%q' "$git_dir/config") --includes --show-origin --get gpg.format"
   elif [[ "$gpg_format" != "ssh" ]]; then
     doctor_ok "Commit signing is on with gpg.format = ${gpg_format:-openpgp} and key $signing_key_raw; teeup checks SSH keys only."
   elif [[ "$signing_key_raw" == key::* ]]; then
-    doctor_ok "Commit signing is on with a literal SSH key in user.signingkey."
+    # The literal is the public half; git signs through ssh-agent, which has
+    # to hold the private half. An empty agent is per-session state (the ssh
+    # doctor says the same), so that is a note, not a failure.
+    literal_file="$(mktemp "${TMPDIR:-/tmp}/teeup-doctor-key.XXXXXX")"
+    printf '%s\n' "${signing_key_raw#key::}" > "$literal_file"
+    literal_ok=true
+    if have ssh-keygen && ! ssh-keygen -l -f "$literal_file" >/dev/null 2>&1; then
+      literal_ok=false
+    fi
+    rm -f "$literal_file"
+    literal_body="$(printf '%s' "${signing_key_raw#key::}" | awk '{ print $2 }')"
+    literal_agent_rc=0
+    literal_agent="$(ssh-add -L 2>/dev/null)" || literal_agent_rc=$?
+    if [[ "$literal_ok" != "true" ]]; then
+      doctor_fail "user.signingkey is a key:: literal that is not a valid SSH public key, so every signed commit fails." "teeup configure git"
+    elif [[ $literal_agent_rc -ge 2 ]] || ! have ssh-add; then
+      doctor_unknown "Commit signing uses a literal SSH key, which git signs with through ssh-agent, and no agent could be reached to check it holds that key." "echo \$SSH_AUTH_SOCK, and start an agent if it is empty"
+    elif [[ -n "$literal_body" ]] && printf '%s\n' "$literal_agent" | awk -v k="$literal_body" '$2 == k { f = 1 } END { exit !f }'; then
+      doctor_ok "Commit signing is on with a literal SSH key in user.signingkey, held by ssh-agent."
+    else
+      doctor_warn "Commit signing uses a literal SSH key, and ssh-agent does not hold it right now, so signed commits fail until its private key is added (ssh-add <private key>)."
+    fi
   elif [[ ! -s "$signing_key" ]]; then
     doctor_fail "Commit signing is on with user.signingkey = $signing_key, but that key is not on this machine, so every git commit fails." "teeup configure ssh"
   else

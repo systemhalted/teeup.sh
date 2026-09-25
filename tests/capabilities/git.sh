@@ -1057,15 +1057,95 @@ test_doctor_names_the_included_file_that_turned_signing_off() {
 }
 
 # Keys git accepts that are not files on disk.
+# A key:: literal is the public half; git signs through ssh-agent, which
+# must hold the private half. Tested with a real key, which ssh-keygen parses.
+literal_key_fixture() {
+  ssh-keygen -q -t ed25519 -N '' -C lit -f "$TEST_HOME/lit" >/dev/null 2>&1 || { echo "fixture: ssh-keygen failed"; return 1; }
+  LIT_PUB="$(cut -d' ' -f1,2 < "$TEST_HOME/lit.pub")"
+  printf '[user]\n\tsigningkey = "key::%s"\n' "$LIT_PUB" > "$TEST_HOME/.config/git/local"
+}
+
 test_doctor_accepts_a_literal_ssh_signing_key() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
   configure_git_with_keys
-  printf '[user]\n\tsigningkey = "key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYpersonal"\n' > "$TEST_HOME/.config/git/local"
-  local out
-  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  literal_key_fixture || return 1
+  mock_command_script ssh-add <<EOF2
+[ "\$1" = "-L" ] && { echo "$LIT_PUB lit"; exit 0; }
+exit 0
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
   assert_not_contains "$out" "not on this machine" "git signs with a key:: literal as written" || return 1
-  assert_contains "$out" "Commit signing is on" || return 1
+  assert_contains "$out" "Commit signing is on with a literal SSH key" || return 1
+  assert_not_contains "$out" "does not hold" || return 1
+  cleanup_test_env
+}
+
+test_doctor_warns_when_the_agent_lacks_a_literal_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  literal_key_fixture || return 1
+  mock_command_script ssh-add <<'EOF2'
+[ "$1" = "-L" ] && { echo "The agent has no identities."; exit 1; }
+exit 1
+EOF2
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_contains "$out" "does not hold" || return 1
+  assert_equals "" "$(grep 'does not hold' "$report")" "an empty agent is per-session state, a note" || return 1
+  cleanup_test_env
+}
+
+test_doctor_rejects_a_malformed_literal_key() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[user]\n\tsigningkey = "key::ssh-ed25519 notakey"\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "not a valid SSH public key" || return 1
+  cleanup_test_env
+}
+
+# git rejects an unknown gpg.format on every signed commit.
+test_doctor_rejects_an_unknown_gpg_format() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[gpg]\n\tformat = sshh\n[user]\n\tsigningkey = 0xDEADBEEF\n' > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "not a format git knows" || return 1
+  cleanup_test_env
+}
+
+# Two nested unsearchable directories: the outer hides the inner, so the
+# repair must make the whole chain searchable, not stop at the first.
+test_doctor_fixes_nested_unsearchable_directories() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  mkdir -p "$TEST_HOME/outer/inner"
+  printf '[commit]\n\tgpgsign = true\n' > "$TEST_HOME/outer/inner/x"
+  printf '[include]\n\tpath = %s\n' "$TEST_HOME/outer/inner/x" > "$TEST_HOME/.config/git/local"
+  chmod 000 "$TEST_HOME/outer/inner"
+  chmod 000 "$TEST_HOME/outer"
+  local report="$TEST_HOME/report" fix
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  DRY_RUN=false cap_run git doctor >/dev/null 2>&1 || true
+  fix="$(grep 'could not tell whether commit signing' "$report" | cut -f3)"
+  (cd "$TEST_HOME" && bash -c "$fix") || true
+  local ok=true
+  [[ -r "$TEST_HOME/outer/inner/x" ]] || ok=false
+  chmod 755 "$TEST_HOME/outer" "$TEST_HOME/outer/inner" 2>/dev/null || true
+  [[ "$ok" == "true" ]] || { echo "one run of the printed fix did not make the include readable: $fix"; return 1; }
   cleanup_test_env
 }
 
@@ -1355,6 +1435,10 @@ run_test "doctor keeps a quote in an unreadable path" test_doctor_keeps_a_quote_
 run_test "doctor fixes an unsearchable parent directory" test_doctor_fixes_an_unsearchable_parent_directory
 run_test "doctor names the included file that turned signing off" test_doctor_names_the_included_file_that_turned_signing_off
 run_test "doctor accepts a literal ssh signing key" test_doctor_accepts_a_literal_ssh_signing_key
+run_test "doctor warns when the agent lacks a literal key" test_doctor_warns_when_the_agent_lacks_a_literal_key
+run_test "doctor rejects a malformed literal key" test_doctor_rejects_a_malformed_literal_key
+run_test "doctor rejects an unknown gpg format" test_doctor_rejects_an_unknown_gpg_format
+run_test "doctor fixes nested unsearchable directories" test_doctor_fixes_nested_unsearchable_directories
 run_test "doctor accepts a gpg key id under openpgp" test_doctor_accepts_a_gpg_key_id_under_openpgp
 run_test "doctor reports a signing key under a missing home" test_doctor_reports_a_signing_key_under_a_missing_home
 run_test "doctor reads the effective allowed signers file" test_doctor_reads_the_effective_allowed_signers_file
