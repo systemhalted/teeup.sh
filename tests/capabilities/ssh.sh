@@ -26,6 +26,17 @@ if [ "$1" = "-l" ]; then
   exit $?
 fi
 if [ "$1" = "-y" ]; then
+  # Two different callers. `-y -P '' -f <key>` is the doctor VALIDATING the
+  # private key, and that only means something against a real parser -- a
+  # mock that says yes would let a truncated key pass, which is the defect
+  # this branch exists to catch. `-y -f <key>` is configure REBUILDING a lost
+  # public half, where the fixture output below is what the caller expects.
+  for a in "$@"; do
+    if [ "$a" = "-P" ]; then
+      command -p ssh-keygen "$@"
+      exit $?
+    fi
+  done
   shift
   [ "$1" = "-f" ] && shift
   [ -f "$1" ] || exit 1
@@ -723,6 +734,35 @@ EOF2
   cleanup_test_env
 }
 
+# A private key truncated after its header still starts with
+# "-----BEGIN OPENSSH PRIVATE KEY-----", and the only ssh-keygen validation
+# here examined the PUBLIC half, so both files stayed non-empty and valid
+# enough for `teeup configure ssh` to skip regeneration. The doctor called
+# the pair healthy while ssh could not load the private key at all.
+#
+# Verified against a real ssh-keygen: `-y -P '' -f <key> </dev/null` exits 0
+# on an unencrypted key, non-zero on a damaged one, and non-zero on an
+# encrypted one -- it never prompts. teeup cannot tell the last two apart
+# without the passphrase, so a failure is reported as could-not-check rather
+# than as damage, which is still not "healthy".
+test_doctor_does_not_call_a_truncated_private_key_healthy() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  local key="$TEST_HOME/.ssh/id_ed25519_personal"
+  assert_file_exists "$key" || return 1
+  # Keep the header, lose the body.
+  head -c 120 "$key" > "$key.trunc" && printf '\n' >> "$key.trunc" && mv "$key.trunc" "$key"
+  chmod 600 "$key"
+  head -1 "$key" | grep -q 'PRIVATE KEY' || { echo "fixture: the header must survive"; return 1; }
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  [[ "$rc" -ne 0 ]] || { echo "a private key ssh cannot load must not read as healthy"; return 1; }
+  assert_contains "$out" "$key" || return 1
+  cleanup_test_env
+}
+
 # ssh_config's Include, which the doctor's scan did not follow. This is not a
 # hypothetical layout: lib/answers.sh:322 says in so many words that it asks
 # ssh instead of parsing because "Include was not followed at all", so
@@ -1125,6 +1165,7 @@ run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor reports unknown when ssh-keygen is missing" test_doctor_reports_unknown_when_ssh_keygen_is_missing
 run_test "doctor reports a missing key pair" test_doctor_reports_a_missing_key_pair
 run_test "doctor reports a world-readable private key" test_doctor_reports_a_world_readable_private_key
+run_test "doctor does not call a truncated private key healthy" test_doctor_does_not_call_a_truncated_private_key_healthy
 run_test "doctor follows an absolute include" test_doctor_follows_an_absolute_include
 run_test "doctor follows a relative include with a glob" test_doctor_follows_a_relative_include_with_a_glob
 run_test "doctor follows nested and multi-pattern includes" test_doctor_follows_nested_and_multi_pattern_includes

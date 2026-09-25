@@ -610,6 +610,42 @@ test_doctor_says_dscl_could_not_answer_when_it_is_blank() {
   cleanup_test_env
 }
 
+# teeup's own stub spans two lines: a guard naming the path, then the dot
+# command on the next. Comment out only the SECOND and the file still has an
+# uncommented line containing capabilities/zsh/default/ -- so a check that
+# looks for the path reports the layer loading while nothing sources it. The
+# dangling `&&` attaches to whatever follows, so the shell stays valid and
+# there is no error to notice either.
+test_doctor_requires_an_active_source_not_just_the_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  local rc_file="${ZDOTDIR:-$TEST_HOME}/.zshrc"
+  assert_file_exists "$rc_file" || return 1
+  # Comment out the dot command, leave its guard alone.
+  awk '/^[[:space:]]*\. "\$TEEUP_PATH\/capabilities\/zsh\/default\/rc"/ { print "#" $0; next } { print }' \
+    "$rc_file" > "$rc_file.new" && mv "$rc_file.new" "$rc_file"
+  grep -q '^#' "$rc_file" || { echo "fixture: nothing was commented out"; return 1; }
+  local out rc=0
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_contains "$out" "does not source teeup's default layer" "the path is present but nothing sources it" || return 1
+  assert_failure "$rc" || return 1
+  cleanup_test_env
+}
+
+# ...and the shipped file, whose source line is real, must still pass.
+test_doctor_accepts_the_shipped_two_line_source() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  local out
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || true
+  assert_contains "$out" "loads teeup's shell layer" "the guard-then-dot shape teeup ships is a real source" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zsh"
 test_env_survives_errexit_without_nvim() {
   setup
@@ -626,6 +662,8 @@ test_env_survives_errexit_without_nvim() {
   cleanup_test_env
 }
 
+run_test "doctor requires an active source not just the path" test_doctor_requires_an_active_source_not_just_the_path
+run_test "doctor accepts the shipped two-line source" test_doctor_accepts_the_shipped_two_line_source
 run_test "install gets the plugins and switches the login shell" test_install_gets_the_plugins_and_switches_the_login_shell
 run_test "install leaves an existing zsh login shell alone" test_install_leaves_an_existing_zsh_login_shell_alone
 run_test "configure installs the thin home files" test_configure_installs_the_thin_home_files
