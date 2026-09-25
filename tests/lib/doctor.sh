@@ -5,11 +5,11 @@ source "$(dirname "$0")/../helper.sh"
 # A capability tree of fixtures, so the metadata check is tested against
 # metadata this file controls rather than against whatever teeup ships.
 make_cap() {
-  local name="$1" packages="${2:-}" casks="${3:-}" apps="${4:-}" provides="${5:-}"
+  local name="$1" packages="${2:-}" casks="${3:-}" apps="${4:-}" provides="${5:-}" package_commands="${6:-}"
   local dir="$TEEUP_CAPS_DIR/$name"
   mkdir -p "$dir"
-  printf 'summary="Fixture %s"\ngroup=system\ntier=lazy\nrequires=""\nprovides="%s"\npackages="%s"\ncasks="%s"\napps="%s"\ninteractive=false\n' \
-    "$name" "$provides" "$packages" "$casks" "$apps" > "$dir/capability"
+  printf 'summary="Fixture %s"\ngroup=system\ntier=lazy\nrequires=""\nprovides="%s"\npackages="%s"\ncasks="%s"\napps="%s"\npackage_commands="%s"\ninteractive=false\n' \
+    "$name" "$provides" "$packages" "$casks" "$apps" "$package_commands" > "$dir/capability"
   printf '#!/usr/bin/env bash\n:\n' > "$dir/install"
   printf '#!/usr/bin/env bash\n:\n' > "$dir/configure"
   chmod +x "$dir/install" "$dir/configure"
@@ -96,6 +96,74 @@ test_verdict_returns_two_for_unknown_alone_and_one_when_a_failure_is_also_presen
   rc=0
   doctor_verdict || rc=$?
   assert_equals "1" "$rc" "a confirmed failure outranks an unrelated unknown in the same run" || return 1
+  cleanup_test_env
+}
+
+# `pkg_install <pkg> <command>` accepts a command already on PATH and skips
+# the formula deliberately: capabilities/zsh/install does exactly that for the
+# zsh macOS ships. Asking only the package manager therefore reports a failure
+# on a machine that is working as designed, and the post-bootstrap `teeup
+# doctor` gate exits 1 on a healthy Mac. package_commands names the command
+# install would have accepted, so the check can ask the same question.
+test_metadata_check_accepts_a_package_the_system_already_provides() {
+  setup
+  make_cap widget "zsh" "" "" "" "zsh:zsh"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  mock_command zsh 0 "zsh 5.9"
+  local out rc=0
+  out="$(doctor_metadata_check widget 2>&1)" || rc=$?
+  assert_contains "$out" "zsh is on PATH" || return 1
+  assert_not_contains "$out" "package zsh is not installed" "the backend not having it is not a problem when the system provides it" || return 1
+  assert_equals "" "$(cat "$REPORT")" "nothing here is a finding the user must act on" || return 1
+  cleanup_test_env
+}
+
+# The fallback is not a way to stop checking: when neither the backend nor
+# PATH has it, that is still a real failure with a real fix.
+test_metadata_check_still_fails_when_neither_the_backend_nor_path_has_it() {
+  setup
+  make_cap widget "zsh" "" "" "" "zsh:zsh"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  hide_host_commands zsh
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "package zsh is not installed" || return 1
+  assert_contains "$(cat "$REPORT")" "teeup install widget" || return 1
+  cleanup_test_env
+}
+
+# The command name is often not the package name (git-delta provides delta),
+# which is why the mapping is declared rather than guessed.
+test_metadata_check_uses_the_declared_command_not_the_package_name() {
+  setup
+  make_cap widget "git-delta" "" "" "" "git-delta:delta"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  mock_command delta 0 "delta 0.18.2"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "delta is on PATH" || return 1
+  assert_not_contains "$out" "package git-delta is not installed" || return 1
+  cleanup_test_env
+}
+
+# A package with no declared command keeps the old, stricter answer: the
+# fallback applies only where install actually offers one.
+test_metadata_check_is_unchanged_for_a_package_with_no_declared_command() {
+  setup
+  make_cap widget "ripgrep"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  mock_command ripgrep 0 "ripgrep"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "package ripgrep is not installed" "without a declared command there is nothing to fall back to" || return 1
   cleanup_test_env
 }
 
@@ -543,6 +611,10 @@ run_test "record without a report is a no-op" test_record_without_a_report_is_a_
 run_test "verdict is zero until something fails" test_verdict_is_zero_until_something_fails
 run_test "unknown prints and records as its own kind" test_unknown_prints_and_records_as_its_own_kind
 run_test "verdict returns 2 for unknown alone and 1 when a failure is also present" test_verdict_returns_two_for_unknown_alone_and_one_when_a_failure_is_also_present
+run_test "metadata check accepts a package the system already provides" test_metadata_check_accepts_a_package_the_system_already_provides
+run_test "metadata check still fails when neither the backend nor PATH has it" test_metadata_check_still_fails_when_neither_the_backend_nor_path_has_it
+run_test "metadata check uses the declared command not the package name" test_metadata_check_uses_the_declared_command_not_the_package_name
+run_test "metadata check is unchanged without a declared command" test_metadata_check_is_unchanged_for_a_package_with_no_declared_command
 run_test "metadata check reports a missing package" test_metadata_check_reports_a_missing_package_with_its_fix
 run_test "metadata check says so when it cannot ask the backend" test_metadata_check_says_so_when_it_cannot_ask_the_backend
 run_test "metadata check says so when the backend is on PATH but broken" test_metadata_check_says_so_when_the_backend_is_on_path_but_broken

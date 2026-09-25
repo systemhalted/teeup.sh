@@ -4,6 +4,7 @@ tier=lazy
 requires="package-manager"
 provides="ollama"
 packages="ollama"
+package_commands="ollama:ollama"
 casks="ollama-app"
 apps="Ollama"
 interactive=false

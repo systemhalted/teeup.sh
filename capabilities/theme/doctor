@@ -92,7 +92,7 @@ for mode in dark light; do
         doctor_unknown "Could not re-render $tpl, so $base was not checked for $mode mode." "chmod u+r $tpl"
       fi
     done <<EOF_TPL
-$(theme_templates)
+$(theme_templates_effective)
 EOF_TPL
   fi
 done
@@ -138,7 +138,7 @@ while IFS= read -r tpl; do
     fi
   done
 done <<EOF_TPL
-$(theme_templates)
+$(theme_templates_effective)
 EOF_TPL
 
 # The appearance the shell layer and every theme-apply hook read. Not a

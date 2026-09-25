@@ -197,6 +197,24 @@ cap_check() {
         echo "$name: provides token '$p' is not a plain command name"; problems=$((problems + 1))
       fi
     done
+    # package_commands= maps a declared package to the command
+    # `pkg_install <pkg> <command>` accepts in its place, so doctor can ask
+    # the same question install asked. A pair naming a package the metadata
+    # does not declare is dead text that silently does nothing, which is
+    # worse than an error: the doctor goes on failing a healthy machine and
+    # the entry that was meant to fix it looks present.
+    for p in $(cap_meta_get "$name" package_commands); do
+      case "$p" in
+        *:?*)
+          seen=" $(cap_meta_get "$name" packages) "
+          case "$seen" in
+            *" ${p%%:*} "*) ;;
+            *) echo "$name: package_commands names '${p%%:*}', which is not in packages"; problems=$((problems + 1)) ;;
+          esac
+          ;;
+        *) echo "$name: package_commands entry '$p' is not <package>:<command>"; problems=$((problems + 1)) ;;
+      esac
+    done
     # apps= is ";"-separated (names contain spaces); an entry becomes
     # "<name>.app" under /Applications and an argument to `open -a`.
     case "$(cap_meta_get "$name" apps)" in

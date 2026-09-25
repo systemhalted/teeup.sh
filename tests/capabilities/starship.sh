@@ -5,6 +5,12 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  # `capabilities/starship/doctor` asks `have starship`. Without this the
+  # answer comes from whatever the developer happens to have in /usr/bin:
+  # four doctor tests here were green on a machine with starship installed
+  # and red on all three CI runners, which have none. Hide the host copy so
+  # only a mock a test installs itself can answer.
+  hide_host_commands starship
   # `--version` answers for real: an exit-0, silent brew reads as "cannot
   # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
   # off every package check below in silence (NI2).
@@ -269,6 +275,7 @@ test_doctor_reports_palette_markers_that_were_edited_away() {
 # structural check passes.
 test_doctor_reports_a_palette_block_that_does_not_match_the_theme() {
   setup
+  mock_command starship 0 "starship 1.23.0"
   source "$TEEUP_PATH/lib/all.sh"
   DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
   theme_set catppuccin >/dev/null 2>&1
@@ -289,6 +296,7 @@ test_doctor_reports_a_palette_block_that_does_not_match_the_theme() {
 # over what is only a permissions problem.
 test_doctor_separates_an_unreadable_config_from_a_missing_one() {
   setup
+  mock_command starship 0 "starship 1.23.0"
   source "$TEEUP_PATH/lib/all.sh"
   DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
   local config
@@ -310,6 +318,7 @@ test_doctor_separates_an_unreadable_config_from_a_missing_one() {
 # suite green.
 test_doctor_reports_a_missing_root_palette_selector() {
   setup
+  mock_command starship 0 "starship 1.23.0"
   source "$TEEUP_PATH/lib/all.sh"
   DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
   local config
@@ -327,6 +336,7 @@ test_doctor_reports_a_missing_root_palette_selector() {
 # all reads as healthy while the prompt selects nothing.
 test_doctor_rejects_a_palette_line_inside_a_table() {
   setup
+  mock_command starship 0 "starship 1.23.0"
   source "$TEEUP_PATH/lib/all.sh"
   DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
   local config
@@ -344,12 +354,32 @@ test_doctor_rejects_a_palette_line_inside_a_table() {
 # answer is visible instead of a bare checkmark.
 test_doctor_names_the_root_palette_selected() {
   setup
+  mock_command starship 0 "starship 1.23.0"
   source "$TEEUP_PATH/lib/all.sh"
   DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
   local rc=0 out
   out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
   assert_success "$rc" || return 1
   assert_contains "$out" "A root palette selector is present (\"teeup-" || return 1
+  cleanup_test_env
+}
+
+
+# The defect this suite shipped once: four doctor tests never mocked starship,
+# so `have starship` in capabilities/starship/doctor was answered by whatever
+# was in the developer's /usr/bin. They passed on a machine with starship
+# installed and failed on all three CI runners, which have none. Hiding the
+# host copy here proves no test in this file is still asking the host.
+test_no_doctor_test_depends_on_a_host_starship() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  assert_contains " ${TEEUP_TEST_MISSING:-} " "starship" "setup must hide the host starship from every test in this file" || return 1
+  mock_command starship 0 "starship 1.23.0"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_success "$rc" "the doctor must pass on its own mock, not on the host's starship" || return 1
+  assert_contains "$out" "starship is on PATH." || return 1
   cleanup_test_env
 }
 
@@ -373,4 +403,5 @@ run_test "doctor separates an unreadable config from a missing one" test_doctor_
 run_test "doctor reports a missing root palette selector" test_doctor_reports_a_missing_root_palette_selector
 run_test "doctor rejects a palette line inside a table" test_doctor_rejects_a_palette_line_inside_a_table
 run_test "doctor names the root palette selected" test_doctor_names_the_root_palette_selected
+run_test "no doctor test depends on a host starship" test_no_doctor_test_depends_on_a_host_starship
 print_summary

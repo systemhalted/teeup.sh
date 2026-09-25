@@ -4,6 +4,7 @@ tier=core
 requires="zsh"
 provides=""
 packages="starship"
+package_commands="starship:starship"
 casks=""
 apps=""
 interactive=false

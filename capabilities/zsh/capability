@@ -4,6 +4,7 @@ tier=core
 requires="teeup-runtime"
 provides=""
 packages="zsh zsh-completions zsh-autosuggestions zsh-syntax-highlighting"
+package_commands="zsh:zsh"
 casks=""
 apps=""
 interactive=true
