@@ -9,6 +9,9 @@ here and done once the current phase of work is finished.
 
 | Raised on | Finding | Status |
 | --- | --- | --- |
+| `fix/phase5a-followups` (Opus P2) | The symlink-target resolution for `~/.gitconfig.local` falls back to `/<name>` when its directory cannot be entered; join the raw `readlink` to `$HOME` instead | Open (after phase 5a) |
+| `fix/phase5a-followups` (Opus P3) | The symlink target is resolved one level only; a chain names an intermediate link; loop `readlink` | Open (after phase 5a) |
+| `fix/phase5a-followups` (Opus P3) | The `-z` output temp file has no trap, so an interrupt leaves it behind | Open (after phase 5a) |
 | Phase 5a task 7 (Opus P2) | `git doctor` matches `~/.gitconfig.local` by literal origin text; a relative include or a C-quoted non-ASCII home reads as "nothing includes it". Use `--show-origin -z` and compare resolved paths | Fixed on `fix/phase5a-followups` |
 | Phase 5a task 7 (Opus P2) | `git config -f ~/.gitconfig.local` exiting 128 (a parse error) reads as "no leftover [user] block" | Fixed on `fix/phase5a-followups` |
 | Phase 5a task 7 (Opus P2) | A failing `chezmoi source-path` reads as "configured here but has no source directory"; report could-not-check | Fixed on `fix/phase5a-followups` |
