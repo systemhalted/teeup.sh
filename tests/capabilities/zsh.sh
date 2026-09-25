@@ -713,6 +713,25 @@ test_doctor_stops_flagging_leftovers_once_migrate_has_neutralised_them() {
   cleanup_test_env
 }
 
+# Review P1 on task 7: migrate keeps a line ending in && (it opens a
+# block), so the doctor must count it as inert too, or a migrated home
+# fails for ever with a fix that changes nothing.
+test_doctor_is_clean_after_migrate_keeps_an_and_opener() {
+  setup
+  export TEEUP_NO_GUM=1
+  export TEEUP_TEST_MISSING="chezmoi"
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  printf '%s\n' '[[ -f ~/.p10k.zsh ]] &&' '  source ~/.p10k.zsh' >> "$TEST_HOME/.zshrc"
+  DRY_RUN=false "$TEEUP" migrate legacy >/dev/null 2>&1 || return 1
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "still load something teeup replaced" "the kept opener runs nothing on its own" || return 1
+  assert_success "$rc" || return 1
+  cleanup_test_env
+}
+
 test_doctor_flags_a_chezmoi_source_directory_that_still_points_here() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -892,5 +911,6 @@ run_test "alias layer carries the last chezmoi aliases" test_alias_layer_carries
 run_test "doctor flags Oh My Zsh, p10k files and a live rc line" test_doctor_flags_oh_my_zsh_p10k_files_and_a_live_rc_line
 run_test "doctor leftover fixes survive a home with a space" test_doctor_leftover_fixes_survive_a_home_with_a_space
 run_test "doctor is clean once migrate has run" test_doctor_stops_flagging_leftovers_once_migrate_has_neutralised_them
+run_test "doctor is clean after migrate keeps an && opener" test_doctor_is_clean_after_migrate_keeps_an_and_opener
 run_test "doctor flags a chezmoi source directory" test_doctor_flags_a_chezmoi_source_directory_that_still_points_here
 print_summary

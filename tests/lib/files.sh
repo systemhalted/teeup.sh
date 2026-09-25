@@ -562,6 +562,32 @@ test_disable_matching_lines_keeps_the_file_parsable_inside_a_block() {
   cleanup_test_env
 }
 
+# An opener is a whole word: a live line that merely ends in "...in" (a
+# trailing "# plugin" comment) runs its init and must be disabled, not kept.
+test_disable_matching_lines_disables_a_line_that_only_ends_in_in() {
+  setup
+  local rc="$TEST_HOME/rc"
+  printf 'source "$HOME/.p10k.zsh" # prompt plugin\n' > "$rc"
+  disable_matching_lines "$rc" 'p10k' "p10k replaced by starship" >/dev/null 2>&1
+  assert_contains "$(cat "$rc")" ': # Disabled by teeup (p10k replaced by starship): source' "a trailing word is not a block opener" || return 1
+  cleanup_test_env
+}
+
+# block_opener_ere is the one definition both disable_matching_lines and
+# the zsh doctor use; checked here with grep -E, which the doctor uses.
+test_block_opener_ere_matches_what_migrate_keeps() {
+  setup
+  local ere l
+  ere="$(block_opener_ere)"
+  for l in 'if true; then' 'for x in a b; do' 'case $x in' 'f() {' 'x=(' 'a \' '[[ -f x ]] &&' 'false ||'; do
+    printf '%s\n' "$l" | grep -qE "$ere" || { echo "not an opener: $l"; return 1; }
+  done
+  for l in 'source x # plugin' 'echo within' 'export DOIN=1' 'echo done'; do
+    printf '%s\n' "$l" | grep -qE "$ere" && { echo "wrongly an opener: $l"; return 1; }
+  done
+  cleanup_test_env
+}
+
 test_disable_matching_lines_is_idempotent() {
   setup
   local rc="$TEST_HOME/rc"
@@ -872,6 +898,8 @@ run_test "replace_literal is literal and repeats" test_replace_literal_is_litera
 run_test "disable_matching_lines neutralises only matching lines" test_disable_matching_lines_neutralises_only_matching_lines
 run_test "disable_matching_lines keeps a block parsable" test_disable_matching_lines_keeps_the_file_parsable_inside_a_block
 run_test "disable_matching_lines is idempotent" test_disable_matching_lines_is_idempotent
+run_test "disable_matching_lines disables a line that only ends in in" test_disable_matching_lines_disables_a_line_that_only_ends_in_in
+run_test "block_opener_ere matches what migrate keeps" test_block_opener_ere_matches_what_migrate_keeps
 run_test "disable_matching_lines passes the pattern unescaped" test_disable_matching_lines_passes_the_pattern_to_awk_unescaped
 run_test "disable_matching_lines leaves a symlink alone" test_disable_matching_lines_leaves_a_symlink_alone
 run_test "disable_matching_lines reports a dangling symlink" test_disable_matching_lines_reports_a_dangling_symlink

@@ -80,11 +80,12 @@ fi
 
 # A line counts as a leftover only when it would still run something. A
 # comment, a line `teeup migrate legacy` neutralised with ": #", and a bare
-# block opener whose body is dead are all inert, so a migrated machine reads
+# block opener whose body is dead (block_opener_ere, the same definition
+# migrate uses to decide what it keeps) are all inert, so a migrated machine reads
 # as clean instead of failing for ever on text it can no longer act on.
 rc_still_loads_a_predecessor() {
   grep -vE '^[[:space:]]*(#|:[[:space:]]#)' "$1" |
-    grep -vE '([[:space:];]|^)(then|do|in)[[:space:]]*$' |
+    grep -vE "$(block_opener_ere)" |
     grep -qE 'powerlevel10k|p10k|POWERLEVEL9K_|oh-my-zsh|ohmyzsh|ZSH_THEME|antigen|teeup\.common|teeupshrc|shellrc\.common|mac-setup'
 }
 
