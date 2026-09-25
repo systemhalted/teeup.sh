@@ -35,3 +35,4 @@ here and done once the current phase of work is finished.
 - `teeup update --dry-run` stops at the AeroSpace migration on a machine with an old AeroSpace, the same as a real run. Honest, but the preview could say what it would wait for instead of failing.
 - ~~`capabilities/git/doctor`: the allowed-signers note interpolated unquoted paths.~~ Quoted on `fix/doctor-followups-3`.
 - ~~`capabilities/git/doctor` header comment said doctor reads the files.~~ Rewritten on `fix/doctor-followups-3`.
+- `capabilities/theme/doctor`: the stale-render check uses `-nt`, which under bash 3.2 compares whole seconds, so a template edited in the same second as its render is not flagged. `stat -f %m` and `-c %Y` are whole seconds too; `find <tpl> -newer <render>` compares sub-second times, if it ever matters.
