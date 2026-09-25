@@ -1481,7 +1481,7 @@ test_doctor_flags_a_user_block_in_gitconfig_local_that_is_still_included() {
   assert_failure "$rc" || return 1
   assert_contains "$out" "has a [user] block and is still included" || return 1
   assert_contains "$out" "the identity teeup wrote" "one identity, not per-directory ones (T7.2)" || return 1
-  assert_contains "$(cat "$report")" "--remove-section user" || return 1
+  assert_contains "$(cat "$report")" "--unset-all user.name" || return 1
   cleanup_test_env
 }
 
@@ -1498,7 +1498,7 @@ test_doctor_only_notes_a_gitconfig_local_that_nothing_includes() {
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
   assert_contains "$out" "but nothing includes it any more" || return 1
-  assert_not_contains "$(cat "$report")" "--remove-section user" "a file nothing reads is a note, not a failure" || return 1
+  assert_not_contains "$(cat "$report")" "--unset-all" "a file nothing reads is a note, not a failure" || return 1
   cleanup_test_env
 }
 
@@ -1572,6 +1572,26 @@ test_doctor_gitconfig_local_fix_removes_subsections_too() {
   export TEEUP_DOCTOR_REPORT="$report"
   DRY_RUN=false cap_run git doctor >/dev/null 2>&1 || true
   fix="$(grep 'still included' "$report" | cut -f3)"
+  (cd "$HOME" && bash -c "$fix") || { echo "the printed fix failed: $fix"; return 1; }
+  : > "$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_not_contains "$out" "still included" "one run of the printed fix must clear it" || return 1
+  cleanup_test_env
+}
+
+# Review P1: a subsection name with a space or a quote, and a section git
+# lowercases in its output, must still come out of the printed fix intact.
+test_doctor_gitconfig_local_fix_survives_odd_section_names() {
+  setup
+  gitconfig_local_fixture
+  printf '[User]\n\tname = A\n[user "a b"]\n\tname = B\n[user "x\\"q"]\n\temail = C\n' > "$HOME/.gitconfig.local"
+  printf '[include]\n\tpath = ~/.gitconfig.local\n' > "$HOME/.gitconfig"
+  local report="$TEST_HOME/report" fix out
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  DRY_RUN=false cap_run git doctor >/dev/null 2>&1 || true
+  fix="$(grep 'still included' "$report" | cut -f3)"
+  [[ -n "$fix" ]] || { echo "fixture: no finding"; return 1; }
   (cd "$HOME" && bash -c "$fix") || { echo "the printed fix failed: $fix"; return 1; }
   : > "$report"
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
@@ -1734,4 +1754,5 @@ run_test "doctor fails an included gitconfig local git cannot parse" test_doctor
 run_test "doctor fails an included gitconfig local it cannot read" test_doctor_fails_an_included_gitconfig_local_it_cannot_read
 run_test "doctor gitconfig local fix removes subsections too" test_doctor_gitconfig_local_fix_removes_subsections_too
 run_test "doctor gitconfig local fix names a symlink target" test_doctor_gitconfig_local_fix_names_a_symlink_target
+run_test "doctor gitconfig local fix survives odd section names" test_doctor_gitconfig_local_fix_survives_odd_section_names
 print_summary

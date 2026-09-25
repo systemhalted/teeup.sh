@@ -108,17 +108,17 @@ else
   gl_out="$(mktemp "${TMPDIR:-/tmp}/teeup-doctor-gl.XXXXXX")"
   gl_err="$(LC_ALL=C GIT_CONFIG_NOSYSTEM=1 git config --global --includes --show-origin -z --get-regexp '^user\.' 2>&1 >"$gl_out")" || gl_rc=$?
   gl_err="$(printf '%s\n' "$gl_err" | awk '/^fatal: / { print; exit }')"
-  gl_sections=""
+  # The keys .gitconfig.local contributes, one per line: a subsection name
+  # can hold spaces and quotes, so they are never split on whitespace.
+  gl_keys=""
   if [[ $gl_rc -le 1 ]]; then
     while IFS= read -r -d '' gl_origin && IFS= read -r -d '' gl_kv; do
       [[ "$gl_origin" == file:* ]] || continue
       git_doctor_same_file "${gl_origin#file:}" "$gitconfig_local" || continue
-      # user.name -> user; user.extra.email -> user.extra
       gl_key="${gl_kv%%$'\n'*}"
-      gl_section="${gl_key%.*}"
-      case " $gl_sections " in
-        *" $gl_section "*) ;;
-        *) gl_sections="$gl_sections $gl_section" ;;
+      case $'\n'"$gl_keys"$'\n' in
+        *$'\n'"$gl_key"$'\n'*) ;;
+        *) gl_keys="$gl_keys$gl_key"$'\n' ;;
       esac
     done < "$gl_out"
   fi
@@ -146,11 +146,16 @@ else
     fi
   elif [[ $gl_rc -gt 1 ]]; then
     doctor_unknown "git could not read its global config (${gl_err#fatal: }), so teeup could not tell whether $gitconfig_local is still included." "git config --global --includes --show-origin --list"
-  elif [[ -n "$gl_sections" ]]; then
+  elif [[ -n "$gl_keys" ]]; then
+    # One --unset-all per key rather than --remove-section per section: git
+    # prints section names lowercased, and --remove-section matches them
+    # case-sensitively, while --unset-all takes the key as git printed it.
+    # Every key is quoted, since a subsection name can hold spaces and quotes.
     gl_fix=""
-    for gl_section in $gl_sections; do
-      gl_fix="${gl_fix:+$gl_fix && }git config --file $(printf '%q' "$gl_target") --remove-section $gl_section"
-    done
+    while IFS= read -r gl_key; do
+      [[ -n "$gl_key" ]] || continue
+      gl_fix="${gl_fix:+$gl_fix && }git config --file $(printf '%q' "$gl_target") --unset-all $(printf '%q' "$gl_key")"
+    done <<< "$gl_keys"
     doctor_fail "$gitconfig_local has a [user] block and is still included, so its name and email win over the identity teeup wrote.$gl_link_note" "$gl_fix"
   elif [[ -r "$gitconfig_local" ]] &&
     LC_ALL=C GIT_CONFIG_NOSYSTEM=1 git config -f "$gitconfig_local" --get-regexp '^user\.' >/dev/null 2>&1; then
