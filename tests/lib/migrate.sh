@@ -30,7 +30,7 @@ setup() {
 # $TEEUP_TEST_CHEZMOI_MANAGED holds. Every call lands in $MOCK_LOG, so a test
 # can prove which subcommands ran.
 mock_chezmoi() {
-  export TEEUP_TEST_CHEZMOI_SRC="${1-$SIBLING}"
+  export TEEUP_TEST_CHEZMOI_SRC="$SIBLING"
   mock_command_script chezmoi <<'EOF2'
 case "$1" in
   source-path) printf '%s\n' "$TEEUP_TEST_CHEZMOI_SRC" ;;
