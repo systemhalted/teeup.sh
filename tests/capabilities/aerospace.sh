@@ -586,6 +586,62 @@ test_the_migration_gate_leaves_a_skipped_aerospace_alone() {
   cleanup_test_env
 }
 
+# Follow-ups from the Opus review of the gate (PR #31).
+# The CLI is not always on PATH (a MacPorts manual download, a stripped
+# PATH), but the app is what reads the config, and it knows its version.
+test_the_migration_gate_asks_the_app_when_the_cli_is_missing() {
+  setup
+  aerospace_migration_fixture
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/AeroSpace.app/Contents"
+  export TEEUP_TEST_MISSING="${TEEUP_TEST_MISSING:-} aerospace"
+  mock_command defaults 0 "0.19.2-Beta"
+  local rc=0
+  DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" "an old app with its CLI off PATH still cannot read config-version 2" || return 1
+  assert_equals '# the previous shipped file' "$(cat "$AERO")" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "AeroSpace.app/Contents/Info CFBundleShortVersionString" "the version comes from the app" || return 1
+  cleanup_test_env
+}
+
+# Where the refresh would write nothing, there is nothing for an old
+# AeroSpace to choke on, and blocking every later migration and `teeup
+# update` over it is all cost.
+test_the_migration_gate_ignores_an_edited_config() {
+  setup
+  aerospace_migration_fixture
+  printf '# mine\n' > "$AERO"
+  mock_aerospace_version 'aerospace CLI client version: 0.19.2-Beta 1a2b3c4'
+  local rc=0
+  DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "an edited config is never refreshed, so the version does not matter" || return 1
+  assert_equals '# mine' "$(cat "$AERO")" || return 1
+  cleanup_test_env
+}
+
+test_the_migration_gate_ignores_a_home_config() {
+  setup
+  aerospace_migration_fixture
+  printf '# theirs\n' > "$TEST_HOME/.aerospace.toml"
+  mock_aerospace_version 'aerospace CLI client version: 0.19.2-Beta 1a2b3c4'
+  local rc=0
+  DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "with ~/.aerospace.toml in place configure installs nothing" || return 1
+  cleanup_test_env
+}
+
+# A leading zero is octal to [[ -lt ]]: 09 errors out, both tests come back
+# false, and the comparison fell through to "new enough".
+test_the_migration_gate_reads_a_leading_zero_as_decimal() {
+  setup
+  aerospace_migration_fixture
+  mock_aerospace_version 'aerospace CLI client version: 0.09.0-Beta 1a2b3c4'
+  local rc=0
+  DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" "0.09 is older than 0.20" || return 1
+  cleanup_test_env
+}
+
 test_the_migration_runs_once_aerospace_is_new_enough() {
   setup
   aerospace_migration_fixture
@@ -797,6 +853,10 @@ run_test "the shipped migration refreshes a pristine config" test_the_shipped_mi
 run_test "the migration waits for an aerospace that can read it" test_the_migration_waits_for_an_aerospace_that_can_read_it
 run_test "the migration runs once aerospace is new enough" test_the_migration_runs_once_aerospace_is_new_enough
 run_test "the migration gate leaves a skipped aerospace alone" test_the_migration_gate_leaves_a_skipped_aerospace_alone
+run_test "the migration gate asks the app when the cli is missing" test_the_migration_gate_asks_the_app_when_the_cli_is_missing
+run_test "the migration gate ignores an edited config" test_the_migration_gate_ignores_an_edited_config
+run_test "the migration gate ignores a home config" test_the_migration_gate_ignores_a_home_config
+run_test "the migration gate reads a leading zero as decimal" test_the_migration_gate_reads_a_leading_zero_as_decimal
 run_test "the migration refuses a version it cannot read" test_the_migration_refuses_a_version_it_cannot_read
 run_test "backstop fails when a rejected candidate cannot be removed" test_backstop_fails_when_a_rejected_candidate_cannot_be_removed
 run_test "backstop fails when the original cannot be restored" test_backstop_fails_when_the_original_cannot_be_restored
