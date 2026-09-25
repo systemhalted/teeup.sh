@@ -350,6 +350,73 @@ test_doctor_rejects_a_palette_line_inside_a_table() {
   cleanup_test_env
 }
 
+# CRLF. Valid TOML, and a shape this project has already shipped a defect
+# for once in the aerospace merge. `grep -cxF` on the marker lines is an
+# exact whole-line match, so a CR turns "markers intact" into "no markers"
+# and offers `teeup reset starship` -- replacing a config that is fine.
+test_doctor_survives_crlf_line_endings() {
+  setup
+  mock_command starship 0 "starship 1.23.0"
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  local cfg
+  cfg="$(user_config_dir)/starship.toml"
+  awk '{ printf "%s\r\n", $0 }' "$cfg" > "$cfg.crlf" && mv "$cfg.crlf" "$cfg"
+  local out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || true
+  assert_not_contains "$out" "no longer follows the teeup theme" "a CR is not a missing marker" || return 1
+  assert_not_contains "$out" "has no root 'palette =' line" "a CR is not a missing palette selector" || return 1
+  cleanup_test_env
+}
+
+# The TOML input space for the root-palette check, enumerated rather than
+# assumed. Every shape below is valid TOML -- confirmed against a real parser
+# -- and the awk anchors `palette` and `[` at column 0, so each one reads as
+# "no root palette selector" on a file that selects one perfectly well.
+#
+# The consequence is not just a wrong line: the fix offered is
+# `teeup reset starship`, which REPLACES the user's config. A false finding
+# here talks somebody into overwriting a working file.
+test_doctor_accepts_an_indented_root_palette() {
+  setup
+  mock_command starship 0 "starship 1.23.0"
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  # Indent the root palette line, which TOML allows.
+  local cfg
+  cfg="$(user_config_dir)/starship.toml"
+  sed -i.bak 's/^palette = /  palette = /' "$cfg" 2>/dev/null || \
+    sed -e 's/^palette = /  palette = /' "$cfg" > "$cfg.new" && mv "$cfg.new" "$cfg"
+  rm -f "$cfg.bak"
+  local out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || true
+  assert_not_contains "$out" "has no root 'palette =' line" "an indented root key is still a root key" || return 1
+  cleanup_test_env
+}
+
+# The mirror: an indented [table] header must still end the root section, or
+# a `palette` found further down is credited as the root selector when TOML
+# says it belongs to that table.
+test_doctor_stops_at_an_indented_table_header() {
+  setup
+  mock_command starship 0 "starship 1.23.0"
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure starship >/dev/null 2>&1
+  local cfg
+  cfg="$(user_config_dir)/starship.toml"
+  # No root palette at all, and one inside an indented table.
+  # An INDENTED table header followed by a column-0 key. A real TOML parser
+  # puts that palette in the table (verified), but an awk that only ends the
+  # root section on a `[` at column 0 never leaves the root and credits it as
+  # the root selector.
+  printf 'add_newline = false\n  [palettes.teeup-dark]\npalette = "not-the-root-one"\n' > "$cfg"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run starship doctor 2>&1)" || rc=$?
+  assert_contains "$out" "has no root 'palette =' line" "a palette inside a table is not the root selector" || return 1
+  assert_not_contains "$out" "not-the-root-one" || return 1
+  cleanup_test_env
+}
+
 # The passing case should also name which palette was picked, so a stale
 # answer is visible instead of a bare checkmark.
 test_doctor_names_the_root_palette_selected() {
@@ -414,6 +481,9 @@ run_test "doctor reports a palette block that does not match the theme" test_doc
 run_test "doctor separates an unreadable config from a missing one" test_doctor_separates_an_unreadable_config_from_a_missing_one
 run_test "doctor reports a missing root palette selector" test_doctor_reports_a_missing_root_palette_selector
 run_test "doctor rejects a palette line inside a table" test_doctor_rejects_a_palette_line_inside_a_table
+run_test "doctor survives CRLF line endings" test_doctor_survives_crlf_line_endings
+run_test "doctor accepts an indented root palette" test_doctor_accepts_an_indented_root_palette
+run_test "doctor stops at an indented table header" test_doctor_stops_at_an_indented_table_header
 run_test "doctor names the root palette selected" test_doctor_names_the_root_palette_selected
 run_test "no doctor test depends on a host starship" test_no_doctor_test_depends_on_a_host_starship
 print_summary

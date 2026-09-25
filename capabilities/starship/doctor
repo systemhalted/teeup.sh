@@ -46,8 +46,15 @@ if [[ ! -r "$config" ]]; then
 fi
 doctor_ok "$config is in place."
 
-start_count="$(grep -cxF '# teeup:theme-palette:start' "$config" || true)"
-end_count="$(grep -cxF '# teeup:theme-palette:end' "$config" || true)"
+# A CR is stripped before the markers are counted. `grep -cxF` is an exact
+# whole-line match, so a file that picked up CRLF line endings reads as
+# having no markers at all -- and the finding for that offers
+# `teeup reset starship`, which replaces the user's config. The same trailing
+# CR is trimmed in the palette-block comparison below and in the root
+# selector scan, so all three agree about what a line says.
+_starship_lines="$(tr -d '\r' < "$config")"
+start_count="$(printf '%s\n' "$_starship_lines" | grep -cxF '# teeup:theme-palette:start' || true)"
+end_count="$(printf '%s\n' "$_starship_lines" | grep -cxF '# teeup:theme-palette:end' || true)"
 if [[ "$start_count" -eq 1 && "$end_count" -eq 1 ]]; then
   # Intact markers are not intact colours: the block between them is what
   # `teeup theme set` writes, and a hand-edited or stale one keeps the prompt
@@ -78,9 +85,10 @@ if [[ "$start_count" -eq 1 && "$end_count" -eq 1 ]]; then
         echo "" >> "$expected_palette"
       fi
     done
-    if awk '/^# teeup:theme-palette:start$/ { inside = 1; next }
-            /^# teeup:theme-palette:end$/ { inside = 0; next }
-            inside { print }' "$config" | diff -q - "$expected_palette" >/dev/null 2>&1; then
+    if printf '%s\n' "$_starship_lines" \
+       | awk '/^# teeup:theme-palette:start$/ { inside = 1; next }
+              /^# teeup:theme-palette:end$/ { inside = 0; next }
+              inside { print }' | diff -q - "$expected_palette" >/dev/null 2>&1; then
       doctor_ok "The starship palette block is intact and matches the current theme."
     else
       doctor_fail "$config's palette block does not match what the $name theme renders, so the prompt is on other colours." "teeup theme set $name"
@@ -97,11 +105,19 @@ fi
 # are present and unused. Only a `palette =` line before the file's first
 # [table] header counts: `grep -q '^palette *='` anywhere in the file also
 # matches inside a [palettes.X] table, which selects nothing at the root.
+# Leading whitespace is legal TOML on both a key and a table header, and a
+# CR survives a file written on another machine, so neither pattern may be
+# anchored at column 0. Getting that wrong is not a cosmetic slip here: the
+# fix this check offers is `teeup reset starship`, which REPLACES the user's
+# config, so a false "no root palette" talks somebody into overwriting a file
+# that was working. The indented-header case is the one that bites hardest --
+# TOML puts a key after it inside that table, while an awk that never leaves
+# the root section credits it as the root selector.
 root_palette="$(awk '
-  /^\[/ { exit }
-  /^palette[[:space:]]*=/ {
-    line = $0
-    sub(/^palette[[:space:]]*=[[:space:]]*/, "", line)
+  { line = $0; sub(/\r$/, "", line); sub(/^[[:space:]]+/, "", line) }
+  line ~ /^\[/ { exit }
+  line ~ /^("palette"|palette)[[:space:]]*=/ {
+    sub(/^("palette"|palette)[[:space:]]*=[[:space:]]*/, "", line)
     print line
     exit
   }
