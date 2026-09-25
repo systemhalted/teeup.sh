@@ -12,7 +12,19 @@ setup() {
 case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
-  mock_command git 0 ""
+  # `git config` is forwarded to the real git; everything else stays mocked.
+  # The doctor reads the config through git itself now -- a line-oriented
+  # search is not section aware and does not follow [include] -- so checking
+  # it against a mock that answers nothing would prove nothing. Same reasoning
+  # as the ssh suite forwarding `ssh-keygen -l` to the real binary: a parser
+  # check only means something against a real parser. HOME is $TEST_HOME, so
+  # a write has nowhere to go but the throwaway tree.
+  mock_command_script git <<'EOF_GIT'
+case "${1:-}" in
+  config) command -p git "$@"; exit $? ;;
+esac
+exit 0
+EOF_GIT
   mock_command git-lfs 0 ""
   export TEEUP_TEST_MISSING="delta lazygit emacsclient"
   TEEUP="$TEEUP_PATH/bin/teeup"
@@ -721,6 +733,44 @@ test_doctor_skips_verification_when_gpg_format_is_not_ssh() {
   cleanup_test_env
 }
 
+# The gitconfig input space, enumerated rather than assumed. _git_doctor_last_value
+# greps for a bare `key =` line, and its own comment admits it "can be fooled
+# by an identically-named key in an unrelated section". Two shapes make that
+# a real false finding rather than a theoretical one, and git itself answers
+# both correctly -- `git config -f <file> --includes --get <key>` is section
+# aware, follows [include], handles quoting, case and continuation. git is
+# present by definition in this capability's doctor.
+test_doctor_reads_the_key_from_the_right_section() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  # A signingkey in a LATER, unrelated section. A line-oriented grep taking
+  # the last match reports that one; git reports user.signingkey.
+  printf '[user]\n\tsigningkey = %s\n[gpg "ssh"]\n\tsigningkey = /nowhere/wrong_key\n' \
+    "$TEST_HOME/.ssh/id_ed25519_personal.pub" > "$TEST_HOME/.config/git/local"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_not_contains "$out" "/nowhere/wrong_key" "the key from an unrelated section is not user.signingkey" || return 1
+  cleanup_test_env
+}
+
+# [include] is how people keep a work identity in a separate file, and git
+# follows it. A doctor that does not will report a perfectly configured
+# machine as having no identity at all.
+test_doctor_follows_a_git_include() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '[user]\n\tname = "Ada Lovelace"\n\temail = "ada@example.com"\n' \
+    > "$TEST_HOME/.config/git/work-identity"
+  printf '[include]\n\tpath = work-identity\n' > "$TEST_HOME/.config/git/identity"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "sets no name and no email" "git follows [include]; so must teeup" || return 1
+  assert_contains "$out" "ada@example.com" || return 1
+  cleanup_test_env
+}
+
 # git treats gpg.ssh.allowedSignersFile as a pathname: `~/allowed_signers`
 # is expanded to $HOME/allowed_signers, and `git config --path --get` shows
 # it. Testing the raw string with -f therefore reports a perfectly usable
@@ -1044,6 +1094,8 @@ run_test "doctor warns about a missing allowed-signers file" test_doctor_warns_a
 run_test "doctor reports signing on with no signing key configured" test_doctor_reports_signing_on_with_no_signing_key_configured
 run_test "doctor reads signingkey from local, not only identity" test_doctor_reads_signingkey_from_local_not_only_identity
 run_test "doctor skips verification when gpg.format is not ssh" test_doctor_skips_verification_when_gpg_format_is_not_ssh
+run_test "doctor reads the key from the right section" test_doctor_reads_the_key_from_the_right_section
+run_test "doctor follows a git include" test_doctor_follows_a_git_include
 run_test "doctor expands a tilde in the allowed signers path" test_doctor_expands_a_tilde_in_the_allowed_signers_path
 run_test "doctor still reports a missing tilde allowed signers file" test_doctor_still_reports_a_missing_tilde_allowed_signers_file
 run_test "doctor fails when the identity has no name" test_doctor_fails_when_the_identity_has_no_name
