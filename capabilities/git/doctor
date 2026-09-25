@@ -297,7 +297,15 @@ if [[ "$signing_on" == "true" ]]; then
       # Set is not the same as usable: a path that is not there verifies
       # nothing, and git says so only at the moment you read a signature.
       signers_file="$(git_doctor_path "$signers_file")"
-      if [[ -f "$signers_file" ]]; then
+      # There, readable, and naming at least one signer: an empty file or
+      # one of comments only leaves every signature untrusted, and one git
+      # cannot open verifies nothing either (Codex P2, PR #32).
+      if [[ -f "$signers_file" && ! -r "$signers_file" ]]; then
+        doctor_fail "gpg.ssh.allowedSignersFile points at $signers_file, which cannot be read, so git can verify no signature." "chmod u+r $signers_file"
+      elif [[ -f "$signers_file" ]] && ! grep -qE '^[[:space:]]*[^#[:space:]]' "$signers_file"; then
+        doctor_fail "gpg.ssh.allowedSignersFile points at $signers_file, which names no signer, so git trusts no signature." \
+          "printf '%s %s\n' \"\$(git config user.email)\" \"\$(cat $(identity_key personal).pub)\" >> $signers_file"
+      elif [[ -f "$signers_file" ]]; then
         doctor_ok "gpg.ssh.allowedSignersFile is set, so signatures can be verified."
       else
         doctor_fail "gpg.ssh.allowedSignersFile points at $signers_file, which does not exist, so git can verify no signature." \

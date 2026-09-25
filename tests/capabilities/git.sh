@@ -830,6 +830,39 @@ test_doctor_expands_a_tilde_in_the_allowed_signers_path() {
   cleanup_test_env
 }
 
+# Codex P2 on PR #32: -f accepted an allowed-signers file that is empty (no
+# principal, so every signature stays untrusted) or unreadable (git cannot
+# open it). Neither verifies anything.
+test_doctor_rejects_an_empty_allowed_signers_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '# nobody yet\n\n' > "$TEST_HOME/.config/git/allowed_signers"
+  printf '[gpg "ssh"]\n\tallowedSignersFile = "%s"\n' "$TEST_HOME/.config/git/allowed_signers" > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "signatures can be verified" || return 1
+  assert_contains "$out" "names no signer" || return 1
+  assert_failure "$rc" || return 1
+  cleanup_test_env
+}
+
+test_doctor_rejects_an_unreadable_allowed_signers_file() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  printf '%s\n' "ada@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYpersonal" > "$TEST_HOME/.config/git/allowed_signers"
+  chmod 000 "$TEST_HOME/.config/git/allowed_signers"
+  printf '[gpg "ssh"]\n\tallowedSignersFile = "%s"\n' "$TEST_HOME/.config/git/allowed_signers" > "$TEST_HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  chmod 600 "$TEST_HOME/.config/git/allowed_signers"
+  assert_not_contains "$out" "signatures can be verified" || return 1
+  assert_contains "$out" "cannot be read" || return 1
+  assert_failure "$rc" || return 1
+  cleanup_test_env
+}
+
 # A tilde path that really is missing is still a failure, so the expansion is
 # not a way of skipping the check.
 test_doctor_still_reports_a_missing_tilde_allowed_signers_file() {
@@ -1059,6 +1092,8 @@ run_test "signing and delta are enabled once they exist" test_signing_and_delta_
 run_test "signing stays off when a private key is missing" test_signing_stays_off_when_a_private_key_is_missing
 run_test "doctor honours signing turned off in local" test_doctor_honours_signing_turned_off_in_local
 run_test "doctor honours signing turned on in local" test_doctor_honours_signing_turned_on_in_local
+run_test "doctor rejects an empty allowed-signers file" test_doctor_rejects_an_empty_allowed_signers_file
+run_test "doctor rejects an unreadable allowed-signers file" test_doctor_rejects_an_unreadable_allowed_signers_file
 run_test "signing turns on once the key exists" test_signing_turns_on_once_the_key_exists
 run_test "generated include is read after the defaults" test_generated_include_is_read_after_the_defaults
 run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_configure_renders_include_paths_for_a_custom_xdg_config_home
