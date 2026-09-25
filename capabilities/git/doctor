@@ -63,13 +63,17 @@ git_doctor_access_fix() {
     printf 'chmod u+r %s\n' "$(printf '%q' "$path")"
     return 0
   fi
-  local dirs="" d started=false
+  # One chmod per directory, outermost first. On macOS `chmod u+x outer
+  # outer/inner` failed with "outer/inner: Permission denied" (CI, #37):
+  # BSD chmod apparently looks at every argument before changing any,
+  # while GNU chmod works through them in order.
+  local cmds="" d started=false
   while IFS= read -r d; do
     [[ -n "$d" ]] || continue
     [[ "$d" == "$blocked" ]] && started=true
-    [[ "$started" == "true" ]] && dirs="$dirs $(printf '%q' "$d")"
+    [[ "$started" == "true" ]] && cmds="${cmds}chmod u+x $(printf '%q' "$d") && "
   done <<< "$chain"
-  printf 'chmod u+x%s && chmod u+r %s\n' "$dirs" "$(printf '%q' "$path")"
+  printf '%schmod u+r %s\n' "$cmds" "$(printf '%q' "$path")"
 }
 
 # git 2.55.0, verified: an unreadable config file this one [include]s is not
