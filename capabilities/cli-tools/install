@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # package:command pairs, because the package name and the binary differ for
 # half of them and pkg_install skips whatever is already on PATH.
+#
+# The pairs live in the capability metadata, not here. They are the same facts
+# `teeup doctor` needs -- it has to ask what install asked, or it reports a
+# failure on a machine where the system's own curl satisfied the package and
+# Homebrew was deliberately skipped. Writing them in two places is how those
+# two came to disagree; there is one list now and both read it.
+#
 # lazygit belongs to the git capability and gh to github: packages= drives the
 # generic update and remove verbs, so every package has exactly one owner.
 failed=""
-for pair in ripgrep:rg fd:fd fzf:fzf bat:bat eza:eza zoxide:zoxide jq:jq \
-            yq:yq btop:btop tree:tree wget:wget curl:curl gnupg:gpg \
-            tldr:tldr dust:dust; do
+for pair in $(cap_meta_get "$TEEUP_CAP" package_commands); do
   pkg="${pair%%:*}"
   cmd="${pair##*:}"
   pkg_install "$pkg" "$cmd" || failed="$failed $pkg"

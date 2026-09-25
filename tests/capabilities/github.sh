@@ -997,11 +997,19 @@ test_doctor_reports_it_could_not_list_keys() {
   seed_keys
   printf 'admin:public_key,admin:ssh_signing_key\n' > "$TEST_HOME/gh-session"
   : > "$TEST_HOME/gh-keys-list-fail"
-  local rc=0 out
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
   out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
   assert_unknown "$rc" "gh ssh-key list failing is could-not-verify, not the key being missing and not healthy" || return 1
   assert_contains "$out" "Could not list SSH keys on github.com" || return 1
   assert_not_contains "$out" "is not on GitHub" "an unlistable key list must not be reported as the key being absent" || return 1
+  # The suggested command has to actually run the check it names. `gh ssh-key
+  # list -h <host>` does not: gh reads -h as --help, so it prints usage and
+  # exits 0 -- a remediation that looks like it worked and tells the user
+  # nothing. The check itself already uses GH_HOST; the fix must too.
+  assert_not_contains "$(cat "$report")" "ssh-key list -h" "-h is --help to gh, so this fix would print usage and exit 0" || return 1
+  assert_contains "$(cat "$report")" "GH_HOST=github.com" "the fix must query the host the check actually used" || return 1
   cleanup_test_env
 }
 

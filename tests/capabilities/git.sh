@@ -601,7 +601,8 @@ test_doctor_passes_on_a_configured_tree() {
   local rc=0 out
   out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
   assert_success "$rc" || return 1
-  assert_contains "$out" "Identity: ada@example.com" || return 1
+  assert_contains "$out" "ada@example.com" || return 1
+  assert_contains "$out" "Identity: " "the identity line names the name as well, since git needs both" || return 1
   assert_contains "$out" "Commit signing is on" || return 1
   cleanup_test_env
 }
@@ -717,6 +718,54 @@ test_doctor_skips_verification_when_gpg_format_is_not_ssh() {
   assert_success "$rc" "gpg.format = openpgp means the SSH allowed-signers check does not apply" || return 1
   assert_contains "$out" "gpg.format = openpgp" || return 1
   assert_not_contains "$out" "gpg.format = ssh" "a claim about gpg.format must be read, not assumed" || return 1
+  cleanup_test_env
+}
+
+# The shipped config sets `useConfigOnly = true` so git never guesses an
+# identity from the hostname. That makes a missing user.name fatal, not
+# cosmetic: git refuses every commit with "fatal: no name was given and
+# auto-detection is disabled". Checking only the email reports that machine
+# healthy, and `teeup doctor` is the gate people trust before they start work.
+test_doctor_fails_when_the_identity_has_no_name() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  local identity="$TEST_HOME/.config/git/identity"
+  printf '[user]\n\temail = "someone@example.com"\n' > "$identity"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" "an identity git will not commit with is not healthy" || return 1
+  assert_contains "$out" "no name" || return 1
+  assert_contains "$out" "useConfigOnly" "the message has to say why a missing name is fatal, not just that it is absent" || return 1
+  cleanup_test_env
+}
+
+# The mirror case, so the check cannot be satisfied by testing one field twice.
+test_doctor_fails_when_the_identity_has_no_email() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  local identity="$TEST_HOME/.config/git/identity"
+  printf '[user]\n\tname = "Someone"\n' > "$identity"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "no email" || return 1
+  cleanup_test_env
+}
+
+# And both present is healthy, with the identity named.
+test_doctor_names_a_complete_identity() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  configure_git_with_keys
+  local identity="$TEST_HOME/.config/git/identity"
+  printf '[user]\n\tname = "Ada Lovelace"\n\temail = "ada@example.com"\n' > "$identity"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "ada@example.com" || return 1
+  assert_not_contains "$out" "no name" || return 1
+  assert_not_contains "$out" "no email" || return 1
   cleanup_test_env
 }
 
@@ -956,6 +1005,9 @@ run_test "doctor warns about a missing allowed-signers file" test_doctor_warns_a
 run_test "doctor reports signing on with no signing key configured" test_doctor_reports_signing_on_with_no_signing_key_configured
 run_test "doctor reads signingkey from local, not only identity" test_doctor_reads_signingkey_from_local_not_only_identity
 run_test "doctor skips verification when gpg.format is not ssh" test_doctor_skips_verification_when_gpg_format_is_not_ssh
+run_test "doctor fails when the identity has no name" test_doctor_fails_when_the_identity_has_no_name
+run_test "doctor fails when the identity has no email" test_doctor_fails_when_the_identity_has_no_email
+run_test "doctor names a complete identity" test_doctor_names_a_complete_identity
 run_test "doctor fails when the identity file is unreadable" test_doctor_fails_when_identity_file_is_unreadable
 run_test "doctor fails when the config file is unreadable" test_doctor_fails_when_config_file_is_unreadable
 run_test "doctor fails when the generated file is unreadable" test_doctor_fails_when_generated_file_is_unreadable

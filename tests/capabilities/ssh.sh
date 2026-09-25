@@ -760,6 +760,54 @@ run_test "configure twice changes nothing" test_configure_twice_changes_nothing
 # ssh reads Host case-insensitively, allows leading whitespace, takes several
 # patterns on one line and ignores a trailing comment. A hand-written config
 # that works perfectly must not be called broken -- and offered a `teeup reset
+# A negated pattern excludes the whole block: `Host * !github.com` means
+# every host EXCEPT github.com. Matching pattern-by-pattern and stopping at
+# the first hit marks the alias matched on `*` and never unmarks it, so the
+# doctor reports a Host block that OpenSSH does not apply -- and, worse,
+# reports the key named in that excluded block as the one in use. The alias
+# then resolves to nothing and every push fails while the gate says healthy.
+#
+# ssh -G is checked against as the oracle here for the same reason
+# lib/answers.sh asks it instead of parsing: what a config means is ssh's
+# question.
+test_doctor_honours_a_negated_host_pattern() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  # A block that matches everything except the alias teeup cares about, and
+  # names a key that really is there -- so nothing else in the doctor can
+  # notice the difference.
+  printf 'Host * !github.com\n    IdentityFile %s\n' \
+    "$TEST_HOME/.ssh/id_ed25519_personal" > "$TEST_HOME/.ssh/config"
+  # Confirm with ssh itself that the block really is excluded, so this test
+  # pins ssh's semantics rather than teeup's idea of them.
+  if ssh -G -F "$TEST_HOME/.ssh/config" -- github.com 2>/dev/null | grep -q "id_ed25519_personal"; then
+    echo "fixture: ssh applies this block, so there is nothing to test"
+    return 1
+  fi
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "declares Host github.com" "ssh excludes this block, so teeup must not report it as declared" || return 1
+  assert_failure "$rc" "an alias no Host block applies to is a real problem" || return 1
+  cleanup_test_env
+}
+
+# The same negation, one level down: the key named inside an excluded block
+# is not the key ssh will offer, so it must not be reported as the one in use.
+test_doctor_does_not_credit_a_key_from_an_excluded_block() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_answers
+  DRY_RUN=false "$TEEUP" configure ssh >/dev/null 2>&1
+  printf 'Host !github.com *\n    IdentityFile %s/.ssh/nonexistent_key\n' "$TEST_HOME" \
+    > "$TEST_HOME/.ssh/config"
+  local out
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || true
+  assert_not_contains "$out" "nonexistent_key" "a key in a block ssh excludes is not the key in use" || return 1
+  cleanup_test_env
+}
+
 # ssh` that would change nothing.
 test_doctor_accepts_a_hand_written_host_block() {
   setup
@@ -983,6 +1031,8 @@ run_test "doctor passes after configure" test_doctor_passes_after_configure
 run_test "doctor reports unknown when ssh-keygen is missing" test_doctor_reports_unknown_when_ssh_keygen_is_missing
 run_test "doctor reports a missing key pair" test_doctor_reports_a_missing_key_pair
 run_test "doctor reports a world-readable private key" test_doctor_reports_a_world_readable_private_key
+run_test "doctor honours a negated host pattern" test_doctor_honours_a_negated_host_pattern
+run_test "doctor does not credit a key from an excluded block" test_doctor_does_not_credit_a_key_from_an_excluded_block
 run_test "doctor accepts a hand-written host block" test_doctor_accepts_a_hand_written_host_block
 run_test "doctor separates an unreachable agent from an empty one" test_doctor_separates_an_unreachable_agent_from_an_empty_one
 run_test "doctor reports an empty ssh agent" test_doctor_reports_an_empty_ssh_agent
