@@ -4,7 +4,7 @@
 
 **Goal:** Let a Mac that already ran the old `teeup.sh`, or that is still handed its dotfiles by the chezmoi repo, become a plain teeup machine with one command — `teeup migrate legacy` — without ever deleting the chezmoi source directory that keeps serving Linux.
 
-**Architecture:** One new library, `lib/migrate.sh`, behind one new verb. Everything it deletes is named by a **key**, not by a path: `migrate_target` is a `case` statement mapping a fixed set of keys to absolute paths, and `migrate_rm` accepts only a key, so there is no argument any caller can pass that names `~/Work/environment/dotfiles`. Two further gates run on the resolved path anyway (strictly inside `$HOME`, and clear of whatever `chezmoi source-path` reports), and every chezmoi call in teeup goes through `chezmoi_ro`, which refuses any subcommand that is not read-only — `purge` among them. The leftovers spec section 10 asks `teeup doctor` to flag are added to the `zsh` and `git` doctor scripts phase 4b created, since that is how checks register.
+**Architecture:** One new library, `lib/migrate.sh`, behind one new verb. Everything it deletes is named by a **key**, not by a path: `migrate_target` is a `case` statement mapping a fixed set of keys to absolute paths, and `migrate_rm` accepts only a key, so there is no argument any caller can pass that names `~/Work/environment/dotfiles`. Two further gates run on the resolved path anyway (strictly inside `$HOME`, and clear of whatever `chezmoi source-path` reports), and every chezmoi call in teeup goes through `chezmoi_ro`, which refuses any subcommand that is not read-only — `purge` among them. The leftovers spec section 10 asks `teeup doctor` to flag are added to the `zsh` and `git` doctor scripts phase 4b creates, since that is how checks register — **which makes Task 7 conditional on PR #32 merging**; see Revision 2.
 
 **Tech Stack:** bash 3.2 (macOS stock), BSD `awk`/`sed`/`date`, chezmoi's read-only subcommands, the phase 1 mock-binary test harness, phase 4a's `backup_copy`/`refresh_if_pristine`/migration runner, phase 4b's doctor contract and `share/teeup/menu.json`.
 
@@ -12,9 +12,98 @@
 
 ---
 
+## Revision 2 — 2026-09-24
+
+A preflight ran this plan against the tree it will actually execute on and found
+5 Blocking and 11 Important defects (`.superpowers/sdd/2026-09-13-redesign-phase5a-legacy-migration/preflight.md`,
+rulings in `rulings-by-task.md` beside it). This revision folds every ruling into the
+plan text so there is one document to follow. **Where a task's body still disagrees
+with a rule below, the rule wins.**
+
+What changed, and why:
+
+1. **The ground truth moved.** Phases 3a, 3b and 4a are merged; `main` is their
+   contract now, not their plan text. Phase 4b's doctor half is open as **PR #32**
+   and is not merged. The dependency table below is corrected.
+2. **Task 7 is gated on 4b landing** (A1/T7.1). The doctor framework, both `doctor`
+   scripts and both test anchors do not exist on `main`. Until #32 merges, skip Task 7,
+   skip Task 6 Step 4 and the `dev check` half of Step 5, and name no `teeup doctor`
+   in the closing message, README or CONTRIBUTING.
+3. **A destructive command may not claim what it did not do** (A2). Every success line
+   in `lib/migrate.sh` uses `ok_unless_dry`, never `ok`, and every `run_cmd` /
+   `backup_target` / `backup_copy` / `disable_matching_lines` call has its status checked
+   before anything is claimed.
+4. **`T1.1` is fixed upstream.** `backup_copy` now checks its `cp`, warns and returns 1
+   (`lib/files.sh`, merged in #30). The remaining obligation is on the *caller*: check
+   its status and abort the rewrite when it returns non-zero.
+5. **Two new safety gates** (T2.1): refuse when `have chezmoi` is true but
+   `migrate_chezmoi_source` prints nothing, and refuse any resolved path with a `.git`
+   entry between it and `$HOME`.
+6. **`migrate_chezmoi` asks before the bulk move** (T5.1), splitting the managed list
+   into what teeup will reinstall and what it will not.
+7. **`ZDOTDIR` is honoured** in the rc-file list (T3.1, T4.1).
+8. **Stale anchors and counts are corrected** (A4, T2.2, T8.2, T9.1). Measured on
+   `main` at `5186afe`: **49 suites**, `tests/lib/files.sh` **42 tests**,
+   `CONTRIBUTING.md`'s numbered list ends at **24**, `lib/all.sh:9` reads
+   `for _teeup_lib in files state answers pkg ui capability macos theme font lazy mise hooks migrations; do`,
+   and `README.md` has no `teeup config` verb to anchor against.
+9. **The `chezmoi_ro` rule becomes enforceable** (A5): a test greps the tree for a
+   `chezmoi` invocation outside the wrapper.
+
+### Binding rules, all tasks
+
+**R1 — `ok_unless_dry`, and only after a checked mutation.** `migrate_rm` says
+"Removed …" only after a real `rm` returned 0; `migrate_chezmoi` counts a move only on a
+real move (`backup_target` returns the prospective path and 0 under `DRY_RUN`). A
+`DRY_RUN=true teeup migrate legacy` that reports deletions which never happened is
+worthless exactly where the user is told to rely on it.
+
+**R2 — compare against the physical path in tests.** `migrate_rm` and `migrate_backup`
+act on the resolved path, and on macOS `$TEST_HOME` (`/var/folders/…`) resolves to
+`/private/var/folders/…`. Whenever an assertion compares a string that came out of
+teeup's own output, compare against `home="$(cd "$TEST_HOME" && pwd -P)"`, not
+`$TEST_HOME`. Getting this wrong goes red on macOS CI while passing locally — a failure
+mode this project has already been bitten by.
+
+**R3 — re-derive every count.** Print the count before each task and write "that count
+plus K". Never paste a number from this plan into an expectation.
+
+**R4 — no `teeup doctor` until #32 merges.** See item 2 above.
+
+### Gate on running this against the user's work Mac
+
+**`teeup migrate legacy` does not run on the work Mac until A2, T1.1, T2.1 and T5.1 are
+done.** Until then the preview lies, the backups are unverified, the sibling-repo gate has
+a state-dependent hole, and the bulk move is unprompted. That Mac is chezmoi-managed, which
+is the exact configuration every one of those four defects is about.
+
+**First real run, in order:**
+
+1. `DRY_RUN=true teeup migrate legacy`, and read every line.
+2. `chezmoi managed --path-style=absolute --include=files,symlinks` by hand; confirm the
+   list matches what the preview said.
+3. `cp -a ~/Work/environment/dotfiles <scratch>` to a location off the machine's normal
+   paths. That repo still serves Linux and is never to be deleted; the copy is in case a
+   gate fails in a way nobody predicted.
+4. The real run. **Answer `no`** to the `~/.config/chezmoi` question the first time.
+5. Open a new terminal before doing anything else, and confirm the shell comes up.
+
+**Sequencing.** Land 5a without Task 7 and without the menu row, or merge PR #32 first.
+Do not half-implement a doctor framework inside 5a.
+
+---
+
 ## Depends on
 
-Phases 1, 2a and 2b are merged; for them `main` is the ground truth. Phases 3a, 3b, 4a, 4b, 4c and 4d are planned but not merged, so their plan text is the contract. Execution order is 3a, 3b, 4a, 4b, 4c, 4d, 5a, 5b.
+Phases 1, 2a, 2b, 3a, 3b and 4a are **merged**; for all of them `main` (at `5186afe`) is
+the ground truth, not their plan text. Phase 4b's doctor half is open as **PR #32** and is
+**not merged**; 4b's remaining tasks (menu, `teeup config`, dev verbs, docs), 4c and 4d are
+neither written nor merged.
+
+Execution order is unchanged on paper — 3a, 3b, 4a, 4b, 4c, 4d, 5a, 5b — but 5a is being
+pulled forward because it is on the critical path for the first real run on the user's
+work Mac (which is chezmoi-managed). That is allowed for every task **except Task 7**,
+which cannot be written against a tree without `lib/doctor.sh`; see Revision 2, item 2.
 
 | Interface | Kind | Defined by |
 |---|---|---|
@@ -30,19 +119,19 @@ Phases 1, 2a and 2b are merged; for them `main` is the ground truth. Phases 3a, 
 | `capabilities/git/config/git/config` | the copy-once gitconfig | main (phase 2a) |
 | `hide_host_commands <name...>` | test helper, `tests/helper.sh` | phase 3b, Task 1 |
 | `shims_dir` | function, `lib/lazy.sh` | phase 3b, Task 1 |
-| `backup_copy <path>` — copies and prints the backup path | function, `lib/files.sh` | phase 4a, Task 3 |
+| `backup_copy <path>` — copies, prints the backup path, **returns 1 without printing `Copied` when the `cp` fails** | function, `lib/files.sh` | main (#30) |
 | `refresh_if_pristine <src> <dest>`, `config_is_pristine <dest>` | functions, `lib/files.sh` | phase 4a, Task 3 |
 | `migration_refresh <capability>`, `migration_run <name>`, `migrations_list`, `TEEUP_MIGRATIONS_DIR` (`$TEEUP_PATH/migrations`) | functions, `lib/migrations.sh` | phase 4a, Task 4 |
 | `state_migration_mark`/`state_migration_done` write and read `$TEEUP_STATE_DIR/migrations/<name>` | functions, `lib/state.sh` | phase 4a, Task 4 |
 | `copy_config_once` turns into `refresh_if_pristine` when `TEEUP_REFRESH` names the running capability | changed behaviour, `lib/files.sh` | phase 4a, Task 3 |
 | `migrations/` exists and holds only `README.md` plus `<unix-epoch>.sh` files | directory | phase 4a, Task 4 |
 | `teeup update`, `teeup reset`, `teeup remove`, `teeup dev add-migration` | verbs, `bin/teeup` | phase 4a, Tasks 4–7 |
-| `doctor_ok <msg>`, `doctor_warn <msg>`, `doctor_fail <msg> <fix-command>`, `doctor_verdict` | functions, `lib/doctor.sh` | phase 4b, Task 1 |
-| `capabilities/zsh/doctor`, `capabilities/git/doctor` | doctor scripts this plan extends | phase 4b, Tasks 2 and 3 |
-| `share/teeup/menu.json` and its flat dotted-id format | menu file | phase 4b, Task 6 |
-| `teeup dev check` (lints metadata, the menu and shellcheck) | verb, `bin/teeup` | phase 4b, Task 9 |
-| `lib/all.sh` sources `… lazy mise hooks migrations doctor menu dev` | library list | phases 3b, 4a, 4b |
-| `teeup doctor`, `teeup menu`, `teeup config` | verbs, `bin/teeup` | phase 4b |
+| `doctor_ok`, `doctor_warn`, `doctor_fail`, `doctor_unknown`, `doctor_summary` | functions, `lib/doctor.sh` | phase 4b — **PR #32, not merged**. Note `doctor_unknown`/`doctor_summary`, not the `doctor_verdict` this plan was written against. |
+| `capabilities/zsh/doctor`, `capabilities/git/doctor` | doctor scripts Task 7 extends | phase 4b — **PR #32, not merged** |
+| `share/teeup/menu.json` and its flat dotted-id format | menu file | phase 4b **task 6, not written**. Task 6 Step 4 is skipped. |
+| `teeup dev check` (lints metadata, the menu and shellcheck) | verb, `bin/teeup` | phase 4b **task 9, not written**. Use `./bin/teeup commands --check` instead. |
+| `lib/all.sh` sources `files state answers pkg ui capability macos theme font lazy mise hooks migrations` (`lib/all.sh:9`, measured) | library list | main |
+| `teeup doctor` | verb, `bin/teeup` | phase 4b — **PR #32, not merged**. `teeup menu` and `teeup config` are not written at all; name neither. |
 
 ### One seam that used to need reconciling, now fixed upstream
 
@@ -70,7 +159,15 @@ Every task's requirements implicitly include this section.
 - **Tests never touch the real machine.** Every test runs under `tests/helper.sh`: a temp `$HOME`, `MOCK_BIN` first on the narrowed PATH `$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin`, `mock_command`, `mock_command_script`, `mock_macos_base`, `hide_host_commands`, `TEEUP_TEST_MISSING`, `TEEUP_PKG_PREFIX`, `TEEUP_APPS_DIR`. **No test in this plan may name a path outside `$TEST_HOME`**, and no test may run a real `chezmoi` or a real `git` against `~/Work/environment/dotfiles`: both are mocked, and the stand-in for the sibling repo is a directory the test creates under `$TEST_HOME`. A test that can only pass on a developer's machine is a defect.
 - **Prompts in tests.** `lib/ui.sh` uses gum whenever `TEEUP_NO_GUM` is empty and `gum` is on PATH, and the harness's narrowed PATH still exposes a host `/usr/bin/gum`. **Every test that drives a prompt must `export TEEUP_NO_GUM=1`**, exactly as `tests/bootstrap.sh` and `tests/capabilities/secrets.sh` do.
 - **Destructive paths need refusal tests.** Every function in `lib/migrate.sh` that can delete something carries at least one test proving it refuses: the chezmoi source directory, a path outside `$HOME`, and a key it was never given.
-- **Suite counts.** `tests/run.sh` ends with `All N suites passed.` Never hard-code N: write "the suite count printed before this task, plus K".
+- **Suite counts (R3).** `tests/run.sh` ends with `All N suites passed.` Never hard-code N:
+  print the count before the task and write "that count plus K". Measured on `main` at
+  `5186afe`: **49 suites**, and `tests/lib/files.sh` reports **42 tests**. Every count
+  written into this plan before Revision 2 is stale; treat one as a defect, not an
+  expectation.
+- **Physical paths in assertions (R2).** On macOS `$TEST_HOME` under `/var/folders/…`
+  resolves to `/private/var/folders/…`, and `migrate_rm`/`migrate_backup` report the
+  resolved path. Any assertion comparing a string teeup printed must compare against
+  `home="$(cd "$TEST_HOME" && pwd -P)"`.
 - **Nothing has run on a real Mac.** Each task carries a **Real-Mac risk** note naming what only hardware proves.
 - **Verify, do not guess** every external CLI flag, config key, package name and file location against the installed tool's `--help` or current upstream documentation.
 - **Every task ends** with: `./tests/run.sh` green, `./bin/teeup commands --check` silent and exit 0, `shellcheck --severity=warning` clean on every new or edited shell script and test, `git diff --check` clean, and ONE commit with a plain imperative subject and NO trailers (no `Co-Authored-By`, no `Claude-Session`, no "Generated with").
@@ -91,7 +188,12 @@ Three independent gates, in this order:
 
 ### Reporting
 
-Every migration step returns 0 when it did its work or had nothing to do, and 1 when it **refused** something. `migrate_legacy` collects those, so a refusal never stops the rest of the migration and the verb still exits non-zero to say something was left alone. Nothing in the migration prompts except the one question spec section 10 requires, and that one defaults to **no**.
+Every success line uses `ok_unless_dry` (`lib/core.sh`), never `ok`, and is printed only
+after the mutation it describes returned 0 (R1). A step that could not check something says
+so rather than claiming it acted.
+
+Every migration step returns 0 when it did its work or had nothing to do, and 1 when it
+**refused** something. `migrate_legacy` collects those, so a refusal never stops the rest of the migration and the verb still exits non-zero to say something was left alone. Nothing in the migration prompts except the one question spec section 10 requires, and that one defaults to **no**.
 
 ### `disable_matching_lines <file> <pattern> <reason>`
 
@@ -128,7 +230,7 @@ Spec section 10 names four. They register as lines inside the doctor scripts pha
 | `capabilities/zsh/default/env` | `~/.cargo/bin`, `GOPATH`, the Emacs package checkout variables | 8 |
 | `capabilities/zsh/default/aliases` | `cd..`, the Colima shortcuts | 8 |
 | `capabilities/git/config/git/config` | the `lfs` and `llg` aliases and the ediff mergetool | 8 |
-| `migrations/<epoch>.sh` | refresh a pristine `~/.config/git/config` onto the new shipped file | 8 |
+| `migrations/<epoch>.sh` | refresh a pristine `~/.config/git/config` onto the new shipped file. **Name it from `./bin/teeup dev add-migration`, never from a number in this plan** (T8.2). | 8 |
 | `tests/lib/files.sh` | `disable_matching_lines` | 1 |
 | `tests/lib/migrate.sh` | every gate, every step, every refusal | 2, 3, 4, 5 |
 | `tests/cli.sh` | `teeup migrate legacy` end to end | 6 |
@@ -155,6 +257,21 @@ Spec section 10 names four. They register as lines inside the doctor scripts pha
 ---
 
 ### Task 1: `disable_matching_lines` in `lib/files.sh`
+
+> **Rulings folded in (Revision 2).**
+> **T1.1 — check the backup before you overwrite.** `backup_copy` now checks its `cp`,
+> warns and returns 1 (`lib/files.sh`, merged in #30), so the fix this ruling asked for is
+> upstream. The obligation left is on this caller: capture its status, and when it is
+> non-zero **warn and return without touching the file**. On a home directory teeup cannot
+> write a backup into, the alternative is rewriting the user's `.zshrc` with no copy
+> anywhere — the one outcome this phase exists to prevent.
+> **T1.2 — refuse a file you cannot write, and claim only the edit you made.** Before
+> rewriting, check the target is a regular writable file (the rule `write_managed_file`
+> already applies), check that `cat "$tmp" > "$file"` succeeded, and print
+> `ok_unless_dry "Disabled …"` only then. Otherwise a read-only rc file gets a success
+> message and no change.
+> **T1.3 — test `-L` before `-f`**, so a dangling legacy symlink is reported like a live
+> one instead of returning silently.
 
 Spec section 10: `teeup migrate legacy` "disables SDKMAN, rbenv, pyenv init lines (reusing `disable_matching_lines`)". The function exists only in `legacy/teeup.sh:479`, which phase 5b deletes, so it is ported first, on its own, with its tests — every later task in this plan calls it.
 
@@ -297,7 +414,7 @@ print_summary
 - [ ] **Step 2: Run it to see it fail**
 
 Run: `bash tests/lib/files.sh`
-Expected: the eight new tests fail with `disable_matching_lines: command not found`; the suite ends with `Summary: 20/28 passed`.
+Expected: the eight new tests fail with `disable_matching_lines: command not found`. Do not expect `20/28`: `tests/lib/files.sh` reports **42** tests on `main` at `5186afe`, so the red state is that count plus the eight new ones, with eight failing (R3). Print the count first.
 
 - [ ] **Step 3: Append the function to `lib/files.sh`**
 
@@ -408,6 +525,26 @@ git commit -m "Port disable_matching_lines out of the legacy script"
 ---
 
 ### Task 2: `lib/migrate.sh` — the closed key list, the safety gates and the read-only chezmoi wrapper
+
+> **Rulings folded in (Revision 2).**
+> **T2.1 (Blocking) — fail closed, and never delete inside a git checkout.**
+> `migrate_path_is_safe` gets two more refusals:
+> (a) when `have chezmoi` is true but `migrate_chezmoi_source` prints nothing, refuse the
+> path — an undeterminable source directory is not an absent one;
+> (b) refuse any resolved path with a `.git` entry in any directory between it and `$HOME`.
+> Without both, a user who answers yes to deleting `~/.config/chezmoi` and later re-runs
+> the verb on a machine whose `~/.config` is symlinked into `~/Work/environment/dotfiles`
+> gets `rm -rf` inside the repo that still serves Linux. The user has declared that
+> outcome absolute. Each gate needs its own refusal test.
+> **T2.2 — the `lib/all.sh` anchor in this task is stale.** The real line is
+> `for _teeup_lib in files state answers pkg ui capability macos theme font lazy mise hooks migrations; do`
+> (`lib/all.sh:9`). Append ` migrate` to **that** line and change nothing else. Do not paste
+> this plan's older version, which sources `doctor`, `menu` and `dev` libraries that do not
+> exist and would break every verb.
+> **A5 — make the `chezmoi_ro` rule enforceable.** Alongside the unit test that
+> `chezmoi_ro purge` dies, add a test that greps `bin/`, `lib/` and `capabilities/` for a
+> `chezmoi` invocation outside `chezmoi_ro` and fails if it finds one. Otherwise the
+> guarantee lasts exactly until someone adds a second call site.
 
 Nothing in this task deletes anything a user would notice; it builds the three gates described under Contracts and proves each one refuses. The migration steps that use them are Tasks 3, 4 and 5.
 
@@ -842,10 +979,10 @@ migrate_rm() {
 `lib/all.sh` sources every library in one loop. Append `migrate` to the end of the list; the libraries define functions and run nothing at source time, so their order among themselves does not matter.
 
 ```bash edit-old=lib/all.sh
-for _teeup_lib in files state answers pkg ui capability macos theme font lazy mise hooks migrations doctor menu dev; do
+for _teeup_lib in files state answers pkg ui capability macos theme font lazy mise hooks migrations; do
 ```
 ```bash edit-new=lib/all.sh
-for _teeup_lib in files state answers pkg ui capability macos theme font lazy mise hooks migrations doctor menu dev migrate; do
+for _teeup_lib in files state answers pkg ui capability macos theme font lazy mise hooks migrations migrate; do
 ```
 
 If the list in the checkout differs (an earlier phase landing in another order), make the same change: append ` migrate` to the end of whatever list is there, leaving the rest untouched.
@@ -870,6 +1007,12 @@ git commit -m "Add the migration safety gates and the read-only chezmoi wrapper"
 ---
 
 ### Task 3: `migrate_legacy_paths` — the legacy files, directories, symlinks and rc wiring
+
+> **Ruling folded in (Revision 2). T3.1 — honour `ZDOTDIR`.** Visit
+> `${ZDOTDIR:-$HOME}/<name>` as well as `$HOME/<name>` for the zsh rc files, de-duplicating
+> when the two are the same directory; the zsh capability installs its stubs into
+> `${ZDOTDIR:-$HOME}` (`capabilities/zsh/configure`). On a `ZDOTDIR` machine the migration
+> otherwise reports success while changing nothing.
 
 Spec section 10, first half: "removes `~/.teeup.common`, `~/.config/mac-setup`, dangling legacy symlinks". The rc lines that loaded them go too, because a `source ~/.teeup.common` left behind after the file is gone makes every new shell print an error. The Oh My Zsh, Powerlevel10k and Antigen lines go with them: spec section 10 asks `teeup doctor` to flag p10k and Oh My Zsh remnants, and a finding is worth printing only when the fix it names really fixes it — `teeup migrate legacy` is that fix, so it has to neutralise those lines too. (`legacy/teeup.sh:2227` disabled the Antigen lines for the same reason.)
 
@@ -1063,6 +1206,10 @@ git commit -m "Remove the files and shell wiring the old teeup left behind"
 
 ### Task 4: `migrate_disable_runtime_inits` — SDKMAN, rbenv and pyenv
 
+> **Ruling folded in (Revision 2). T4.1 — the same `ZDOTDIR` rule as T3.1**; the rc list is
+> shared. Otherwise the SDKMAN/rbenv/pyenv lines that actually run on that machine keep
+> running alongside mise, which is the shadowing this step exists to stop.
+
 Spec section 10: "disables SDKMAN, rbenv, pyenv init lines (reusing `disable_matching_lines`)". mise owns every runtime now (phase 3b), and two managers both putting a `java` or a `python` on PATH is the failure this prevents. teeup never deletes `~/.sdkman`, `~/.rbenv` or `~/.pyenv`: those hold installed toolchains a user may still want, and the shell lines are what make them win.
 
 **Files:**
@@ -1249,6 +1396,22 @@ git commit -m "Disable the SDKMAN, rbenv and pyenv shell init lines"
 ---
 
 ### Task 5: `migrate_chezmoi` — detect, list, back up, and ask only about `~/.config/chezmoi`
+
+> **Rulings folded in (Revision 2).**
+> **T5.1 (Blocking) — ask before the bulk move, and split what teeup will restore from what
+> it will not.** List the managed entries in two groups — ones teeup ships a config for (it
+> will reinstall them) and ones it does not (`~/.tmux.conf`, `~/.local/bin/*.sh`, anything
+> else) — then ask one `ui_confirm … no` before moving anything. In a non-interactive run,
+> move nothing and print what a real run would do. Without this, the first real run on the
+> user's work Mac renames ~20 files they wrote, their own `~/.local/bin` scripts included,
+> with no prompt and nothing to put them back but a hand search for `*.teeup_backup_*`.
+> **T5.2 (Blocking) — `ok_unless_dry` for "Moved N …", and count only real moves.**
+> `backup_target` returns the prospective path and 0 under `DRY_RUN`, so counting its
+> return makes the preview claim it moved the user's home aside.
+> **T5.3 — tell a refusal apart from a failed backup.** `migrate_backup` returns 1 for
+> "refused" and 2 for "`backup_target` failed"; the closing message names which happened.
+> Conflating them sends the user looking for a safety refusal while the file that failed to
+> move sits there uninvestigated.
 
 Spec section 10: "detects a chezmoi-managed home, prints the list from `chezmoi managed`, backs those files up with `backup_target`, and asks before deleting only `~/.config/chezmoi` (the config that points chezmoi at its source). It never runs `chezmoi purge`, which would delete the source directory, and never touches `~/Work/environment/dotfiles`, which keeps serving Linux."
 
@@ -1526,6 +1689,18 @@ git commit -m "Take a chezmoi-managed home over without touching its source"
 
 ### Task 6: `teeup migrate legacy` — the verb, the menu row and the end-to-end refusal proofs
 
+> **Rulings folded in (Revision 2).**
+> **T6.1 (Blocking) — drop the menu row and `dev check` for now.** `share/teeup/menu.json`
+> and `teeup dev check` do not exist on `main` (4b tasks 6 and 9 are unwritten), so **skip
+> Step 4 and the `dev check` half of Step 5**, and close with a command that exists:
+> `teeup update`, then `teeup status`. A migration that ends by naming a verb `bin/teeup`
+> rejects with "Unknown verb" undoes the trust the command is for.
+> **T6.2 — do not leave the machine without a shell.** Before moving rc files aside, check
+> `state_done check cap-zsh`; when zsh has not been configured here, say so and either run
+> `teeup install zsh` first or refuse the chezmoi half with instructions. Otherwise a user
+> who migrates before installing teeup's zsh layer opens a new terminal with no `.zshrc`,
+> `.zshenv` or `.zprofile` at all.
+
 The three steps become one command. The verb takes a target so that a future migration off something else needs no new verb, and today `legacy` is the only one.
 
 **Files:**
@@ -1537,7 +1712,7 @@ The three steps become one command. The verb takes a target so that a future mig
 - Consumes: `migrate_legacy_paths` (Task 3), `migrate_disable_runtime_inits` (Task 4), `migrate_chezmoi` (Task 5); `ok err die` (`lib/core.sh`).
 - Produces: `cmd_migrate [<target>]` in `bin/teeup`, reached as `teeup migrate legacy`. Exit 0 when nothing was refused, 1 otherwise. A `setup.migrate` row in `share/teeup/menu.json`.
 
-**Real-Mac risk:** the whole command has only ever run against mocks. On a real machine the order matters in a way no test shows: `migrate_legacy_paths` neutralises rc lines that `migrate_chezmoi` may then move aside wholesale, so the surviving `.teeup_backup_<ts>` copies are the record of what the machine used to do. Only a real migration shows whether the shell that comes up afterwards is usable, which is why the last line points at `teeup doctor`.
+**Real-Mac risk:** the whole command has only ever run against mocks. On a real machine the order matters in a way no test shows: `migrate_legacy_paths` neutralises rc lines that `migrate_chezmoi` may then move aside wholesale, so the surviving `.teeup_backup_<ts>` copies are the record of what the machine used to do. Only a real migration shows whether the shell that comes up afterwards is usable, which is why the last line points the user at a follow-up command — `teeup update` today, `teeup doctor` once #32 has merged (T6.1).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1721,9 +1896,9 @@ cmd_migrate() {
   migrate_chezmoi || rc=1
   echo ""
   if [[ $rc -eq 0 ]]; then
-    ok "Migration finished. Open a new terminal, then run: teeup doctor"
+    ok "Migration finished. Open a new terminal, then run: teeup update"
   else
-    err "Migration finished, but teeup refused to touch something above. Nothing was lost; read the warnings, then run: teeup doctor"
+    err "Migration finished, but teeup refused to touch something above. Nothing was lost; read the warnings, then run: teeup status"
   fi
   return $rc
 }
@@ -1774,6 +1949,30 @@ git commit -m "Add the teeup migrate legacy verb"
 ---
 
 ### Task 7: The doctor leftover checks
+
+> **BLOCKED until PR #32 merges (Revision 2, A1/T7.1).** `lib/doctor.sh`,
+> `capabilities/zsh/doctor` and `capabilities/git/doctor` do not exist on `main`. Do not
+> invent a doctor framework inside 5a; 4b would immediately contradict it. **If #32 has not
+> merged, skip this task** and record the five checks (Oh My Zsh, p10k files, a live
+> predecessor rc line, a chezmoi source still pointing here, git's `[user]` block) as a note
+> for whoever lands the rest of 4b.
+>
+> **When #32 has merged, three corrections apply before writing it:**
+> **T7.2 — fix the git wording.** teeup has **one** git identity now ("One identity, full
+> stop", `capabilities/git/configure`), so the finding must say the `[user]` block outranks
+> *the identity teeup wrote*, not "teeup's per-directory identities". Printing a claim about
+> a model teeup deliberately removed is exactly the untrue message that has bitten this
+> project on real machines.
+> **T7.3 — re-anchor both test insertions.** `tests/capabilities/git.sh` has
+> `run_test "configure writes the one identity" …`, not "writes both identities", and
+> `tests/capabilities/zsh.sh` has no "doctor reports a home file that lost the layer" line
+> at all. Insert above the first `run_test` in each file instead. Note that `print_summary`
+> fails a suite for any `test_*` function without a `run_test` line, so a mis-anchored
+> insertion is not silent — but it is also not what you meant.
+> **T7.4 — #32 renamed the contract.** It ships `doctor_ok`/`doctor_warn`/`doctor_fail`/
+> `doctor_unknown` and `doctor_summary`, with exit codes 0 verified / 1 problems / 2 could
+> not check. There is no `doctor_verdict`. A check that cannot verify a leftover reports
+> `doctor_unknown`, not `doctor_ok`.
 
 Spec section 10: "`teeup doctor` flags leftovers: a `[user]` block in `~/.gitconfig.local`, p10k remnants, Oh My Zsh directory, a chezmoi source dir still pointing at the Linux repo." Phase 4b owns the doctor framework, and its contract is that checks live inside a capability's own `doctor` script and report through `doctor_ok`/`doctor_warn`/`doctor_fail`. Three of the four belong to `zsh` (they are all about what a shell loads before teeup's layer does) and one to `git`.
 
@@ -2067,6 +2266,17 @@ git commit -m "Flag the migration leftovers in teeup doctor"
 
 ### Task 8: The remaining chezmoi content, and the migration that refreshes it
 
+> **Rulings folded in (Revision 2).**
+> **T8.1 — re-anchor the test insertions**, for the same reason as T7.3: both quoted
+> anchors are lines Task 7 would have created, and Task 7 may not have run.
+> **T8.2 — name the migration from `./bin/teeup dev add-migration`**, not from the epoch
+> written in this plan, and make the Task-8 test use the same name. A hard-coded epoch
+> either fails the test with "No migration named …" or ships a migration whose timestamp
+> predates commits already in the tree.
+> **T8.3 (keep) — keep the `cap_exists git` guard.** Several `teeup update` tests in
+> `tests/cli.sh` do not override `TEEUP_MIGRATIONS_DIR` and run this migration against a
+> fixture capability tree with no `git`, where `migration_refresh` errors.
+
 Spec section 10's last bullet: "Content from the chezmoi repo worth porting into capability configs: `~/.config/shell/{envs,aliases,functions}`, `wezterm.lua` …, gitconfig aliases, the `javav` function."
 
 Most of it is already here. `javav`, `zd`, the `ls`/`git`/Emacs/Finder aliases, the PATH helpers, the package-manager prefixes and the `EDITOR`/`VISUAL`/`SUDO_EDITOR` defaults all landed in phase 2a's `capabilities/zsh/default/{env,aliases,functions}`; twenty-four of the twenty-six gitconfig aliases landed in phase 2a's `capabilities/git/config/git/config`; `wezterm.lua` is phase 2b's `wezterm` capability, with its own themed template and the `~/.wezterm_local.lua` seam. **This task closes what is genuinely still missing**, which was found by reading `/home/systemhalted/Work/environment/dotfiles` (read-only) against the checkout:
@@ -2086,7 +2296,7 @@ Most of it is already here. `javav`, `zd`, the `ls`/`git`/Emacs/Finder aliases, 
 - Modify: `capabilities/zsh/default/env`
 - Modify: `capabilities/zsh/default/aliases`
 - Modify: `capabilities/git/config/git/config`
-- Create: `migrations/1789593600.sh`
+- Create: `migrations/<epoch>.sh`
 - Modify: `tests/capabilities/zsh.sh`, `tests/capabilities/git.sh`
 
 **Interfaces:**
@@ -2095,7 +2305,7 @@ Most of it is already here. `javav`, `zd`, the `ls`/`git`/Emacs/Finder aliases, 
 
 **The one ordering trap:** `default/env` ends by appending mise's shims and then `$TEEUP_STATE_DIR/shims`, and the teeup shims **must stay the last PATH entry** — `capabilities/teeup-runtime/doctor` checks it and `tests/capabilities/zsh.sh`'s `default env appends the shims last` asserts it. `path_append "$GOPATH/bin"` therefore goes above that block, not below it.
 
-**Migration naming:** `./bin/teeup dev add-migration` names the file from the checkout's last commit time and prints the path. `migrations/1789593600.sh` below is that name for a checkout whose last commit is 2026-09-16; if `dev add-migration` prints a different epoch, use the name it printed — the body is the same either way, and `migrations/` holds nothing else, so any epoch sorts correctly.
+**Migration naming:** `./bin/teeup dev add-migration` names the file from the checkout's last commit time and prints the path. `migrations/<epoch>.sh` below is that name for a checkout whose last commit is 2026-09-16; if `dev add-migration` prints a different epoch, use the name it printed — the body is the same either way, and `migrations/` holds nothing else, so any epoch sorts correctly.
 
 **Real-Mac risk:** `~/Development/GoWorkspace` and the three Emacs package checkouts exist only on the user's own machines; the exports are inert everywhere else, and `path_append` skips a directory that is not there. Whether `cargo` really lands in `~/.cargo/bin` after `teeup install dev-env rust` is a mise-on-macOS fact no test here reaches.
 
@@ -2191,13 +2401,15 @@ test_the_shipped_migration_refreshes_a_pristine_git_config() {
   # stock record matches it, so it reads as pristine.
   printf '[alias]\n\ts = status\n' > "$TEST_HOME/.config/git/config"
   stock_record "$TEST_HOME/.config/git/config" "$(file_sha "$TEST_HOME/.config/git/config")"
-  DRY_RUN=false migration_run 1789593600.sh >/dev/null 2>&1 || return 1
+  # T8.2: MIGRATION is the name ./bin/teeup dev add-migration produced in Step 4,
+  # not a number pasted from the plan. Define it once at the top of the suite.
+  DRY_RUN=false migration_run "$MIGRATION" >/dev/null 2>&1 || return 1
   assert_contains "$(cat "$TEST_HOME/.config/git/config")" "llg = log --color --graph" || return 1
   # An edited copy is left alone: that is the stock-checksum rule. The marker
   # lib/state.sh wrote goes first, so the migration is allowed to run again.
   printf '[alias]\n\tmine = status\n' > "$TEST_HOME/.config/git/config"
-  rm -f "$TEEUP_STATE_DIR/migrations/1789593600.sh"
-  DRY_RUN=false migration_run 1789593600.sh >/dev/null 2>&1 || true
+  rm -f "$TEEUP_STATE_DIR/migrations/$MIGRATION"
+  DRY_RUN=false migration_run "$MIGRATION" >/dev/null 2>&1 || true
   assert_equals '[alias]
 	mine = status' "$(cat "$TEST_HOME/.config/git/config")" || return 1
   cleanup_test_env
@@ -2211,7 +2423,7 @@ run_test "doctor flags an included [user] block" test_doctor_flags_a_user_block_
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `bash tests/capabilities/zsh.sh; bash tests/capabilities/git.sh`
-Expected: the two zsh tests fail (no `.cargo/bin`, no `GOPATH`, no `cd..`), `configure ships the last two chezmoi aliases` fails on the missing `lfs`/`llg`, and `the shipped migration refreshes a pristine config` fails with `No migration named 1789593600.sh`.
+Expected: the two zsh tests fail (no `.cargo/bin`, no `GOPATH`, no `cd..`), `configure ships the last two chezmoi aliases` fails on the missing `lfs`/`llg`, and `the shipped migration refreshes a pristine config` fails with `No migration named <epoch>.sh` — the name `./bin/teeup dev add-migration` will produce in Step 4, which the suite holds in `$MIGRATION` (T8.2).
 
 - [ ] **Step 3: Add the PATH entries to `capabilities/zsh/default/env`**
 
@@ -2321,7 +2533,7 @@ fi
 
 `~/.config/git/config` is installed once and then belongs to the user, so a machine that already ran teeup would never see the two new aliases. That is what the stock-checksum rule and `migration_refresh` are for.
 
-```bash file=migrations/1789593600.sh
+```bash file=migrations/<epoch>.sh
 #!/usr/bin/env bash
 # Phase 5a: the shipped ~/.config/git/config gained the `lfs` and `llg`
 # aliases, the last two the chezmoi repo had that teeup did not (spec section
@@ -2362,19 +2574,31 @@ Expected: all three end with every test passing.
 
 - [ ] **Step 9: Run the whole suite and the checks**
 
-Run: `./tests/run.sh && ./bin/teeup commands --check && shellcheck --severity=warning migrations/1789593600.sh tests/capabilities/zsh.sh tests/capabilities/git.sh && git diff --check`
+Run: `./tests/run.sh && ./bin/teeup commands --check && shellcheck --severity=warning migrations/<epoch>.sh tests/capabilities/zsh.sh tests/capabilities/git.sh && git diff --check`
 Expected: the same suite count as the task before this one; everything else silent.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add capabilities/zsh/default/env capabilities/zsh/default/aliases capabilities/git/config/git/config migrations/1789593600.sh tests/capabilities/zsh.sh tests/capabilities/git.sh
+git add capabilities/zsh/default/env capabilities/zsh/default/aliases capabilities/git/config/git/config migrations/<epoch>.sh tests/capabilities/zsh.sh tests/capabilities/git.sh
 git commit -m "Port the last of the chezmoi shell and git content"
 ```
 
 ---
 
 ### Task 9: README and contributor documentation
+
+> **Rulings folded in (Revision 2).**
+> **T9.1 — both anchors are stale.** There is no `teeup config get` line in `README.md`
+> (no `teeup config` verb exists), so add the `teeup migrate legacy` line under the existing
+> command list where it actually is. `CONTRIBUTING.md`'s numbered list ends at **24**, so
+> the new items are **25-28**, not 31-34. Renumbering by hand against this plan's old
+> numbers would duplicate or skip items in a file other phases keep appending to.
+> **T9.2 (Blocking) — the README section must not promise `teeup doctor`**, or the five
+> findings it would print, until #32 merges. The README is the one page a user reads before
+> trusting a command that deletes things; it may not document a verb the shipped CLI rejects.
+> **T9.3 (keep) — leave the `teeup remove` bullet alone.** `tests/docs.sh` pins its
+> capability names and counts, and `tests/docs.sh` derives those claims from the tree.
 
 Documentation only. It is a task of its own because a reviewer can reject the wording without rejecting the code, and because `teeup migrate legacy` is the one command in teeup whose entire value is that a user trusts what it will and will not delete — that has to be written down where they will read it.
 
@@ -2388,11 +2612,15 @@ Documentation only. It is a task of its own because a reviewer can reject the wo
 
 - [ ] **Step 1: Add the verb to the README's command list**
 
+The `teeup config get` line this step used to anchor on does not exist (T9.1). The real
+command list is the fenced block under `## New runtime (preview)` in `README.md`, whose
+last line is the `dev-env` one. Anchor there:
+
 ```bash edit-old=README.md
-teeup config get          # the answers, and which of them a machine file pins
+teeup install dev-env go  # install a language runtime through mise
 ```
 ```bash edit-new=README.md
-teeup config get          # the answers, and which of them a machine file pins
+teeup install dev-env go  # install a language runtime through mise
 teeup migrate legacy      # retire the old teeup and chezmoi wiring on this Mac
 ```
 
@@ -2413,8 +2641,13 @@ This repository contains `teeup.sh`, a cross-platform developer setup script. It
 ```bash
 DRY_RUN=true teeup migrate legacy   # read what it would do first
 teeup migrate legacy
-teeup doctor                        # what is left, and how to finish it
+teeup status                        # what is installed afterwards
 ```
+
+(T9.2: `teeup doctor` is named here only once PR #32 has merged. Until then the README
+may not point at a verb `bin/teeup` rejects. When #32 lands, the third line becomes
+`teeup doctor   # what is left, and how to finish it` and the paragraph on the five
+findings can be added with it.)
 
 `teeup migrate legacy` retires the two things this teeup replaced. It removes
 `~/.teeup.common`, `~/.config/mac-setup` and the `~/.teeupshrc` and
@@ -2470,7 +2703,7 @@ Append after the last numbered item in `CONTRIBUTING.md` (item 30, which phase 4
     `PATH`, and the harness `PATH` keeps `/usr/bin`, so on a machine with
     gum installed there the test would drive a full-screen prompt instead of
     the plain fallback that reads stdin.
-31. Nothing in `teeup migrate legacy` deletes a path it was given. Every
+25. Nothing in `teeup migrate legacy` deletes a path it was given. Every
     deletion goes through `migrate_rm <key>`, and the keys are the five-entry
     `case` in `migrate_target` — adding something to delete means adding a
     key there and a test for it, never passing a path. The resolved path is
@@ -2478,17 +2711,17 @@ Append after the last numbered item in `CONTRIBUTING.md` (item 30, which phase 4
     chezmoi source directory and everything above and below it), because an
     `XDG_CONFIG_HOME` override or a symlinked `~/.config` can still make a
     key land somewhere it must not.
-32. `chezmoi` is only ever run through `chezmoi_ro`, which accepts `managed`,
+26. `chezmoi` is only ever run through `chezmoi_ro`, which accepts `managed`,
     `source-path` and `--version` and `die`s on anything else. `chezmoi purge`
     removes chezmoi's source directory, which is the sibling repo that still
     serves Linux, so it must stay unreachable — including from a capability's
     `doctor` script, which sources the same libraries.
-33. A test in this area may never name a path outside `$TEST_HOME`. The
+27. A test in this area may never name a path outside `$TEST_HOME`. The
     stand-in for the sibling checkout is a `Work/environment/dotfiles`
     directory the test creates inside the throwaway `$HOME`, and `chezmoi` and
     `git` are mocked. A destructive code path needs a test for the refusal,
     not only for the success.
-34. Use `disable_matching_lines` rather than editing a shell file by hand. It
+28. Use `disable_matching_lines` rather than editing a shell file by hand. It
     rewrites a matching line as `: # Disabled by teeup (<reason>): <line>` —
     the `:` matters, because an `if … ; then` whose whole body is commented
     out is a syntax error — leaves a line that *opens* a block alone and
@@ -2533,7 +2766,7 @@ echo "exit: $?"                 # 1
 Expected: `Refusing to remove …` for `~/.config/mac-setup` and `~/.config/chezmoi`, `Migration finished, but teeup refused to touch something above`, exit 1, and the stand-in directory byte-identical afterwards.
 
 6. **`chezmoi purge` is unreachable.** `grep -rn 'chezmoi' lib/ bin/ capabilities/ --include='*' | grep -v chezmoi_ro | grep -v '^.*#'` returns only the `chezmoi "$@"` line inside `chezmoi_ro` itself and the `have chezmoi` guards. Then, in a shell with `lib/all.sh` sourced, `chezmoi_ro purge` prints `teeup only runs read-only chezmoi subcommands` and exits 1.
-7. **The doctor closes the loop.** On the throwaway HOME above, without the symlink: `teeup migrate legacy` then `teeup doctor zsh` and `teeup doctor git` both exit 0 — that is the spec's "teeup doctor must exit 0 afterward" for section 10's leftovers.
+7. **The doctor closes the loop — only once PR #32 has merged and Task 7 has run.** On the throwaway HOME above, without the symlink: `teeup migrate legacy` then `teeup doctor zsh` and `teeup doctor git` both exit 0 — that is the spec's "teeup doctor must exit 0 afterward" for section 10's leftovers. Note #32's exit codes: 0 is verified healthy, 1 problems, 2 could not check, so "not 1" is not good enough here. When Task 7 is skipped, this step is skipped with it and the leftovers stay on 4b's list.
 8. **`DRY_RUN` is faithful.** `DRY_RUN=true teeup migrate legacy` in a legacy-shaped HOME, then `git status` on nothing and a `find $HOME -newer` that lists no file: the preview must create, delete and rename nothing, including backups.
 
 ---
@@ -2611,7 +2844,7 @@ Searched the plan for `TBD`, `TODO`, `implement later`, `fill in`, `appropriate 
 
 ### Mechanical verification (2026-09-16)
 
-**The base.** `main` (at `c08dd63`, which already carries the parallel test runner, so nothing was cherry-picked) with the phase 3a, 3b, 4a, 4b, 4c and 4d plans applied in that order into `…/scratchpad/plan5a/base`. It reaches **60 suites**, `./tests/run.sh` green and `./bin/teeup commands --check` silent. Two hand reconciliations were needed to get there, both between plans this one consumes, neither in 5a's own text. **Both have since been fixed in the plans themselves** (cross-plan pass of 2026-09-16), so an executor applying 3a to 5b in order meets neither:
+**The base (superseded — see Revision 2).** This whole section records a transcription run made on 2026-09-13 against a *simulated* base, and every count in it is stale: `main` now measures **49 suites** and `tests/lib/files.sh` **42 tests**. Read it as evidence that the plan's code applies cleanly, not as an expectation to check against. The base was `main` (at `c08dd63`, which already carries the parallel test runner, so nothing was cherry-picked) with the phase 3a, 3b, 4a, 4b, 4c and 4d plans applied in that order into `…/scratchpad/plan5a/base`. It reaches **60 suites**, `./tests/run.sh` green and `./bin/teeup commands --check` silent. Two hand reconciliations were needed to get there, both between plans this one consumes, neither in 5a's own text. **Both have since been fixed in the plans themselves** (cross-plan pass of 2026-09-16), so an executor applying 3a to 5b in order meets neither:
 
 1. Phase 4b's three `lib/all.sh` edits anchored on the library list *without* 4a's `hooks migrations`, so each anchor was widened by those two names before applying. 4b's six blocks now carry `hooks migrations`.
 2. Phase 4a and 4b each defined `cmd_dev` in `bin/teeup`; applied mechanically that left two definitions, the later one winning and `teeup dev new-capability` breaking. 4b's Task 8 Step 4 now edits 4a's function instead of redefining it, and Task 9 Step 4 anchors on the result.
@@ -2621,7 +2854,7 @@ Searched the plan for `TBD`, `TODO`, `implement later`, `fill in`, `appropriate 
 Two defects in this plan's own text were found by that run and fixed:
 
 - `TEEUP_MIGRATE_RC_FILES` is set in Task 2 but not read until Task 3, so shellcheck failed Task 2 with SC2034. It is now `export`ed, like `TEEUP_MIGRATIONS_DIR` and the rest of teeup's module variables.
-- `migrations/1789593600.sh` called `migration_refresh git` unconditionally, which broke two of phase 4a's `teeup update` tests: they point `TEEUP_CAPS_DIR` at a fixture tree with no `git` capability, so the migration exited non-zero and stopped the update. It is now guarded with `if cap_exists git`.
+- `migrations/<epoch>.sh` called `migration_refresh git` unconditionally, which broke two of phase 4a's `teeup update` tests: they point `TEEUP_CAPS_DIR` at a fixture tree with no `git` capability, so the migration exited non-zero and stopped the update. It is now guarded with `if cap_exists git`.
 
 **Final state.** On the finished tree: `./tests/run.sh` **All 61 suites passed**; `TEEUP_TEST_JOBS=1 ./tests/run.sh` **All 61 suites passed**; the whole suite under the bash 3.2.0 build at `…/scratchpad/bash32build/bash-3.2/bash` **All 61 suites passed**; `shellcheck --severity=warning` over `lib/migrate.sh lib/files.sh lib/all.sh bin/teeup capabilities/zsh/doctor capabilities/git/doctor migrations/*.sh` and the five test files, silent; `./bin/teeup commands --check`, silent and 0; `git diff --check`, silent; `./bin/teeup dev check`, `teeup dev check: everything passed`. Applying the plan a second time to a fresh copy of the base produces a tree byte-identical to the transcribed one.
 
