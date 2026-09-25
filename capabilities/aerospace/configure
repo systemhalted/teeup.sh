@@ -47,7 +47,11 @@ else
       # Installing on top of that would let copy_config_once mistake the
       # candidate for a hand edit and keep it. Stop, and say where the
       # original is: aerospace_config_ok has already named the saved copy.
-      err "teeup could not put $AEROSPACE_DEST_TOML back after checking it with AeroSpace. It was not changed further; restore the saved copy named above before running this again."
+      # Two shapes reach here: a previous config that could not be restored
+      # (the saved copy is named in the warning above) and a staged candidate
+      # on a fresh install that could not be removed. Neither leaves the
+      # destination as teeup found it, so the message must not say it did.
+      err "teeup left $AEROSPACE_DEST_TOML in a state it did not choose while checking it with AeroSpace. Read the warning above and put that file right before running this again."
       exit 1
     fi
     if [[ "$AEROSPACE_VALIDATION_RC" -ne 0 ]]; then

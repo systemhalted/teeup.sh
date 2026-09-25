@@ -635,7 +635,17 @@ aerospace_config_ok() {
       return 2
     fi
   else
-    rm -f "$dest"
+    # Nothing to put back on a fresh install -- but the candidate still has to
+    # go, and an unchecked rm here is the same defect as an unchecked restore
+    # above. If it fails the candidate is left at the LIVE config path: an
+    # accepted one with no stock record, which teeup then reads as
+    # hand-edited forever and never refreshes, and a rejected one installed
+    # while the caller reports the destination unchanged. Same status 2, for
+    # the same reason: the destination is not what it was.
+    if ! rm -f "$dest" 2>/dev/null; then
+      warn "Could not remove the staged copy at $dest after checking it with AeroSpace; it is still there and is not a config teeup chose to install." >&2
+      return 2
+    fi
   fi
   if [[ $rc -ne 0 ]]; then
     printf '%s\n' "$out"

@@ -541,6 +541,44 @@ test_the_shipped_migration_refreshes_a_pristine_config() {
 # edited the file, and leaves it exactly where it is. The user's real config
 # stays stranded in a .teeup_validate_old.XXXXXX beside it and configure
 # reports success. A failed restore has to stop the capability.
+# The fresh-install mirror of the restore-failure case. With no previous
+# destination there is nothing to put back, so the staged candidate is simply
+# removed -- and that rm was unchecked. If it fails, the candidate stays at
+# the live config path: an ACCEPTED one is then left there with no stock
+# record, so teeup reads it as hand-edited forever and never refreshes it;
+# a REJECTED one is left installed while configure says the destination was
+# not changed, which is the worse of the two.
+test_backstop_fails_when_a_rejected_candidate_cannot_be_removed() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local cfg_dir
+  cfg_dir="$(dirname "$AERO")"
+  rm -rf "$cfg_dir"
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  list-monitors) echo "monitor 1"; exit 0 ;;
+  reload-config) echo "aerospace: config error: unexpected key on line 12" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  # An rm that refuses to delete the staged candidate at the live path.
+  mock_command_script rm <<'EOF2'
+for a in "$@"; do
+  case "$a" in
+    */aerospace/aerospace.toml) exit 1 ;;
+  esac
+done
+exec /bin/rm "$@"
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure aerospace 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  # The candidate is still there, so the message must not say the config was
+  # left untouched.
+  assert_not_contains "$out" "was not changed." "a candidate teeup could not remove is not an unchanged destination" || return 1
+  cleanup_test_env
+}
+
 test_backstop_fails_when_the_original_cannot_be_restored() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -681,6 +719,7 @@ run_test "backstop leaves the config untouched when AeroSpace rejects it" test_b
 run_test "backstop never writes through a symlinked config" test_backstop_never_writes_through_a_symlinked_config
 run_test "backstop skips when aerospace is not running" test_backstop_skips_when_aerospace_is_not_running
 run_test "the shipped migration refreshes a pristine config" test_the_shipped_migration_refreshes_a_pristine_config
+run_test "backstop fails when a rejected candidate cannot be removed" test_backstop_fails_when_a_rejected_candidate_cannot_be_removed
 run_test "backstop fails when the original cannot be restored" test_backstop_fails_when_the_original_cannot_be_restored
 run_test "backstop validates on a fresh machine with no config dir" test_backstop_validates_on_a_fresh_machine_with_no_config_dir
 run_test "backstop installs nothing on a fresh machine when AeroSpace rejects it" test_backstop_installs_nothing_on_a_fresh_machine_when_aerospace_rejects_it
