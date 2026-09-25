@@ -898,10 +898,11 @@ test_migrate_legacy_runs_every_step_and_closes_with_a_real_command() {
   assert_contains "$content" "rbenv replaced by mise" || return 1
   assert_contains "$content" "export KEEP=1" || return 1
   assert_contains "$out" "nothing to take over" "no chezmoi here" || return 1
-  # T6.1: the closing line must name a verb that exists. teeup doctor does
-  # not yet; teeup update does.
+  # T6.1: the closing line must name verbs that exist. teeup doctor landed
+  # after this test was written, and is how to see what is left over.
   assert_contains "$out" "teeup update" || return 1
-  assert_not_contains "$out" "teeup doctor" "the migration must not close by naming a verb bin/teeup rejects" || return 1
+  assert_contains "$out" "teeup doctor" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup doctor" "the verb the migration names must be one bin/teeup has" || return 1
   cleanup_test_env
 }
 

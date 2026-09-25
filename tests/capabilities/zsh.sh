@@ -758,6 +758,24 @@ EOF2
   cleanup_test_env
 }
 
+# A chezmoi that fails is not a chezmoi with no source directory.
+test_doctor_reports_unknown_when_chezmoi_fails() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command dscl 0 "UserShell: /bin/zsh"
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  mkdir -p "$TEST_HOME/.config/chezmoi"
+  mock_command_script chezmoi <<'EOF2'
+echo "chezmoi: invalid config: yaml: line 1" >&2
+exit 1
+EOF2
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run zsh doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "has no source directory" || return 1
+  assert_unknown "$rc" "nothing confirmed broken, but chezmoi could not be asked" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zsh"
 test_env_survives_errexit_without_nvim() {
   setup
@@ -913,4 +931,5 @@ run_test "doctor leftover fixes survive a home with a space" test_doctor_leftove
 run_test "doctor is clean once migrate has run" test_doctor_stops_flagging_leftovers_once_migrate_has_neutralised_them
 run_test "doctor is clean after migrate keeps an && opener" test_doctor_is_clean_after_migrate_keeps_an_and_opener
 run_test "doctor flags a chezmoi source directory" test_doctor_flags_a_chezmoi_source_directory_that_still_points_here
+run_test "doctor reports unknown when chezmoi fails" test_doctor_reports_unknown_when_chezmoi_fails
 print_summary

@@ -764,9 +764,9 @@ cmd_migrate() {
   migrate_chezmoi || rc=1
   echo ""
   if [[ $rc -eq 0 ]]; then
-    ok "Migration finished. Open a new terminal, then run: teeup update"
+    ok "Migration finished. Open a new terminal, then run: teeup update, then teeup doctor to see anything still left over"
   else
-    err "Migration finished, but teeup refused to touch something above. Nothing was lost; read the warnings, then run: teeup status"
+    err "Migration finished, but teeup refused to touch something above. Nothing was lost; read the warnings, then run: teeup doctor"
   fi
   return $rc
 }

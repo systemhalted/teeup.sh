@@ -139,8 +139,13 @@ fi
 # it. The config that points chezmoi at it is the problem, because while it
 # exists one `chezmoi apply` puts its files back over teeup's.
 if [[ -d "$(user_config_dir)/chezmoi" ]] && have chezmoi; then
-  chezmoi_src="$(chezmoi_ro source-path 2>/dev/null || true)"
-  if [[ -n "$chezmoi_src" && -d "$chezmoi_src" ]]; then
+  chezmoi_rc=0
+  chezmoi_src="$(chezmoi_ro source-path 2>/dev/null)" || chezmoi_rc=$?
+  if [[ $chezmoi_rc -ne 0 ]]; then
+    # A chezmoi that fails (a broken config, say) has told teeup nothing,
+    # least of all that there is no source directory.
+    doctor_unknown "chezmoi is configured here but 'chezmoi source-path' failed, so teeup could not tell where it points." "chezmoi source-path"
+  elif [[ -n "$chezmoi_src" && -d "$chezmoi_src" ]]; then
     doctor_fail "chezmoi still points at $chezmoi_src, so one 'chezmoi apply' would put its files back over the ones teeup owns." "teeup migrate legacy"
   else
     doctor_ok "chezmoi is configured here but has no source directory."
