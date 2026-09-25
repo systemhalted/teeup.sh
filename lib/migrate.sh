@@ -323,3 +323,203 @@ EOF_RC
   fi
   return 0
 }
+
+# migrate_teeup_ships <absolute-path>
+# 0 when some capability ships a file that lands exactly at <absolute-path>.
+# This is what separates "teeup will put this back on the next update" from
+# "this is yours and nothing will restore it", and the two deserve very
+# different warnings before a bulk rename of somebody's home directory.
+#
+# Two shipped layouts: capabilities/<cap>/config/<rel> lands at
+# <user_config_dir>/<rel>, and capabilities/<cap>/home/<name> lands at
+# ${ZDOTDIR:-$HOME}/<name> for the zsh stubs or $HOME/<name> otherwise --
+# both are checked, since which one applies is the capability's business.
+migrate_teeup_ships() {
+  local want="$1" cap_dir rel dest zdot="${ZDOTDIR:-$HOME}"
+  for cap_dir in "$TEEUP_CAPS_DIR"/*; do
+    [[ -d "$cap_dir" ]] || continue
+    if [[ -d "$cap_dir/config" ]]; then
+      while IFS= read -r dest; do
+        [[ -n "$dest" ]] || continue
+        rel="${dest#"$cap_dir/config/"}"
+        if [[ "$(user_config_dir)/$rel" == "$want" ]]; then
+          return 0
+        fi
+      done <<EOF_CFG
+$(find "$cap_dir/config" -type f 2>/dev/null)
+EOF_CFG
+    fi
+    if [[ -d "$cap_dir/home" ]]; then
+      while IFS= read -r dest; do
+        [[ -n "$dest" ]] || continue
+        rel="${dest##*/}"
+        if [[ "$HOME/$rel" == "$want" || "$zdot/$rel" == "$want" ]]; then
+          return 0
+        fi
+      done <<EOF_HOME
+$(find "$cap_dir/home" -type f 2>/dev/null)
+EOF_HOME
+    fi
+  done
+  return 1
+}
+
+# migrate_backup <absolute-path>
+# backup_target behind the same gates migrate_rm uses. Every path reaching
+# this comes from `chezmoi managed`, which lists entries in the destination
+# directory, so the gates should never fire; they are here because a chezmoi
+# config with an unusual destDir would otherwise let the migration rename a
+# file outside $HOME. Prints the backup path when it moved something, prints
+# nothing when there was nothing there.
+#
+# Three statuses, because the caller has to tell them apart: 0 moved it or
+# there was nothing to move, 1 REFUSED, 2 backup_target FAILED. Collapsing
+# the last two tells the user teeup protected something when in fact a file
+# is still sitting there unmoved -- they go looking for a safety rule and
+# never investigate the file.
+migrate_backup() {
+  local path="$1" resolved
+  if ! resolved="$(migrate_resolve "$path")"; then
+    return 0
+  fi
+  if ! migrate_path_is_safe "$resolved"; then
+    warn "Refusing to back up $path: it resolves to $resolved, which teeup's migration must not touch."
+    return 1
+  fi
+  if [[ ! -e "$resolved" && ! -L "$resolved" ]]; then
+    return 0
+  fi
+  if [[ -d "$resolved" && ! -L "$resolved" ]]; then
+    log "Leaving the directory $resolved in place; only files are moved aside."
+    return 0
+  fi
+  backup_target "$resolved" || return 2
+}
+
+# migrate_chezmoi
+# The chezmoi half of spec section 10. Managed files are MOVED ASIDE, not
+# deleted: copy_config_once then installs teeup's own version into the gap,
+# and the .teeup_backup_<ts> copy is right there to lift personal lines out
+# of. The source directory is never deleted, never purged, never written to --
+# it is ~/Work/environment/dotfiles on this user's machines and it still
+# serves Linux. The one thing this can delete is ~/.config/chezmoi, the config
+# that points chezmoi at that source, and only after asking; the default is
+# no, so a non-interactive run keeps it.
+#
+# Nothing is renamed until somebody says so. This moves about twenty files in
+# a real home directory, and the list is not all the same kind of thing: the
+# ones teeup ships a config for come back on the next update, and the rest --
+# a ~/.tmux.conf, somebody's own ~/.local/bin scripts -- have nothing to
+# restore them but a hand search for *.teeup_backup_*. So the two groups are
+# listed separately and one confirmation covers the move, defaulting to no.
+# 0 when everything it tried succeeded, 1 when something was refused or failed.
+migrate_chezmoi() {
+  local src managed line backup count=0 rc=0 chezmoi_config
+  local mine="" theirs="" refused=0 failed=0 migrate_backup_rc=0
+  if ! have chezmoi; then
+    log "No chezmoi on this machine; nothing to take over."
+    return 0
+  fi
+  src="$(migrate_chezmoi_source)" || {
+    warn "chezmoi is installed but teeup could not determine its source directory, so nothing was taken over."
+    return 1
+  }
+  if [[ -z "$src" ]]; then
+    log "chezmoi is installed but reports no source directory here; nothing to take over."
+    return 0
+  fi
+  log "chezmoi manages this home from $src"
+  log "That checkout still serves Linux, so teeup never deletes it, never runs 'chezmoi purge', and never writes to it."
+  managed="$(mktemp)"
+  if ! chezmoi_ro managed --path-style=absolute --include=files,symlinks > "$managed" 2>/dev/null; then
+    warn "Could not list what chezmoi manages, so nothing was moved. Run 'chezmoi managed' yourself to see why."
+    rm -f "$managed"
+    return 1
+  fi
+  # Split first, so the question can say which files are which.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ -z "$line" ]]; then
+      continue
+    fi
+    if [[ ! -e "$line" && ! -L "$line" ]]; then
+      continue
+    fi
+    if migrate_teeup_ships "$line"; then
+      theirs="$theirs  $line
+"
+    else
+      mine="$mine  $line
+"
+    fi
+  done < "$managed"
+  if [[ -z "$theirs" && -z "$mine" ]]; then
+    log "chezmoi manages nothing that is still in your home directory; nothing to move."
+    rm -f "$managed"
+  else
+    if [[ -n "$theirs" ]]; then
+      echo "teeup will reinstall these on the next 'teeup update':"
+      printf '%s' "$theirs"
+    fi
+    if [[ -n "$mine" ]]; then
+      echo "teeup does not ship these -- they are yours, and only the .teeup_backup_<ts> copy will hold them:"
+      printf '%s' "$mine"
+    fi
+    if ! lazy_is_tty; then
+      # A bulk rename of somebody's home directory is not something to do on
+      # an unattended run. Say what a real one would do and stop.
+      log "Not moving anything: there is nobody to ask. A run from a terminal would move the files above aside as <name>.teeup_backup_<ts>."
+      rm -f "$managed"
+      return 0
+    fi
+    if ! ui_confirm "Move the files above aside so teeup can take over this home directory?" no; then
+      log "Nothing was moved. chezmoi still owns those files; re-run when you are ready."
+      rm -f "$managed"
+      return 0
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ -z "$line" ]]; then
+        continue
+      fi
+      backup=""
+      migrate_backup_rc=0
+      backup="$(migrate_backup "$line")" || migrate_backup_rc=$?
+      case "$migrate_backup_rc" in
+        0)
+          # backup_target returns the prospective path and 0 under DRY_RUN
+          # without moving anything, so counting its output there would make
+          # the preview claim it moved the user's home aside. Only a real
+          # move counts.
+          if [[ -n "$backup" && "$DRY_RUN" != "true" ]]; then
+            count=$((count + 1))
+          fi
+          ;;
+        1) refused=$((refused + 1)); rc=1 ;;
+        *) failed=$((failed + 1)); rc=1 ;;
+      esac
+    done < "$managed"
+    rm -f "$managed"
+    ok_unless_dry "Moved $count chezmoi-managed file(s) aside. Run 'teeup update' and teeup reinstalls the ones it owns."
+    # Which of the two happened, named separately: a refusal is teeup
+    # protecting something, a failure is a file still sitting there that
+    # nobody will look at if it reads as a refusal.
+    if [[ "$refused" -gt 0 ]]; then
+      warn "$refused file(s) were refused: they resolve somewhere teeup's migration must not touch. Nothing was lost; they are where they were."
+    fi
+    if [[ "$failed" -gt 0 ]]; then
+      warn "$failed file(s) could not be backed up and are still in place. Read the warnings above: that is a write that failed, not a safety refusal."
+    fi
+  fi
+  chezmoi_config="$(migrate_target chezmoi-config)"
+  if [[ ! -e "$chezmoi_config" ]]; then
+    log "No $chezmoi_config, so chezmoi already has nothing pointing it at this home."
+    return $rc
+  fi
+  if ui_confirm "Delete $chezmoi_config, so chezmoi stops pointing at $src? The checkout itself stays." no; then
+    if ! migrate_rm chezmoi-config; then
+      rc=1
+    fi
+  else
+    log "Keeping $chezmoi_config. Running 'chezmoi apply' again will put its files back over teeup's."
+  fi
+  return $rc
+}

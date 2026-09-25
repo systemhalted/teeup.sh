@@ -455,6 +455,167 @@ test_migrate_disable_runtime_inits_honours_zdotdir() {
   cleanup_test_env
 }
 
+# Which managed files teeup will put back, and which it will not. On a real
+# machine the second group is the user's own work -- ~/.tmux.conf, their
+# ~/.local/bin scripts -- and moving those aside without saying so leaves
+# nothing to restore them but a hand search for *.teeup_backup_*.
+test_migrate_teeup_ships_knows_what_it_will_reinstall() {
+  setup
+  # A config teeup really ships (capabilities/git/config/git/config).
+  migrate_teeup_ships "$XDG_CONFIG_HOME/git/config" || { echo "teeup ships the gitconfig; it must say so"; return 1; }
+  # A zsh stub teeup really ships, which lives directly in $HOME.
+  migrate_teeup_ships "$TEST_HOME/.zshrc" || { echo "teeup ships .zshrc; it must say so"; return 1; }
+  # The user's own work.
+  if migrate_teeup_ships "$TEST_HOME/.tmux.conf"; then
+    echo "teeup ships no tmux.conf into HOME; it must not claim it will restore one"
+    return 1
+  fi
+  if migrate_teeup_ships "$TEST_HOME/.local/bin/mine.sh"; then
+    echo "a user's own script must not be counted as teeup's"
+    return 1
+  fi
+  cleanup_test_env
+}
+
+# T5.1, Blocking. The bulk move must be consented to, once, before anything
+# is renamed -- and the prompt has to separate what teeup will put back from
+# what it will not, because those are two very different risks.
+test_migrate_chezmoi_asks_before_moving_anything() {
+  setup
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  printf '%s\n%s\n' "$TEST_HOME/.zshrc" "$TEST_HOME/.tmux.conf" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  printf 'mine\n' > "$TEST_HOME/.tmux.conf"
+  local out
+  # Answer no.
+  out="$(printf 'n\n' | migrate_chezmoi 2>&1)" || true
+  assert_contains "$out" "teeup will reinstall" "the prompt must name what teeup puts back" || return 1
+  assert_contains "$out" ".tmux.conf" || return 1
+  assert_contains "$out" "teeup does not ship" "the prompt must name what it will not put back" || return 1
+  assert_equals "mine" "$(cat "$TEST_HOME/.zshrc")" "answering no must move nothing" || return 1
+  assert_equals "mine" "$(cat "$TEST_HOME/.tmux.conf")" || return 1
+  assert_equals "0" "$(find "$TEST_HOME" -name '*.teeup_backup_*' | wc -l | tr -d ' ')" || return 1
+  cleanup_test_env
+}
+
+test_migrate_chezmoi_moves_the_files_when_told_to() {
+  setup
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  local out
+  out="$(printf 'y\n' | migrate_chezmoi 2>&1)" || true
+  [[ ! -e "$TEST_HOME/.zshrc" ]] || { echo "the file was not moved aside"; return 1; }
+  assert_equals "1" "$(find "$TEST_HOME" -name '.zshrc.teeup_backup_*' | wc -l | tr -d ' ')" || return 1
+  assert_contains "$out" "Moved 1" || return 1
+  cleanup_test_env
+}
+
+# T5.1, second half. Without a TTY there is nobody to ask, and a bulk rename
+# of the user's home is not something to do on an unattended `teeup update`.
+test_migrate_chezmoi_moves_nothing_without_a_tty() {
+  setup
+  mock_chezmoi
+  export TEEUP_TEST_TTY=no
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  local out
+  out="$(migrate_chezmoi 2>&1)" || true
+  assert_equals "mine" "$(cat "$TEST_HOME/.zshrc")" "a non-interactive run must move nothing" || return 1
+  assert_contains "$out" "would move" "it must still say what a real run would do" || return 1
+  assert_not_contains "$out" "Moved 1" "nothing was moved, so it must not say it moved anything" || return 1
+  cleanup_test_env
+}
+
+# T5.2, Blocking. backup_target returns the prospective path and 0 under
+# DRY_RUN, so counting its return makes the preview claim it moved the user's
+# home aside. DRY_RUN=true is the step the README tells people to take first.
+test_migrate_chezmoi_dry_run_claims_no_moves() {
+  setup
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  local out
+  out="$(printf 'y\n' | DRY_RUN=true migrate_chezmoi 2>&1)" || true
+  assert_equals "mine" "$(cat "$TEST_HOME/.zshrc")" "a dry run must move nothing" || return 1
+  assert_not_contains "$out" "✅ Moved" "a dry run must not claim it moved anything" || return 1
+  assert_equals "0" "$(find "$TEST_HOME" -name '*.teeup_backup_*' | wc -l | tr -d ' ')" || return 1
+  cleanup_test_env
+}
+
+# T5.3. A refusal and a failed backup are different things with different
+# next steps: one is teeup protecting something, the other is a file still
+# sitting there unmoved that nobody will look at if it reads as a refusal.
+test_migrate_backup_separates_a_refusal_from_a_failure() {
+  setup
+  mock_chezmoi
+  local rc=0
+  # Refused: inside the sibling repo.
+  migrate_backup "$SIBLING/dot_zshrc" >/dev/null 2>&1 || rc=$?
+  assert_equals "1" "$rc" "a refusal is status 1" || return 1
+  # Failed: the file is there, but its directory cannot be written.
+  no_chezmoi
+  mkdir -p "$TEST_HOME/ro"
+  printf 'x\n' > "$TEST_HOME/ro/f"
+  chmod 0500 "$TEST_HOME/ro"
+  rc=0
+  migrate_backup "$TEST_HOME/ro/f" >/dev/null 2>&1 || rc=$?
+  chmod 0700 "$TEST_HOME/ro"
+  assert_equals "2" "$rc" "a failed backup is status 2, not a refusal" || return 1
+  cleanup_test_env
+}
+
+test_migrate_chezmoi_says_which_happened() {
+  setup
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  printf '%s\n' "$SIBLING/dot_zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  local out rc=0
+  out="$(printf 'y\n' | migrate_chezmoi 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "refused" || return 1
+  assert_not_contains "$out" "could not be backed up" "nothing failed here, so it must not say something did" || return 1
+  cleanup_test_env
+}
+
+test_migrate_chezmoi_does_nothing_without_chezmoi() {
+  setup
+  no_chezmoi
+  local out rc=0
+  out="$(migrate_chezmoi 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "nothing to take over" || return 1
+  cleanup_test_env
+}
+
+# The source directory is never deleted, never purged, never written to. The
+# one thing this may remove is the config that points chezmoi at it, and only
+# after asking, with no as the default.
+test_migrate_chezmoi_asks_before_removing_the_chezmoi_config() {
+  setup
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  : > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  mkdir -p "$XDG_CONFIG_HOME/chezmoi"
+  printf 'sourceDir = "x"\n' > "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml"
+  # Two prompts now: the bulk move, then this one. Answer no to both.
+  local out
+  out="$(printf 'n\nn\n' | migrate_chezmoi 2>&1)" || true
+  assert_dir_exists "$XDG_CONFIG_HOME/chezmoi" "answering no must keep it" || return 1
+  assert_dir_exists "$SIBLING" "the source directory is never deleted" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "chezmoi purge" || return 1
+  cleanup_test_env
+}
+
 echo "lib/migrate"
 run_test "migrate_target names only the five legacy paths" test_migrate_target_names_only_the_five_legacy_paths
 run_test "chezmoi_ro runs the read-only subcommands" test_chezmoi_ro_runs_the_read_only_subcommands
@@ -479,4 +640,13 @@ run_test "migrate_runtime_pattern is narrow enough to be safe" test_migrate_runt
 run_test "migrate_disable_runtime_inits neutralises each manager" test_migrate_disable_runtime_inits_neutralises_each_manager
 run_test "migrate_disable_runtime_inits names the toolchains without deleting them" test_migrate_disable_runtime_inits_names_the_toolchains_without_deleting_them
 run_test "migrate_disable_runtime_inits honours ZDOTDIR" test_migrate_disable_runtime_inits_honours_zdotdir
+run_test "migrate_teeup_ships knows what it will reinstall" test_migrate_teeup_ships_knows_what_it_will_reinstall
+run_test "migrate_chezmoi asks before moving anything" test_migrate_chezmoi_asks_before_moving_anything
+run_test "migrate_chezmoi moves the files when told to" test_migrate_chezmoi_moves_the_files_when_told_to
+run_test "migrate_chezmoi moves nothing without a tty" test_migrate_chezmoi_moves_nothing_without_a_tty
+run_test "migrate_chezmoi dry run claims no moves" test_migrate_chezmoi_dry_run_claims_no_moves
+run_test "migrate_backup separates a refusal from a failure" test_migrate_backup_separates_a_refusal_from_a_failure
+run_test "migrate_chezmoi says which happened" test_migrate_chezmoi_says_which_happened
+run_test "migrate_chezmoi does nothing without chezmoi" test_migrate_chezmoi_does_nothing_without_chezmoi
+run_test "migrate_chezmoi asks before removing the chezmoi config" test_migrate_chezmoi_asks_before_removing_the_chezmoi_config
 print_summary
