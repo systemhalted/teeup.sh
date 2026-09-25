@@ -41,6 +41,27 @@ for suite in "$TESTS_DIR"/lib/*.sh "$TESTS_DIR"/capabilities/*.sh "$TESTS_DIR"/c
   suites[${#suites[@]}]="$suite"
 done
 
+# A test that changes a file's mode inside the checkout breaks whatever else
+# is reading that file at the same moment, and suites run in parallel. It has
+# happened twice -- a capability's themed/ directory, then a template file
+# inside it -- and the second cost a red macos-14 run in which a parallel
+# suite hit "Permission denied" on a real template. A static rule cannot catch
+# it, because the offending chmod names a path the test computed at runtime, so
+# the modes of the tree are recorded before the run and compared after. Every
+# test must work inside $TEST_HOME; the checkout is read-only to all of them.
+_mode_snapshot() {
+  find "$(dirname "$TESTS_DIR")" \
+    -name .git -prune -o \
+    -type f -print 2>/dev/null \
+  | LC_ALL=C sort \
+  | while IFS= read -r f; do
+      printf '%s %s\n' "$(ls -l "$f" 2>/dev/null | awk '{print $1}')" "$f"
+    done
+}
+modes_before="$(mktemp "${TMPDIR:-/tmp}/teeup-modes.XXXXXX")"
+modes_after="$(mktemp "${TMPDIR:-/tmp}/teeup-modes.XXXXXX")"
+_mode_snapshot > "$modes_before"
+
 failed=0
 ran=0
 out_dir=""
@@ -109,6 +130,18 @@ else
     report "$suite" "$out_dir/$key.log" "$out_dir/$key.rc"
   done
 fi
+
+_mode_snapshot > "$modes_after"
+if ! diff -q "$modes_before" "$modes_after" >/dev/null 2>&1; then
+  echo ""
+  echo "A test changed a file mode inside the checkout. Suites run in parallel,"
+  echo "so this breaks whichever other suite was reading that file. Point the"
+  echo "test at a throwaway tree under \$TEST_HOME instead:"
+  diff "$modes_before" "$modes_after" | sed -n 's/^[<>] /  /p' | LC_ALL=C sort -u
+  rm -f "$modes_before" "$modes_after"
+  exit 1
+fi
+rm -f "$modes_before" "$modes_after"
 
 echo ""
 if [[ $ran -eq 0 ]]; then
