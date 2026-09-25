@@ -797,6 +797,18 @@ json_merge_key() { _json_edit merge "$1" "$2" "$3"; }
 
 # --- retiring a predecessor's shell lines -------------------------------------
 
+# block_opener_ere -> the ERE for a line that opens a block: it ends in the
+# word then, do or in, in { or ( or a backslash, or in && or ||. Commenting
+# one out would orphan its fi, done or body, so disable_matching_lines keeps
+# such lines and neutralises the body instead -- and the zsh doctor must
+# treat exactly those lines as inert, or a migrated home fails for ever. One
+# definition, used by both (awk through ENVIRON, the doctor through grep -E).
+# Written without backslash escapes outside brackets, which awk and grep
+# read differently.
+block_opener_ere() {
+  printf '%s\n' '(^|[[:space:];])(then|do|in)[[:space:]]*$|[{(][[:space:]]*$|[\\][[:space:]]*$|(&&|[|][|])[[:space:]]*$'
+}
+
 # disable_matching_lines <file> <pattern> <reason>
 # Neutralise every line of <file> matching the awk ERE <pattern> by rewriting
 # it as ": # Disabled by teeup (<reason>): <the original line>".
@@ -860,11 +872,11 @@ disable_matching_lines() {
     return 0
   fi
   tmp="$(mktemp)" || { warn "Could not create a temp file, so $file was left alone."; return 0; }
-  if ! TEEUP_DML_PATTERN="$pattern" TEEUP_DML_REASON="$reason" awk '
+  if ! TEEUP_DML_PATTERN="$pattern" TEEUP_DML_REASON="$reason" TEEUP_DML_OPENER="$(block_opener_ere)" awk '
     $0 ~ ENVIRON["TEEUP_DML_PATTERN"] && $0 !~ /^[ \t]*[:#]/ {
       # A line that opens a block keeps its terminator company; its body is
       # what actually runs the init, and that gets neutralised below.
-      if ($0 ~ /(then|do|in)[ \t]*$/ || $0 ~ /[{(\\][ \t]*$/ || $0 ~ /(&&|\|\|)[ \t]*$/) {
+      if ($0 ~ ENVIRON["TEEUP_DML_OPENER"]) {
         openers = openers "\n" $0
         print
         next
