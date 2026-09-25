@@ -73,4 +73,79 @@ else
   doctor_fail "No $local_zsh, which is where your own shell lines belong." "teeup configure zsh"
 fi
 
+# Leftovers from what teeup replaced (spec section 10). None of these breaks a
+# shell on its own; each quietly outranks or duplicates teeup's layer, and the
+# only way to notice is to be told. Every path in a printed fix is shell-quoted:
+# the fixes are pasted, and a home with a space in it must survive them.
+
+# A line counts as a leftover only when it would still run something. A
+# comment, a line `teeup migrate legacy` neutralised with ": #", and a bare
+# block opener whose body is dead are all inert, so a migrated machine reads
+# as clean instead of failing for ever on text it can no longer act on.
+rc_still_loads_a_predecessor() {
+  grep -vE '^[[:space:]]*(#|:[[:space:]]#)' "$1" |
+    grep -vE '([[:space:];]|^)(then|do|in)[[:space:]]*$' |
+    grep -qE 'powerlevel10k|p10k|POWERLEVEL9K_|oh-my-zsh|ohmyzsh|ZSH_THEME|antigen|teeup\.common|teeupshrc|shellrc\.common|mac-setup'
+}
+
+omz_dir="$HOME/.oh-my-zsh"
+if [[ -d "$omz_dir" ]]; then
+  doctor_fail "$omz_dir is still on disk. Oh My Zsh redefines prompts, aliases and completions on top of teeup's layer." "rm -rf $(printf '%q' "$omz_dir")"
+else
+  doctor_ok "No Oh My Zsh directory."
+fi
+
+# ZDOTDIR defaults to $HOME, so the same file can be named twice; the case
+# below keeps the list and the rm it prints free of duplicates.
+p10k_files=""
+p10k_quoted=""
+for f in "$HOME/.p10k.zsh" "$zsh_home_dir/.p10k.zsh" "$HOME/.powerlevel10k"; do
+  if [[ -e "$f" ]]; then
+    case " $p10k_files " in
+      *" $f "*) continue ;;
+    esac
+    p10k_files="$p10k_files $f"
+    p10k_quoted="$p10k_quoted $(printf '%q' "$f")"
+  fi
+done
+if [[ -n "$p10k_files" ]]; then
+  doctor_fail "Powerlevel10k files are still here:$p10k_files. teeup's prompt is starship, and p10k's instant prompt takes over the start of every shell." "rm -rf$p10k_quoted"
+else
+  doctor_ok "No Powerlevel10k files."
+fi
+
+stale_rc=""
+rc_skipped=false
+for f in .zshenv .zprofile .zshrc; do
+  [[ -f "$zsh_home_dir/$f" ]] || continue
+  # An unreadable file is already reported above. There is nothing here to
+  # read, grep's own error must not reach the report, and the all-clear
+  # below must not claim a file nobody looked at.
+  if [[ ! -r "$zsh_home_dir/$f" ]]; then
+    rc_skipped=true
+  elif rc_still_loads_a_predecessor "$zsh_home_dir/$f"; then
+    stale_rc="$stale_rc $zsh_home_dir/$f"
+  fi
+done
+if [[ -n "$stale_rc" ]]; then
+  doctor_fail "These still load something teeup replaced:$stale_rc" "teeup migrate legacy"
+elif [[ "$rc_skipped" == "false" ]]; then
+  doctor_ok "No shell file loads a predecessor of teeup."
+fi
+
+# The source directory itself is never teeup's business: it is
+# ~/Work/environment/dotfiles, it still serves Linux, and nothing here touches
+# it. The config that points chezmoi at it is the problem, because while it
+# exists one `chezmoi apply` puts its files back over teeup's.
+if [[ -d "$(user_config_dir)/chezmoi" ]] && have chezmoi; then
+  chezmoi_src="$(chezmoi_ro source-path 2>/dev/null || true)"
+  if [[ -n "$chezmoi_src" && -d "$chezmoi_src" ]]; then
+    doctor_fail "chezmoi still points at $chezmoi_src, so one 'chezmoi apply' would put its files back over the ones teeup owns." "teeup migrate legacy"
+  else
+    doctor_ok "chezmoi is configured here but has no source directory."
+  fi
+else
+  doctor_ok "chezmoi is not pointing at this home."
+fi
+
 doctor_verdict

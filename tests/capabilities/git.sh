@@ -1464,6 +1464,44 @@ test_the_shipped_migration_refreshes_a_pristine_git_config() {
   cleanup_test_env
 }
 
+# A chezmoi-era ~/.gitconfig.local (spec section 10; phase 5a task 7). Whether
+# it is included is asked of git, not grepped for: a mention in a comment
+# includes nothing.
+test_doctor_flags_a_user_block_in_gitconfig_local_that_is_still_included() {
+  setup
+  seed_answers
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  printf '[user]\n\tname = Someone Else\n\temail = old@example.com\n' > "$TEST_HOME/.gitconfig.local"
+  printf '[include]\n\tpath = ~/.gitconfig.local\n' > "$TEST_HOME/.gitconfig"
+  local rc=0 out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "has a [user] block and is still included" || return 1
+  assert_contains "$out" "the identity teeup wrote" "one identity, not per-directory ones (T7.2)" || return 1
+  assert_contains "$(cat "$report")" "--remove-section user" || return 1
+  cleanup_test_env
+}
+
+test_doctor_only_notes_a_gitconfig_local_that_nothing_includes() {
+  setup
+  seed_answers
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  printf '[user]\n\tname = Someone Else\n' > "$TEST_HOME/.gitconfig.local"
+  # Named, but only in a comment: nothing actually includes it.
+  printf '# used to [include] ~/.gitconfig.local here\n' >> "$TEST_HOME/.config/git/local"
+  local out report="$TEST_HOME/report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "but nothing includes it any more" || return 1
+  assert_not_contains "$(cat "$report")" "--remove-section user" "a file nothing reads is a note, not a failure" || return 1
+  cleanup_test_env
+}
+
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
 run_test "a configured work identity does not change the git identity" test_a_configured_work_identity_does_not_change_the_git_identity
@@ -1597,4 +1635,6 @@ run_test "configure twice after the repair changes nothing" test_configure_twice
 run_test "configure dry run repairs nothing" test_configure_dry_run_repairs_nothing
 run_test "the shipped migration refreshes a pristine git config" test_the_shipped_migration_refreshes_a_pristine_git_config
 run_test "configure ships the last two chezmoi aliases" test_configure_ships_the_last_two_chezmoi_aliases
+run_test "doctor flags an included [user] block" test_doctor_flags_a_user_block_in_gitconfig_local_that_is_still_included
+run_test "doctor only notes an unused gitconfig.local" test_doctor_only_notes_a_gitconfig_local_that_nothing_includes
 print_summary
