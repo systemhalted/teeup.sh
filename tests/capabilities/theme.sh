@@ -624,6 +624,10 @@ test_doctor_warns_when_a_template_is_newer_than_its_render() {
   # Checked: an unnoticed cp failure leaves no user template, so the warning
   # this test is about cannot appear and the failure says nothing about why.
   cp "$real_tpl" "$TEEUP_CONFIG_DIR/themed/$base" || { echo "fixture: could not copy $real_tpl"; return 1; }
+  # Newer by a margin, not by however long the cp took: the render and the
+  # copy can land in the same second, and bash 3.2's -nt compares whole
+  # seconds, so this raced on the macOS runners. touch -t is POSIX.
+  touch -t 203001010000 "$TEEUP_CONFIG_DIR/themed/$base" || { echo "fixture: could not date the template"; return 1; }
   local rc=0 out
   out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
   assert_success "$rc" "a stale render is a warning, not a failure" || return 1
