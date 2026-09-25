@@ -533,6 +533,151 @@ test_two_backups_of_the_same_file_within_one_second_both_survive() {
   cleanup_test_env
 }
 
+
+test_disable_matching_lines_neutralises_only_matching_lines() {
+  setup
+  local rc="$TEST_HOME/rc"
+  printf 'export A=1\neval "$(rbenv init -)"\nexport B=2\n' > "$rc"
+  disable_matching_lines "$rc" 'rbenv (init|shell)|RBENV_ROOT' "rbenv replaced by mise" >/dev/null
+  assert_equals 'export A=1
+: # Disabled by teeup (rbenv replaced by mise): eval "$(rbenv init -)"
+export B=2' "$(cat "$rc")" || return 1
+  cleanup_test_env
+}
+
+# A shell init line is usually inside an `if ...; then`, and an if whose whole
+# body is commented out is a syntax error -- the fi below has nothing to close.
+# `:` keeps the line a command while carrying its old text as a comment, and an
+# opener is left alone because neutralising it would orphan its terminator.
+test_disable_matching_lines_keeps_the_file_parsable_inside_a_block() {
+  setup
+  local rc="$TEST_HOME/rc" out
+  printf 'if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then\n  . "$HOME/.sdkman/bin/sdkman-init.sh"\nfi\nexport KEEP=1\n' > "$rc"
+  out="$(disable_matching_lines "$rc" 'sdkman' "SDKMAN replaced by mise" 2>&1)"
+  assert_contains "$(cat "$rc")" 'if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then' "the opener is left alone" || return 1
+  assert_contains "$(cat "$rc")" ': # Disabled by teeup (SDKMAN replaced by mise):   . "$HOME/.sdkman/bin/sdkman-init.sh"' || return 1
+  assert_contains "$(cat "$rc")" "export KEEP=1" || return 1
+  assert_contains "$out" "block-opening lines in $rc" || return 1
+  bash -n "$rc" || { echo "the rewritten file no longer parses"; return 1; }
+  cleanup_test_env
+}
+
+test_disable_matching_lines_is_idempotent() {
+  setup
+  local rc="$TEST_HOME/rc"
+  printf 'eval "$(rbenv init -)"\n' > "$rc"
+  disable_matching_lines "$rc" 'rbenv (init|shell)' "rbenv replaced by mise" >/dev/null
+  disable_matching_lines "$rc" 'rbenv (init|shell)' "rbenv replaced by mise" >/dev/null
+  assert_equals ': # Disabled by teeup (rbenv replaced by mise): eval "$(rbenv init -)"' "$(cat "$rc")" || return 1
+  assert_equals "1" "$(find "$TEST_HOME" -name 'rc.teeup_backup_*' | wc -l | tr -d ' ')" "the second pass must not back up again" || return 1
+  cleanup_test_env
+}
+
+test_disable_matching_lines_passes_the_pattern_to_awk_unescaped() {
+  setup
+  local rc="$TEST_HOME/rc"
+  # "mypyenv" is the trap: awk expands escape sequences inside a -v
+  # assignment, so the legacy version saw ".pyenv" (any character, then
+  # "pyenv") and disabled this alias too.
+  printf 'alias mypyenv="echo hi"\nexport PATH="$HOME/.pyenv/bin:$PATH"\n' > "$rc"
+  disable_matching_lines "$rc" 'pyenv (init|virtualenv-init)|PYENV_ROOT|\.pyenv' "pyenv replaced by mise" >/dev/null
+  assert_contains "$(cat "$rc")" 'alias mypyenv="echo hi"' "a name that merely contains pyenv must survive" || return 1
+  assert_not_contains "$(cat "$rc")" 'Disabled by teeup (pyenv replaced by mise): alias mypyenv' || return 1
+  assert_contains "$(cat "$rc")" ': # Disabled by teeup (pyenv replaced by mise): export PATH="$HOME/.pyenv/bin:$PATH"' || return 1
+  cleanup_test_env
+}
+
+test_disable_matching_lines_leaves_a_symlink_alone() {
+  setup
+  local real="$TEST_HOME/real" link="$TEST_HOME/link" out
+  printf 'eval "$(rbenv init -)"\n' > "$real"
+  ln -s "$real" "$link"
+  out="$(disable_matching_lines "$link" 'rbenv' "rbenv replaced by mise")"
+  assert_contains "$out" "Not editing the symlink $link" || return 1
+  assert_equals 'eval "$(rbenv init -)"' "$(cat "$real")" || return 1
+  cleanup_test_env
+}
+
+# T1.3: -L is tested before -f, so a legacy symlink whose target is already
+# gone is reported like a live one rather than passed over in silence.
+test_disable_matching_lines_reports_a_dangling_symlink() {
+  setup
+  local link="$TEST_HOME/link" out
+  ln -s "$TEST_HOME/gone" "$link"
+  out="$(disable_matching_lines "$link" 'rbenv' "rbenv replaced by mise")" || return 1
+  assert_contains "$out" "Not editing the symlink $link" "a dangling symlink must be reported, not skipped silently" || return 1
+  cleanup_test_env
+}
+
+test_disable_matching_lines_ignores_a_missing_file_and_a_pattern_that_matches_nothing() {
+  setup
+  local rc="$TEST_HOME/rc"
+  disable_matching_lines "$TEST_HOME/nope" 'rbenv' "rbenv replaced by mise" >/dev/null || return 1
+  printf 'export A=1\n' > "$rc"
+  disable_matching_lines "$rc" 'rbenv' "rbenv replaced by mise" >/dev/null
+  assert_equals 'export A=1' "$(cat "$rc")" || return 1
+  assert_equals "0" "$(find "$TEST_HOME" -name 'rc.teeup_backup_*' | wc -l | tr -d ' ')" "nothing matched, so nothing is backed up" || return 1
+  cleanup_test_env
+}
+
+test_disable_matching_lines_dry_run_changes_nothing() {
+  setup
+  local rc="$TEST_HOME/rc" out
+  printf 'eval "$(rbenv init -)"\n' > "$rc"
+  out="$(DRY_RUN=true disable_matching_lines "$rc" 'rbenv' "rbenv replaced by mise")"
+  assert_contains "$out" "[DRY-RUN] Would disable matching lines in $rc: rbenv replaced by mise" || return 1
+  assert_equals 'eval "$(rbenv init -)"' "$(cat "$rc")" || return 1
+  assert_equals "0" "$(find "$TEST_HOME" -name 'rc.teeup_backup_*' | wc -l | tr -d ' ')" || return 1
+  cleanup_test_env
+}
+
+# T1.1: backup_copy returns 1 when its cp fails. Rewriting anyway would leave
+# the user's rc file edited with no copy of the original anywhere -- the one
+# outcome this whole phase exists to prevent.
+test_disable_matching_lines_does_not_rewrite_when_the_backup_failed() {
+  setup
+  local dir="$TEST_HOME/ro" rc out before
+  mkdir -p "$dir"
+  rc="$dir/rc"
+  printf 'eval "$(rbenv init -)"\n' > "$rc"
+  before="$(cat "$rc")"
+  # The file stays writable; its directory does not, so backup_copy's cp of
+  # rc.teeup_backup_<ts> into the same directory is what fails.
+  chmod 500 "$dir"
+  out="$(disable_matching_lines "$rc" 'rbenv' "rbenv replaced by mise" 2>&1)"
+  chmod 700 "$dir"
+  assert_equals "$before" "$(cat "$rc")" "the file must be untouched when no backup was written" || return 1
+  assert_not_contains "$out" "Disabled rbenv replaced by mise" "it must not claim an edit it did not make" || return 1
+  cleanup_test_env
+}
+
+# T1.2: a read-only rc file gets a refusal, not a success message and no change.
+test_disable_matching_lines_refuses_a_file_it_cannot_write() {
+  setup
+  local rc="$TEST_HOME/rc" out before
+  printf 'eval "$(rbenv init -)"\n' > "$rc"
+  before="$(cat "$rc")"
+  chmod 444 "$rc"
+  out="$(disable_matching_lines "$rc" 'rbenv' "rbenv replaced by mise" 2>&1)"
+  chmod 644 "$rc"
+  assert_equals "$before" "$(cat "$rc")" || return 1
+  assert_contains "$out" "$rc is not writable" || return 1
+  assert_not_contains "$out" "Disabled rbenv replaced by mise" "a refusal must not read as a success" || return 1
+  cleanup_test_env
+}
+
+test_disable_matching_lines_handles_a_path_with_spaces_and_metacharacters() {
+  setup
+  local dir="$TEST_HOME/od d \$x & 'q'" rc
+  mkdir -p "$dir"
+  rc="$dir/.zshrc"
+  printf 'eval "$(rbenv init -)"\n' > "$rc"
+  disable_matching_lines "$rc" 'rbenv' "rbenv replaced by mise" >/dev/null
+  assert_equals ': # Disabled by teeup (rbenv replaced by mise): eval "$(rbenv init -)"' "$(cat "$rc")" || return 1
+  assert_equals "1" "$(find "$dir" -name '.zshrc.teeup_backup_*' | wc -l | tr -d ' ')" || return 1
+  cleanup_test_env
+}
+
 echo "lib/files.sh"
 # A dangling symlink answers "does not exist" to `-e`, so an install path
 # that tests existence first would replace the LINK with a regular file --
@@ -724,4 +869,15 @@ run_test "backup_copy keeps the original in place" test_backup_copy_keeps_the_or
 run_test "backup_copy reports a copy it could not make" test_backup_copy_reports_a_copy_it_could_not_make
 run_test "two backups of the same file within one second both survive" test_two_backups_of_the_same_file_within_one_second_both_survive
 run_test "replace_literal is literal and repeats" test_replace_literal_is_literal_and_repeats
+run_test "disable_matching_lines neutralises only matching lines" test_disable_matching_lines_neutralises_only_matching_lines
+run_test "disable_matching_lines keeps a block parsable" test_disable_matching_lines_keeps_the_file_parsable_inside_a_block
+run_test "disable_matching_lines is idempotent" test_disable_matching_lines_is_idempotent
+run_test "disable_matching_lines passes the pattern unescaped" test_disable_matching_lines_passes_the_pattern_to_awk_unescaped
+run_test "disable_matching_lines leaves a symlink alone" test_disable_matching_lines_leaves_a_symlink_alone
+run_test "disable_matching_lines reports a dangling symlink" test_disable_matching_lines_reports_a_dangling_symlink
+run_test "disable_matching_lines ignores a missing file and a non-match" test_disable_matching_lines_ignores_a_missing_file_and_a_pattern_that_matches_nothing
+run_test "disable_matching_lines dry run changes nothing" test_disable_matching_lines_dry_run_changes_nothing
+run_test "disable_matching_lines does not rewrite when the backup failed" test_disable_matching_lines_does_not_rewrite_when_the_backup_failed
+run_test "disable_matching_lines refuses a file it cannot write" test_disable_matching_lines_refuses_a_file_it_cannot_write
+run_test "disable_matching_lines handles an awkward path" test_disable_matching_lines_handles_a_path_with_spaces_and_metacharacters
 print_summary
