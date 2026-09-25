@@ -35,6 +35,7 @@ teeup - your Mac, as a distribution
   teeup theme set|list|current   apply, list or print the cross-tool theme
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
   teeup lazy-run <cap> <cmd> [args]  what a lazy shim runs: install <cap> on first use, then exec <cmd>
+  teeup menu [<id>]              every teeup action as a keyboard-driven list
   teeup doctor [<capability>]    check what is installed, and say how to fix what is not
                                  (exit 0 verified healthy, 1 found problems,
                                   2 could not check something)
@@ -800,6 +801,117 @@ cmd_config() {
   esac
 }
 
+# _menu_parent <id> -> the id with its last dotted segment removed, or
+# nothing at the top level.
+_menu_parent() {
+  local id="$1" parent
+  parent="${id%.*}"
+  if [[ "$parent" != "$id" ]]; then
+    printf '%s\n' "$parent"
+  fi
+}
+
+# _menu_loop <cache> <route>
+# Iterative, not recursive: bash 3.2 has no tail calls and a menu is a walk,
+# not a stack. Arrays are indexed by hand throughout, and "${labels[@]}" is
+# only ever expanded after the count has been checked, because bash 3.2 under
+# `set -u` treats the expansion of an EMPTY array as an unbound variable.
+_menu_loop() {
+  local cache="$1" current="$2" id chosen action title i
+  local rows labels
+  if [[ -n "$current" ]] && ! menu_ids "$cache" | grep -qxF "$current"; then
+    err "No menu row with the id '$current'."
+    return 1
+  fi
+  while :; do
+    rows=()
+    labels=()
+    for id in $(menu_children "$cache" "$current"); do
+      if menu_visible "$cache" "$id"; then
+        rows[${#rows[@]}]="$id"
+        labels[${#labels[@]}]="$(menu_label "$cache" "$id")"
+      fi
+    done
+    if [[ ${#rows[@]} -eq 0 ]]; then
+      if [[ -z "$current" ]]; then
+        err "Every row in the menu is hidden by its own 'when' condition."
+        return 1
+      fi
+      warn "Nothing left to show under $current."
+      current="$(_menu_parent "$current")"
+      continue
+    fi
+    if [[ -n "$current" ]]; then
+      rows[${#rows[@]}]=".."
+      labels[${#labels[@]}]=".."
+    fi
+    title="$(menu_field "$cache" "$current" title)"
+    if [[ -z "$title" ]]; then
+      if [[ -n "$current" ]]; then
+        title="$(menu_label "$cache" "$current")"
+      else
+        title="teeup"
+      fi
+    fi
+    # Cancelling is how you leave a submenu: it goes back one level, exactly
+    # like choosing "..". Only a cancel at the top level actually ends the
+    # menu, which is what makes leaving it a deliberate, separate step rather
+    # than a single stray keypress from anywhere in the tree.
+    if ! chosen="$(menu_pick "$title" "${labels[@]}")"; then
+      if [[ -z "$current" ]]; then
+        return 0
+      fi
+      current="$(_menu_parent "$current")"
+      continue
+    fi
+    id=""
+    i=0
+    while [[ $i -lt ${#labels[@]} ]]; do
+      if [[ "${labels[$i]}" == "$chosen" ]]; then
+        id="${rows[$i]}"
+        break
+      fi
+      i=$((i + 1))
+    done
+    if [[ -z "$id" ]]; then
+      warn "Unknown choice: $chosen"
+      continue
+    fi
+    if [[ "$id" == ".." ]]; then
+      current="$(_menu_parent "$current")"
+      continue
+    fi
+    action="$(menu_field "$cache" "$id" action)"
+    if [[ -n "$action" ]]; then
+      menu_run "$action"
+      return $?
+    fi
+    current="$id"
+  done
+}
+
+# teeup menu [<id>]
+# The whole of teeup as a list (spec section 2: Omarchy's menu, translated to
+# a TUI). An optional id opens straight at that row, the way `omarchy menu
+# summon style.theme` does.
+cmd_menu() {
+  local route="${1:-}" cache rc=0
+  menu_validate_picker_env
+  cache="$(menu_cache)" || exit 1
+  # The path, not the variable name, goes in the trap: "cache" is local to
+  # this function, so a trap that looked it up by name at fire time would
+  # find nothing left once cmd_menu has returned, and die of its own
+  # `set -u` on the script's own exit -- long after the interrupted run this
+  # trap exists to clean up after.
+  # shellcheck disable=SC2064  # deliberate: "cache" is local, so a
+  # single-quoted trap that looked it up by name would find nothing at the
+  # script's own exit, once cmd_menu has already returned.
+  trap "rm -f $(printf '%q' "$cache")" EXIT
+  _menu_loop "$cache" "$route" || rc=$?
+  rm -f "$cache"
+  return $rc
+}
+
 # teeup doctor [<capability>]
 # Exit 0 when healthy: the spec's release gate is "a real bootstrap on a
 # clean macOS VM, then teeup doctor must exit 0". With no argument it checks
@@ -1002,6 +1114,7 @@ case "$verb" in
   list) cmd_list "$@" ;;
   launch) cmd_launch "$@" ;;
   lazy-run) cmd_lazy_run "$@" ;;
+  menu) cmd_menu "$@" ;;
   doctor) cmd_doctor "$@" ;;
   config) cmd_config "$@" ;;
   has) cmd_has "$@" ;;
