@@ -6,6 +6,9 @@
 # from the capabilities themselves.
 set -euo pipefail
 source "$(dirname "$0")/helper.sh"
+# teeup_verbs lives in lib/dev.sh now, so this check and `teeup dev check`'s
+# menu lint (R9.5) cannot silently disagree about what a real verb is.
+source "$TEEUP_PATH/lib/dev.sh"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd -P)"
 
@@ -85,11 +88,7 @@ test_readme_remove_script_count_matches_the_tree() {
 #
 # This exists because the migration section was written against `teeup doctor`
 # while the doctor branch had not merged, and nothing would have caught it.
-teeup_verbs() {
-  awk '/^case "\$verb" in/,/^esac/' "$TEEUP_PATH/bin/teeup" \
-    | grep -oE '^  [a-z|_-]+\)' | tr -d ' )' | tr '|' '\n' | sort -u
-}
-
+# teeup_verbs itself now lives in lib/dev.sh (sourced above).
 test_readme_only_shows_verbs_that_exist() {
   local in_block=false line word verbs bad=""
   verbs=" $(teeup_verbs | tr '\n' ' ') "
