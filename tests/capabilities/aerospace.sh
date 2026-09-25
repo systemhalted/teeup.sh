@@ -635,6 +635,37 @@ test_the_migration_gate_ignores_an_edited_config() {
   cleanup_test_env
 }
 
+# Codex P2 on #34: skipping the version gate is not enough while the
+# refresh still runs -- configure asks a running AeroSpace to validate the
+# new file before refresh_if_pristine leaves the edited one alone, an old
+# AeroSpace rejects it, and the update stays blocked.
+test_the_migration_skips_the_refresh_for_an_edited_config() {
+  setup
+  aerospace_migration_fixture
+  printf '# mine\n' > "$AERO"
+  mock_command_script aerospace <<'EOF2'
+case "$1" in
+  --version) echo 'aerospace CLI client version: 0.19.2-Beta 1a2b3c4' ;;
+  list-monitors) exit 0 ;;
+  reload-config) echo "unknown key config-version" ; exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local rc=0
+  DRY_RUN=false migration_run "$MIG" >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "an edited config is never refreshed, so a running old AeroSpace has nothing to reject" || return 1
+  assert_equals '# mine' "$(cat "$AERO")" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "aerospace reload-config" "nothing to install, so nothing to validate" || return 1
+  # And an up-to-date pristine copy is not called "edited".
+  cp "$TEEUP_PATH/capabilities/aerospace/config/aerospace/aerospace.toml" "$AERO"
+  stock_record "$AERO" "$(file_sha "$AERO")"
+  rm -f "$TEEUP_STATE_DIR/migrations/$MIG"
+  local out
+  out="$(DRY_RUN=false migration_run "$MIG" 2>&1)" || true
+  assert_not_contains "$out" "edited" "the shipped file, untouched, is not an edit" || return 1
+  cleanup_test_env
+}
+
 test_the_migration_gate_ignores_a_home_config() {
   setup
   aerospace_migration_fixture
@@ -872,6 +903,7 @@ run_test "the migration gate leaves a skipped aerospace alone" test_the_migratio
 run_test "the migration gate asks the app when the cli is missing" test_the_migration_gate_asks_the_app_when_the_cli_is_missing
 run_test "the migration gate finds the app in ~/Applications" test_the_migration_gate_finds_the_app_in_home_applications
 run_test "the migration gate ignores an edited config" test_the_migration_gate_ignores_an_edited_config
+run_test "the migration skips the refresh for an edited config" test_the_migration_skips_the_refresh_for_an_edited_config
 run_test "the migration gate ignores a home config" test_the_migration_gate_ignores_a_home_config
 run_test "the migration gate reads a leading zero as decimal" test_the_migration_gate_reads_a_leading_zero_as_decimal
 run_test "the migration refuses a version it cannot read" test_the_migration_refuses_a_version_it_cannot_read
