@@ -23,13 +23,15 @@ here and done once the current phase of work is finished.
 | `fix/doctor-followups-2` (Opus P3) | `chmod u+r <file>` is the wrong fix when a parent directory is unsearchable | Fixed on `fix/doctor-followups-3` |
 | `fix/doctor-followups-2` (Opus P3) | "remove the commit.gpgsign line there" names `local` when the line is in a file `local` includes | Fixed on `fix/doctor-followups-3` |
 | `fix/doctor-followups-2` (Opus P3) | A `~nosuchuser/` signing key makes `--path` exit 128 and reads as unset; a `key::` literal or GPG key ID fails the `-s` check although git accepts both (the latter predates this branch) | Fixed on `fix/doctor-followups-3` |
-| `fix/doctor-followups-3` (local Codex P2) | Any `gpg.format` other than `ssh` is accepted as healthy, including a typo git rejects on every commit; validate against `openpgp`, `x509`, `ssh` | Open |
-| `fix/doctor-followups-3` (local Codex P2) | A `key::` literal is reported healthy without checking it parses or that ssh-agent holds its private key | Open |
-| `fix/doctor-followups-3` (local Codex P3) | With two nested unsearchable directories, the repair fixes only the outer one (the inner is not a `-d` behind it) | Open |
+| `fix/doctor-followups-3` (local Codex P2) | Any `gpg.format` other than `ssh` is accepted as healthy, including a typo git rejects on every commit; validate against `openpgp`, `x509`, `ssh` | Fixed on `fix/doctor-followups-3` |
+| `fix/doctor-followups-3` (local Codex P2) | A `key::` literal is reported healthy without checking it parses or that ssh-agent holds its private key | Fixed on `fix/doctor-followups-3` |
+| `fix/doctor-followups-3` (local Codex P3) | With two nested unsearchable directories, the repair fixes only the outer one (the inner is not a `-d` behind it) | Fixed on `fix/doctor-followups-3` |
 | PR #34 (Codex P2) | The AeroSpace refresh still ran (and validated against a running old AeroSpace) where nothing would be written | Fixed on `fix/aerospace-gate-followups-2` |
 | PR #31 gate (Opus P2) | The AeroSpace migration gate read a missing CLI as no AeroSpace, though the app can be installed without it | Fixed on `fix/aerospace-gate-followups` |
 | PR #31 gate (Opus P2) | The gate blocked `teeup update` where the refresh would write nothing (edited config, `~/.aerospace.toml`) | Fixed on `fix/aerospace-gate-followups` |
 | PR #31 gate (Opus P3) | A leading zero in a version was compared as octal | Fixed on `fix/aerospace-gate-followups` |
+
+Doctor follow-ups stop here (decision 2026-09-25): P2/P3 findings on `capabilities/git/doctor` from any further review round are logged below and done after phase 5a, not in another follow-up PR.
 
 ## Nitpicks
 
