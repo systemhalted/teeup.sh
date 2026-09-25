@@ -18,7 +18,7 @@ here and done once the current phase of work is finished.
 | PR #33 (Codex P2) | A syntax error anywhere in the include graph was reported as a bad `commit.gpgsign` value | Fixed on `fix/doctor-followups-2` |
 | PR #33 (Codex P2) | A `false` in a file that `local` includes was blamed on teeup-generated | Fixed on `fix/doctor-followups-2` |
 | PR #33 (Codex P2) | The allowed-signers repair used the signing key from identity/generated/local, missing a top-level override | Fixed on `fix/doctor-followups-2` |
-| `fix/doctor-followups-2` (Opus P2) | git's first stderr line can be a warning printed before the fatal one, so a bad boolean was reported as an unreadable directory. Take the first `fatal:` line | Open |
+| `fix/doctor-followups-2` (Opus P2) | git's first stderr line can be a warning printed before the fatal one, so a bad boolean was reported as an unreadable directory. Take the first `fatal:` line | Fixed on `fix/doctor-followups-3` |
 | `fix/doctor-followups-2` (Opus P3) | The unreadable-path parse cuts at the first `'`, truncating a path with a quote in it | Fixed on `fix/doctor-followups-3` |
 | `fix/doctor-followups-2` (Opus P3) | `chmod u+r <file>` is the wrong fix when a parent directory is unsearchable | Fixed on `fix/doctor-followups-3` |
 | `fix/doctor-followups-2` (Opus P3) | "remove the commit.gpgsign line there" names `local` when the line is in a file `local` includes | Fixed on `fix/doctor-followups-3` |
