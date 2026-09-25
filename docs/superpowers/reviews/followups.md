@@ -48,3 +48,4 @@ Doctor follow-ups stop here (decision 2026-09-25): P2/P3 findings on `capabiliti
 - ~~`capabilities/git/doctor`: the allowed-signers note interpolated unquoted paths.~~ Quoted on `fix/doctor-followups-3`.
 - ~~`capabilities/git/doctor` header comment said doctor reads the files.~~ Rewritten on `fix/doctor-followups-3`.
 - `capabilities/theme/doctor`: the stale-render check uses `-nt`, which under bash 3.2 compares whole seconds, so a template edited in the same second as its render is not flagged. `stat -f %m` and `-c %Y` are whole seconds too; `find <tpl> -newer <render>` compares sub-second times, if it ever matters.
+- `tests/run.sh`: nothing stops a test writing into the checkout (two package-manager tests wrote `machines/testmac.conf` there, racing every suite that loads it). Snapshot `machines/` before the run and fail when it changed.
