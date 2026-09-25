@@ -76,6 +76,90 @@ git_doctor_access_fix() {
   printf '%schmod u+r %s\n' "$cmds" "$(printf '%q' "$path")"
 }
 
+# A leftover from the chezmoi era (spec section 10). That gitconfig ended with
+# `[include] path = ~/.gitconfig.local`, so a [user] block there outranks the
+# identity teeup wrote -- but only while something still includes it. Checked
+# before the early exit below, because a stale identity matters whether or
+# not teeup has configured git here.
+#
+# All of it is asked of git, in one read of the global config with its
+# includes. -z prints each origin raw -- a relative include
+# (.config/git/../../.gitconfig.local) or a non-ASCII home would otherwise
+# come back C-quoted -- and each is compared by its resolved directory, so
+# however the include spells the path, it is recognised. A file git cannot
+# open or parse makes that read fail and names the file; included and broken,
+# it breaks every git command, which is a failure.
+
+# git_doctor_same_file <a> <b> -> 0 when both name the same file: their
+# directories resolved physically, the final names compared as written (a
+# symlink named .gitconfig.local is that file, wherever it points).
+git_doctor_same_file() {
+  local da db
+  da="$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" || return 1
+  db="$(cd "$(dirname "$2")" 2>/dev/null && pwd -P)" || return 1
+  [[ "$da/$(basename "$1")" == "$db/$(basename "$2")" ]]
+}
+
+gitconfig_local="$HOME/.gitconfig.local"
+if [[ ! -e "$gitconfig_local" && ! -L "$gitconfig_local" ]]; then
+  doctor_ok "No leftover $gitconfig_local."
+else
+  gl_rc=0
+  gl_out="$(mktemp "${TMPDIR:-/tmp}/teeup-doctor-gl.XXXXXX")"
+  gl_err="$(LC_ALL=C GIT_CONFIG_NOSYSTEM=1 git config --global --includes --show-origin -z --get-regexp '^user\.' 2>&1 >"$gl_out")" || gl_rc=$?
+  gl_err="$(printf '%s\n' "$gl_err" | awk '/^fatal: / { print; exit }')"
+  gl_sections=""
+  if [[ $gl_rc -le 1 ]]; then
+    while IFS= read -r -d '' gl_origin && IFS= read -r -d '' gl_kv; do
+      [[ "$gl_origin" == file:* ]] || continue
+      git_doctor_same_file "${gl_origin#file:}" "$gitconfig_local" || continue
+      # user.name -> user; user.extra.email -> user.extra
+      gl_key="${gl_kv%%$'\n'*}"
+      gl_section="${gl_key%.*}"
+      case " $gl_sections " in
+        *" $gl_section "*) ;;
+        *) gl_sections="$gl_sections $gl_section" ;;
+      esac
+    done < "$gl_out"
+  fi
+  rm -f "$gl_out"
+  # The file named in git's fatal line, if any: "unable to access '<p>': ..."
+  # or "bad config line N in file <p>".
+  gl_bad=""
+  case "$gl_err" in
+    "fatal: unable to access '"*) gl_bad="${gl_err#fatal: unable to access \'}"; gl_bad="${gl_bad%\': *}" ;;
+    "fatal: bad config line "*" in file "*) gl_bad="${gl_err#* in file }" ;;
+  esac
+  # Where a fix would write: through a symlink, git edits the target, which
+  # may well be a file in a dotfiles repo -- so the fix names it.
+  gl_target="$gitconfig_local"
+  gl_link_note=""
+  if [[ -L "$gitconfig_local" ]]; then
+    gl_target="$(cd "$(dirname "$gitconfig_local")" && cd "$(dirname "$(readlink "$gitconfig_local")")" 2>/dev/null && pwd -P)/$(basename "$(readlink "$gitconfig_local")")"
+    gl_link_note=" It is a symlink to $gl_target, which the fix edits."
+  fi
+  if [[ -n "$gl_bad" ]] && git_doctor_same_file "$gl_bad" "$gitconfig_local"; then
+    if [[ ! -r "$gitconfig_local" ]]; then
+      doctor_fail "$gitconfig_local is included but cannot be read, so every git command fails.$gl_link_note" "chmod u+r $(printf '%q' "$gl_target")"
+    else
+      doctor_fail "$gitconfig_local is included but git cannot parse it (${gl_err#fatal: }), so every git command fails.$gl_link_note" "git config --file $(printf '%q' "$gl_target") --list"
+    fi
+  elif [[ $gl_rc -gt 1 ]]; then
+    doctor_unknown "git could not read its global config (${gl_err#fatal: }), so teeup could not tell whether $gitconfig_local is still included." "git config --global --includes --show-origin --list"
+  elif [[ -n "$gl_sections" ]]; then
+    gl_fix=""
+    for gl_section in $gl_sections; do
+      gl_fix="${gl_fix:+$gl_fix && }git config --file $(printf '%q' "$gl_target") --remove-section $gl_section"
+    done
+    doctor_fail "$gitconfig_local has a [user] block and is still included, so its name and email win over the identity teeup wrote.$gl_link_note" "$gl_fix"
+  elif [[ -r "$gitconfig_local" ]] &&
+    LC_ALL=C GIT_CONFIG_NOSYSTEM=1 git config -f "$gitconfig_local" --get-regexp '^user\.' >/dev/null 2>&1; then
+    doctor_warn "$gitconfig_local has a [user] block, but nothing includes it any more. Move anything you still want into $git_dir/local and delete it."
+  else
+    doctor_ok "No leftover [user] block in effect from $gitconfig_local."
+  fi
+fi
+
 # git 2.55.0, verified: an unreadable config file this one [include]s is not
 # a "could not check" situation, it is fatal -- `git config --list`, `git
 # commit`, every git command exits 128 the moment it tries to read an
@@ -87,32 +171,6 @@ git_doctor_access_fix() {
 # pattern mise and starship already use for their own unreadable files
 # (B-A) -- not a warn, and never a claim that the file "is in place" when
 # git cannot actually read it.
-# A leftover from the chezmoi era (spec section 10). That gitconfig ended with
-# `[include] path = ~/.gitconfig.local`, so a [user] block there outranks the
-# identity teeup wrote -- but only while something still includes it. Both
-# questions are asked of git: whether the file sets user.*, and whether the
-# global config git actually reads reaches it. A grep for the file's name
-# would count a comment as an include. Checked before the early exit below,
-# because a stale identity matters whether or not teeup has configured git.
-gitconfig_local="$HOME/.gitconfig.local"
-if [[ ! -f "$gitconfig_local" ]]; then
-  doctor_ok "No leftover $gitconfig_local."
-elif [[ ! -r "$gitconfig_local" ]]; then
-  doctor_unknown "$gitconfig_local cannot be read, so teeup could not tell whether it still sets a git identity." "chmod u+r $(printf '%q' "$gitconfig_local")"
-elif ! LC_ALL=C GIT_CONFIG_NOSYSTEM=1 git config -f "$gitconfig_local" --get-regexp '^user\.' >/dev/null 2>&1; then
-  doctor_ok "No leftover [user] block in $gitconfig_local."
-else
-  gitconfig_local_rc=0
-  gitconfig_local_origins="$(LC_ALL=C GIT_CONFIG_NOSYSTEM=1 git config --global --includes --show-origin --get-regexp '^user\.' 2>/dev/null)" || gitconfig_local_rc=$?
-  if [[ $gitconfig_local_rc -gt 1 ]]; then
-    doctor_unknown "$gitconfig_local has a [user] block, and git could not read its global config to tell whether anything still includes it." "git config --global --includes --show-origin --list"
-  elif printf '%s\n' "$gitconfig_local_origins" | grep -qF "file:$gitconfig_local"$'\t'; then
-    doctor_fail "$gitconfig_local has a [user] block and is still included, so its name and email win over the identity teeup wrote." "git config --file $(printf '%q' "$gitconfig_local") --remove-section user"
-  else
-    doctor_warn "$gitconfig_local has a [user] block, but nothing includes it any more. Move anything you still want into $git_dir/local and delete it."
-  fi
-fi
-
 if [[ ! -f "$git_dir/config" ]]; then
   doctor_fail "git has never been configured here: there is no $git_dir/config." "teeup configure git"
   doctor_verdict

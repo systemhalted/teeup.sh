@@ -1502,6 +1502,97 @@ test_doctor_only_notes_a_gitconfig_local_that_nothing_includes() {
   cleanup_test_env
 }
 
+# Phase 5a follow-ups (review of task 7). Every case below is decided by
+# what git itself reads, and the printed fix must clear the finding.
+gitconfig_local_fixture() {
+  seed_answers
+  source "$TEEUP_PATH/lib/all.sh"
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+}
+
+test_doctor_sees_a_relative_include_of_gitconfig_local() {
+  setup
+  gitconfig_local_fixture
+  printf '[user]\n\tname = Someone Else\n' > "$HOME/.gitconfig.local"
+  printf '[include]\n\tpath = ../../.gitconfig.local\n' > "$HOME/.config/git/local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_contains "$out" "has a [user] block and is still included" || return 1
+  assert_failure "$rc" || return 1
+  cleanup_test_env
+}
+
+test_doctor_sees_an_include_under_a_non_ascii_home() {
+  setup
+  export HOME="$TEST_HOME/hömé"
+  mkdir -p "$HOME"
+  export XDG_CONFIG_HOME="$HOME/.config"
+  gitconfig_local_fixture
+  printf '[user]\n\tname = Someone Else\n' > "$HOME/.gitconfig.local"
+  printf '[include]\n\tpath = ~/.gitconfig.local\n' > "$HOME/.gitconfig"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "has a [user] block and is still included" "git C-quotes this path unless asked for -z" || return 1
+  cleanup_test_env
+}
+
+test_doctor_fails_an_included_gitconfig_local_git_cannot_parse() {
+  setup
+  gitconfig_local_fixture
+  printf '[user\n\tname = x\n' > "$HOME/.gitconfig.local"
+  printf '[include]\n\tpath = ~/.gitconfig.local\n' > "$HOME/.gitconfig"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  assert_not_contains "$out" "No leftover [user] block" "a file git cannot parse is not clean" || return 1
+  assert_contains "$out" "$HOME/.gitconfig.local" || return 1
+  assert_failure "$rc" || return 1
+  cleanup_test_env
+}
+
+test_doctor_fails_an_included_gitconfig_local_it_cannot_read() {
+  setup
+  gitconfig_local_fixture
+  printf '[user]\n\tname = x\n' > "$HOME/.gitconfig.local"
+  printf '[include]\n\tpath = ~/.gitconfig.local\n' > "$HOME/.gitconfig"
+  chmod 000 "$HOME/.gitconfig.local"
+  local rc=0 out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || rc=$?
+  chmod 600 "$HOME/.gitconfig.local"
+  assert_equals "1" "$rc" "included and unreadable breaks every git command: a failure, not unknown" || return 1
+  cleanup_test_env
+}
+
+test_doctor_gitconfig_local_fix_removes_subsections_too() {
+  setup
+  gitconfig_local_fixture
+  printf '[user]\n\tname = Someone Else\n[user "extra"]\n\temail = x@y\n' > "$HOME/.gitconfig.local"
+  printf '[include]\n\tpath = ~/.gitconfig.local\n' > "$HOME/.gitconfig"
+  local report="$TEST_HOME/report" fix out
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  DRY_RUN=false cap_run git doctor >/dev/null 2>&1 || true
+  fix="$(grep 'still included' "$report" | cut -f3)"
+  (cd "$HOME" && bash -c "$fix") || { echo "the printed fix failed: $fix"; return 1; }
+  : > "$report"
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_not_contains "$out" "still included" "one run of the printed fix must clear it" || return 1
+  cleanup_test_env
+}
+
+test_doctor_gitconfig_local_fix_names_a_symlink_target() {
+  setup
+  gitconfig_local_fixture
+  mkdir -p "$TEST_HOME/dotfiles"
+  printf '[user]\n\tname = Someone Else\n' > "$TEST_HOME/dotfiles/gitconfig.local"
+  ln -s "$TEST_HOME/dotfiles/gitconfig.local" "$HOME/.gitconfig.local"
+  printf '[include]\n\tpath = ~/.gitconfig.local\n' > "$HOME/.gitconfig"
+  local out
+  out="$(DRY_RUN=false cap_run git doctor 2>&1)" || true
+  assert_contains "$out" "symlink" "say the fix edits the file it links to" || return 1
+  assert_contains "$out" "dotfiles/gitconfig.local" || return 1
+  cleanup_test_env
+}
+
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
 run_test "a configured work identity does not change the git identity" test_a_configured_work_identity_does_not_change_the_git_identity
@@ -1637,4 +1728,10 @@ run_test "the shipped migration refreshes a pristine git config" test_the_shippe
 run_test "configure ships the last two chezmoi aliases" test_configure_ships_the_last_two_chezmoi_aliases
 run_test "doctor flags an included [user] block" test_doctor_flags_a_user_block_in_gitconfig_local_that_is_still_included
 run_test "doctor only notes an unused gitconfig.local" test_doctor_only_notes_a_gitconfig_local_that_nothing_includes
+run_test "doctor sees a relative include of gitconfig local" test_doctor_sees_a_relative_include_of_gitconfig_local
+run_test "doctor sees an include under a non ascii home" test_doctor_sees_an_include_under_a_non_ascii_home
+run_test "doctor fails an included gitconfig local git cannot parse" test_doctor_fails_an_included_gitconfig_local_git_cannot_parse
+run_test "doctor fails an included gitconfig local it cannot read" test_doctor_fails_an_included_gitconfig_local_it_cannot_read
+run_test "doctor gitconfig local fix removes subsections too" test_doctor_gitconfig_local_fix_removes_subsections_too
+run_test "doctor gitconfig local fix names a symlink target" test_doctor_gitconfig_local_fix_names_a_symlink_target
 print_summary

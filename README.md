@@ -208,7 +208,7 @@ pull and the package manager warn and the rest still runs, which makes
 ```bash
 DRY_RUN=true teeup migrate legacy   # read what it would do first
 teeup migrate legacy
-teeup status                        # what is installed afterwards
+teeup doctor                        # names anything still left over, and how to fix it
 ```
 
 `teeup migrate legacy` retires the two things this teeup replaced. It removes
@@ -246,6 +246,12 @@ itself stays.
 
 Every step runs to the end. A refusal is reported and never stops the rest,
 and the exit status is non-zero when anything was left alone.
+
+Afterwards, `teeup doctor` names what is still left over: an Oh My Zsh
+directory, Powerlevel10k files, a shell file that still loads a predecessor,
+chezmoi still pointing at a source directory, or a `~/.gitconfig.local` whose
+`[user]` block git still reads. Each finding comes with the command that
+fixes it.
 
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
