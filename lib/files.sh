@@ -623,7 +623,16 @@ aerospace_config_ok() {
     elif cp -p "$saved" "$dest" 2>/dev/null; then
       rm -f "$saved"
     else
+      # A failed restore leaves the CANDIDATE sitting at $dest. Warning and
+      # returning success is the worst of both: copy_config_once then compares
+      # that candidate against the stock record, does not recognise the hash,
+      # concludes the user edited their config, and leaves it exactly where it
+      # is -- while their real file stays stranded at $saved and configure
+      # reports success. Status 2 says "the destination is not what it was",
+      # which is a different thing from "AeroSpace rejected this" (1), and the
+      # caller has to stop for it.
       warn "Could not restore $dest after checking it with AeroSpace; your original is saved at $saved." >&2
+      return 2
     fi
   else
     rm -f "$dest"

@@ -812,6 +812,51 @@ EOF2
   mock_command mise 0 ""
 }
 
+# A migration that adjusts a config for a NEW version of a tool has to run
+# after that tool is upgraded, not before. Running migrations first deadlocks
+# the update on a machine whose old binary rejects the new config: the
+# migration's refresh validates against the binary that is still installed,
+# fails, and `migrations_run_pending || exit 1` stops the update before the
+# upgrade that would have fixed it -- every time, forever.
+#
+# This is not hypothetical: migrations/<epoch>.sh refreshes aerospace.toml to
+# config-version 2, and capabilities/aerospace/configure asks the running
+# AeroSpace to validate it before installing.
+test_update_upgrades_packages_before_running_migrations() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  export TEEUP_MIGRATIONS_DIR="$TEST_HOME/migrations"
+  mkdir -p "$TEEUP_MIGRATIONS_DIR"
+  # The migration records what the package manager had already done by the
+  # time it ran.
+  printf '#!/usr/bin/env bash\nif grep -q "brew upgrade" "$MOCK_LOG" 2>/dev/null; then echo "migration saw the upgrade"; else echo "migration ran before the upgrade"; fi\n' \
+    > "$TEEUP_MIGRATIONS_DIR/1780000001.sh"
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "migration saw the upgrade" "a migration must run against the versions this update installed" || return 1
+  assert_not_contains "$out" "migration ran before the upgrade" || return 1
+  cleanup_test_env
+}
+
+# ...and still before the configure loop, so a configure never runs on top of
+# a migration that has not been applied yet.
+test_update_runs_migrations_before_configuring() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  export TEEUP_MIGRATIONS_DIR="$TEST_HOME/migrations"
+  mkdir -p "$TEEUP_MIGRATIONS_DIR"
+  printf '#!/usr/bin/env bash\necho "migration ran"\n' > "$TEEUP_MIGRATIONS_DIR/1780000002.sh"
+  local out mig_line cfg_line
+  out="$("$TEEUP" update 2>&1)"
+  mig_line="$(printf '%s\n' "$out" | grep -n 'migration ran' | head -1 | cut -d: -f1)"
+  cfg_line="$(printf '%s\n' "$out" | grep -n 'configure:alpha' | head -1 | cut -d: -f1)"
+  [[ -n "$mig_line" && -n "$cfg_line" ]] || { echo "fixture: both steps must appear"; return 1; }
+  [[ "$mig_line" -lt "$cfg_line" ]] || { echo "migrations must still run before configure"; return 1; }
+  cleanup_test_env
+}
+
 test_update_walks_every_step_in_order() {
   setup
   mock_update_world
@@ -1453,6 +1498,8 @@ run_test "reset dry run changes nothing" test_reset_dry_run_changes_nothing
 run_test "reset refuses what it cannot reset" test_reset_refuses_what_it_cannot_reset
 run_test "reset reports a refused write plainly" test_reset_reports_a_refused_write_plainly
 run_test "dev add-migration creates a named scaffold" test_dev_add_migration_creates_a_named_scaffold
+run_test "update upgrades packages before running migrations" test_update_upgrades_packages_before_running_migrations
+run_test "update runs migrations before configuring" test_update_runs_migrations_before_configuring
 run_test "update walks every step in order" test_update_walks_every_step_in_order
 run_test "update skips core capabilities it never installed" test_update_skips_core_capabilities_it_never_installed
 run_test "update refuses a dirty checkout" test_update_refuses_a_dirty_checkout
