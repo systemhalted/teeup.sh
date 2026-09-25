@@ -45,6 +45,7 @@ teeup - your Mac, as a distribution
   teeup status                   package manager, answers, installed capabilities
   teeup commands --check         lint capability metadata
   teeup dev add-migration        start migrations/<epoch>.sh for machines already set up
+  teeup dev new-capability <name>  scaffold capabilities/<name> and its test
   teeup migrate legacy           retire the old teeup and chezmoi wiring on this Mac
   teeup version
   teeup help
@@ -1081,10 +1082,13 @@ cmd_status() {
 # case arm; the scaffold writes into the checkout (TEEUP_MIGRATIONS_DIR).
 cmd_dev() {
   local op="${1:-}"
-  [[ $# -gt 0 ]] && shift
+  if [[ $# -gt 0 ]]; then
+    shift
+  fi
   case "$op" in
     add-migration) migration_new ;;
-    *) die "Usage: teeup dev add-migration" ;;
+    new-capability) dev_new_capability "$@" ;;
+    *) die "Usage: teeup dev add-migration | new-capability <name>" ;;
   esac
 }
 

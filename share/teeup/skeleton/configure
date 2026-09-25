@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Configuration only, and idempotent: a second run must report that there was
+# nothing to do rather than do it again. Every mutation goes through run_cmd
+# or a DRY_RUN-guarded primitive, so `DRY_RUN=true` changes nothing.
+#
+# The usual shapes, in the order they are usually needed:
+#
+#   copy_config_once "$TEEUP_CAP_DIR/config/@NAME@/config.toml" \
+#     "$(user_config_dir)/@NAME@/config.toml"
+#   defaults_write com.example.@NAME@ SomeKey -bool true
+#   launchagent_install com.example.@NAME@ <<PLIST
+#   ...
+#   PLIST
+#
+log "Nothing to configure yet for @NAME@."

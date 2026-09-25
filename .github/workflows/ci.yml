@@ -72,6 +72,8 @@ jobs:
               -o -name font-apply \)) \
             capabilities/teeup-runtime/default/hooks/*.sample \
             $(find migrations -type f -name '*.sh' 2>/dev/null) \
+            share/teeup/skeleton/install share/teeup/skeleton/configure \
+            share/teeup/skeleton/test.sh \
             tests/helper.sh tests/run.sh tests/cli.sh tests/bootstrap.sh tests/docs.sh \
             tests/lib/*.sh tests/capabilities/*.sh
 

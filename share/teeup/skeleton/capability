@@ -1,0 +1,9 @@
+summary="@NAME@, described in one line"
+group=system
+tier=lazy
+requires="package-manager"
+provides=""
+packages="@NAME@"
+casks=""
+apps=""
+interactive=false
