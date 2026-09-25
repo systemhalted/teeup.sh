@@ -1,0 +1,62 @@
+{
+  "install": {"label": "Install", "title": "Install a capability"},
+  "launch": {"label": "Launch", "title": "Open an app"},
+  "style": {"label": "Style", "title": "Theme and font"},
+  "check": {"label": "Check", "title": "What is installed, and what is wrong"},
+  "setup": {"label": "Setup", "title": "Answers, secrets and machine state"},
+  "update": {"label": "Update", "action": "teeup update"},
+
+  "install.editors": {"label": "Editors"},
+  "install.editors.emacs": {"label": "Emacs", "when": "! teeup has emacs", "action": "teeup install emacs"},
+  "install.editors.zed": {"label": "Zed", "when": "! teeup has zed", "action": "teeup install zed"},
+  "install.editors.neovim": {"label": "Neovim", "when": "! teeup has neovim", "action": "teeup install neovim"},
+  "install.editors.vscode": {"label": "Visual Studio Code", "when": "! teeup has vscode", "action": "teeup install vscode"},
+  "install.editors.cursor": {"label": "Cursor", "when": "! teeup has cursor", "action": "teeup install cursor"},
+
+  "install.apps": {"label": "Apps"},
+  "install.apps.firefox": {"label": "Firefox Developer Edition", "when": "! teeup has firefox-developer-edition", "action": "teeup install firefox-developer-edition"},
+  "install.apps.chrome": {"label": "Google Chrome", "when": "! teeup has chrome", "action": "teeup install chrome"},
+  "install.apps.obsidian": {"label": "Obsidian", "when": "! teeup has obsidian", "action": "teeup install obsidian"},
+
+  "install.ai": {"label": "AI"},
+  "install.ai.clis": {"label": "AI command-line tools", "when": "! teeup has ai", "action": "teeup install ai"},
+  "install.ai.ollama": {"label": "Ollama", "when": "! teeup has ollama", "action": "teeup install ollama"},
+  "install.ai.herdr": {"label": "Herdr", "when": "! teeup has herdr", "action": "teeup install herdr"},
+
+  "install.shell": {"label": "Shell and containers"},
+  "install.shell.tmux": {"label": "tmux", "when": "! teeup has tmux", "action": "teeup install tmux"},
+  "install.shell.colima": {"label": "Docker through Colima", "when": "! teeup has colima", "action": "teeup install colima"},
+
+  "install.dev-env": {"label": "Language runtimes", "title": "Install a runtime through mise"},
+  "install.dev-env.python": {"label": "Python", "action": "teeup install dev-env python"},
+  "install.dev-env.node": {"label": "Node", "action": "teeup install dev-env node"},
+  "install.dev-env.java": {"label": "Java", "action": "teeup install dev-env java"},
+  "install.dev-env.ruby": {"label": "Ruby", "action": "teeup install dev-env ruby"},
+  "install.dev-env.rust": {"label": "Rust", "action": "teeup install dev-env rust"},
+  "install.dev-env.go": {"label": "Go", "action": "teeup install dev-env go"},
+
+  "launch.wezterm": {"label": "WezTerm", "when": "teeup has wezterm", "action": "teeup launch WezTerm"},
+  "launch.emacs": {"label": "Emacs", "when": "teeup has emacs", "action": "teeup launch Emacs"},
+  "launch.zed": {"label": "Zed", "when": "teeup has zed", "action": "teeup launch Zed"},
+  "launch.vscode": {"label": "Visual Studio Code", "when": "teeup has vscode", "action": "teeup launch Visual Studio Code"},
+  "launch.cursor": {"label": "Cursor", "when": "teeup has cursor", "action": "teeup launch Cursor"},
+  "launch.firefox": {"label": "Firefox Developer Edition", "when": "teeup has firefox-developer-edition", "action": "teeup launch Firefox Developer Edition"},
+  "launch.chrome": {"label": "Google Chrome", "when": "teeup has chrome", "action": "teeup launch Google Chrome"},
+  "launch.obsidian": {"label": "Obsidian", "when": "teeup has obsidian", "action": "teeup launch Obsidian"},
+  "launch.ollama": {"label": "Ollama", "when": "teeup has ollama", "action": "teeup launch Ollama"},
+  "launch.aerospace": {"label": "AeroSpace", "when": "teeup has aerospace", "action": "teeup launch AeroSpace"},
+
+  "style.theme": {"label": "Theme", "action": "teeup theme set"},
+  "style.current": {"label": "Current theme", "action": "teeup theme current"},
+  "style.fonts": {"label": "Fonts teeup knows", "action": "teeup install font list"},
+
+  "check.doctor": {"label": "Doctor", "action": "teeup doctor"},
+  "check.status": {"label": "Status", "action": "teeup status"},
+  "check.list": {"label": "Every capability", "action": "teeup list"},
+  "check.lint": {"label": "Lint the capability metadata", "action": "teeup commands --check && echo 'Metadata is clean.'"},
+
+  "setup.config": {"label": "Edit the answers", "action": "teeup config edit"},
+  "setup.answers": {"label": "Show the answers", "action": "teeup config get"},
+  "setup.migrate-preview": {"label": "Preview retiring the old wiring", "action": "DRY_RUN=true teeup migrate legacy"},
+  "setup.migrate": {"label": "Retire the old teeup and chezmoi wiring", "action": "teeup migrate legacy"}
+}

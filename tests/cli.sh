@@ -1968,6 +1968,89 @@ test_config_edit_dry_run_creates_and_touches_nothing() {
 }
 
 
+# A menu of the fixture capabilities, so these tests never depend on what
+# share/teeup/menu.json happens to contain.
+write_test_menu() {
+  export TEEUP_MENU_FILE="$TEST_HOME/menu.json"
+  cat > "$TEEUP_MENU_FILE" <<'EOF2'
+{
+  "install": {"icon": "+", "label": "Install", "title": "Install something"},
+  "install.alpha": {"label": "Alpha", "when": "! teeup has alpha", "action": "teeup install alpha"},
+  "install.beta": {"label": "Beta", "action": "teeup install beta"},
+  "status": {"label": "Status", "action": "teeup status"}
+}
+EOF2
+}
+
+test_menu_walks_into_a_submenu_and_runs_the_action() {
+  setup
+  write_test_menu
+  local out
+  out="$(printf '1\n1\n' | "$TEEUP" menu 2>&1)"
+  assert_contains "$out" "1) + Install" || return 1
+  assert_contains "$out" "install:alpha" || return 1
+  "$TEEUP" has alpha || { echo "the action should really have installed alpha"; return 1; }
+  cleanup_test_env
+}
+
+test_menu_hides_a_row_whose_when_predicate_fails() {
+  setup
+  write_test_menu
+  "$TEEUP" install alpha >/dev/null
+  local out
+  out="$(printf '1\n\n' | "$TEEUP" menu 2>&1)"
+  assert_contains "$out" "Beta" || return 1
+  assert_not_contains "$out" "Alpha" "an installed alpha drops off the list" || return 1
+  cleanup_test_env
+}
+
+test_menu_takes_a_route_and_offers_a_way_back() {
+  setup
+  write_test_menu
+  local out
+  out="$(printf '3\n\n' | "$TEEUP" menu install 2>&1)"
+  assert_contains "$out" "Install something" || return 1
+  assert_contains "$out" "3) .." || return 1
+  assert_contains "$out" "1) + Install" "going back lands at the top level" || return 1
+  cleanup_test_env
+}
+
+test_menu_rejects_an_unknown_route() {
+  setup
+  write_test_menu
+  local rc=0 out
+  out="$("$TEEUP" menu nosuch 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No menu row with the id 'nosuch'" || return 1
+  cleanup_test_env
+}
+
+test_menu_dry_run_prints_the_action_instead_of_running_it() {
+  setup
+  write_test_menu
+  local out
+  out="$(printf '1\n1\n' | DRY_RUN=true "$TEEUP" menu 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would run: teeup install alpha" || return 1
+  "$TEEUP" has alpha && { echo "a dry run must install nothing"; return 1; }
+  cleanup_test_env
+}
+
+# R6.4: an empty line inside Install backs out to the top level rather than
+# leaving the whole menu; a second empty line, now at the top level, is what
+# actually exits. Two renders of the top level prove the walk went back
+# rather than straight out after the first cancel.
+test_menu_cancel_inside_a_submenu_goes_back_a_level() {
+  setup
+  write_test_menu
+  local out rc=0 top_renders
+  out="$(printf '1\n\n\n' | "$TEEUP" menu 2>&1)" || rc=$?
+  assert_success "$rc" "a cancel at the top level is not an error" || return 1
+  assert_contains "$out" "Install something" "entering Install shows its title" || return 1
+  top_renders="$(printf '%s\n' "$out" | grep -cF '1) + Install')"
+  assert_equals "2" "$top_renders" "the top level renders again after backing out of Install" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
@@ -2047,6 +2130,12 @@ run_test "doctor reports an unreadable state dir instead of calling it empty" te
 run_test "doctor reports an unreadable state dir parent instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_parent_instead_of_calling_it_empty
 run_test "doctor reports an unreadable state dir grandparent instead of calling it empty" test_doctor_reports_an_unreadable_state_dir_grandparent_instead_of_calling_it_empty
 run_test "doctor rejects an unknown capability" test_doctor_rejects_an_unknown_capability
+run_test "menu walks into a submenu and runs the action" test_menu_walks_into_a_submenu_and_runs_the_action
+run_test "menu hides a row whose when fails" test_menu_hides_a_row_whose_when_predicate_fails
+run_test "menu takes a route and offers a way back" test_menu_takes_a_route_and_offers_a_way_back
+run_test "menu rejects an unknown route" test_menu_rejects_an_unknown_route
+run_test "menu dry run prints the action" test_menu_dry_run_prints_the_action_instead_of_running_it
+run_test "menu cancel inside a submenu goes back a level" test_menu_cancel_inside_a_submenu_goes_back_a_level
 run_test "migrate requires a known target" test_migrate_requires_a_known_target
 run_test "migrate legacy runs every step and closes with a real command" test_migrate_legacy_runs_every_step_and_closes_with_a_real_command
 run_test "migrate legacy refuses the chezmoi half without teeup's zsh layer" test_migrate_legacy_refuses_the_chezmoi_half_without_teeups_zsh_layer
