@@ -211,3 +211,115 @@ migrate_rm() {
   fi
   ok_unless_dry "Removed the legacy file $path"
 }
+
+# migrate_rc_paths -> every rc file to visit, one absolute path per line
+#
+# zsh reads ${ZDOTDIR:-$HOME}/.zshenv, not always $HOME/.zshenv, and
+# capabilities/zsh/configure installs teeup's stubs into that same directory.
+# Visiting only $HOME on a ZDOTDIR machine means the migration reports success
+# while changing nothing: the predecessor's lines go on running in the files
+# zsh actually reads, and a doctor finding naming `teeup migrate legacy` as
+# the fix can never go green.
+#
+# Both locations are visited when they differ, because a machine part-way
+# through a migration can have leftovers in either. The bash files are not
+# affected by ZDOTDIR and are only ever looked for in $HOME. One definition,
+# used by every step that walks rc files, so they cannot disagree about which
+# files exist.
+migrate_rc_paths() {
+  local zdot="${ZDOTDIR:-$HOME}" name
+  for name in .zshenv .zprofile .zshrc; do
+    printf '%s\n' "$zdot/$name"
+    if [[ "$zdot" != "$HOME" ]]; then
+      printf '%s\n' "$HOME/$name"
+    fi
+  done
+  for name in .bashrc .bash_profile .profile; do
+    printf '%s\n' "$HOME/$name"
+  done
+}
+
+# Every rc line that wired a predecessor into a shell. Two patterns, because
+# the reason printed on each neutralised line should say which predecessor it
+# came from. teeup's own zsh stubs (phase 2a) contain none of these names, so
+# neither pattern touches them and their stock checksums stay valid.
+TEEUP_MIGRATE_LEGACY_RC_PATTERN='teeup\.common|teeupshrc|shellrc\.common|mac-setup'
+# Oh My Zsh, Powerlevel10k and Antigen: the prompt and plugin frameworks that
+# teeup's zsh layer and starship replace. legacy/teeup.sh disabled the antigen
+# lines for the same reason. capabilities/zsh/doctor looks for exactly this
+# union afterwards, so anything added here belongs there too.
+TEEUP_MIGRATE_PROMPT_RC_PATTERN='powerlevel10k|p10k|POWERLEVEL9K_|oh-my-zsh|ohmyzsh|ZSH_THEME|antigen'
+
+# migrate_legacy_paths
+# What the old monolithic teeup.sh left behind: ~/.teeup.common (a file it
+# generated with append_once), ~/.config/mac-setup (which held the generated
+# zsh.zsh), and the ~/.teeupshrc and ~/.shellrc.common symlinks it created
+# into whatever dotfiles directory it was pointed at. Removing the files
+# without neutralising the lines that source them would make every new shell
+# print an error, so both halves happen here.
+# 0 when everything it tried succeeded, 1 when a removal was refused. A
+# refusal never stops the rest: the point of the step is to get as much of the
+# machine into a good state as it safely can, and say what it would not touch.
+migrate_legacy_paths() {
+  local key path rc=0
+  log "Removing what older teeup versions left in your home directory"
+  for key in teeup-common teeupshrc shellrc-common mac-setup; do
+    if ! migrate_rm "$key"; then
+      rc=1
+    fi
+  done
+  log "Neutralising the shell lines that loaded them"
+  while IFS= read -r path; do
+    if [[ -n "$path" ]]; then
+      disable_matching_lines "$path" "$TEEUP_MIGRATE_LEGACY_RC_PATTERN" "replaced by teeup's zsh layer"
+      disable_matching_lines "$path" "$TEEUP_MIGRATE_PROMPT_RC_PATTERN" "replaced by teeup's starship prompt"
+    fi
+  done <<EOF_RC
+$(migrate_rc_paths)
+EOF_RC
+  return $rc
+}
+
+# migrate_runtime_pattern <sdkman|rbenv|pyenv> -> that manager's awk ERE
+# Deliberately narrow. The bare name would match a comment, an unrelated PATH
+# entry or a variable that merely contains it, and a pattern that is too wide
+# comments out lines the user still needs. These are the patterns
+# legacy/teeup.sh used, plus the dot-directory each manager puts on PATH.
+migrate_runtime_pattern() {
+  case "$1" in
+    sdkman) printf '%s\n' 'sdkman-init\.sh|SDKMAN_DIR|\.sdkman' ;;
+    rbenv)  printf '%s\n' 'rbenv (init|shell)|RBENV_ROOT|\.rbenv' ;;
+    pyenv)  printf '%s\n' 'pyenv (init|virtualenv-init)|PYENV_ROOT|\.pyenv' ;;
+    *) return 1 ;;
+  esac
+}
+
+# migrate_disable_runtime_inits
+# mise owns every runtime from phase 3b on, and two managers each putting a
+# java or a python on PATH is the failure this prevents. The toolchains stay:
+# ~/.sdkman, ~/.rbenv and ~/.pyenv hold installed versions a user may still
+# want, and it is the shell lines, not the directories, that make them win.
+# Always 0: nothing here can be refused.
+migrate_disable_runtime_inits() {
+  local manager path dir leftover="" pattern
+  log "Disabling the runtime managers mise replaces (SDKMAN, rbenv, pyenv)"
+  for manager in sdkman rbenv pyenv; do
+    pattern="$(migrate_runtime_pattern "$manager")"
+    while IFS= read -r path; do
+      if [[ -n "$path" ]]; then
+        disable_matching_lines "$path" "$pattern" "$manager replaced by mise"
+      fi
+    done <<EOF_RC
+$(migrate_rc_paths)
+EOF_RC
+  done
+  for dir in .sdkman .rbenv .pyenv; do
+    if [[ -d "$HOME/$dir" ]]; then
+      leftover="$leftover ~/$dir"
+    fi
+  done
+  if [[ -n "$leftover" ]]; then
+    warn "Still on disk:$leftover. teeup does not delete an installed toolchain; remove them yourself once a new shell works."
+  fi
+  return 0
+}

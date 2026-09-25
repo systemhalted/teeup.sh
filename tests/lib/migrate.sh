@@ -306,6 +306,155 @@ test_migrate_rm_refuses_a_key_that_resolves_into_the_sibling_repo() {
   cleanup_test_env
 }
 
+# T3.1/T4.1, Important. zsh reads ${ZDOTDIR:-$HOME}/.zshenv, and
+# capabilities/zsh/configure installs teeup's stubs there. Visiting only
+# $HOME on a ZDOTDIR machine means the migration reports success while
+# changing nothing -- the predecessor's lines go on running in the files zsh
+# actually reads. The bash rc files are not affected by ZDOTDIR and stay in
+# $HOME either way.
+test_migrate_rc_paths_honours_zdotdir_without_duplicating() {
+  setup
+  local out
+  # No ZDOTDIR: every file sits in $HOME, once each.
+  unset ZDOTDIR
+  out="$(migrate_rc_paths)"
+  assert_equals "6" "$(printf '%s\n' "$out" | grep -c .)" "six rc files, no duplicates" || return 1
+  assert_contains "$out" "$TEST_HOME/.zshrc" || return 1
+  assert_contains "$out" "$TEST_HOME/.bashrc" || return 1
+  # ZDOTDIR set elsewhere: the three zsh files are visited in BOTH places,
+  # because a machine mid-migration can have leftovers in either.
+  export ZDOTDIR="$TEST_HOME/zdot"
+  mkdir -p "$ZDOTDIR"
+  out="$(migrate_rc_paths)"
+  assert_contains "$out" "$ZDOTDIR/.zshrc" "the file zsh actually reads must be visited" || return 1
+  assert_contains "$out" "$TEST_HOME/.zshrc" "a leftover in HOME must still be reachable" || return 1
+  assert_contains "$out" "$TEST_HOME/.bashrc" "bash rc files do not move with ZDOTDIR" || return 1
+  assert_not_contains "$out" "$ZDOTDIR/.bashrc" "bash does not read ZDOTDIR" || return 1
+  # ZDOTDIR set to HOME: no duplicates.
+  export ZDOTDIR="$TEST_HOME"
+  out="$(migrate_rc_paths)"
+  assert_equals "6" "$(printf '%s\n' "$out" | grep -c .)" "ZDOTDIR=HOME must not double the list" || return 1
+  cleanup_test_env
+}
+
+test_migrate_legacy_paths_removes_the_files_and_neutralises_the_lines() {
+  setup
+  no_chezmoi
+  printf 'x\n' > "$TEST_HOME/.teeup.common"
+  mkdir -p "$XDG_CONFIG_HOME/mac-setup"
+  printf 'source "$HOME/.teeup.common"\nexport KEEP=1\nZSH_THEME="powerlevel10k/powerlevel10k"\n' > "$TEST_HOME/.zshrc"
+  local rc=0
+  migrate_legacy_paths >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" || return 1
+  [[ ! -e "$TEST_HOME/.teeup.common" ]] || { echo "the legacy file survived"; return 1; }
+  [[ ! -e "$XDG_CONFIG_HOME/mac-setup" ]] || { echo "the legacy directory survived"; return 1; }
+  local content
+  content="$(cat "$TEST_HOME/.zshrc")"
+  assert_contains "$content" ': # Disabled by teeup' || return 1
+  assert_contains "$content" "export KEEP=1" "an unrelated line must survive" || return 1
+  assert_not_contains "$content" '^ZSH_THEME' "the prompt framework line must be neutralised" || return 1
+  bash -n "$TEST_HOME/.zshrc" || { echo "the rewritten rc no longer parses"; return 1; }
+  cleanup_test_env
+}
+
+# The ZDOTDIR half of the same step: the file zsh really reads is the one
+# whose lines have to stop running.
+test_migrate_legacy_paths_neutralises_the_zdotdir_rc_file() {
+  setup
+  no_chezmoi
+  export ZDOTDIR="$TEST_HOME/zdot"
+  mkdir -p "$ZDOTDIR"
+  printf 'source "$HOME/.teeup.common"\nexport KEEP=1\n' > "$ZDOTDIR/.zshrc"
+  migrate_legacy_paths >/dev/null 2>&1 || true
+  local content
+  content="$(cat "$ZDOTDIR/.zshrc")"
+  assert_contains "$content" ': # Disabled by teeup' "the ZDOTDIR rc file must be edited" || return 1
+  assert_contains "$content" "export KEEP=1" || return 1
+  cleanup_test_env
+}
+
+# A refusal must not stop the rest of the step, and must still be reported.
+test_migrate_legacy_paths_carries_on_past_a_refusal() {
+  setup
+  mock_chezmoi
+  rm -rf "$XDG_CONFIG_HOME"
+  ln -s "$SIBLING/dot_config" "$XDG_CONFIG_HOME"
+  mkdir -p "$SIBLING/dot_config/mac-setup"
+  printf 'x\n' > "$TEST_HOME/.teeup.common"
+  # mac-setup is the LAST key the loop visits, so "the earlier removal
+  # happened" cannot tell a continuing loop from one that aborted on the
+  # refusal. The rc-file half of the step runs after the loop, so whether it
+  # ran is what actually proves the refusal did not stop anything.
+  printf 'source "$HOME/.teeup.common"\nexport KEEP=1\n' > "$TEST_HOME/.zshrc"
+  local rc=0
+  migrate_legacy_paths >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" "a refusal must make the step return non-zero" || return 1
+  [[ ! -e "$TEST_HOME/.teeup.common" ]] || { echo "the refusal stopped the rest of the step"; return 1; }
+  assert_contains "$(cat "$TEST_HOME/.zshrc")" ': # Disabled by teeup' "the work after the refused removal must still run" || return 1
+  assert_contains "$(cat "$TEST_HOME/.zshrc")" "export KEEP=1" || return 1
+  assert_dir_exists "$SIBLING/dot_config/mac-setup" "the refused path must be untouched" || return 1
+  cleanup_test_env
+}
+
+test_migrate_runtime_pattern_is_narrow_enough_to_be_safe() {
+  setup
+  local rc=0
+  migrate_runtime_pattern nosuchmanager >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" "an unknown manager has no pattern" || return 1
+  assert_contains "$(migrate_runtime_pattern sdkman)" "sdkman-init" || return 1
+  assert_contains "$(migrate_runtime_pattern rbenv)" "RBENV_ROOT" || return 1
+  assert_contains "$(migrate_runtime_pattern pyenv)" "PYENV_ROOT" || return 1
+  cleanup_test_env
+}
+
+test_migrate_disable_runtime_inits_neutralises_each_manager() {
+  setup
+  no_chezmoi
+  printf 'eval "$(rbenv init -)"\nexport PYENV_ROOT="$HOME/.pyenv"\n[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ] && source "$HOME/.sdkman/bin/sdkman-init.sh"\nalias mypyenvthing="echo hi"\nexport KEEP=1\n' > "$TEST_HOME/.zshrc"
+  migrate_disable_runtime_inits >/dev/null 2>&1 || return 1
+  local content
+  content="$(cat "$TEST_HOME/.zshrc")"
+  assert_contains "$content" ': # Disabled by teeup (rbenv replaced by mise): eval "$(rbenv init -)"' || return 1
+  assert_contains "$content" ': # Disabled by teeup (pyenv replaced by mise): export PYENV_ROOT' || return 1
+  assert_contains "$content" ': # Disabled by teeup (sdkman replaced by mise)' || return 1
+  assert_contains "$content" "export KEEP=1" || return 1
+  # The narrowness that matters: a name merely containing "pyenv" survives.
+  assert_contains "$content" 'alias mypyenvthing="echo hi"' "a name that merely contains pyenv must survive" || return 1
+  bash -n "$TEST_HOME/.zshrc" || { echo "the rewritten rc no longer parses"; return 1; }
+  cleanup_test_env
+}
+
+# The toolchains stay: ~/.sdkman and friends hold installed versions the user
+# may still want, and it is the shell lines, not the directories, that make
+# them shadow mise. The step says what is still there rather than deleting it.
+test_migrate_disable_runtime_inits_names_the_toolchains_without_deleting_them() {
+  setup
+  no_chezmoi
+  mkdir -p "$TEST_HOME/.rbenv" "$TEST_HOME/.pyenv"
+  local out
+  out="$(migrate_disable_runtime_inits 2>&1)"
+  assert_contains "$out" "Still on disk" || return 1
+  # The literal "~/.rbenv" is the point: the message is for a human to read,
+  # so it names the path the way they would type it rather than expanding
+  # $HOME to a temp directory.
+  # shellcheck disable=SC2088
+  assert_contains "$out" "~/.rbenv" || return 1
+  assert_dir_exists "$TEST_HOME/.rbenv" "teeup must not delete an installed toolchain" || return 1
+  assert_dir_exists "$TEST_HOME/.pyenv" || return 1
+  cleanup_test_env
+}
+
+test_migrate_disable_runtime_inits_honours_zdotdir() {
+  setup
+  no_chezmoi
+  export ZDOTDIR="$TEST_HOME/zdot"
+  mkdir -p "$ZDOTDIR"
+  printf 'eval "$(rbenv init -)"\nexport KEEP=1\n' > "$ZDOTDIR/.zshrc"
+  migrate_disable_runtime_inits >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$ZDOTDIR/.zshrc")" ': # Disabled by teeup (rbenv replaced by mise)' "the file zsh reads must be edited" || return 1
+  cleanup_test_env
+}
+
 echo "lib/migrate"
 run_test "migrate_target names only the five legacy paths" test_migrate_target_names_only_the_five_legacy_paths
 run_test "chezmoi_ro runs the read-only subcommands" test_chezmoi_ro_runs_the_read_only_subcommands
@@ -322,4 +471,12 @@ run_test "migrate_rm dry run previews without claiming a deletion" test_migrate_
 run_test "migrate_rm reports a deletion that did not happen" test_migrate_rm_reports_a_deletion_that_did_not_happen
 run_test "migrate_rm says nothing is there without failing" test_migrate_rm_says_nothing_is_there_without_failing
 run_test "migrate_rm refuses a key that resolves into the sibling repo" test_migrate_rm_refuses_a_key_that_resolves_into_the_sibling_repo
+run_test "migrate_rc_paths honours ZDOTDIR without duplicating" test_migrate_rc_paths_honours_zdotdir_without_duplicating
+run_test "migrate_legacy_paths removes the files and neutralises the lines" test_migrate_legacy_paths_removes_the_files_and_neutralises_the_lines
+run_test "migrate_legacy_paths neutralises the ZDOTDIR rc file" test_migrate_legacy_paths_neutralises_the_zdotdir_rc_file
+run_test "migrate_legacy_paths carries on past a refusal" test_migrate_legacy_paths_carries_on_past_a_refusal
+run_test "migrate_runtime_pattern is narrow enough to be safe" test_migrate_runtime_pattern_is_narrow_enough_to_be_safe
+run_test "migrate_disable_runtime_inits neutralises each manager" test_migrate_disable_runtime_inits_neutralises_each_manager
+run_test "migrate_disable_runtime_inits names the toolchains without deleting them" test_migrate_disable_runtime_inits_names_the_toolchains_without_deleting_them
+run_test "migrate_disable_runtime_inits honours ZDOTDIR" test_migrate_disable_runtime_inits_honours_zdotdir
 print_summary
