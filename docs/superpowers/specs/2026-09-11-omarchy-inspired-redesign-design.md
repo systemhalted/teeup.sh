@@ -400,7 +400,7 @@ teeup commands [--check]                            teeup uninstall [--packages]
 2. **Every installed capability, dependents first,** through the same removal `teeup remove` uses (its `remove` script, then its metadata's packages and casks). A capability still required by one that failed is refused, not removed.
 3. **teeup's LaunchAgents** (`sh.teeup.*`), whatever is still loaded after step 2.
 4. **Config files by the stock-checksum rule** (section 9): pristine copies go, edited ones stay, and a `.teeup_backup_*` copy of what teeup replaced at install time is offered back.
-5. **The identity, only with `--identity`**: the keys at teeup's own naming convention (`~/.ssh/id_ed25519_<identity>`), a pristine `~/.ssh/config`, and the git identity. Without the flag they are never touched, and neither is `~/.config/git/config`, through which git reads that identity.
+5. **The identity, only with `--identity`**: the git identity file teeup generated, `~/.config/git/local` (moved aside, since teeup never wrote it), and a pristine `~/.ssh/config` and `~/.config/git/config`. teeup never deletes an SSH key, with or without the flag; `--identity` only names each one, with the commands that drop its Keychain passphrase and move it aside by hand. Without the flag, `~/.ssh/config` and `~/.config/git/config` stay untouched too, even when pristine. *Amended 2026-09-26 (user decision): this step used to have `--identity` run `ssh-add -d` and delete the key files; it no longer does.*
 6. **teeup itself, last and only after a clean run**: `~/.local/bin/teeup`, `$TEEUP_CONFIG_DIR` (teeup's own files; the user's machine file, hooks and themes stay) and `$TEEUP_STATE_DIR`. After any refusal or failure they stay, because they are what a rerun needs.
 
 Packages and casks the metadata names are uninstalled only when the user says so: a question on a terminal defaulting to no, or `--packages`; with `--yes` or no terminal they stay, and the summary names them with the command that removes them. A real run with no terminal requires `--yes`. `DRY_RUN=true` asks nothing and changes nothing. The run ends with a summary in four columns -- removed, kept, refused, failed -- and exits non-zero when anything was refused or failed. A second run on a clean machine changes nothing and exits 0.
@@ -415,7 +415,7 @@ The seven capabilities `teeup remove` refuses, because they ship no `remove` scr
 | `package-manager` | keeps it, names the package manager's own uninstaller | the user's decision: never |
 | `dev-dirs` | keeps `~/Work` | it holds the user's projects |
 | `secrets` | keeps the Keychain items, names each with the `security delete-generic-password` that deletes it | they are the user's data, not teeup's configuration |
-| `ssh` | keeps keys and `~/.ssh/config` unless `--identity` | they are the identity |
+| `ssh` | keeps the keys always, and `~/.ssh/config` unless `--identity` | they are the identity, and teeup never deletes a key |
 | `teeup-runtime` | removed in step 6 | its state, env file, shims and command are teeup itself |
 | `theme` | removed with `$TEEUP_STATE_DIR` in step 6 | everything it generated lives there; palette regions inside user files follow the stock-checksum rule in step 4 |
 
