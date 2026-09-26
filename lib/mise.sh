@@ -152,7 +152,7 @@ if [ -n "\$teeup_missing" ]; then
   if [ "\${TEEUP_RUN_LOG_CAPTURED:-false}" != "true" ]; then
     teeup_state_dir="\${TEEUP_STATE_DIR:-\${XDG_STATE_HOME:-\$HOME/.local/state}/teeup}"
     teeup_log_file="\${TEEUP_LOG_FILE:-\$teeup_state_dir/logs/lazy.log}"
-    if mkdir -p "\$(dirname "\$teeup_log_file")" 2>/dev/null; then
+    if mkdir -p "\$(dirname "\$teeup_log_file")" 2>/dev/null && { : >> "\$teeup_log_file"; } 2>/dev/null; then
       teeup_log_ready=true
     else
       printf '%s\\n' "Could not write the lazy install log: \$teeup_log_file" >&2

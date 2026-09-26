@@ -248,6 +248,28 @@ test_wrapper_prints_progress_to_stderr_and_logs_the_install() {
   cleanup_test_env
 }
 
+# I3: readiness must probe the log file itself, not just its directory. A
+# pre-existing read-only lazy.log has a writable parent, so `mkdir -p` alone
+# says "ready" and the later `tee -a`/`>>` then leaks bash's raw permission
+# error instead of teeup's own warning -- and the install must still finish.
+test_wrapper_warns_once_when_the_lazy_log_is_read_only() {
+  setup
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
+  local wrapper="$TEST_HOME/.local/bin/claude"
+  local log="$TEST_HOME/.local/state/teeup/logs/lazy.log" out err
+  mkdir -p "$(dirname "$log")"
+  : > "$log"
+  chmod 0444 "$log"
+  out="$("$wrapper" --version 2>"$TEST_HOME/err")"
+  err="$(cat "$TEST_HOME/err")"
+  chmod 0644 "$log"
+  assert_equals "mise-x:claude:claude --version" "$out" "install must still succeed" || return 1
+  assert_contains "$err" "Could not write the lazy install log: $log" || return 1
+  assert_not_contains "$err" "Permission denied" "teeup's own warning must replace the raw error" || return 1
+  assert_equals "" "$(cat "$log")" "the read-only log must stay untouched" || return 1
+  cleanup_test_env
+}
+
 test_wrapper_dry_run_creates_no_lazy_log() {
   setup
   mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
@@ -641,6 +663,7 @@ run_test "ensure_global warns and fails when mise cannot install" test_ensure_gl
 run_test "wrapper installs on first call and execs after" test_wrapper_installs_on_first_call_and_execs_after
 run_test "wrapper installs a requested tool without rewriting the pin" test_wrapper_installs_a_requested_tool_without_rewriting_the_pin
 run_test "wrapper prints progress and logs the install" test_wrapper_prints_progress_to_stderr_and_logs_the_install
+run_test "wrapper warns once when the lazy log is read-only" test_wrapper_warns_once_when_the_lazy_log_is_read_only
 run_test "wrapper dry run creates no lazy log" test_wrapper_dry_run_creates_no_lazy_log
 run_test "wrapper skips its own log under an outer run_logged" test_wrapper_skips_its_own_log_under_an_outer_run_logged
 run_test "wrapper retries an interrupted global request" test_wrapper_retries_an_interrupted_global_request
