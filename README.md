@@ -146,6 +146,7 @@ the theme each tool should load:
 | Theme | Palettes | bat | Emacs | Zed | Neovim | VS Code |
 |---|---|---|---|---|---|---|
 | `catppuccin` | Mocha, Latte | `OneHalfDark`, `OneHalfLight` | `modus-vivendi`, `modus-operandi` | Catppuccin Mocha, Latte (extension `catppuccin`) | `catppuccin-mocha`, `catppuccin-latte` | Catppuccin Mocha, Latte (`Catppuccin.catppuccin-vsc`) |
+| `everforest` | dark, light (medium contrast) | `base16` | `modus-vivendi`, `modus-operandi-tinted` | Everforest Dark Medium (regular), Everforest Light Medium (regular) (extension `everforest`) | `everforest` | Everforest Dark, Everforest Light (`sainnhe.everforest`) |
 | `gruvbox` | dark, light (medium contrast) | `gruvbox-dark`, `gruvbox-light` | `modus-vivendi`, `modus-operandi-tinted` | Gruvbox Dark, Gruvbox Light (built in) | `gruvbox` | Gruvbox Dark Medium, Gruvbox Light Medium (`jdinhlife.gruvbox`) |
 | `tokyo-night` | night, day | `base16` | `modus-vivendi-tinted`, `modus-operandi` | Tokyo Night, Tokyo Night Light (extension `tokyo-night`) | `tokyonight-night`, `tokyonight-day` | Tokyo Night, Tokyo Night Light (`enkia.tokyo-night`) |
 

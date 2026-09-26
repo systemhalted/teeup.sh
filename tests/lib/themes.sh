@@ -244,6 +244,28 @@ gruvbox light neovim_colorscheme gruvbox
 gruvbox light vscode_theme Gruvbox Light Medium
 gruvbox light vscode_extension jdinhlife.gruvbox
 gruvbox light doom_theme doom-gruvbox-light
+everforest dark background #2d353b
+everforest dark foreground #d3c6aa
+everforest dark accent #a7c080
+everforest dark bat_theme base16
+everforest dark emacs_theme modus-vivendi
+everforest dark zed_theme Everforest Dark Medium (regular)
+everforest dark zed_extension everforest
+everforest dark neovim_colorscheme everforest
+everforest dark vscode_theme Everforest Dark
+everforest dark vscode_extension sainnhe.everforest
+everforest dark doom_theme doom-spacegrey
+everforest light background #fdf6e3
+everforest light foreground #5c6a72
+everforest light accent #93b259
+everforest light bat_theme base16
+everforest light emacs_theme modus-operandi-tinted
+everforest light zed_theme Everforest Light Medium (regular)
+everforest light zed_extension everforest
+everforest light neovim_colorscheme everforest
+everforest light vscode_theme Everforest Light
+everforest light vscode_extension sainnhe.everforest
+everforest light doom_theme doom-solarized-light
 ANCHORS
 }
 

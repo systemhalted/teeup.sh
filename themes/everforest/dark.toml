@@ -1,0 +1,57 @@
+# Everforest dark, medium contrast, as a teeup semantic palette. Every colour
+# is a named colour from sainnhe/everforest's autoload/everforest.vim at
+# commit 85a86eb6 (the name is in the comment), and the ANSI roles follow
+# colors/everforest.vim's terminal colours, whose bright set repeats the
+# normal one.
+mode = "dark"
+
+# Names, not colours. bat has no Everforest theme built in; base16 draws with
+# the terminal's own sixteen colours, which WezTerm takes from this palette.
+bat_theme = "base16"
+emacs_theme = "modus-vivendi"
+# Zed: the "everforest" extension (albertsko/zed-everforest).
+zed_theme = "Everforest Dark Medium (regular)"
+zed_extension = "everforest"
+# Neovim: neanias/everforest-nvim, which follows 'background'.
+neovim_colorscheme = "everforest"
+# VS Code: sainnhe.everforest, whose contrast setting defaults to medium.
+vscode_theme = "Everforest Dark"
+vscode_extension = "sainnhe.everforest"
+
+# doom-themes has no Everforest port (github.com/doomemacs/themes, commit
+# a59202912ad55014e53a685eee6cd94130bdd4fd, checked 2026-09-26: no
+# doom-everforest* file under themes/). doom-spacegrey is the closest
+# built-in match for the dark medium palette: its background #2b303b is
+# within 5 units per channel of Everforest's #2d353b, and its green
+# #a3be8c is within 12 units per channel of Everforest's own green #a7c080.
+doom_theme = "doom-spacegrey"
+
+accent = "#a7c080"                # statusline1
+selection = "#543a48"             # bg_visual
+muted = "#475258"                 # bg3 (terminal black)
+
+background = "#2d353b"            # bg0
+dark_background = "#232a2e"       # bg_dim
+darker_background = "#1e2326"     # bg_dim of the hard palette
+lighter_background = "#343f44"    # bg1
+
+foreground = "#d3c6aa"            # fg
+dark_foreground = "#859289"       # grey1 (Comment)
+light_foreground = "#9da9a0"      # grey2
+bright_foreground = "#d3c6aa"     # fg (terminal white)
+
+red = "#e67e80"                   # red
+yellow = "#dbbc7f"                # yellow
+orange = "#e69875"                # orange
+green = "#a7c080"                 # green
+cyan = "#83c092"                  # aqua
+blue = "#7fbbb3"                  # blue
+magenta = "#d699b6"               # purple
+brown = "#e69875"                 # no brown upstream: orange
+
+bright_red = "#e67e80"            # red
+bright_yellow = "#dbbc7f"         # yellow
+bright_green = "#a7c080"          # green
+bright_cyan = "#83c092"           # aqua
+bright_blue = "#7fbbb3"           # blue
+bright_magenta = "#d699b6"        # purple

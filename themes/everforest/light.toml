@@ -1,0 +1,50 @@
+# Everforest light, medium contrast. Every colour is a named colour from
+# sainnhe/everforest's autoload/everforest.vim at commit 85a86eb6; the
+# upstream terminal palette for a light background uses fg as black, so
+# muted takes bg5, the grey upstream draws line numbers in.
+mode = "light"
+
+bat_theme = "base16"
+emacs_theme = "modus-operandi-tinted"
+zed_theme = "Everforest Light Medium (regular)"
+zed_extension = "everforest"
+neovim_colorscheme = "everforest"
+vscode_theme = "Everforest Light"
+vscode_extension = "sainnhe.everforest"
+
+# doom-solarized-light is the closest built-in match for the light medium
+# palette (same commit as dark.toml, checked 2026-09-26): its background
+# #fdf6e3 is an exact match for Everforest's own light background (Everforest
+# borrows Solarized's cream), and its foreground #556b72 is within 7 units
+# per channel of Everforest's #5c6a72.
+doom_theme = "doom-solarized-light"
+
+accent = "#93b259"                # statusline1
+selection = "#eaedc8"             # bg_visual
+muted = "#bdc3af"                 # bg5
+
+background = "#fdf6e3"            # bg0
+dark_background = "#efebd4"       # bg_dim
+darker_background = "#e0dcc7"     # bg4
+lighter_background = "#f4f0d9"    # bg1
+
+foreground = "#5c6a72"            # fg
+dark_foreground = "#939f91"       # grey1 (Comment)
+light_foreground = "#829181"      # grey2
+bright_foreground = "#5c6a72"     # fg
+
+red = "#f85552"                   # red
+yellow = "#dfa000"                # yellow
+orange = "#f57d26"                # orange
+green = "#8da101"                 # green
+cyan = "#35a77c"                  # aqua
+blue = "#3a94c5"                  # blue
+magenta = "#df69ba"               # purple
+brown = "#f57d26"                 # no brown upstream: orange
+
+bright_red = "#f85552"            # red
+bright_yellow = "#dfa000"         # yellow
+bright_green = "#8da101"          # green
+bright_cyan = "#35a77c"           # aqua
+bright_blue = "#3a94c5"           # blue
+bright_magenta = "#df69ba"        # purple
