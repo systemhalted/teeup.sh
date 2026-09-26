@@ -1036,6 +1036,21 @@ test_teardown_refuses_a_state_dir_with_no_teeup_markers() {
 
 # The re-review's case: mise's own data dir has shims/ and migrations/, so a
 # TEEUP_STATE_DIR override pointed at it passed a check on generic names.
+# Codex on #52: the uninstall loop names a linked LaunchAgents directory as
+# refused and leaves the file in the checkout alone.
+test_launchagents_refuses_a_linked_launchagents_directory() {
+  setup
+  mock_command launchctl 0 ""
+  local repo="$TEST_HOME/dotfiles"
+  mkdir -p "$repo/.git" "$repo/LaunchAgents" "$TEST_HOME/Library"
+  printf '<plist/>\n' > "$repo/LaunchAgents/sh.teeup.old.plist"
+  ln -s "$repo/LaunchAgents" "$TEST_HOME/Library/LaunchAgents"
+  uninstall_launchagents >/dev/null 2>&1
+  assert_file_exists "$repo/LaunchAgents/sh.teeup.old.plist" || return 1
+  assert_contains "$_UNINSTALL_REFUSED" "sh.teeup.old" || return 1
+  cleanup_test_env
+}
+
 test_teardown_refuses_a_state_dir_that_only_shares_generic_names() {
   setup
   teeup_runtime_home
@@ -1177,6 +1192,7 @@ run_test "teardown refuses a state dir with no teeup markers" test_teardown_refu
 run_test "teardown still removes a real state dir" test_teardown_still_removes_a_real_state_dir
 run_test "teardown removes a defaults directory macos-defaults leaves behind" test_teardown_removes_a_defaults_directory_macos_defaults_leaves_behind
 run_test "teardown refuses a state dir that only shares generic names" test_teardown_refuses_a_state_dir_that_only_shares_generic_names
+run_test "launchagents refuses a linked LaunchAgents directory" test_launchagents_refuses_a_linked_launchagents_directory
 run_test "teardown keeps a file it did not write in the state dir" test_teardown_keeps_a_file_it_did_not_write_in_the_state_dir
 run_test "shell handles zsh home files left at an old ZDOTDIR" test_shell_handles_zsh_home_files_left_at_an_old_zdotdir
 run_test "configs leaves zsh home files at an old ZDOTDIR for uninstall_shell" test_configs_leaves_zsh_home_files_at_an_old_zdotdir_for_uninstall_shell

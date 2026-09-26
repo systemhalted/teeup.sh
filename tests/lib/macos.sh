@@ -264,6 +264,35 @@ test_launchagent_remove_unloads_and_deletes_the_plist() {
   cleanup_test_env
 }
 
+# Codex on #52: a LaunchAgents directory linked into a dotfiles checkout
+# made rm -f delete the file inside the checkout.
+test_launchagent_remove_refuses_a_linked_launchagents_directory() {
+  setup
+  mock_command launchctl 0 ""
+  local repo="$TEST_HOME/dotfiles" rc=0
+  mkdir -p "$repo/.git" "$repo/LaunchAgents" "$TEST_HOME/Library"
+  printf '<plist/>\n' > "$repo/LaunchAgents/sh.teeup.test.plist"
+  ln -s "$repo/LaunchAgents" "$TEST_HOME/Library/LaunchAgents"
+  launchagent_remove sh.teeup.test >/dev/null 2>&1 || rc=$?
+  assert_equals "2" "$rc" || return 1
+  assert_file_exists "$repo/LaunchAgents/sh.teeup.test.plist" "the file in the checkout must survive" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG" 2>/dev/null)" "bootout" || return 1
+  cleanup_test_env
+}
+
+test_launchagent_remove_refuses_a_symlinked_plist() {
+  setup
+  mock_command launchctl 0 ""
+  local rc=0
+  mkdir -p "$TEST_HOME/Library/LaunchAgents" "$TEST_HOME/elsewhere"
+  printf '<plist/>\n' > "$TEST_HOME/elsewhere/real.plist"
+  ln -s "$TEST_HOME/elsewhere/real.plist" "$TEST_HOME/Library/LaunchAgents/sh.teeup.test.plist"
+  launchagent_remove sh.teeup.test >/dev/null 2>&1 || rc=$?
+  assert_equals "2" "$rc" || return 1
+  assert_file_exists "$TEST_HOME/elsewhere/real.plist" || return 1
+  cleanup_test_env
+}
+
 test_launchagent_remove_without_a_plist_is_a_noop() {
   setup
   mock_command launchctl 0 ""
@@ -357,6 +386,8 @@ run_test "defaults_restore leaves an unreplayable type alone" test_defaults_rest
 run_test "defaults_restore warns and keeps the record when a write fails" test_defaults_restore_warns_and_keeps_the_record_when_a_write_fails
 run_test "defaults_restore without a record is a no-op" test_defaults_restore_without_a_record_is_a_noop
 run_test "launchagent_remove unloads and deletes the plist" test_launchagent_remove_unloads_and_deletes_the_plist
+run_test "launchagent_remove refuses a linked LaunchAgents directory" test_launchagent_remove_refuses_a_linked_launchagents_directory
+run_test "launchagent_remove refuses a symlinked plist" test_launchagent_remove_refuses_a_symlinked_plist
 run_test "launchagent_remove without a plist is a no-op" test_launchagent_remove_without_a_plist_is_a_noop
 run_test "launchagent_remove dry run changes nothing" test_launchagent_remove_dry_run_changes_nothing
 run_test "launchagent_install writes and reloads" test_launchagent_install_writes_and_reloads

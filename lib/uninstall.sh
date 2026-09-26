@@ -723,7 +723,7 @@ uninstall_capabilities() {
 # belongs to a capability no longer marked installed. Unloaded and deleted
 # through launchagent_remove, then checked on disk.
 uninstall_launchagents() {
-  local plist label
+  local plist label rc
   for plist in "$HOME/Library/LaunchAgents"/sh.teeup.*.plist; do
     [[ -e "$plist" || -L "$plist" ]] || continue
     label="${plist##*/}"
@@ -732,7 +732,12 @@ uninstall_launchagents() {
       uninstall_note refused "LaunchAgent $label: $plist is a symlink, so teeup left it. Unload and delete it with: launchctl bootout gui/$(id -u) $(uninstall_q "$plist"); rm $(uninstall_q "$plist")"
       continue
     fi
-    launchagent_remove "$label" || true
+    rc=0
+    launchagent_remove "$label" 2>/dev/null || rc=$?
+    if [[ "$rc" -eq 2 ]]; then
+      uninstall_note refused "LaunchAgent $label: $plist sits in a linked LaunchAgents directory, so teeup left it. Unload and delete it with: launchctl bootout gui/$(id -u) $(uninstall_q "$plist"); rm $(uninstall_q "$plist")"
+      continue
+    fi
     if [[ "$DRY_RUN" != "true" && -e "$plist" ]]; then
       uninstall_note failed "LaunchAgent $label: $plist is still there. Unload and delete it with: launchctl bootout gui/$(id -u) $(uninstall_q "$plist"); rm $(uninstall_q "$plist")"
       continue
