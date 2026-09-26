@@ -2450,11 +2450,34 @@ test_teardown_refuses_a_state_dir_outside_home_with_a_fix_that_works() {
   export TEEUP_STATE_DIR="$TEST_HOME/elsewhere/st ate \$x"
   export TEEUP_CONFIG_DIR="$HOME/.config/teeup"
   mkdir -p "$HOME" "$TEEUP_STATE_DIR/done"
+  mkdir -p "$TEEUP_CONFIG_DIR" "$HOME/.local/bin"
+  printf 'x\n' > "$TEEUP_CONFIG_DIR/answers"
+  ln -s "$TEEUP_PATH/bin/teeup" "$HOME/.local/bin/teeup"
   uninstall_teardown >/dev/null 2>&1
   assert_dir_exists "$TEEUP_STATE_DIR" || return 1
-  assert_contains "$_UNINSTALL_REFUSED" "teeup's state" || return 1
+  # Checked before anything was deleted: config and command stay too.
+  assert_file_exists "$TEEUP_CONFIG_DIR/answers" "a refused state dir must stop the whole teardown" || return 1
+  [[ -L "$HOME/.local/bin/teeup" ]] || { echo "the teeup command must stay for the rerun"; return 1; }
   run_fix "${_UNINSTALL_REFUSED##*mean to: }" || { echo "the printed rm failed"; return 1; }
   [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "the printed rm must remove it"; return 1; }
+  cleanup_test_env
+}
+
+# Codex P1 on the plan: a symlinked config dir was refused only after the
+# command was deleted, and the state was deleted after it anyway.
+test_teardown_keeps_everything_when_the_config_dir_is_a_symlink() {
+  setup
+  export HOME="$TEST_HOME/home"
+  export TEEUP_STATE_DIR="$HOME/.local/state/teeup"
+  export TEEUP_CONFIG_DIR="$HOME/.config/teeup"
+  mkdir -p "$TEST_HOME/dotfiles/teeup" "$HOME/.config" "$TEEUP_STATE_DIR/done" "$HOME/.local/bin"
+  ln -s "$TEST_HOME/dotfiles/teeup" "$TEEUP_CONFIG_DIR"
+  ln -s "$TEEUP_PATH/bin/teeup" "$HOME/.local/bin/teeup"
+  uninstall_teardown >/dev/null 2>&1
+  assert_dir_exists "$TEEUP_STATE_DIR/done" "the state must stay for the rerun" || return 1
+  [[ -L "$HOME/.local/bin/teeup" ]] || { echo "the teeup command must stay for the rerun"; return 1; }
+  [[ -L "$TEEUP_CONFIG_DIR" ]] || { echo "the symlinked config dir must be left as it was"; return 1; }
+  assert_contains "$_UNINSTALL_REFUSED" "symlink" || return 1
   cleanup_test_env
 }
 
@@ -2470,6 +2493,7 @@ run_test "teardown keeps the user's own files in the config dir" test_teardown_k
 run_test "teardown waits for a clean run" test_teardown_waits_for_a_clean_run
 run_test "teardown leaves a command that is not teeup's" test_teardown_leaves_a_command_that_is_not_teeups
 run_test "teardown refuses a state dir outside HOME, with a fix that works" test_teardown_refuses_a_state_dir_outside_home_with_a_fix_that_works
+run_test "teardown keeps everything when the config dir is a symlink" test_teardown_keeps_everything_when_the_config_dir_is_a_symlink
 print_summary
 ```
 
@@ -2746,9 +2770,34 @@ MINE
 # tell a pristine file from an edited one, the install markers, the recorded
 # `defaults` values -- so after any refusal or failure they stay.
 uninstall_teardown() {
-  local link="$HOME/.local/bin/teeup" target
+  local link="$HOME/.local/bin/teeup" target d resolved
   if ! uninstall_clean; then
     uninstall_note kept "teeup's own state ($TEEUP_STATE_DIR), config ($TEEUP_CONFIG_DIR) and command: something above was refused or failed, and the rerun needs them."
+    return 0
+  fi
+  # Every target is checked before any is deleted. A clean run can still meet
+  # a refusal here -- a symlinked config dir, a state dir outside $HOME --
+  # and deleting the command first, then refusing the config, then deleting
+  # the state anyway breaks the promise that all three stay after any
+  # problem (Codex, on this plan). The same checks uninstall_rm makes, done
+  # up front.
+  for d in "$TEEUP_CONFIG_DIR" "$TEEUP_STATE_DIR"; do
+    [[ -e "$d" || -L "$d" ]] || continue
+    if [[ -L "$d" ]] || ! resolved="$(migrate_resolve "$d")" || ! migrate_path_is_safe "$resolved"; then
+      uninstall_note refused "$d is a symlink, outside your home directory, inside a git checkout or inside the chezmoi source, so teeup did not delete it -- nor its state, config or command, which a rerun needs. Remove it yourself if you mean to: rm -rf $(uninstall_q "$d")"
+      return 0
+    fi
+  done
+  # Config and state first, each followed by a fresh check, so a failure
+  # stops the teardown; the command last, since it is what a rerun calls.
+  _uninstall_config_dir
+  if ! uninstall_clean; then
+    uninstall_note kept "teeup's state ($TEEUP_STATE_DIR) and command: removing the config did not finish cleanly, and the rerun needs them."
+    return 0
+  fi
+  uninstall_rm "$TEEUP_STATE_DIR" "teeup's state ($TEEUP_STATE_DIR: install records, shims, the generated theme, logs)" || true
+  if ! uninstall_clean; then
+    uninstall_note kept "the teeup command: removing the state did not finish cleanly, and the rerun needs it."
     return 0
   fi
   if [[ -L "$link" ]]; then
@@ -2761,8 +2810,6 @@ uninstall_teardown() {
   elif [[ -e "$link" ]]; then
     uninstall_note kept "$link: it is a file, not teeup's link."
   fi
-  _uninstall_config_dir
-  uninstall_rm "$TEEUP_STATE_DIR" "teeup's state ($TEEUP_STATE_DIR: install records, shims, the generated theme, logs)" || true
 }
 ```
 
