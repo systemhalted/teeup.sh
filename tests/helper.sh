@@ -65,6 +65,13 @@ setup_test_env() {
   # PATH, and ZDOTDIR is where zsh configure writes and compinit dumps.
   unset EDITOR ALTERNATE_EDITOR MANPAGER MANROFFOPT ZDOTDIR XDG_DATA_HOME XDG_CACHE_HOME
   unset TEEUP_APPEARANCE TEEUP_THEME_MODE TEEUP_THEME_ACCENT
+  # /usr/bin/osascript is on the narrowed PATH of every Mac, and the
+  # terminal-app capability writes Terminal.app's settings through it, so any
+  # test that reaches that capability's hooks would change the real Terminal
+  # of the Mac running the suite. A stand-in that does nothing is the
+  # default; a test that wants osascript to answer mocks it again.
+  mock_command osascript 0 ""
+  unset TEEUP_TEST_TERMINAL_PLIST TEEUP_TERMINAL_FONT_SIZE
   local var
   for var in $(compgen -e); do
     case "$var" in MISE_*|__MISE_*|STARSHIP_*) unset "$var" ;; esac

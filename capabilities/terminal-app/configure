@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# The profile is the whole configuration, and theme-apply builds it. On a
+# first bootstrap this capability is marked installed only after this script
+# returns, so it names itself as the capability being configured, the way
+# the zed and vscode capabilities do, and its hook runs now rather than at
+# the next theme switch.
+export TEEUP_CONFIGURING="$TEEUP_CAP"
+cap_run_optional "$TEEUP_CAP" theme-apply

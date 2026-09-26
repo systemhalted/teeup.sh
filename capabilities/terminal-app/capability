@@ -1,0 +1,6 @@
+summary="Terminal.app profile in the current teeup theme"
+group=macos
+tier=core
+requires="theme"
+provides=""
+interactive=false

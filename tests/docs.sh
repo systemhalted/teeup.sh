@@ -73,6 +73,7 @@ test_readme_remove_script_count_matches_the_tree() {
     9) word=nine ;;
     10) word=ten ;;
     11) word=eleven ;;
+    12) word=twelve ;;
     *) echo "no spelling for $n remove scripts: update this test and the README"; return 1 ;;
   esac
   printf '%s' "$bullet" | grep -q "$word capabilities ship one today" || {

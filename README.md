@@ -42,7 +42,7 @@ teeup migrate legacy      # retire the old teeup and chezmoi wiring on this Mac
 The core tier is complete: `xcode-clt`, `package-manager`, `teeup-runtime`,
 `dev-dirs`, `zsh`, `starship`, `cli-tools`, `secrets`, `git`, `ssh`, `github`,
 `mise`, `wezterm`, `fonts`, `aerospace`, `keyboard`, `macos-defaults`,
-`theme`. The daily tier (`emacs`, `zed`, `firefox-developer-edition`,
+`theme`, `terminal-app`. The daily tier (`emacs`, `zed`, `firefox-developer-edition`,
 `obsidian`) installs at bootstrap when you say yes to it. `neovim`, `vscode`
 and `chrome` are lazy: `teeup install <name>` brings one in when you want it.
 `teeup list` is always the source of truth.
@@ -176,17 +176,29 @@ template; a theme added to `themes/` needs a row in the table above.
 
 teeup's terminal is WezTerm, and the font teeup installs (JetBrainsMono Nerd
 Font, or whichever `teeup install font` chose) reaches WezTerm, Emacs, Zed,
-VS Code and Neovim. It does not reach Terminal.app or any other terminal you
-use: their fonts stay as you set them.
+VS Code and Neovim.
+
+Terminal.app gets the theme too, through the core `terminal-app` capability.
+Every `teeup theme set` (and a font change) writes a Terminal profile named
+after the theme and the current appearance, such as "teeup Tokyo Night Dark",
+with the palette's background, text, bold, cursor, selection and sixteen ANSI
+colours, and the recorded teeup font at 13 points (`TEEUP_TERMINAL_FONT_SIZE`
+in a machine file changes the size). That profile becomes Terminal's default
+and startup profile. New windows get it; windows already open keep their
+colours until you close them or pick the profile under Shell > Use Profile.
+teeup only ever writes or deletes profiles whose names start with "teeup ", so
+your own profiles are left alone, and `teeup remove terminal-app` deletes
+teeup's profiles and puts back the default profile you had before (or Basic,
+when that one no longer exists). Other terminals keep their fonts and colours
+as you set them.
 
 That shows in `ls`, which the shell layer points at `eza --icons=auto`. In a
 terminal whose font is not a Nerd Font, some icons still appear -- macOS finds
 the older ones in the installed Nerd Font through font fallback -- but folders
 and most file types show as `?` boxes, because recent eza draws them with
 Material Design icons (code points U+F0000 and up) that Terminal.app does not
-take from a fallback font. Either work in WezTerm, or set the other
-terminal's font to the Nerd Font yourself. In Terminal.app that is
-Settings > Profiles > Text > Font > "JetBrainsMono Nerd Font".
+take from a fallback font. Work in WezTerm or Terminal.app with the teeup
+profile, or set the other terminal's font to the Nerd Font yourself.
 
 Per-machine overrides live in `~/.config/teeup/machines/<hostname>.conf` -- your own file, never in this checkout, so `git pull` never touches it -- sourced after your answers and winning over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs. (`machines/<hostname>.conf` in the checkout itself still works, checked second, for anyone who keeps a fork instead.) It is also the only place a work identity is configured -- teeup's own git/ssh/GitHub identity is a single one, `TEEUP_NAME`/`TEEUP_EMAIL` from the wizard, full stop; a machine that also needs a work identity sets `TEEUP_WORK_EMAIL` here (plus `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host, or `TEEUP_WORK_GH_ACCOUNT` when work is a second account on github.com), which gives that machine a second SSH key uploaded to that identity's own GitHub host and account. See `machines/example.conf.sample`.
 
@@ -297,8 +309,10 @@ pull and the package manager warn and the rest still runs, which makes
   and the theme and font hooks run afterwards, so a reset `starship.toml`
   carries the current palette.
 - **`teeup remove <cap>`** runs the capability's own `remove` script when it
-  has one (eleven capabilities ship one today: `macos-defaults` puts every
-  preference back the way it found it, `emacs` and `keyboard` unload their
+  has one (twelve capabilities ship one today: `macos-defaults` puts every
+  preference back the way it found it, `terminal-app` deletes teeup's
+  Terminal.app profiles and puts back the default profile it replaced,
+  `emacs` and `keyboard` unload their
   LaunchAgents, `colima` stops the VM before Homebrew can orphan it, each of the
   five `ai-*` leaves deletes its one teeup-written wrapper, the `ai` bundle
   removes all five leaves, and `emacs` and `wezterm` also uninstall the

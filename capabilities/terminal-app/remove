@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Put Terminal.app back the way teeup found it: the Default and Startup Window
+# Settings first, so neither ever names a profile that is about to go, then
+# every profile whose name starts with "teeup ". A profile of the user's own
+# is never deleted (profile.js checks the prefix itself).
+#
+# A default is restored to the profile it named before teeup, when that
+# profile still exists. When it has gone (deleted by hand, or another tool's
+# profile that is no longer there) it becomes Basic, Terminal's own default,
+# rather than a name Terminal cannot find. When osascript cannot say whether
+# it exists, the user's own choice is put back.
+#
+# Every step is attempted and failures are counted, as in macos-defaults: a
+# removal that left something behind exits 1, and cmd_remove keeps the
+# capability marked installed so it can be run again.
+if ! have osascript; then
+  err "No osascript on this machine, so teeup cannot reach Terminal.app's profiles."
+  exit 1
+fi
+
+TERMINAL_JS="$TEEUP_CAP_DIR/profile.js"
+TERMINAL_DOMAIN="com.apple.Terminal"
+remove_failed=0
+
+for key in "Default Window Settings" "Startup Window Settings"; do
+  # _defaults_record_path is lib/macos.sh's own record location, the one
+  # defaults_write filled in when theme-apply first set this key.
+  record="$(_defaults_record_path "$TERMINAL_DOMAIN" "$key")"
+  prior=""
+  if [[ -f "$record" ]]; then
+    case "$(cat "$record")" in
+      -string:*) prior="$(cat "$record")"; prior="${prior#-string:}" ;;
+    esac
+  fi
+  if [[ -n "$prior" ]]; then
+    case "$prior" in
+      "teeup "*) exists="absent" ;;
+      *) exists="$(osascript -l JavaScript "$TERMINAL_JS" has "$prior" 2>/dev/null || true)" ;;
+    esac
+    if [[ "$exists" == "absent" ]]; then
+      log "$key named the $prior profile before teeup, and it is gone now; setting it to Basic instead."
+      if [[ "$DRY_RUN" == "true" ]]; then
+        run_cmd defaults write "$TERMINAL_DOMAIN" "$key" -string Basic
+        continue
+      fi
+      # Rewriting the record and replaying it keeps the write, and the record
+      # being cleared only once it worked, inside defaults_restore.
+      _defaults_record "$record" "-string:Basic"
+    fi
+  fi
+  defaults_restore "$TERMINAL_DOMAIN" "$key" || remove_failed=$((remove_failed + 1))
+done
+
+if ! run_cmd osascript -l JavaScript "$TERMINAL_JS" remove; then
+  warn "Could not delete teeup's profiles from Terminal.app's settings."
+  remove_failed=$((remove_failed + 1))
+fi
+
+# The importable copies theme-apply saved are teeup's own state.
+if [[ -d "$TEEUP_STATE_DIR/terminal-app" ]]; then run_cmd rm -rf "$TEEUP_STATE_DIR/terminal-app"; fi
+
+if [[ "$remove_failed" -gt 0 ]]; then
+  err "$remove_failed step(s) could not be undone; the warnings above say which."
+  err "terminal-app stays marked installed so you can fix the cause and run: teeup remove terminal-app"
+  exit 1
+fi
+ok_unless_dry "Terminal.app's default profile is back the way teeup found it, and teeup's profiles are gone. Windows already open keep their colours."
