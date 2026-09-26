@@ -263,7 +263,7 @@ _manual_org_markers() {
         }
         prose = line
         gsub(/`[^`]+`/, "", prose)
-        if (prose ~ /(^|[ (|])=[^= ]([^=]*[^= ])?=($|[ .,;:)|])/) bad = 1
+        if (prose ~ /(^|[ (|"[{])=[^= ]([^=]*[^= ])?=($|[ .,;:)|!?"}]|\])/) bad = 1
         if (bad) print file ":" NR ": " line
       }
     ' "$f"
@@ -289,6 +289,7 @@ test_manual_org_marker_check_catches_leftovers() {
     '| `c=, =cls` | clear |' \
     'teeup runs mise from `/= for this, so a =mise.toml` here.' \
     'Run =teeup status= to see it.' \
+    'Is it =teeup status=? Run "=teeup status=!" [=teeup doctor=] {=teeup list=}' \
     'Set `DRY_RUN=true` and `--icons=auto`, or `config = { a = 1 }`.' \
     '```sh' 'DRY_RUN=true teeup update' 'x =y= z' '```' > "$dir/page.md"
   found="$(_manual_org_markers "$dir")"
@@ -296,9 +297,10 @@ test_manual_org_marker_check_catches_leftovers() {
   assert_contains "$found" "page.md:1:" || return 1
   assert_contains "$found" "page.md:2:" || return 1
   assert_contains "$found" "page.md:3:" || return 1
-  assert_not_contains "$found" "page.md:4:" || return 1
-  assert_not_contains "$found" "page.md:6:" || return 1
+  assert_contains "$found" "page.md:4:" || return 1
+  assert_not_contains "$found" "page.md:5:" || return 1
   assert_not_contains "$found" "page.md:7:" || return 1
+  assert_not_contains "$found" "page.md:8:" || return 1
 }
 
 test_manual_only_shows_verbs_that_exist() {
