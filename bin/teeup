@@ -746,7 +746,7 @@ _config_apply_hint() {
     # narrower command and does not touch anything else.
     TEEUP_EMACS_FLAVOR) log "Run: teeup configure emacs -- that is what reads $key (teeup update now covers it too)." ;;
     TEEUP_DAILY) log "Run: ./bootstrap -- that is what reads $key." ;;
-    TEEUP_THEME) log "Run: teeup theme set $value -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
+    TEEUP_THEME) log "Run: teeup theme set${value:+ $value} -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
     TEEUP_PACKAGE_MANAGER) warn "$key only takes effect the next time ./bootstrap or teeup install package-manager runs; nothing on this machine changed yet." ;;
     *) warn "$key is not one of the answers ./bootstrap writes (TEEUP_NAME, TEEUP_EMAIL, TEEUP_EMACS_FLAVOR, TEEUP_DAILY, TEEUP_PACKAGE_MANAGER, TEEUP_THEME); teeup config cannot say what, if anything, reads it." ;;
   esac
