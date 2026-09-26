@@ -9,6 +9,7 @@ here and done once the current phase of work is finished.
 
 | Raised on | Finding | Status |
 | --- | --- | --- |
+| PR #40 (Codex P2) | README "Terminals and file icons" says teeup installs the Nerd Font; on MacPorts `cask_install` skips the font cask and configure only records the family, so qualify the claim for MacPorts | Open |
 | Phase 4b 5-10 final review (m5) | `config set TEEUP_THEME` stores an unvalidated name before redirecting; the printed `teeup theme set $value` is unquoted | Open |
 | Phase 4b 5-10 final review (m6) | "Run: ./bootstrap" only works from the checkout; use `$TEEUP_PATH/bootstrap` | Open |
 | Phase 4b 5-10 final review (m7) | A forced `TEEUP_MENU_PICKER=fzf|gum` with the tool missing, or a picker crash, reads as a cancel; the theme-set picker infers cancel from an empty `$1` | Open |
