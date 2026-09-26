@@ -785,12 +785,19 @@ _config_file_get() {
 # known to hold nothing but KEY="value" lines -- reading them this way is
 # safe.
 _config_report_changed_answers() {
-  local old="$1" new="$2" key old_val new_val old_set new_set keys
+  local old="$1" new="$2" key old_val new_val old_set new_set keys pinned
   keys="$( { _config_file_keys "$old"; _config_file_keys "$new"; } | sort -u )"
   for key in $keys; do
     if old_val="$(_config_file_get "$old" "$key")"; then old_set=true; else old_set=false; old_val=""; fi
     if new_val="$(_config_file_get "$new" "$key")"; then new_set=true; else new_set=false; new_val=""; fi
     if [[ "$old_set" == "$new_set" && "$old_val" == "$new_val" ]]; then
+      continue
+    fi
+    # Same check `config set` makes: answers_load sources the machine file
+    # last, so a pinned key keeps the pin whatever the edit says, and the
+    # hint would send the user to a command that changes nothing.
+    if pinned="$(machine_get "$key")" && [[ "$pinned" != "$new_val" ]]; then
+      warn "$(machine_file) pins $key=${pinned:-<empty>}, which is sourced after the answers file, so this edit has no effect until that line changes."
       continue
     fi
     _config_apply_hint "$key" "$new_val"

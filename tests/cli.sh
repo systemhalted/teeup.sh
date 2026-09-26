@@ -2203,6 +2203,25 @@ EOF2
 # An edit that opens the editor but changes nothing (saved with no edits, or
 # edited back to the same values) must print no hint at all -- the whole
 # point is naming only what actually needs re-applying.
+# A machine-file pin wins over the edited answer, so the edit must say so
+# instead of naming a command that would change nothing (Codex on #48).
+test_config_edit_of_a_pinned_key_warns_instead_of_hinting() {
+  setup
+  seed_config_answers
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_EMACS_FLAVOR="starter"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_EMACS_FLAVOR="doom"\n' >> "$1"
+EOF2
+  local out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "pins TEEUP_EMACS_FLAVOR=starter" || return 1
+  assert_not_contains "$out" "teeup configure emacs" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 test_config_edit_that_changes_nothing_prints_no_hint() {
   setup
   seed_config_answers
@@ -2469,4 +2488,5 @@ run_test "config edit passes flags in EDITOR" test_config_edit_passes_flags_in_t
 run_test "config edit dry run creates and touches nothing" test_config_edit_dry_run_creates_and_touches_nothing
 run_test "config edit that changes emacs flavor prints the configure emacs hint" test_config_edit_that_changes_emacs_flavor_prints_the_configure_emacs_hint
 run_test "config edit that changes nothing prints no hint" test_config_edit_that_changes_nothing_prints_no_hint
+run_test "config edit of a pinned key warns instead of hinting" test_config_edit_of_a_pinned_key_warns_instead_of_hinting
 print_summary
