@@ -397,6 +397,12 @@ test_a_legacy_emacs_d_is_reported_not_moved() {
   cleanup_test_env
 }
 
+# Doom's stock config.el starts with a file-local-variables cookie
+# (`-*- lexical-binding: t; -*-`), which Emacs only honors on the file's
+# first line; if the marked block were prepended ahead of it, the cookie
+# would silently stop applying (config.el would load dynamically instead of
+# lexically) with no error anywhere. The cookie must stay first, and the
+# block goes right after it.
 test_doom_flavor_adds_the_theme_line_once() {
   setup
   set_flavor doom
@@ -405,12 +411,30 @@ test_doom_flavor_adds_the_theme_line_once() {
   DRY_RUN=false "$TEEUP" configure emacs >/dev/null
   local body
   body="$(cat "$DOOM_DIR/config.el")"
-  assert_equals ";; teeup: theme (managed by teeup; remove this line to opt out)" "$(head -n1 "$DOOM_DIR/config.el")" \
-    "the line sits at the top, so it is read before the user's own setq" || return 1
+  assert_equals ";;; config.el -*- lexical-binding: t; -*-" "$(head -n1 "$DOOM_DIR/config.el")" \
+    "the file-local-variables cookie must stay on line 1" || return 1
+  assert_equals ";; teeup: theme (managed by teeup; remove this line to opt out)" "$(sed -n '2p' "$DOOM_DIR/config.el")" \
+    "the marked line follows the cookie, still ahead of the user's own setq" || return 1
   assert_contains "$body" "(load! \"$TEST_HOME/.local/state/teeup/current/theme/light/doom-theme.el\" \"\" t)" || return 1
   assert_contains "$body" "(setq doom-theme (quote doom-one))" "the user's own line is kept" || return 1
   DRY_RUN=false "$TEEUP" configure emacs >/dev/null
   assert_equals "1" "$(grep -c "teeup: theme" "$DOOM_DIR/config.el")" "the line is never duplicated" || return 1
+  assert_equals ";;; config.el -*- lexical-binding: t; -*-" "$(head -n1 "$DOOM_DIR/config.el")" \
+    "the second run must not move the cookie either" || return 1
+  cleanup_test_env
+}
+
+# A config.el with no file-local-variables cookie on its first line keeps the
+# pre-fix behavior: the marked block goes at the very top.
+test_doom_flavor_without_a_cookie_adds_the_line_at_the_top() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  printf ';;; config.el\n(setq doom-theme (quote doom-one))\n' > "$DOOM_DIR/config.el"
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  assert_equals ";; teeup: theme (managed by teeup; remove this line to opt out)" "$(head -n1 "$DOOM_DIR/config.el")" \
+    "with no cookie to protect, the line sits at the top as before" || return 1
+  assert_contains "$(cat "$DOOM_DIR/config.el")" "(setq doom-theme (quote doom-one))" "the user's own line is kept" || return 1
   cleanup_test_env
 }
 
@@ -702,6 +726,73 @@ test_doom_theme_apply_picks_up_a_new_theme_without_restarting() {
   cleanup_test_env
 }
 
+# The daemon's LaunchAgent plist exports TEEUP_STATE_DIR (capabilities/emacs/
+# configure), so `teeup-apply` must resolve the rendered file's directory the
+# same way `lib/core.sh` does -- (getenv "TEEUP_STATE_DIR") first -- not a
+# path hardcoded to the default ~/.local/state/teeup. This renders theme A
+# under a non-default state dir, loads it, overwrites that same path with
+# theme B's rendered file, then runs `teeup-apply` with TEEUP_STATE_DIR set to
+# that non-default directory and checks `doom-theme` picked up B's value.
+test_doom_theme_apply_honors_a_non_default_teeup_state_dir() {
+  setup
+  local NO_EMACS_RC=0
+  if no_real_emacs; then
+    cleanup_test_env
+    return "$NO_EMACS_RC"
+  fi
+  source "$TEEUP_PATH/lib/all.sh"
+  local mode="dark" state_dir rendered rendered_b palette_a palette_b out
+  state_dir="$TEST_HOME/elsewhere/state"
+  rendered="$state_dir/current/theme/$mode/doom-theme.el"
+  rendered_b="$TEST_HOME/doom-theme-b.el"
+  mkdir -p "$(dirname "$rendered")"
+  palette_a="$TEST_HOME/palette-a.toml"
+  palette_b="$TEST_HOME/palette-b.toml"
+  printf 'mode = "dark"\ndoom_theme = "doom-dracula"\n' > "$palette_a"
+  printf 'mode = "dark"\ndoom_theme = "doom-nord"\n' > "$palette_b"
+  theme_palette_load "$palette_a" "$mode" || { echo "palette A did not load"; return 1; }
+  theme_render "$TEEUP_PATH/capabilities/emacs/themed/doom-theme.el.tpl" "$rendered" || { echo "theme A did not render"; return 1; }
+  theme_palette_load "$palette_b" "$mode" || { echo "palette B did not load"; return 1; }
+  theme_render "$TEEUP_PATH/capabilities/emacs/themed/doom-theme.el.tpl" "$rendered_b" || { echo "theme B did not render"; return 1; }
+  out="$(TEEUP_APPEARANCE="$mode" TEEUP_STATE_DIR="$state_dir" "$EMACS_REAL" -Q --batch \
+    --eval "(defun load-theme (&rest _) t)" \
+    -l "$rendered" \
+    --eval "(copy-file \"$rendered_b\" \"$rendered\" t)" \
+    --eval "(teeup-apply)" \
+    --eval "(princ (symbol-name doom-theme))" 2>&1)"
+  assert_equals "doom-nord" "$out" "teeup-apply must resolve TEEUP_STATE_DIR from the environment, not a hardcoded path" || return 1
+  cleanup_test_env
+}
+
+# doom-themes may not be installed (e.g. the :ui theme module disabled);
+# `load-theme` then errors. teeup-apply must degrade like the starter's
+# teeup-apply-theme: message the error and leave Emacs usable, not signal out
+# of the daemon hook. load-theme is stubbed to error unconditionally.
+test_doom_theme_apply_survives_a_load_theme_error() {
+  setup
+  local NO_EMACS_RC=0
+  if no_real_emacs; then
+    cleanup_test_env
+    return "$NO_EMACS_RC"
+  fi
+  source "$TEEUP_PATH/lib/all.sh"
+  local mode="dark" rendered palette out rc=0
+  rendered="$TEST_HOME/.local/state/teeup/current/theme/$mode/doom-theme.el"
+  mkdir -p "$(dirname "$rendered")"
+  palette="$TEST_HOME/palette.toml"
+  printf 'mode = "dark"\ndoom_theme = "doom-dracula"\n' > "$palette"
+  theme_palette_load "$palette" "$mode" || { echo "palette did not load"; return 1; }
+  theme_render "$TEEUP_PATH/capabilities/emacs/themed/doom-theme.el.tpl" "$rendered" || { echo "theme did not render"; return 1; }
+  out="$(TEEUP_APPEARANCE="$mode" "$EMACS_REAL" -Q --batch \
+    --eval "(defun load-theme (&rest _) (error \"doom-themes not installed\"))" \
+    -l "$rendered" \
+    --eval "(teeup-apply)" \
+    --eval '(princ "OK")' 2>&1)" || rc=$?
+  assert_success "$rc" "teeup-apply must not signal when load-theme errors: $out" || return 1
+  assert_contains "$out" "OK" "Emacs stays usable and reaches the eval after teeup-apply" || return 1
+  cleanup_test_env
+}
+
 # M8: `teeup--find-quote` (the `string-search` call `teeup--unquote` makes
 # for '...' quoting) must degrade to `string-match` on an Emacs without
 # `string-search` (28 and earlier) rather than erroring out of init. Run
@@ -777,6 +868,7 @@ run_test "the machine file wins over the answer" test_the_machine_file_wins_over
 run_test "unknown flavor warns and uses the starter" test_unknown_flavor_warns_and_uses_the_starter
 run_test "a legacy ~/.emacs.d is reported, not moved" test_a_legacy_emacs_d_is_reported_not_moved
 run_test "doom flavor adds the theme line once" test_doom_flavor_adds_the_theme_line_once
+run_test "doom flavor without a cookie adds the line at the top" test_doom_flavor_without_a_cookie_adds_the_line_at_the_top
 run_test "doom flavor dry run leaves config.el untouched" test_doom_flavor_dry_run_leaves_config_el_untouched
 run_test "doom flavor without config.el writes nothing" test_doom_flavor_without_config_el_writes_nothing
 run_test "starter flavor leaves Doom's config.el untouched" test_starter_flavor_leaves_doom_config_el_untouched
@@ -793,5 +885,7 @@ run_test "configure points git at emacsclient" test_configure_points_git_at_emac
 run_test "starter loads in a real emacs" test_starter_loads_in_a_real_emacs
 run_test "env file paths survive special bytes" test_env_file_paths_survive_special_bytes
 run_test "doom theme-apply picks up a new theme without restarting" test_doom_theme_apply_picks_up_a_new_theme_without_restarting
+run_test "doom theme-apply honors a non-default TEEUP_STATE_DIR" test_doom_theme_apply_honors_a_non_default_teeup_state_dir
+run_test "doom theme-apply survives a load-theme error" test_doom_theme_apply_survives_a_load_theme_error
 run_test "unquote degrades without string-search" test_unquote_degrades_without_string_search
 print_summary

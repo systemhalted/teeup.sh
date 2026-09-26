@@ -144,8 +144,26 @@ if [[ "$flavor" == "doom" && -f "$doom_theme_config_el" ]]; then
     elif [[ -L "$doom_theme_config_el" ]]; then
       warn "$doom_theme_config_el is a symlink; teeup does not write through it. Add near the top by hand: $doom_theme_load_line"
     else
+      # Emacs only honors a `-*- ... -*-` file-local-variables cookie (e.g.
+      # `lexical-binding: t`) on the file's first line; prepending the marked
+      # block ahead of it would silently push the cookie to line 2+ and
+      # change how the rest of config.el loads, with no error anywhere. When
+      # the first line carries one, keep it first and insert the block right
+      # after it instead; otherwise insert at the top as before.
+      doom_theme_first_line=""
+      IFS= read -r doom_theme_first_line < "$doom_theme_config_el" || true
+      doom_theme_rest_from=1
+      case "$doom_theme_first_line" in
+        *'-*-'*) doom_theme_rest_from=2 ;;
+      esac
       doom_theme_config_tmp="$(mktemp)"
-      if { printf '%s\n%s\n\n' "$doom_theme_marker" "$doom_theme_load_line"; cat "$doom_theme_config_el"; } > "$doom_theme_config_tmp" &&
+      if {
+           if [[ "$doom_theme_rest_from" -eq 2 ]]; then
+             printf '%s\n' "$doom_theme_first_line"
+           fi
+           printf '%s\n%s\n\n' "$doom_theme_marker" "$doom_theme_load_line"
+           tail -n "+$doom_theme_rest_from" "$doom_theme_config_el"
+         } > "$doom_theme_config_tmp" &&
          mv "$doom_theme_config_tmp" "$doom_theme_config_el"; then
         ok "Added the teeup theme line near the top of $doom_theme_config_el"
       else

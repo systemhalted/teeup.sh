@@ -38,7 +38,20 @@
   (interactive)
   (let ((rendered (expand-file-name
                     (concat "current/theme/" (teeup--doom-appearance) "/doom-theme.el")
-                    "~/.local/state/teeup")))
+                    ;; Same precedence as lib/core.sh: TEEUP_STATE_DIR, else
+                    ;; XDG_STATE_HOME, else ~/.local/state, then /teeup. The
+                    ;; daemon's LaunchAgent plist (capabilities/emacs/
+                    ;; configure) exports TEEUP_STATE_DIR into this same
+                    ;; process, so a non-default state dir is honored here
+                    ;; too rather than silently missing the rendered file.
+                    (or (getenv "TEEUP_STATE_DIR")
+                        (expand-file-name "teeup" (or (getenv "XDG_STATE_HOME") "~/.local/state"))))))
     (when (file-readable-p rendered) (load rendered nil t)))
   (mapc #'disable-theme custom-enabled-themes)
-  (load-theme doom-theme t))
+  ;; doom-themes may not be installed (e.g. the :ui theme module disabled);
+  ;; degrade like the starter's teeup-apply-theme rather than signaling out
+  ;; of the daemon hook and leaving Emacs looking broken.
+  (condition-case err
+      (load-theme doom-theme t)
+    (error (message "teeup: could not load theme %s: %s"
+                    doom-theme (error-message-string err)))))
