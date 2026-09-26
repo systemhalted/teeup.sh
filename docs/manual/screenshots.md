@@ -80,3 +80,5 @@ and tick the entry here. This file sits outside `src/`, so it is not published.
 
 - [ ] Three windows tiled by AeroSpace (WezTerm, Emacs, Firefox Developer
   Edition) on workspace 1.
+
+## Part 4: Configuration
