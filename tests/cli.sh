@@ -1714,7 +1714,13 @@ test_config_set_refuses_any_work_key() {
   local rc=0 out
   out="$("$TEEUP" config set TEEUP_WORK_EMAIL boss@corp.example 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "$TEST_HOME/machines/testmac.conf" "names the file to edit" || return 1
+  # M1: with no machine file anywhere yet, the file to edit must be the
+  # personal overlay under TEEUP_CONFIG_DIR -- never machine_file()'s own
+  # fallback, which is the checkout's machines/ dir and contradicts R7.1's
+  # own ruling that the user edits their own overlay, not the checkout.
+  assert_contains "$out" "$TEST_HOME/.config/teeup/machines/testmac.conf" "names the personal overlay to edit" || return 1
+  assert_not_contains "$out" "$TEST_HOME/machines/testmac.conf" "must not point at the checkout's machine file when neither exists yet" || return 1
+  assert_not_contains "$out" "(R7.1)" "an internal ruling tag must not reach the user" || return 1
   assert_contains "$out" "example.conf.sample" || return 1
 
   rc=0
@@ -1726,6 +1732,23 @@ test_config_set_refuses_any_work_key() {
   assert_failure "$rc" || return 1
 
   assert_not_contains "$(cat "$TEST_HOME/.config/teeup/answers")" "TEEUP_WORK" "the answers file must never gain a work key" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+# M1, the case machine_file() already handles right: once a machine file
+# actually exists (even only the checkout's), it must still be the one
+# named -- the fallback change must not hide a real, existing file.
+test_config_set_names_an_existing_machine_file_even_the_checkouts() {
+  setup
+  seed_config_answers
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_THEME="nord"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  local rc=0 out
+  out="$("$TEEUP" config set TEEUP_WORK_EMAIL boss@corp.example 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$TEEUP_MACHINES_DIR/testmac.conf" "an existing machine file is still named" || return 1
   unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
@@ -2251,6 +2274,7 @@ run_test "config set writes the answers file" test_config_set_writes_the_answers
 run_test "config set says when a pin makes it pointless" test_config_set_says_when_the_machine_file_makes_the_write_pointless
 run_test "config set rejects a non-answer key" test_config_set_rejects_a_key_that_is_not_an_answer
 run_test "config set refuses any work key" test_config_set_refuses_any_work_key
+run_test "config set names an existing machine file even the checkout's" test_config_set_names_an_existing_machine_file_even_the_checkouts
 run_test "config set dry run changes and claims nothing" test_config_set_dry_run_does_not_claim_success_or_write
 run_test "config set names teeup configure git for name/email" test_config_set_says_the_git_identity_needs_reconfiguring
 run_test "config set names teeup configure emacs for emacs flavor" test_config_set_says_emacs_needs_reconfiguring
