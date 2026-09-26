@@ -326,6 +326,63 @@ test_path_hint_prints_a_macports_command_that_works() {
   cleanup_test_env
 }
 
+# Final review I3: mise's own tools (node, and anything the ai-* wrappers
+# lazily install through it) stop resolving in a new shell once teeup's shell
+# layer -- which ran `mise activate zsh` (capabilities/zsh/default/init) and
+# put ~/.local/bin and mise's own shims on PATH (default/env) -- is gone.
+# When packages are kept, mise stays installed too, so the hint restores it
+# the same way it restores Homebrew's or MacPorts' own PATH line. mise is
+# mocked so `activate zsh` prints a PATH export the way real mise's does,
+# pointing at a directory holding a fake tool.
+test_path_hint_restores_mise_tools_when_they_are_kept() {
+  setup
+  export ZDOTDIR="$TEST_HOME/z dot"
+  mkdir -p "$ZDOTDIR" "$TEEUP_PKG_PREFIX/bin"
+  printf '#!/bin/sh\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
+  local tools="$TEST_HOME/mise-tools"
+  mkdir -p "$tools"
+  printf '#!/bin/sh\necho ran\n' > "$tools/node"
+  chmod +x "$tools/node"
+  cat > "$TEEUP_PKG_PREFIX/bin/mise" <<MISE
+#!/bin/sh
+if [ "\$1" = "activate" ]; then
+  printf 'export PATH="%s:\$PATH"\n' "$tools"
+fi
+MISE
+  chmod +x "$TEEUP_PKG_PREFIX/bin/mise"
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  _UNINSTALL_PACKAGES=false
+  uninstall_path_hint
+  local note fix
+  note="$(printf '%s\n' "$_UNINSTALL_KEPT" | grep '^mise at')"
+  [[ -n "$note" ]] || { echo "no mise PATH hint was printed"; return 1; }
+  fix="${note##*run: }"
+  run_fix "$fix" || { echo "the printed command failed"; return 1; }
+  assert_contains "$(cat "$ZDOTDIR/.zshrc")" "mise activate zsh" || return 1
+  run_fix ". $(printf '%q' "$ZDOTDIR/.zshrc"); command -v node" | grep -q "$tools/node" || { echo "the mise shim tool does not resolve once the fix is sourced"; return 1; }
+  uninstall_report_reset
+  uninstall_path_hint
+  assert_not_contains "$_UNINSTALL_KEPT" "mise at" "no repeat once the line is there" || return 1
+  cleanup_test_env
+}
+
+# --packages uninstalls mise itself along with everything else it installed,
+# so there is nothing of it left to restore, and the hint must say nothing.
+test_path_hint_skips_mise_when_packages_are_removed() {
+  setup
+  mkdir -p "$TEEUP_PKG_PREFIX/bin"
+  printf '#!/bin/sh\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
+  printf '#!/bin/sh\n' > "$TEEUP_PKG_PREFIX/bin/mise"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/mise"
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  _UNINSTALL_PACKAGES=true
+  uninstall_path_hint
+  assert_not_contains "$_UNINSTALL_KEPT" "mise at" "mise's own hint must not print when --packages removes it" || return 1
+  cleanup_test_env
+}
+
 # A hint is suppressed only by a line that would actually work: a comment
 # never runs, and a bare `brew shellenv` cannot find Homebrew once teeup's own
 # PATH lines are gone -- only the absolute, active eval does.
@@ -671,6 +728,54 @@ test_configs_gpgsign_fix_works() {
   cleanup_test_env
 }
 
+# Final review I2: --packages can uninstall git-delta, git-lfs and gh while a
+# kept git/config (edited, or pristine and kept because --identity was not
+# given) still sets core.pager, interactive.diffFilter, the lfs filter and
+# the GitHub/gist credential helper to them. The kept note names each such
+# line and the exact command that clears it; run_fix proves each one really
+# works, and git stays usable (a real commit, then `git log`) with delta gone.
+test_configs_names_git_config_lines_that_reference_removed_packages() {
+  setup
+  hide_host_commands ssh
+  local gdir note fixes cmd
+  gdir="$(user_config_dir)/git"
+  install_teeup_file "$(cat "$TEEUP_PATH/capabilities/git/config/git/config")" "$gdir/config"
+  _UNINSTALL_PACKAGES=true
+  uninstall_configs >/dev/null 2>&1
+  note="$(printf '%s\n' "$_UNINSTALL_KEPT" | grep "still sets")"
+  [[ -n "$note" ]] || { echo "no kept note named the git config lines that reference removed packages"; return 1; }
+  assert_contains "$note" "core.pager = delta" || return 1
+  assert_contains "$note" "interactive.diffFilter = delta --color-only" || return 1
+  assert_contains "$note" "filter.lfs" || return 1
+  assert_contains "$note" "credential.https://github.com.helper" || return 1
+  assert_contains "$note" "credential.https://gist.github.com.helper" || return 1
+  fixes="$(printf '%s\n' "$note" | sed -n 's/^.*Remove those settings with: //p')"
+  [[ -n "$fixes" ]] || { echo "no fix commands were printed"; return 1; }
+  local old_ifs="$IFS"
+  IFS=';'
+  for cmd in $fixes; do
+    cmd="$(printf '%s' "$cmd" | sed -e 's/^ *//' -e 's/ *$//')"
+    run_fix "$cmd" || { IFS="$old_ifs"; echo "the fix failed: $cmd"; return 1; }
+  done
+  IFS="$old_ifs"
+  [[ -z "$(git config --file "$gdir/config" --get core.pager 2>/dev/null)" ]] || { echo "core.pager should be unset"; return 1; }
+  [[ -z "$(git config --file "$gdir/config" --get interactive.diffFilter 2>/dev/null)" ]] || { echo "interactive.diffFilter should be unset"; return 1; }
+  ! git config --file "$gdir/config" --get-regexp '^filter\.lfs\.' >/dev/null 2>&1 || { echo "filter.lfs should be gone"; return 1; }
+  [[ -z "$(git config --file "$gdir/config" --get credential.https://github.com.helper 2>/dev/null)" ]] || { echo "the github helper should be unset"; return 1; }
+  [[ -z "$(git config --file "$gdir/config" --get credential.https://gist.github.com.helper 2>/dev/null)" ]] || { echo "the gist helper should be unset"; return 1; }
+  # git must still work once delta is gone: build a real repo with this fixed
+  # config as its only global config (HOME and XDG_CONFIG_HOME already point
+  # here) and the harness's own narrowed PATH, which has no delta on it.
+  local repo="$TEST_HOME/gitlogrepo" out
+  mkdir -p "$repo"
+  ( cd "$repo" && git init -q . &&
+    git -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t commit --allow-empty -q -m init
+  ) >/dev/null 2>&1 || { echo "building the repo failed with the fixed config"; return 1; }
+  out="$(cd "$repo" && git log 2>&1)" || { echo "git log failed with delta absent: $out"; return 1; }
+  assert_contains "$out" "init" "git log still shows the commit" || return 1
+  cleanup_test_env
+}
+
 # Plan Decision 8: git/config is kept only WITHOUT --identity; a pristine one
 # goes under --identity like any other file.
 test_configs_removes_a_pristine_git_config_with_identity() {
@@ -968,6 +1073,21 @@ test_teardown_still_removes_a_real_state_dir() {
   cleanup_test_env
 }
 
+# Final review I1: lib/macos.sh's _defaults_record_path writes under
+# $TEEUP_STATE_DIR/defaults, which macos-defaults (core tier) leaves behind
+# once defaults_restore has cleared every record file inside it. Missing from
+# teeup's own list, that empty directory made every real Mac's state dir
+# un-removable and every later run call it "not teeup's own".
+test_teardown_removes_a_defaults_directory_macos_defaults_leaves_behind() {
+  setup
+  teeup_runtime_home
+  mkdir -p "$TEEUP_STATE_DIR/defaults"
+  printf 'string:1\n' > "$TEEUP_STATE_DIR/defaults/com.example.foo"
+  uninstall_teardown >/dev/null 2>&1
+  [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "the state dir must go once defaults/ is one of teeup's own entries"; return 1; }
+  cleanup_test_env
+}
+
 # Task 6 carry (Task 5's re-review observation): a ZDOTDIR changed since
 # install leaves the old zsh home files still recorded in stock, at a
 # directory uninstall_shell no longer looks at by default. They must still
@@ -1019,6 +1139,8 @@ run_test "shell dry run changes nothing" test_shell_dry_run_changes_nothing
 run_test "path hint prints a command that works" test_path_hint_prints_a_command_that_works
 run_test "path hint prints a macports command that works" test_path_hint_prints_a_macports_command_that_works
 run_test "path hint needs an active working line to stop" test_path_hint_needs_an_active_working_line_to_stop
+run_test "path hint restores mise's tools when they are kept" test_path_hint_restores_mise_tools_when_they_are_kept
+run_test "path hint skips mise when packages are removed" test_path_hint_skips_mise_when_packages_are_removed
 run_test "shell notes a failure instead of silence when it cannot read the zshrc" test_shell_notes_a_failure_instead_of_silence_when_it_cannot_read_the_zshrc
 run_test "capabilities keep packages by default and name how to remove them" test_capabilities_keep_packages_by_default_and_name_how_to_remove_them
 run_test "capabilities name what the tools made for themselves" test_capabilities_name_what_the_tools_made_for_themselves
@@ -1036,6 +1158,7 @@ run_test "configs remove pristine files, keep edited ones and prune empty dirs" 
 run_test "configs keep the identity files without --identity" test_configs_keep_the_identity_files_without_identity
 run_test "configs leave a generated file teeup did not write" test_configs_leave_a_generated_file_teeup_did_not_write
 run_test "configs gpgsign fix works" test_configs_gpgsign_fix_works
+run_test "configs names git config lines that reference removed packages" test_configs_names_git_config_lines_that_reference_removed_packages
 run_test "configs removes a pristine git config with --identity" test_configs_removes_a_pristine_git_config_with_identity
 run_test "configs identity skip survives a changed XDG_CONFIG_HOME" test_configs_identity_skip_survives_a_changed_xdg_config_home
 run_test "identity never deletes a regular key and prints a working removal command" test_identity_never_deletes_a_regular_key_and_prints_a_working_removal_command
@@ -1052,6 +1175,7 @@ run_test "teardown refuses a state dir outside HOME, with a fix that works" test
 run_test "teardown keeps everything when the config dir is a symlink" test_teardown_keeps_everything_when_the_config_dir_is_a_symlink
 run_test "teardown refuses a state dir with no teeup markers" test_teardown_refuses_a_state_dir_with_no_teeup_markers
 run_test "teardown still removes a real state dir" test_teardown_still_removes_a_real_state_dir
+run_test "teardown removes a defaults directory macos-defaults leaves behind" test_teardown_removes_a_defaults_directory_macos_defaults_leaves_behind
 run_test "teardown refuses a state dir that only shares generic names" test_teardown_refuses_a_state_dir_that_only_shares_generic_names
 run_test "teardown keeps a file it did not write in the state dir" test_teardown_keeps_a_file_it_did_not_write_in_the_state_dir
 run_test "shell handles zsh home files left at an old ZDOTDIR" test_shell_handles_zsh_home_files_left_at_an_old_zdotdir

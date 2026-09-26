@@ -431,26 +431,51 @@ _uninstall_active_match() {
 # PATH lines are gone), does not count. /usr/local/bin (Intel Homebrew) is on
 # macOS's default PATH already.
 uninstall_path_hint() {
-  local prefix zprofile line
+  local prefix zprofile zshrc line
   zprofile="${ZDOTDIR:-$HOME}/.zprofile"
+  zshrc="${ZDOTDIR:-$HOME}/.zshrc"
   prefix="$(pkg_prefix)"
   case "$(pkg_backend)" in
     homebrew)
-      [[ "$prefix" != "/usr/local" && -x "$prefix/bin/brew" ]] || return 0
-      if _uninstall_active_match "$zprofile" "eval.*$(ere_quote "$prefix/bin/brew shellenv")"; then
-        return 0
+      if [[ "$prefix" != "/usr/local" && -x "$prefix/bin/brew" ]] && ! _uninstall_active_match "$zprofile" "eval.*$(ere_quote "$prefix/bin/brew shellenv")"; then
+        line="eval \"\$($prefix/bin/brew shellenv)\""
+        uninstall_note kept "$(pkg_backend_label) at $prefix. teeup's shell layer put it on PATH; to keep it there in new shells run: echo $(uninstall_q "$line") >> $(uninstall_q "$zprofile")"
       fi
-      line="eval \"\$($prefix/bin/brew shellenv)\""
       ;;
     macports)
-      [[ -x "$prefix/bin/port" ]] || return 0
-      if _uninstall_active_match "$zprofile" "PATH=.*$(ere_quote "$prefix/bin")"; then
-        return 0
+      if [[ -x "$prefix/bin/port" ]] && ! _uninstall_active_match "$zprofile" "PATH=.*$(ere_quote "$prefix/bin")"; then
+        line="export PATH=\"$prefix/bin:$prefix/sbin:\$PATH\""
+        uninstall_note kept "$(pkg_backend_label) at $prefix. teeup's shell layer put it on PATH; to keep it there in new shells run: echo $(uninstall_q "$line") >> $(uninstall_q "$zprofile")"
       fi
-      line="export PATH=\"$prefix/bin:$prefix/sbin:\$PATH\""
       ;;
   esac
-  uninstall_note kept "$(pkg_backend_label) at $prefix. teeup's shell layer put it on PATH; to keep it there in new shells run: echo $(uninstall_q "$line") >> $(uninstall_q "$zprofile")"
+  _uninstall_mise_path_hint "$prefix" "$zshrc"
+}
+
+# _uninstall_mise_path_hint <package prefix> <.zshrc path>
+# mise's own tools stop resolving in a new shell the same way Homebrew's and
+# MacPorts' packages do: capabilities/zsh/default/init ran `mise activate
+# zsh`, and default/env put ~/.local/bin and mise's own shims directory on
+# PATH. Only printed when mise itself is staying: with --packages, mise is
+# uninstalled along with everything else and there is nothing left to
+# restore. The activation line is what mise's own docs and
+# capabilities/zsh/default/init both run, from mise's resolved absolute path
+# rather than a bare `mise` so it works before anything else puts mise back
+# on PATH.
+_uninstall_mise_path_hint() {
+  local prefix="$1" zshrc="$2" mise_bin line local_bin
+  [[ "$_UNINSTALL_PACKAGES" != "true" ]] || return 0
+  mise_bin="$prefix/bin/mise"
+  [[ -x "$mise_bin" ]] || return 0
+  if ! _uninstall_active_match "$zshrc" "activate zsh"; then
+    line="eval \"\$($mise_bin activate zsh)\""
+    uninstall_note kept "mise at $mise_bin. teeup's shell layer ran it for you; to reach its tools in new shells run: echo $(uninstall_q "$line") >> $(uninstall_q "$zshrc")"
+  fi
+  local_bin="$HOME/.local/bin"
+  if ! _uninstall_active_match "$zshrc" "$(ere_quote "$local_bin")"; then
+    line="export PATH=\"$local_bin:\$PATH\""
+    uninstall_note kept "$local_bin, which teeup's shell layer also put on PATH; to keep it there in new shells run: echo $(uninstall_q "$line") >> $(uninstall_q "$zshrc")"
+  fi
 }
 
 # --- capabilities ---------------------------------------------------------------
@@ -784,6 +809,48 @@ _uninstall_is_identity_config() {
   esac
 }
 
+# _uninstall_git_config_removed_packages_note <path to git/config>
+# --packages can uninstall git-delta, git-lfs and gh (capabilities/git and
+# capabilities/github's own packages) while a kept git/config -- edited, or
+# pristine and kept because --identity was not given -- still sets
+# core.pager and interactive.diffFilter to delta, the lfs clean/smudge/
+# process filter, and the GitHub and gist credential helpers to
+# `gh auth git-credential` (capabilities/git/config/git/config). Read from
+# the file itself rather than tracked per capability, so an edit that added
+# the same settings by hand is caught the same way. Only fires when
+# --packages actually removes something (without it nothing on the machine
+# changed, so the settings still work).
+_uninstall_git_config_removed_packages_note() {
+  local file="$1" refs="" cmds="" val host
+  [[ "$_UNINSTALL_PACKAGES" == "true" ]] || return 0
+  [[ -f "$file" ]] || return 0
+  val="$(git config --file "$file" --get core.pager 2>/dev/null || true)"
+  if [[ "$val" == "delta" ]]; then
+    refs="${refs:+$refs, }core.pager = $val"
+    cmds="${cmds:+$cmds; }git config --file $(uninstall_q "$file") --unset core.pager"
+  fi
+  val="$(git config --file "$file" --get interactive.diffFilter 2>/dev/null || true)"
+  case "$val" in
+    delta*)
+      refs="${refs:+$refs, }interactive.diffFilter = $val"
+      cmds="${cmds:+$cmds; }git config --file $(uninstall_q "$file") --unset interactive.diffFilter"
+      ;;
+  esac
+  if git config --file "$file" --get-regexp '^filter\.lfs\.' >/dev/null 2>&1; then
+    refs="${refs:+$refs, }filter.lfs"
+    cmds="${cmds:+$cmds; }git config --file $(uninstall_q "$file") --remove-section filter.lfs"
+  fi
+  for host in github.com gist.github.com; do
+    val="$(git config --file "$file" --get "credential.https://$host.helper" 2>/dev/null || true)"
+    if [[ "$val" == "!gh auth git-credential" ]]; then
+      refs="${refs:+$refs, }credential.https://$host.helper = $val"
+      cmds="${cmds:+$cmds; }git config --file $(uninstall_q "$file") --unset-all credential.https://$host.helper"
+    fi
+  done
+  [[ -n "$refs" ]] || return 0
+  uninstall_note kept "$file still sets $refs, which --packages just removed the tools for. Remove those settings with: $cmds"
+}
+
 # uninstall_configs
 # The stock-checksum rule (spec section 9) decides every file teeup copied:
 # pristine, it is teeup's and goes (after offering back whatever it replaced);
@@ -852,6 +919,7 @@ STOCK
       uninstall_note kept "Commit signing is on in $gdir/config but $key is missing, so git commit would fail. Turn signing off with: git config --file $(uninstall_q "$gdir/config") commit.gpgsign false"
     fi
   fi
+  _uninstall_git_config_removed_packages_note "$gdir/config"
 }
 
 # uninstall_identity
@@ -970,21 +1038,43 @@ uninstall_mark_state_dir() {
   return 0
 }
 
+# _UNINSTALL_STATE_ENTRIES lists every top-level name teeup itself writes
+# under $TEEUP_STATE_DIR, one place both loops in _uninstall_state_dir read
+# from -- add a name here, and it is both removed and no longer counted as a
+# leftover. Named after their writers: done/na/toggles/migrations
+# (lib/state.sh), current (lib/theme.sh, lib/font.sh), shims (lib/lazy.sh),
+# stock (lib/files.sh), logs (lib/core.sh's TEEUP_LOG_FILE default and
+# bin/teeup), defaults (lib/macos.sh's _defaults_record_path). CONTRIBUTING.md
+# item 33 says a new one belongs here too.
+_UNINSTALL_STATE_ENTRIES="done na toggles migrations stock shims current logs defaults"
+
+# _uninstall_is_state_entry <name> -> 0 when <name> is one of
+# _UNINSTALL_STATE_ENTRIES.
+_uninstall_is_state_entry() {
+  local name="$1" entry
+  for entry in $_UNINSTALL_STATE_ENTRIES; do
+    if [[ "$entry" == "$name" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # _uninstall_state_dir
 # Removes only the entries teeup itself writes under $TEEUP_STATE_DIR, then
 # the directory once it is empty. Anything else in there is not teeup's and
 # stays, named, so the directory stays with it.
 _uninstall_state_dir() {
   local name left=""
-  for name in "done" na toggles migrations stock shims current logs; do
+  for name in $_UNINSTALL_STATE_ENTRIES; do
     uninstall_rm "$TEEUP_STATE_DIR/$name" "teeup's $name records ($TEEUP_STATE_DIR/$name)" || true
   done
   for name in "$TEEUP_STATE_DIR"/* "$TEEUP_STATE_DIR"/.[!.]* "$TEEUP_STATE_DIR"/..?*; do
     if [[ -e "$name" || -L "$name" ]]; then
       # A dry run leaves teeup's own entries in place; they are not leftovers.
-      case "${name##*/}" in
-        done|na|toggles|migrations|stock|shims|current|logs) continue ;;
-      esac
+      if _uninstall_is_state_entry "${name##*/}"; then
+        continue
+      fi
       left="$left ${name##*/}"
     fi
   done

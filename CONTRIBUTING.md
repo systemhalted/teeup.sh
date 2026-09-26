@@ -696,4 +696,8 @@ Happy contributing! 🚀
     `TEEUP_REMOVE_PACKAGES` is `false`, which is how `teeup uninstall` keeps
     packages. A capability with no `remove` script and no packages needs a
     line in `uninstall_policy`, or uninstall treats it as having nothing to
-    undo. Every deletion goes through `uninstall_rm`.
+    undo. Every deletion goes through `uninstall_rm`. A new top-level entry
+    under `$TEEUP_STATE_DIR` (a writer such as `lib/state.sh`, `lib/theme.sh`
+    or `lib/macos.sh` gaining its own directory there) must be added to
+    `_UNINSTALL_STATE_ENTRIES` in `lib/uninstall.sh`, or the state directory
+    is never recognised as fully teeup's and never goes.

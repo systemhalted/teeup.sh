@@ -369,7 +369,9 @@ last (wherever `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `TEEUP_CONFIG_DIR` and
 `TEEUP_STATE_DIR` put the first two).
 
 What it keeps unless you say otherwise: the packages and apps (it asks,
-defaulting to no; Homebrew or MacPorts itself stays either way); your SSH
+defaulting to no; Homebrew or MacPorts itself stays either way, and so does
+mise and whatever it manages -- a new shell needs the printed `mise
+activate` line the same way it needs Homebrew's or MacPorts' own); your SSH
 keys, always -- teeup never deletes one, with or without `--identity`, and
 instead names each one with the commands that drop its Keychain passphrase
 and move it aside by hand; and, without `--identity`, your git identity and

@@ -2626,6 +2626,31 @@ test_uninstall_twice_does_nothing_the_second_time() {
   cleanup_test_env
 }
 
+# Final review I1: a real Mac's state dir has a defaults/ directory
+# (macos-defaults records each preference it touches there), which was
+# missing from teeup's own list -- the state dir never went, and a rerun
+# called it "not teeup's own". A clean run removes it, defaults/ included,
+# and a rerun afterwards is still a no-op.
+test_uninstall_removes_a_defaults_directory_and_a_rerun_is_a_no_op() {
+  setup
+  uninstall_fixture
+  mkdir -p "$TEST_HOME/.local/state/teeup/defaults"
+  printf 'string:1\n' > "$TEST_HOME/.local/state/teeup/defaults/com.example.foo"
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  [[ ! -e "$TEST_HOME/.local/state/teeup" ]] || { echo "the state dir, defaults/ included, must be removed"; return 1; }
+  : > "$MOCK_LOG"
+  local before
+  before="$(home_snapshot)"
+  rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Nothing of teeup's was left to remove." || return 1
+  assert_equals "$before" "$(home_snapshot)" || return 1
+  cleanup_test_env
+}
+
 # A failure keeps the run's exit status, and keeps teeup's state and command
 # so the rerun the output names can finish.
 test_uninstall_fails_loudly_and_keeps_what_a_rerun_needs() {
@@ -2778,6 +2803,7 @@ run_test "uninstall on a terminal asks first, and no changes nothing" test_unins
 run_test "uninstall asks about packages and keeps them by default" test_uninstall_asks_about_packages_and_keeps_them_by_default
 run_test "uninstall dry run changes nothing" test_uninstall_dry_run_changes_nothing
 run_test "uninstall twice does nothing the second time" test_uninstall_twice_does_nothing_the_second_time
+run_test "uninstall removes a defaults directory and a rerun is a no-op" test_uninstall_removes_a_defaults_directory_and_a_rerun_is_a_no_op
 run_test "uninstall fails loudly and keeps what a rerun needs" test_uninstall_fails_loudly_and_keeps_what_a_rerun_needs
 run_test "uninstall rerun command carries the active flags" test_uninstall_rerun_command_carries_the_active_flags
 run_test "uninstall no-terminal hint carries the active flags" test_uninstall_no_terminal_hint_carries_the_active_flags
