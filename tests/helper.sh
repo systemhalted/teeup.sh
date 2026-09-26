@@ -51,6 +51,23 @@ setup_test_env() {
   # of the test's own, not ~/Applications, so the tests that tell the two
   # folders apart still can; a test that sets the hook itself still wins.
   export TEEUP_APPS_DIR="$TEST_HOME/root/Applications"
+  # The zsh env layer puts /opt/homebrew/bin (or /usr/local/bin) first on
+  # PATH whenever a brew is there, and on a Mac running teeup its emacsclient
+  # then became the editor a test expected to be vim. The same empty root
+  # relocates those prefixes; the tests that stage a prefix pass their own.
+  export TEEUP_TEST_PREFIX_ROOT="$TEST_HOME/root"
+  # The rest of what a teeup shell exports, from that layer, the theme env
+  # and the tools it activates. Each steers code under test off $TEST_HOME:
+  # EDITOR decides the editor the env layer picks, TEEUP_APPEARANCE is taken
+  # over asking `defaults` (so a light-mode Mac failed the dark-mode test),
+  # XDG_DATA_HOME and MISE_DATA_DIR name the mise shims directory put on
+  # PATH, and ZDOTDIR is where zsh configure writes and compinit dumps.
+  unset EDITOR ALTERNATE_EDITOR MANPAGER MANROFFOPT ZDOTDIR XDG_DATA_HOME XDG_CACHE_HOME
+  unset TEEUP_APPEARANCE TEEUP_THEME_MODE TEEUP_THEME_ACCENT
+  local var
+  for var in $(compgen -e); do
+    case "$var" in MISE_*|__MISE_*|STARSHIP_*) unset "$var" ;; esac
+  done
 }
 
 cleanup_test_env() {
