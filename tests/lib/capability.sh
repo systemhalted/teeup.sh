@@ -341,10 +341,15 @@ EOF2
 test_cap_remove_with_packages_runs_the_script_then_uninstalls() {
   setup
   make_removable
-  local out rc=0
-  out="$(cap_remove alpha true 2>&1)" || rc=$?
+  # Not `out="$(cap_remove ... )"`: that runs cap_remove in a nested
+  # subshell, so an export it forgets to unset dies with that subshell and
+  # the check below would pass either way. Redirecting to a file instead
+  # runs cap_remove in this function's own shell, where a leaked
+  # TEEUP_REMOVE_PACKAGES would actually be seen.
+  local out_file="$TEST_HOME/cap-remove.out" rc=0
+  cap_remove alpha true >"$out_file" 2>&1 || rc=$?
   assert_success "$rc" || return 1
-  assert_contains "$out" "remove:alpha packages=true" || return 1
+  assert_contains "$(cat "$out_file")" "remove:alpha packages=true" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
   state_done check cap-alpha && { echo "the marker must be cleared"; return 1; }

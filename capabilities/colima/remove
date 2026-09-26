@@ -1,27 +1,15 @@
 #!/usr/bin/env bash
-# Undo what colima/configure set up, while colima and the Compose formula are
-# still installed: stop the VM first. `brew uninstall colima` (which runs
-# right after this script) under a running lima VM leaves the VM process
+# Undo what colima/configure set up. Stop the VM first, whether or not
+# packages are about to come off: teeup's configure is what started it, and
+# leaving it running once the capability is forgotten hands it to nobody. On
+# Homebrew, `brew uninstall colima` (which runs right after this script when
+# packages are not kept) under a running lima VM leaves the VM process
 # orphaned and the docker context pointing at nothing -- a real-Mac risk,
-# invisible under mocks (R-7.2). Then drop the Compose plugin symlink
-# configure created (configure:9-27); Homebrew's own uninstall knows about
-# neither. Only the symlink teeup itself put there is touched: it is removed
-# only when it still points at this backend's Compose plugin, the same check
-# configure makes before deciding it is "Already linked".
+# invisible under mocks (R-7.2).
 # A failed stop ends the removal: cmd_remove uninstalls the packages right
 # after this script returns, and `brew uninstall colima` under a VM that is
 # still running is the exact damage this script exists to prevent. Warning
 # and carrying on would do it anyway and then report "Removed".
-#
-# `teeup uninstall` without --packages keeps colima, docker and Compose
-# installed (TEEUP_REMOVE_PACKAGES=false, from lib/capability.sh's
-# cap_remove). Then there is no formula coming off to protect the VM from,
-# and the Compose link is what makes the docker the user keeps work, so both
-# stay exactly as they are.
-if [[ "${TEEUP_REMOVE_PACKAGES:-true}" != "true" ]]; then
-  log "Keeping colima, docker and Compose installed, so the VM and the docker compose link stay as they are."
-  exit 0
-fi
 if have colima; then
   if colima status >/dev/null 2>&1; then
     if run_cmd colima stop; then
@@ -36,6 +24,21 @@ else
   log "colima is not on PATH; nothing to stop."
 fi
 
+# `teeup uninstall` without --packages keeps colima, docker and Compose
+# installed (TEEUP_REMOVE_PACKAGES=false, from lib/capability.sh's
+# cap_remove). The VM is already stopped above; what stays is the software
+# itself and the Compose plugin symlink configure created (configure:9-27),
+# which is what makes the docker the user keeps work.
+if [[ "${TEEUP_REMOVE_PACKAGES:-true}" != "true" ]]; then
+  log "Keeping colima, docker and Compose installed, so the docker compose link stays as it is."
+  exit 0
+fi
+
+# Drop the Compose plugin symlink configure created; Homebrew's own uninstall
+# knows nothing about it. Only the symlink teeup itself put there is
+# touched: it is removed only when it still points at this backend's
+# Compose plugin, the same check configure makes before deciding it is
+# "Already linked".
 if [[ "$(pkg_backend)" == "homebrew" ]]; then
   plugin="$(pkg_prefix)/lib/docker/cli-plugins/docker-compose"
   plugins_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
