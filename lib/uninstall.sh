@@ -209,12 +209,28 @@ uninstall_shell_pattern() {
 # one matching uninstall_shell_pattern that is not a comment, not already
 # neutralised (": # Disabled by teeup ..."), and not a block opener, which
 # disable_matching_lines leaves in place on purpose and which does nothing
-# once its body is disabled and TEEUP_PATH is unset.
+# once its body is disabled and TEEUP_PATH is unset. 1 when the file was
+# actually read and none of its lines is live. 2 when it could not be
+# inspected at all -- unreadable, most often -- which a caller must never
+# treat the same as 1: that would leave a live hook in place, silently, while
+# later steps remove the binary it hooks.
 uninstall_shell_live() {
-  TEEUP_UNS_PATTERN="$(uninstall_shell_pattern)" TEEUP_UNS_OPENER="$(block_opener_ere)" awk '
+  local status=0
+  if [[ ! -r "$1" ]]; then
+    return 2
+  fi
+  if TEEUP_UNS_PATTERN="$(uninstall_shell_pattern)" TEEUP_UNS_OPENER="$(block_opener_ere)" awk '
     $0 ~ ENVIRON["TEEUP_UNS_PATTERN"] && $0 !~ /^[ \t]*[:#]/ && $0 !~ ENVIRON["TEEUP_UNS_OPENER"] { found = 1 }
     END { exit found ? 0 : 1 }
-  ' "$1" 2>/dev/null
+  ' "$1" 2>/dev/null; then
+    status=0
+  else
+    status=$?
+  fi
+  if [[ "$status" -gt 1 ]]; then
+    return 2
+  fi
+  return "$status"
 }
 
 # _uninstall_zshrc_stub -> the ~/.zshrc left in place of a pristine teeup
@@ -234,17 +250,35 @@ _uninstall_zshrc_stub() {
 
 # _uninstall_shell_file <path>
 _uninstall_shell_file() {
-  local file="$1" name resolved target backup parsed_before=false
+  local file="$1" name resolved target backup parsed_before=false live_status=0
   name="${file##*/}"
   [[ -e "$file" || -L "$file" ]] || return 0
   if [[ -L "$file" ]]; then
     target="$(readlink "$file" 2>/dev/null || true)"
-    if [[ -f "$file" ]] && uninstall_shell_live "$file"; then
-      uninstall_note refused "$file is a symlink (to $target), so teeup did not write through it. Delete the lines that mention TEEUP_PATH or teeup/env from the file it points to."
+    if [[ -f "$file" ]]; then
+      if uninstall_shell_live "$file"; then
+        uninstall_note refused "$file is a symlink (to $target), so teeup did not write through it. Delete the lines that mention TEEUP_PATH or teeup/env from the file it points to."
+      else
+        live_status=$?
+        if [[ "$live_status" -eq 2 ]]; then
+          uninstall_note failed "$file is a symlink (to $target) that teeup could not read, so it could not tell whether the file it points to still needs its lines removed. Check $target by hand for lines mentioning TEEUP_PATH or teeup/env."
+        fi
+      fi
     fi
     return 0
   fi
-  uninstall_shell_live "$file" || return 0
+  if uninstall_shell_live "$file"; then
+    live_status=0
+  else
+    live_status=$?
+  fi
+  if [[ "$live_status" -eq 1 ]]; then
+    return 0
+  fi
+  if [[ "$live_status" -eq 2 ]]; then
+    uninstall_note failed "$file: teeup could not read it, so it could not check it for lines to remove. Check it by hand for lines mentioning TEEUP_PATH or teeup/env."
+    return 0
+  fi
   resolved="$(migrate_resolve "$file")" || resolved="$file"
   if migrate_in_git_checkout "$resolved"; then
     uninstall_note refused "$file is inside a git checkout, so teeup did not edit it. Delete the lines that mention TEEUP_PATH or teeup/env yourself."
@@ -280,6 +314,12 @@ _uninstall_shell_file() {
   if uninstall_shell_live "$file"; then
     uninstall_note failed "$file: teeup's lines are still live (see the warnings above). Delete the lines that mention TEEUP_PATH or teeup/env by hand."
     return 0
+  else
+    live_status=$?
+    if [[ "$live_status" -eq 2 ]]; then
+      uninstall_note failed "$file: could not be read back after its lines were disabled, so teeup could not confirm none is still live. Check it by hand for lines mentioning TEEUP_PATH or teeup/env; your copy from before is ${backup:-missing}."
+      return 0
+    fi
   fi
   if [[ "$parsed_before" == "true" ]] && ! zsh -f -n "$file" 2>/dev/null; then
     if [[ -n "$backup" ]] && cat "$backup" > "$file"; then
@@ -312,14 +352,32 @@ uninstall_shell() {
   fi
 }
 
+# _uninstall_active_match <file> <ere> -> 0 when some active line in <file>
+# matches the ERE <ere>: one that has not been commented out, however it is
+# indented. A comment is text a shell never runs, so it can never be the
+# working line uninstall_path_hint is checking for; a missing or unreadable
+# file has no active lines at all.
+_uninstall_active_match() {
+  local file="$1" pattern="$2"
+  [[ -r "$file" ]] || return 1
+  TEEUP_UAM_PATTERN="$pattern" awk '
+    $0 !~ /^[ \t]*#/ && $0 ~ ENVIRON["TEEUP_UAM_PATTERN"] { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$file" 2>/dev/null
+}
+
 # uninstall_path_hint
 # teeup's shell layer is what put the package manager on PATH (default/env
 # and `brew shellenv` in default/profile). With the layer gone, a new shell
 # on Apple Silicon or MacPorts no longer finds brew, port or anything they
 # installed, although both stay. The line each package manager documents
 # for this is noted, with the command that adds it, unless the user's own
-# .zprofile already has one. /usr/local/bin (Intel Homebrew) is on macOS's
-# default PATH already.
+# .zprofile already has an active line that would actually put it there --
+# an absolute `<prefix>/bin/brew shellenv` eval for Homebrew, an active PATH
+# export naming `<prefix>/bin` for MacPorts. A comment, or a bare
+# `brew shellenv` with no prefix (which cannot find Homebrew once teeup's own
+# PATH lines are gone), does not count. /usr/local/bin (Intel Homebrew) is on
+# macOS's default PATH already.
 uninstall_path_hint() {
   local prefix zprofile line
   zprofile="${ZDOTDIR:-$HOME}/.zprofile"
@@ -327,12 +385,16 @@ uninstall_path_hint() {
   case "$(pkg_backend)" in
     homebrew)
       [[ "$prefix" != "/usr/local" && -x "$prefix/bin/brew" ]] || return 0
-      if grep -qs 'brew shellenv' "$zprofile"; then return 0; fi
+      if _uninstall_active_match "$zprofile" "eval.*$(ere_quote "$prefix/bin/brew shellenv")"; then
+        return 0
+      fi
       line="eval \"\$($prefix/bin/brew shellenv)\""
       ;;
     macports)
       [[ -x "$prefix/bin/port" ]] || return 0
-      if grep -qsF "$prefix/bin" "$zprofile"; then return 0; fi
+      if _uninstall_active_match "$zprofile" "PATH=.*$(ere_quote "$prefix/bin")"; then
+        return 0
+      fi
       line="export PATH=\"$prefix/bin:$prefix/sbin:\$PATH\""
       ;;
   esac

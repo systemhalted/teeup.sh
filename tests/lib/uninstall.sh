@@ -307,6 +307,64 @@ test_path_hint_prints_a_command_that_works() {
   cleanup_test_env
 }
 
+# MacPorts's own line, run the same way: the printed export really does put
+# the port prefix on PATH once the .zprofile it lands in is sourced.
+test_path_hint_prints_a_macports_command_that_works() {
+  setup
+  export ZDOTDIR="$TEST_HOME/z dot"
+  mkdir -p "$ZDOTDIR" "$TEEUP_PKG_PREFIX/bin"
+  printf '#!/bin/sh\n' > "$TEEUP_PKG_PREFIX/bin/port"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/port"
+  export TEEUP_PACKAGE_MANAGER=macports
+  uninstall_path_hint
+  run_fix "${_UNINSTALL_KEPT##*run: }" || { echo "the printed command failed"; return 1; }
+  assert_contains "$(cat "$ZDOTDIR/.zprofile")" "export PATH=\"$TEEUP_PKG_PREFIX/bin:$TEEUP_PKG_PREFIX/sbin:\$PATH\"" || return 1
+  run_fix ". $(printf '%q' "$ZDOTDIR/.zprofile"); command -v port" || { echo "the port prefix never lands on PATH"; return 1; }
+  uninstall_report_reset
+  uninstall_path_hint
+  assert_equals "" "$_UNINSTALL_KEPT" "no hint once the line is there" || return 1
+  cleanup_test_env
+}
+
+# A hint is suppressed only by a line that would actually work: a comment
+# never runs, and a bare `brew shellenv` cannot find Homebrew once teeup's own
+# PATH lines are gone -- only the absolute, active eval does.
+test_path_hint_needs_an_active_working_line_to_stop() {
+  setup
+  export ZDOTDIR="$TEST_HOME/z dot"
+  mkdir -p "$ZDOTDIR" "$TEEUP_PKG_PREFIX/bin"
+  printf '#!/bin/sh\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  printf '# eval "$(%s/bin/brew shellenv)"\n' "$TEEUP_PKG_PREFIX" > "$ZDOTDIR/.zprofile"
+  uninstall_path_hint
+  assert_contains "$_UNINSTALL_KEPT" "run:" "a commented-out working line must not suppress the hint" || return 1
+  uninstall_report_reset
+  printf 'eval "$(brew shellenv)"\n' > "$ZDOTDIR/.zprofile"
+  uninstall_path_hint
+  assert_contains "$_UNINSTALL_KEPT" "run:" "a bare shellenv with no prefix cannot find this Homebrew and must not suppress the hint" || return 1
+  uninstall_report_reset
+  printf 'eval "$(%s/bin/brew shellenv)"\n' "$TEEUP_PKG_PREFIX" > "$ZDOTDIR/.zprofile"
+  uninstall_path_hint
+  assert_equals "" "$_UNINSTALL_KEPT" "the working absolute line must suppress the hint" || return 1
+  cleanup_test_env
+}
+
+# An unreadable file cannot be told apart from a clean one by exit status
+# alone; a caller that treats "could not check" as "nothing to remove" would
+# leave a live hook in place while later steps remove the binary it hooks.
+test_shell_notes_a_failure_instead_of_silence_when_it_cannot_read_the_zshrc() {
+  setup
+  zsh_home
+  printf 'export MINE=1\n' >> "$ZH/.zshrc"
+  chmod 000 "$ZH/.zshrc"
+  uninstall_shell >/dev/null 2>&1
+  chmod 644 "$ZH/.zshrc"
+  assert_contains "$_UNINSTALL_FAILED" "$ZH/.zshrc" "an unreadable file must be a failure, not silence" || return 1
+  assert_contains "$(cat "$ZH/.zshrc")" "export MINE=1" "nothing teeup could not read may have been rewritten" || return 1
+  cleanup_test_env
+}
+
 echo "lib/uninstall.sh"
 run_test "rm removes a file, a directory and a link without following it" test_rm_removes_a_file_a_directory_and_a_link_without_following_it
 run_test "rm refuses outside HOME and in a git checkout, with a fix that works" test_rm_refuses_outside_home_and_in_a_git_checkout_with_a_fix_that_works
@@ -322,4 +380,7 @@ run_test "shell refuses a symlinked zshrc and writes nothing" test_shell_refuses
 run_test "shell honours ZDOTDIR and refuses one inside a git checkout" test_shell_honours_zdotdir_and_refuses_one_inside_a_git_checkout
 run_test "shell dry run changes nothing" test_shell_dry_run_changes_nothing
 run_test "path hint prints a command that works" test_path_hint_prints_a_command_that_works
+run_test "path hint prints a macports command that works" test_path_hint_prints_a_macports_command_that_works
+run_test "path hint needs an active working line to stop" test_path_hint_needs_an_active_working_line_to_stop
+run_test "shell notes a failure instead of silence when it cannot read the zshrc" test_shell_notes_a_failure_instead_of_silence_when_it_cannot_read_the_zshrc
 print_summary
