@@ -2356,6 +2356,37 @@ test_theme_set_without_a_name_opens_the_picker() {
   cleanup_test_env
 }
 
+test_theme_set_the_current_theme_says_nothing_changed() {
+  setup
+  "$TEEUP" theme set catppuccin >/dev/null
+  local state name_file before out rc=0
+  state="$TEST_HOME/.local/state/teeup"
+  name_file="$state/current/theme.name"
+  before="$(cat "$name_file")"
+  out="$("$TEEUP" theme set catppuccin 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "catppuccin is already the theme; nothing changed." || return 1
+  assert_not_contains "$out" "Theme set to catppuccin" "a repeat set must not re-render" || return 1
+  assert_equals "$before" "$(cat "$name_file")" "the recorded theme name is untouched" || return 1
+  cleanup_test_env
+}
+
+test_theme_picker_choosing_the_current_theme_says_nothing_changed() {
+  setup
+  # Two complete palettes, so choosing option 2 really means "zzz-second".
+  export TEEUP_THEMES_DIR="$TEST_HOME/themes"
+  mkdir -p "$TEEUP_THEMES_DIR"
+  cp -R "$TEEUP_PATH/themes/catppuccin" "$TEEUP_THEMES_DIR/aaa-first"
+  cp -R "$TEEUP_PATH/themes/catppuccin" "$TEEUP_THEMES_DIR/zzz-second"
+  "$TEEUP" theme set zzz-second >/dev/null
+  local out rc=0
+  out="$(printf '2\n' | "$TEEUP" theme set 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "zzz-second is already the theme; nothing changed." || return 1
+  assert_not_contains "$out" "Theme set to zzz-second" "picking the current theme must not re-render" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install skips a done requirement but repairs the target" test_install_skips_a_done_requirement_but_repairs_the_target
@@ -2450,6 +2481,8 @@ run_test "menu route to a leaf runs its action" test_menu_route_to_a_leaf_runs_i
 run_test "menu dry run prints the action" test_menu_dry_run_prints_the_action_instead_of_running_it
 run_test "menu cancel inside a submenu goes back a level" test_menu_cancel_inside_a_submenu_goes_back_a_level
 run_test "theme set without a name opens the picker" test_theme_set_without_a_name_opens_the_picker
+run_test "theme set on the current theme says nothing changed" test_theme_set_the_current_theme_says_nothing_changed
+run_test "theme picker choosing the current theme says nothing changed" test_theme_picker_choosing_the_current_theme_says_nothing_changed
 run_test "migrate requires a known target" test_migrate_requires_a_known_target
 run_test "migrate legacy runs every step and closes with a real command" test_migrate_legacy_runs_every_step_and_closes_with_a_real_command
 run_test "migrate legacy refuses the chezmoi half without teeup's zsh layer" test_migrate_legacy_refuses_the_chezmoi_half_without_teeups_zsh_layer

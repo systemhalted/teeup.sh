@@ -551,6 +551,13 @@ cmd_theme() {
         theme_list | sed 's/^/  /' >&2
         exit 1
       fi
+      # Covers both the explicit name and a picker choice: the picker set $1
+      # above and falls through to here. Nothing to render or record, so
+      # this returns before theme_set touches anything.
+      if [[ "$1" == "$(theme_current)" ]]; then
+        log "$1 is already the theme; nothing changed."
+        return 0
+      fi
       theme_set "$1"
       # Remembered, so the next ./bootstrap or teeup configure theme keeps it.
       answers_set TEEUP_THEME "$1"
