@@ -9,6 +9,8 @@ here and done once the current phase of work is finished.
 
 | Raised on | Finding | Status |
 | --- | --- | --- |
+| PR #43 uninstall plan (Codex P2) | The printed rerun command after a refusal drops the active flags (`--yes --packages --identity`); carry them through | Open (fold in when executing the plan) |
+| PR #43 uninstall plan (Codex P2) | On MacPorts the kept-package ledger omits the emacs/wezterm ports that their remove scripts map casks to | Open (fold in when executing the plan) |
 | Migrate reinstall fix (local Codex P2) | A `DRY_RUN=true teeup migrate legacy` does not preview the new reinstall step (owners are collected only for real moves); track owners separately and preview each configure | Open |
 | PR #41 (Codex P2) | dev check lints the personal menu against shipped parent ids only; build and validate the merged cache so cross-file duplicate labels and action/children conflicts are caught | Open |
 | PR #41 (Codex P2) | `lib/menu.awk` drops an empty row object (`"ghost": {}`), so an invalid menu passes `menu_check`; emit an id record or reject it | Open |
