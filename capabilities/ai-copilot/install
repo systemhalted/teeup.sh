@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+log "GitHub Copilot CLI downloads through mise when copilot is first called."

@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+log "OpenCode downloads through mise when opencode is first called."

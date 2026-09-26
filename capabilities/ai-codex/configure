@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+mise_wrapper_write ai-codex "Codex" codex codex
+if [[ "$MISE_WRAPPER_WRITTEN" == "true" ]]; then
+  log "The first call of codex installs Codex through mise."
+fi

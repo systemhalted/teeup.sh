@@ -1,0 +1,9 @@
+summary="Claude Code through mise, installed on first call"
+group=ai
+tier=lazy
+requires="mise"
+provides="claude"
+packages=""
+casks=""
+apps=""
+interactive=false

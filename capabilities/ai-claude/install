@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+log "Claude Code downloads through mise when claude is first called."

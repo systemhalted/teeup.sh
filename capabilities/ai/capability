@@ -1,8 +1,8 @@
-summary="AI coding CLIs: claude, codex, gemini, copilot, opencode through mise"
+summary="All five AI coding CLIs through mise"
 group=ai
 tier=lazy
-requires="mise"
-provides="claude codex gemini copilot opencode"
+requires="ai-claude ai-codex ai-gemini ai-copilot ai-opencode"
+provides=""
 packages=""
 casks=""
 apps=""

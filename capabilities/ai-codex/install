@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+log "Codex downloads through mise when codex is first called."
