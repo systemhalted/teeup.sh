@@ -423,7 +423,7 @@ migrate_backup() {
 # 0 when everything it tried succeeded, 1 when something was refused or failed.
 migrate_chezmoi() {
   local src managed line backup count=0 rc=0 chezmoi_config
-  local mine="" theirs="" refused=0 failed=0 migrate_backup_rc=0 owners="" owner blocked=""
+  local mine="" theirs="" refused=0 failed=0 migrate_backup_rc=0 owners="" owner
   if ! have chezmoi; then
     log "No chezmoi on this machine; nothing to take over."
     return 0
@@ -499,6 +499,14 @@ migrate_chezmoi() {
       if [[ -z "$line" ]]; then
         continue
       fi
+      # A capability the machine opts out of with TEEUP_SKIP will not be
+      # reinstalled below, so its file stays where it is: moving it would
+      # leave nothing in its place (TEEUP_SKIP=zsh: no .zshrc at all).
+      owner="$(migrate_teeup_owner "$line")"
+      if [[ -n "$owner" ]] && cap_skipped "$owner"; then
+        log "Leaving $line in place: $owner is in TEEUP_SKIP, so teeup would not put its own version back."
+        continue
+      fi
       backup=""
       migrate_backup_rc=0
       backup="$(migrate_backup "$line")" || migrate_backup_rc=$?
@@ -522,15 +530,6 @@ migrate_chezmoi() {
         1) refused=$((refused + 1)); rc=1 ;;
         *) failed=$((failed + 1)); rc=1 ;;
       esac
-      # A capability with any file refused or failed is not reinstalled:
-      # its configure writes every file it ships, including the one the
-      # migration just refused to touch (Codex, on this reinstall).
-      if [[ "$migrate_backup_rc" -ne 0 ]]; then
-        owner="$(migrate_teeup_owner "$line")"
-        if [[ -n "$owner" ]]; then
-          blocked="$blocked $owner"
-        fi
-      fi
     done < "$managed"
     rm -f "$managed"
     ok_unless_dry "Moved $count chezmoi-managed file(s) aside."
@@ -539,24 +538,30 @@ migrate_chezmoi() {
     # real Mac (2026-09-25) with no teeup layer, no Homebrew on PATH and no
     # teeup in the next shell. Only capabilities installed here are
     # configured -- anything else would lay down a capability nobody chose.
-    for owner in $owners; do
-      case " $blocked " in
-        *" $owner "*)
-          warn "Not reinstalling teeup's $owner configuration: another of its files was left alone above, and configure would write it. Deal with that file, then run: teeup configure $owner"
+    # After any refusal or failure, nothing is reinstalled automatically:
+    # configure scripts write more than the files they ship (LaunchAgents,
+    # for one), so one could write through the path that was just refused.
+    # The commands are named instead.
+    if [[ "$refused" -gt 0 || "$failed" -gt 0 ]]; then
+      for owner in $owners; do
+        if state_done check "cap-$owner" && ! state_na check "cap-$owner"; then
+          warn "Not reinstalling teeup's $owner configuration automatically, because something above was left alone. Deal with that, then run: teeup configure $owner"
+        fi
+      done
+    else
+      for owner in $owners; do
+        if state_na check "cap-$owner" || ! state_done check "cap-$owner"; then
+          log "$owner is not installed here, so its file stays moved aside; run 'teeup install $owner' to get teeup's version."
           continue
-          ;;
-      esac
-      if cap_skipped "$owner" || state_na check "cap-$owner" || ! state_done check "cap-$owner"; then
-        log "$owner is not installed here, so its file stays moved aside; run 'teeup install $owner' to get teeup's version."
-        continue
-      fi
-      if cap_run "$owner" configure; then
-        ok "Reinstalled teeup's $owner configuration."
-      else
-        warn "Could not reinstall teeup's $owner configuration; run: teeup configure $owner"
-        rc=1
-      fi
-    done
+        fi
+        if cap_run "$owner" configure; then
+          ok "Reinstalled teeup's $owner configuration."
+        else
+          warn "Could not reinstall teeup's $owner configuration; run: teeup configure $owner"
+          rc=1
+        fi
+      done
+    fi
     # Which of the two happened, named separately: a refusal is teeup
     # protecting something, a failure is a file still sitting there that
     # nobody will look at if it reads as a refusal.
