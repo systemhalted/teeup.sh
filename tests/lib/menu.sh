@@ -183,6 +183,28 @@ mine" "$(menu_children "$cache" "")" || return 1
   cleanup_test_env
 }
 
+# I4: _menu_merge passed the shipped file's mktemp path to awk through -v,
+# which processes backslash escapes in a -v value. A TMPDIR containing a
+# backslash then makes the shipped-file marker never equal awk's own
+# FILENAME, so every row -- shipped and user alike -- lands in the "user"
+# bucket in file order, and a user override never wins a duplicate-id lookup
+# that returns on first match. The fix has to pass the path through ENVIRON
+# instead, which awk does not backslash-process.
+test_a_user_override_survives_a_tmpdir_containing_a_backslash() {
+  setup
+  sample_menu
+  write_user <<'EOF2'
+{"install.colima": {"label": "Docker", "action": "echo mine"}}
+EOF2
+  local tmp_with_backslash="$TEST_HOME/t mp\\dir"
+  mkdir -p "$tmp_with_backslash"
+  local out
+  out="$(TMPDIR="$tmp_with_backslash" menu_entries)"
+  assert_contains "$out" "install.colima	action	echo mine" "the user's action must win" || return 1
+  assert_not_contains "$out" "install.colima	action	teeup install colima" "the shipped action must not survive alongside it" || return 1
+  cleanup_test_env
+}
+
 test_children_and_fields_and_labels() {
   setup
   sample_menu
@@ -367,6 +389,7 @@ run_test "parse refuses a duplicate field" test_parse_refuses_a_duplicate_field
 run_test "entries are the shipped file with no user file" test_entries_are_the_shipped_file_when_there_is_no_user_file
 run_test "a user entry replaces the shipped one whole" test_a_user_entry_replaces_the_shipped_one_whole_and_keeps_its_place
 run_test "a user-only entry is appended" test_a_user_only_entry_is_appended
+run_test "a user override survives a TMPDIR containing a backslash" test_a_user_override_survives_a_tmpdir_containing_a_backslash
 run_test "children, fields and labels" test_children_and_fields_and_labels
 run_test "visible runs the when predicate" test_visible_runs_the_when_predicate_through_teeup_has
 run_test "picker resolves and rejects junk" test_picker_resolves_and_rejects_junk
