@@ -116,9 +116,40 @@ test_readme_only_shows_verbs_that_exist() {
   return 0
 }
 
+# The README's menu-field table (R5.2's `label icon action when title`) has
+# to name exactly the fields lib/menu.awk's valid_field() accepts. Derived
+# from the parser rather than hard-coded here, so a field added to one and
+# not the other fails this test instead of drifting silently (R10.4).
+_menu_awk_fields() {
+  local line inner
+  line="$(grep -F 'function valid_field' "$REPO/lib/menu.awk")"
+  [[ -n "$line" ]] || { echo "could not find valid_field() in lib/menu.awk" >&2; return 1; }
+  inner="${line#*/^(}"
+  inner="${inner%%)\$/*}"
+  printf '%s\n' "$inner" | tr '|' '\n' | sort
+}
+
+_readme_menu_fields() {
+  awk '/^\| Field \| Meaning \|$/,/^$/' "$REPO/README.md" \
+    | grep -oE '^\| `[a-z]+`' | sed -e 's/^| `//' -e 's/`$//' | sort
+}
+
+test_readme_menu_field_table_matches_menu_awk() {
+  local awk_fields readme_fields
+  awk_fields="$(_menu_awk_fields)"
+  readme_fields="$(_readme_menu_fields)"
+  [[ -n "$readme_fields" ]] || { echo "could not find the menu field table in README.md"; return 1; }
+  if [[ "$awk_fields" != "$readme_fields" ]]; then
+    echo "README's menu field table ($(printf '%s' "$readme_fields" | tr '\n' ' ')) does not match lib/menu.awk's valid_field() list ($(printf '%s' "$awk_fields" | tr '\n' ' '))"
+    return 1
+  fi
+  return 0
+}
+
 echo "docs"
 run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
 run_test "README's remove count matches the tree" test_readme_remove_count_matches_the_tree
 run_test "README's remove-script count matches the tree" test_readme_remove_script_count_matches_the_tree
+run_test "README's menu field table matches menu.awk" test_readme_menu_field_table_matches_menu_awk
 print_summary

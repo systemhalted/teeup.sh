@@ -628,3 +628,49 @@ Happy contributing! 🚀
     and neutralises a matching line with `: #` rather than `#` -- an `if`
     whose whole body is commented out is a syntax error, and a line that
     opens a block is reported rather than broken.
+29. Start a capability with `teeup dev new-capability <name>`, which writes
+    `capabilities/<name>/{capability,install,configure}` and
+    `tests/capabilities/<name>.sh` from `share/teeup/skeleton/`. The scaffold
+    is `tier=lazy` on purpose: a `core` or `daily` capability that is not in
+    its tier list makes `teeup commands --check` fail, so change the tier and
+    append to the list in the same commit. Finish with
+    `teeup dev check <name>`, which runs the metadata lint, the menu lint,
+    shellcheck and that capability's suite -- the same four things CI runs.
+    `teeup dev check` with no name runs the whole suite, which takes minutes.
+30. A capability may ship an executable `doctor` beside its `install` and
+    `configure`. It runs exactly like them (`bash -eu`, `lib/all.sh` loaded,
+    answers sourced, `TEEUP_CAP` and `TEEUP_CAP_DIR` exported) and reports
+    through `doctor_ok <message>`, `doctor_warn <message>`, `doctor_fail
+    <message> <fix>` and `doctor_unknown <message> <fix>`; its last line is
+    `doctor_verdict`, which returns 0 when every check reached a verdict and
+    none found a problem, 1 when at least one `doctor_fail` fired, and 2 when
+    nothing is confirmed broken but at least one `doctor_unknown` fired
+    because a check could not run to a verdict at all. `doctor_fail` and
+    `doctor_unknown` both return 0 so the script keeps checking, and the fix
+    each records is what the summary prints, so make it one command somebody
+    can paste. A doctor script mutates nothing, so it needs no `DRY_RUN`
+    guard. Do not write one for anything the metadata already says: `teeup
+    doctor` checks `packages`, `casks`, `apps` and `provides` for every
+    capability by itself. Write one for the invariants metadata cannot
+    express -- a config in two places at once, a key with the wrong mode, a
+    generated file that is stale.
+31. Adding a row to `share/teeup/menu.json` is step 5 of adding a tool. Ids
+    are dotted and the tree is in them, so `install.editors.zed` needs
+    `install.editors` and `install` to exist as rows too. Every row needs a
+    `label`; a row is a leaf when it has an `action` and a submenu when it has
+    children, never both and never neither; and no two rows under the same
+    parent may share a label, because the picker hands back a label and it is
+    mapped to an id by position. `teeup dev check` enforces all of that. Use
+    `"when": "! teeup has <name>"` on an Install row so it disappears once the
+    thing is installed. The file is read by `lib/menu.awk`, not jq: macOS
+    before 15 ships no jq and the harness's narrowed `PATH` hides Homebrew's
+    too, so values are one-line strings and the only escapes are `\"`, `\\`
+    and `\/`.
+32. Anything that draws a full-screen picker -- `gum choose`, `fzf` -- is
+    behind `menu_pick`, and `TEEUP_NO_GUM` turns off both, because both paint
+    on `/dev/tty`. **Every test that drives a prompt or a menu must
+    `export TEEUP_NO_GUM=1`**: the harness narrows `PATH` but `/usr/bin/gum`
+    can still be there, and a test that forgets will hang on a real terminal
+    widget. A test that wants the fzf branch specifically sets
+    `TEEUP_MENU_PICKER=fzf` and mocks `fzf`; no test may need either program
+    installed.
