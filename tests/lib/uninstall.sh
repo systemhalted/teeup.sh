@@ -28,21 +28,28 @@ setup() {
 }
 
 # make_cap <name> <tier> [requires] [packages] [casks]
+# Locals are named away from the reserved capability metadata keys (summary
+# group tier requires provides packages casks apps interactive
+# package_commands): cap_meta_get sources the capability file in a subshell
+# that still sees a caller's locals, so a fixture builder using those names
+# is exactly the trap that bit the first cap_remove.
 make_cap() {
-  local name="$1" tier="$2" requires="${3:-}" pkgs="${4:-}" casks="${5:-}"
+  local name="$1" cap_tier="$2" cap_requires="${3:-}" pkgs="${4:-}" cap_casks="${5:-}"
   local dir="$TEEUP_CAPS_DIR/$name"
   mkdir -p "$dir"
   printf 'summary="Fixture %s"\ngroup=system\ntier=%s\nrequires="%s"\nprovides=""\npackages="%s"\ncasks="%s"\ninteractive=false\n' \
-    "$name" "$tier" "$requires" "$pkgs" "$casks" > "$dir/capability"
+    "$name" "$cap_tier" "$cap_requires" "$pkgs" "$cap_casks" > "$dir/capability"
   printf '#!/usr/bin/env bash\necho "install:%s"\n' "$name" > "$dir/install"
   printf '#!/usr/bin/env bash\necho "configure:%s"\n' "$name" > "$dir/configure"
   chmod +x "$dir/install" "$dir/configure"
 }
 
 # run_fix <command>: what the user would do with a printed fix, in their
-# shell: zsh when the machine has it (every CI runner does), else bash.
+# shell: zsh when the machine has it (every CI runner does), else bash. -f:
+# without it zsh sources ~/.zshenv first, teeup's own shell layer, in the
+# middle of its removal.
 run_fix() {
-  if have zsh; then zsh -c "$1"; else bash -c "$1"; fi
+  if have zsh; then zsh -f -c "$1"; else bash -c "$1"; fi
 }
 
 test_rm_removes_a_file_a_directory_and_a_link_without_following_it() {
@@ -131,6 +138,41 @@ test_caps_lists_installed_capabilities_dependents_first() {
   cleanup_test_env
 }
 
+# Mirrors the live ai bundle: one capability requiring five leaves that all
+# require a shared base (ai requires ai-claude..ai-opencode, each of which
+# requires mise). The bundle must come out before every leaf, and every leaf
+# before the base each of them requires.
+test_caps_orders_a_bundle_before_its_leaves_and_leaves_before_their_shared_base() {
+  setup
+  make_cap base core
+  make_cap leaf1 lazy base
+  make_cap leaf2 lazy base
+  make_cap leaf3 lazy base
+  make_cap leaf4 lazy base
+  make_cap leaf5 lazy base
+  make_cap bundle lazy "leaf1 leaf2 leaf3 leaf4 leaf5"
+  state_done mark cap-base
+  state_done mark cap-leaf1
+  state_done mark cap-leaf2
+  state_done mark cap-leaf3
+  state_done mark cap-leaf4
+  state_done mark cap-leaf5
+  state_done mark cap-bundle
+  local out leaf bundle_pos base_pos leaf_pos
+  out="$(uninstall_caps)"
+  bundle_pos="$(grep -n -x bundle <<<"$out" | cut -d: -f1)"
+  base_pos="$(grep -n -x base <<<"$out" | cut -d: -f1)"
+  [[ -n "$bundle_pos" ]] || { echo "the bundle must be listed"; return 1; }
+  [[ -n "$base_pos" ]] || { echo "the base must be listed"; return 1; }
+  for leaf in leaf1 leaf2 leaf3 leaf4 leaf5; do
+    leaf_pos="$(grep -n -x "$leaf" <<<"$out" | cut -d: -f1)"
+    [[ -n "$leaf_pos" ]] || { echo "$leaf must be listed"; return 1; }
+    [[ "$bundle_pos" -lt "$leaf_pos" ]] || { echo "the bundle must come before $leaf"; return 1; }
+    [[ "$leaf_pos" -lt "$base_pos" ]] || { echo "$leaf must come before the shared base"; return 1; }
+  done
+  cleanup_test_env
+}
+
 test_offer_restore_asks_and_puts_the_earlier_copy_back() {
   setup
   printf 'teeup\n' > "$TEST_HOME/conf"
@@ -165,6 +207,7 @@ run_test "rm refuses outside HOME and in a git checkout, with a fix that works" 
 run_test "rm dry run deletes nothing and claims nothing" test_rm_dry_run_deletes_nothing_and_claims_nothing
 run_test "summary lists each column and fails on a problem" test_summary_lists_each_column_and_fails_on_a_problem
 run_test "caps lists installed capabilities dependents first" test_caps_lists_installed_capabilities_dependents_first
+run_test "caps orders a bundle before its leaves and leaves before their shared base" test_caps_orders_a_bundle_before_its_leaves_and_leaves_before_their_shared_base
 run_test "offer_restore asks and puts the earlier copy back" test_offer_restore_asks_and_puts_the_earlier_copy_back
 run_test "offer_restore without a terminal notes a command that works" test_offer_restore_without_a_terminal_notes_a_command_that_works
 print_summary
