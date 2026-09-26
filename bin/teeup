@@ -89,6 +89,14 @@ cmd_install() {
       warn "Skipping $c (TEEUP_SKIP)"
       continue
     fi
+    # A completed requirement is the expensive path lazy-run must not replay:
+    # xcode-clt, package-manager and mise have already installed and configured.
+    # The requested target is different. It always runs so `teeup install X`
+    # repairs X after a wrapper, binary or config was removed by hand.
+    if [[ "$c" != "$target" ]] && state_done check "cap-$c"; then
+      log "Already installed: $c (required by $target)"
+      continue
+    fi
     # Explicit, not left to `set -e`: cmd_lazy_run calls cmd_install inside an
     # `if`, which disables `set -e` for everything it runs, so a failure that
     # used to abort the process would otherwise let the loop carry on and mark
@@ -545,6 +553,13 @@ cmd_lazy_run() {
   if ! ui_confirm "$command is provided by capability $cap. Install now?" yes; then
     err "Not installed. When you want it: teeup install $cap"
     exit 127
+  fi
+  # Declines and previews create no log. Once a real install has been approved,
+  # every cap_run bracket and capability line goes to the lazy transcript. An
+  # explicit TEEUP_LOG_FILE remains authoritative for a diagnostic invocation.
+  if [[ "$DRY_RUN" != "true" && -z "$TEEUP_LOG_FILE" ]]; then
+    TEEUP_LOG_FILE="$TEEUP_STATE_DIR/logs/lazy.log"
+    export TEEUP_LOG_FILE
   fi
   # A real install failure must reach the shim contract's 127 ("the command
   # still is not here"), not abort the process at this line under `set -e`

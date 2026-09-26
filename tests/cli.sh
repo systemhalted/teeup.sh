@@ -79,6 +79,40 @@ test_install_runs_requires_in_order_and_marks_done() {
   cleanup_test_env
 }
 
+test_install_skips_a_done_requirement_but_repairs_the_target() {
+  setup
+  state_dir="$TEST_HOME/.local/state/teeup"
+  mkdir -p "$state_dir/done"
+  : > "$state_dir/done/cap-alpha"
+  # Any accidental requirement run is now a hard failure, not only an output
+  # assertion, so the test proves cmd_install trusted the done marker.
+  printf '#!/usr/bin/env bash\necho "alpha must not run" >&2\nexit 91\n' > "$TEEUP_CAPS_DIR/alpha/install"
+  chmod +x "$TEEUP_CAPS_DIR/alpha/install"
+  local out
+  out="$("$TEEUP" install beta 2>&1)"
+  assert_contains "$out" "Already installed: alpha (required by beta)" || return 1
+  assert_not_contains "$out" "alpha must not run" || return 1
+  assert_contains "$out" "install:beta" || return 1
+  assert_contains "$out" "configure:beta" || return 1
+  "$TEEUP" has beta || { echo "beta must be marked installed"; return 1; }
+
+  # The requested target remains the repair path even when it is already done.
+  out="$("$TEEUP" install beta 2>&1)"
+  assert_contains "$out" "install:beta" || return 1
+  assert_contains "$out" "configure:beta" || return 1
+  cleanup_test_env
+}
+
+test_install_runs_a_missing_requirement() {
+  setup
+  local out
+  out="$("$TEEUP" install beta)"
+  assert_contains "$out" "install:alpha" || return 1
+  assert_contains "$out" "configure:alpha" || return 1
+  "$TEEUP" has alpha || { echo "the missing requirement must be marked"; return 1; }
+  cleanup_test_env
+}
+
 test_install_refuses_skipped_capability() {
   setup
   local rc=0 out
@@ -350,6 +384,32 @@ test_lazy_run_on_a_tty_installs_configures_and_execs() {
   assert_contains "$out" "configure:lazyone" || return 1
   assert_contains "$out" "frob ran: --flag two words" || return 1
   "$TEEUP" has lazyone || { echo "lazyone must be marked installed"; return 1; }
+  cleanup_test_env
+}
+
+test_lazy_run_logs_a_consented_install_once() {
+  setup
+  make_frob_installable
+  local log="$TEST_HOME/.local/state/teeup/logs/lazy.log" out
+  out="$(printf 'y\n' | TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob 2>&1)"
+  assert_file_exists "$log" || return 1
+  assert_contains "$(cat "$log")" "Starting: lazyone install" || return 1
+  assert_contains "$(cat "$log")" "Completed: lazyone configure" || return 1
+  assert_equals "1" "$(grep -c 'Starting: lazyone install' "$log" || true)" || return 1
+  assert_equals "1" "$(grep -c 'configure:lazyone' "$log" || true)" || return 1
+  assert_contains "$out" "frob ran:" || return 1
+  cleanup_test_env
+}
+
+test_lazy_run_decline_and_dry_run_create_no_log() {
+  setup
+  make_frob_installable
+  local log="$TEST_HOME/.local/state/teeup/logs/lazy.log" rc=0
+  printf 'n\n' | TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob >/dev/null 2>&1 || rc=$?
+  assert_equals "127" "$rc" || return 1
+  [[ ! -e "$log" ]] || { echo "declining created a lazy log"; return 1; }
+  printf 'y\n' | DRY_RUN=true TEEUP_TEST_TTY=yes "$TEEUP" lazy-run lazyone frob >/dev/null 2>&1
+  [[ ! -e "$log" ]] || { echo "dry run created a lazy log"; return 1; }
   cleanup_test_env
 }
 
@@ -2196,6 +2256,8 @@ test_theme_set_without_a_name_opens_the_picker() {
 
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
+run_test "install skips a done requirement but repairs the target" test_install_skips_a_done_requirement_but_repairs_the_target
+run_test "install runs a missing requirement" test_install_runs_a_missing_requirement
 run_test "install refuses skipped capability" test_install_refuses_skipped_capability
 run_test "install unknown capability" test_install_unknown_capability
 run_test "configure only" test_configure_only
@@ -2214,6 +2276,8 @@ run_test "list --tier without a value errors" test_list_tier_without_a_value_err
 run_test "lazy-run execs a real binary when one exists" test_lazy_run_execs_a_real_binary_when_one_exists
 run_test "lazy-run without a tty hints and exits 127" test_lazy_run_without_a_tty_hints_and_exits_127
 run_test "lazy-run on a tty installs, configures and execs" test_lazy_run_on_a_tty_installs_configures_and_execs
+run_test "lazy-run logs a consented install once" test_lazy_run_logs_a_consented_install_once
+run_test "lazy-run decline and dry run create no log" test_lazy_run_decline_and_dry_run_create_no_log
 run_test "lazy-run declined exits 127 without installing" test_lazy_run_declined_exits_127_without_installing
 run_test "lazy-run exits 127 when the install fails" test_lazy_run_exits_127_when_the_install_fails
 run_test "lazy-run does not mark installed when a dependency fails" test_lazy_run_does_not_mark_installed_when_a_dependency_fails
