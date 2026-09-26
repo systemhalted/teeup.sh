@@ -120,6 +120,25 @@ test_new_capability_refuses_when_the_test_file_already_exists() {
   cleanup_test_env
 }
 
+# Codex P1 on #41: cap_exists needs a capability file, so a half-made
+# capabilities/<name>/ (an interrupted or hand-started scaffold) passed the
+# check and the renders overwrote the work already in it.
+test_new_capability_refuses_a_directory_without_metadata() {
+  setup
+  mkdir -p "$TEEUP_CAPS_DIR/widget"
+  printf '#!/usr/bin/env bash\necho "my own install"\n' > "$TEEUP_CAPS_DIR/widget/install"
+  local before
+  before="$(cat "$TEEUP_CAPS_DIR/widget/install")"
+  local rc=0 out
+  out="$(dev_new_capability widget 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "already exists" || return 1
+  assert_equals "$before" "$(cat "$TEEUP_CAPS_DIR/widget/install")" "work in a half-made capability must survive" || return 1
+  [[ ! -e "$TEEUP_CAPS_DIR/widget/capability" ]] || { echo "a refused scaffold must write nothing"; return 1; }
+  [[ ! -e "$TEEUP_TESTS_DIR/capabilities/widget.sh" ]] || { echo "a refused scaffold must write no test"; return 1; }
+  cleanup_test_env
+}
+
 test_new_capability_writes_nothing_in_a_dry_run() {
   setup
   local out
@@ -133,12 +152,15 @@ test_new_capability_writes_nothing_in_a_dry_run() {
 
 test_new_capability_removes_a_partial_scaffold_when_a_render_fails() {
   setup
-  mkdir -p "$TEEUP_CAPS_DIR/widget"
-  : > "$TEEUP_CAPS_DIR/widget/install"
-  chmod 400 "$TEEUP_CAPS_DIR/widget/install"
+  # The capability files render first, then the test file: an unwritable
+  # tests/capabilities makes that last render fail after the capability
+  # directory exists, which is the partial scaffold to clean up. (A
+  # pre-existing capabilities/widget is refused up front instead, never
+  # removed: it may hold someone's work.)
+  chmod 500 "$TEEUP_TESTS_DIR/capabilities"
   local rc=0 out
   out="$(dev_new_capability widget 2>&1)" || rc=$?
-  chmod 700 "$TEEUP_CAPS_DIR/widget/install" 2>/dev/null || true
+  chmod 700 "$TEEUP_TESTS_DIR/capabilities"
   assert_failure "$rc" || return 1
   [[ ! -e "$TEEUP_CAPS_DIR/widget" ]] || { echo "a failed render must remove the partial scaffold"; return 1; }
   cleanup_test_env
@@ -510,6 +532,7 @@ run_test "the scaffolded files are valid shell" test_the_scaffolded_files_are_va
 run_test "the scaffolded metadata passes the lint" test_the_scaffolded_metadata_passes_the_lint
 run_test "new-capability refuses a bad or taken name" test_new_capability_refuses_a_bad_or_taken_name
 run_test "new-capability refuses when the test file already exists" test_new_capability_refuses_when_the_test_file_already_exists
+run_test "new-capability refuses a directory without metadata" test_new_capability_refuses_a_directory_without_metadata
 run_test "new-capability writes nothing in a dry run" test_new_capability_writes_nothing_in_a_dry_run
 run_test "new-capability removes a partial scaffold when a render fails" test_new_capability_removes_a_partial_scaffold_when_a_render_fails
 run_test "the scaffold passes its own generated suite" test_the_scaffolded_capability_passes_its_own_generated_suite
