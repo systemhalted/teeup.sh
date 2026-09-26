@@ -19,7 +19,12 @@
   "install.apps.obsidian": {"label": "Obsidian", "when": "! teeup has obsidian", "action": "teeup install obsidian"},
 
   "install.ai": {"label": "AI"},
-  "install.ai.clis": {"label": "AI command-line tools", "when": "! teeup has ai", "action": "teeup install ai"},
+  "install.ai.claude": {"label": "Claude Code", "when": "! teeup has ai-claude", "action": "teeup install ai-claude"},
+  "install.ai.codex": {"label": "Codex", "when": "! teeup has ai-codex", "action": "teeup install ai-codex"},
+  "install.ai.gemini": {"label": "Gemini CLI", "when": "! teeup has ai-gemini", "action": "teeup install ai-gemini"},
+  "install.ai.copilot": {"label": "GitHub Copilot CLI", "when": "! teeup has ai-copilot", "action": "teeup install ai-copilot"},
+  "install.ai.opencode": {"label": "OpenCode", "when": "! teeup has ai-opencode", "action": "teeup install ai-opencode"},
+  "install.ai.all": {"label": "All AI command-line tools", "when": "! teeup has ai", "action": "teeup install ai"},
   "install.ai.ollama": {"label": "Ollama", "when": "! teeup has ollama", "action": "teeup install ollama"},
   "install.ai.herdr": {"label": "Herdr", "when": "! teeup has herdr", "action": "teeup install herdr"},
 
