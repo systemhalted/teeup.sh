@@ -3,10 +3,11 @@ set -euo pipefail
 source "$(dirname "$0")/../helper.sh"
 
 # lua and luac are found before setup_test_env narrows PATH (Homebrew's live
-# outside it on macOS). CI installs lua5.4 / lua, so a missing one fails the
-# Lua checks rather than skipping them.
-NVIM_LUAC="$(command -v luac || command -v luac5.4 || true)"
-NVIM_LUA="$(command -v lua || command -v lua5.4 || command -v lua5.3 || true)"
+# outside it on macOS), and only a real one counts (real_lua in helper.sh).
+# CI installs lua5.4 / lua, so a missing one fails the Lua checks there;
+# anywhere else they are reported as skipped.
+NVIM_LUAC="$(real_lua luac luac5.4)"
+NVIM_LUA="$(real_lua lua lua5.4 lua5.3)"
 
 setup() {
   setup_test_env
@@ -191,7 +192,7 @@ test_lua_files_parse() {
   if [[ -z "$NVIM_LUAC" ]]; then
     echo "luac is not installed: install lua5.4 (apt) or lua (brew) to run this suite"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   DRY_RUN=false "$TEEUP" configure neovim >/dev/null
   DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
@@ -216,7 +217,7 @@ test_plugin_for_matches_dashed_colorscheme_names() {
   if [[ -z "$NVIM_LUA" ]]; then
     echo "lua is not installed: install lua5.4 (apt) or lua (brew) to run this suite"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   local out
   out="$("$NVIM_LUA" -e "
@@ -268,7 +269,7 @@ test_teeup_paths_survive_special_bytes() {
   if [[ -z "$NVIM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   DRY_RUN=false "$TEEUP" configure neovim >/dev/null
   local weird checkout state
