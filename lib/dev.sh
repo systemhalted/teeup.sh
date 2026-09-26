@@ -50,7 +50,10 @@ dev_new_capability() {
     err "A capability name uses lower-case letters, digits and dashes and starts with a letter or digit (got '$name')."
     return 1
   fi
-  if cap_exists "$name"; then
+  # Any existing path, not just a complete capability: cap_exists needs a
+  # capability file, so a half-made directory (an interrupted scaffold, or
+  # one started by hand) would pass it and have its files overwritten.
+  if [[ -e "$(cap_dir "$name")" || -L "$(cap_dir "$name")" ]]; then
     err "$(cap_dir "$name") already exists."
     return 1
   fi
