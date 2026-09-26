@@ -1174,7 +1174,16 @@ cmd_migrate() {
   migrate_disable_runtime_inits || rc=1
   migrate_chezmoi || rc=1
   echo ""
-  if [[ $rc -eq 0 ]]; then
+  if [[ "$DRY_RUN" == "true" ]]; then
+    # A preview claims nothing: the steps above said what they would do, and
+    # "finished, now run teeup update" only makes sense after a real run.
+    # The exit status still reports a refusal a real run would hit.
+    if [[ $rc -eq 0 ]]; then
+      log "Dry run finished: nothing was changed. Run it again without DRY_RUN=true to migrate."
+    else
+      warn "Dry run finished: nothing was changed, and a real run would refuse to touch something above. Read the warnings first."
+    fi
+  elif [[ $rc -eq 0 ]]; then
     ok "Migration finished. Open a new terminal, then run: teeup update, then teeup doctor to see anything still left over"
   else
     err "Migration finished, but teeup refused to touch something above. Nothing was lost; read the warnings, then run: teeup doctor"

@@ -981,6 +981,11 @@ test_migrate_legacy_dry_run_changes_nothing() {
   assert_file_exists "$TEST_HOME/.teeup.common" "a dry run must delete nothing" || return 1
   assert_equals 'eval "$(rbenv init -)"' "$(cat "$TEST_HOME/.zshrc")" "a dry run must edit nothing" || return 1
   assert_not_contains "$out" "✅ Removed" "a dry run must not claim a removal" || return 1
+  # Seen on a real Mac, 2026-09-25: the preview ended "Migration finished.
+  # Open a new terminal, then run: teeup update", a migration that never
+  # happened, with a next step that only makes sense after a real one.
+  assert_not_contains "$out" "Migration finished" "a dry run must not claim the migration ran" || return 1
+  assert_contains "$out" "Dry run finished: nothing was changed" || return 1
   cleanup_test_env
 }
 
