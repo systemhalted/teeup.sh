@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
 mise_wrapper_remove ai-copilot copilot
+mise_tool_unuse copilot
