@@ -604,7 +604,12 @@ uninstall_capabilities() {
         ;;
       identity)
         if [[ "$_UNINSTALL_IDENTITY" != "true" ]]; then
-          uninstall_note kept "Your SSH keys and ~/.ssh/config: they are your identity. teeup uninstall --identity removes the keys teeup generated."
+          # No "run teeup uninstall --identity" here: a clean run tears
+          # teeup itself down (Decision 11), so that advice would name a
+          # command that no longer exists by the time this line is read.
+          # teeup never deletes an SSH key either way (2026-09-26 decision);
+          # uninstall_identity names each one and how to remove it by hand.
+          uninstall_note kept "Your SSH keys and ~/.ssh/config: they are your identity. teeup never deletes an SSH key, with or without --identity."
         fi
         _UNINSTALL_GONE="$_UNINSTALL_GONE$name "
         ;;
@@ -684,12 +689,16 @@ uninstall_stock_paths() {
 # _uninstall_prune_dirs <removed file>
 # Directories the removal left empty go too, walking up, but never $HOME
 # itself or the XDG config directory. rmdir removes only an empty directory,
-# so anything of the user's stops the walk.
+# so anything of the user's stops the walk. The config directory's own
+# trailing slash (a $XDG_CONFIG_HOME set with one) is stripped before the
+# comparison, or it would never match $dir and the walk could reach into
+# $HOME itself.
 _uninstall_prune_dirs() {
   local dir config
   if [[ "$DRY_RUN" == "true" ]]; then return 0; fi
   dir="$(dirname "$1")"
   config="$(user_config_dir)"
+  config="${config%/}"
   while [[ "$dir" == "$HOME"/* && "$dir" != "$config" ]]; do
     rmdir "$dir" 2>/dev/null || break
     dir="$(dirname "$dir")"
@@ -710,12 +719,27 @@ _uninstall_generated() {
   fi
 }
 
+# _uninstall_is_identity_config <path> -> 0 when <path> is one of the files
+# that carry the user's identity (~/.ssh/config or <config dir>/git/config),
+# decided from the recorded path's own tail rather than by comparing it
+# against the CURRENT XDG_CONFIG_HOME: a stock record written under one
+# XDG_CONFIG_HOME must still be recognised when uninstall later runs with
+# another (or with none set at all).
+_uninstall_is_identity_config() {
+  case "$1" in
+    */.ssh/config|*/git/config) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # uninstall_configs
 # The stock-checksum rule (spec section 9) decides every file teeup copied:
 # pristine, it is teeup's and goes (after offering back whatever it replaced);
 # edited, it is the user's and stays. The zsh home files were already handled
-# by uninstall_shell. ~/.ssh/config and ~/.config/git/config carry the
-# identity and wait for --identity.
+# by uninstall_shell. ~/.ssh/config waits for --identity; ~/.config/git/config
+# does not -- the user's decision is that git/config is kept only WITHOUT
+# --identity (Decision 8), so a pristine one goes here, like any other file,
+# once --identity is given.
 uninstall_configs() {
   local path zdot gdir key edited=""
   zdot="${ZDOTDIR:-$HOME}"
@@ -725,12 +749,18 @@ uninstall_configs() {
     case "$path" in
       "$zdot/.zshenv"|"$zdot/.zprofile"|"$zdot/.zshrc") continue ;;
     esac
-    if [[ "$_UNINSTALL_IDENTITY" != "true" ]]; then
-      case "$path" in
-        "$HOME/.ssh/config"|"$gdir/config") continue ;;
-      esac
+    if [[ "$_UNINSTALL_IDENTITY" != "true" ]] && _uninstall_is_identity_config "$path"; then
+      continue
     fi
-    [[ -e "$path" || -L "$path" ]] || continue
+    if [[ -L "$path" ]]; then
+      uninstall_note kept "$path is a symlink; teeup does not touch it."
+      continue
+    fi
+    if [[ -d "$path" ]]; then
+      uninstall_note kept "$path is a directory where teeup installed a file; it is left alone."
+      continue
+    fi
+    [[ -e "$path" ]] || continue
     if config_is_pristine "$path"; then
       if uninstall_offer_restore "$path"; then continue; fi
       if uninstall_rm "$path" "teeup's $path"; then _uninstall_prune_dirs "$path"; fi
@@ -744,47 +774,74 @@ STOCK
     uninstall_note kept "Config files you edited: $edited"
   fi
   _uninstall_generated "$gdir/teeup-generated" "teeup's generated git settings ($gdir/teeup-generated)"
-  if [[ "$_UNINSTALL_IDENTITY" != "true" && -f "$gdir/config" ]]; then
-    uninstall_note kept "$gdir/config and $gdir/identity: git reads your name and email through them. teeup uninstall --identity removes them."
-    # teeup-generated turned signing off until a key existed; with it gone
-    # the shipped config's gpgsign = true is back in charge, and signing
-    # with no key fails every commit.
+  if [[ "$_UNINSTALL_IDENTITY" != "true" ]]; then
+    # Not "run teeup uninstall --identity": a clean run tears teeup itself
+    # down (Decision 11), so naming that command here would point at
+    # something already gone by the time this line is read.
+    uninstall_note kept "$gdir/config and $gdir/identity: git reads your name and email through them, so teeup leaves them in place without --identity."
+  fi
+  if [[ -f "$gdir/config" ]]; then
+    # teeup-generated turned signing off until a key existed; if the key is
+    # missing for any reason the shipped config's gpgsign = true is back in
+    # charge, and signing with no key fails every commit -- with or without
+    # --identity, since teeup never deletes a key either way.
     key="$(identity_key personal)"
-    if grep -qE '^[[:space:]]*gpgsign[[:space:]]*=[[:space:]]*true' "$gdir/config" && [[ ! -f "$key" || ! -f "$key.pub" ]]; then
+    if [[ "$(git config --file "$gdir/config" --type=bool --get commit.gpgsign 2>/dev/null)" == "true" ]] && [[ ! -f "$key" || ! -f "$key.pub" ]]; then
       uninstall_note kept "Commit signing is on in $gdir/config but $key is missing, so git commit would fail. Turn signing off with: git config --file $(uninstall_q "$gdir/config") commit.gpgsign false"
     fi
   fi
 }
 
 # uninstall_identity
-# Only with --identity. The keys at teeup's own naming convention
-# (~/.ssh/id_ed25519_<identity>) and nothing else: a key the user's own
-# ~/.ssh/config named was theirs before teeup and stays. Each key's
-# passphrase is dropped from the login Keychain first, with the same flag
-# capabilities/ssh/configure stored it with. ~/.ssh/config went with the
-# other configs if it was pristine. git's identity file is generated and
+# Only with --identity. teeup never deletes an SSH key, with or without this
+# flag (2026-09-26 decision): a key at teeup's own naming convention
+# (~/.ssh/id_ed25519_<identity>) may be one teeup generated, one it adopted
+# because the user already had it there (capabilities/ssh/configure logs
+# "Already present" and changes nothing about it), or one restored from a
+# backup since -- teeup keeps no record telling those cases apart, and
+# guessing wrong destroys a private key nothing else may hold a copy of.
+# Every key found is named in the ledger instead, with the exact commands
+# that drop its Keychain passphrase and move it aside by hand; a symlink is
+# only named, never followed or touched. git's identity file is generated and
 # goes; ~/.config/git/local is the user's own and is moved aside, never
-# deleted.
+# deleted -- and left alone entirely when it is itself a symlink.
 uninstall_identity() {
-  local id key flag="--apple-use-keychain" major gdir backup
+  local id key flag="--apple-use-keychain" major gdir backup local_backup
+  local key_backup pub_backup cmd
   major="$(macos_major)"
   if [[ "$major" =~ ^[0-9]+$ && "$major" -lt 12 ]]; then flag="-K"; fi
   for id in personal work; do
     key="$HOME/.ssh/id_ed25519_$id"
-    [[ -e "$key" || -L "$key" || -e "$key.pub" || -L "$key.pub" ]] || continue
-    if [[ -f "$key" ]] && have ssh-add; then
-      run_cmd ssh-add -d "$flag" "$key" 2>/dev/null || log "The ssh agent did not hold $key; nothing to forget."
+    if [[ -L "$key" ]]; then
+      uninstall_note kept "$key is a symlink; teeup does not touch it. Remove it yourself if you mean to."
+      continue
     fi
-    uninstall_rm "$key" "SSH key $key" || true
-    uninstall_rm "$key.pub" "SSH key $key.pub" || true
+    [[ -e "$key" || -e "$key.pub" ]] || continue
+    cmd="ssh-add -d $flag $(uninstall_q "$key") 2>/dev/null"
+    if [[ -e "$key" ]]; then
+      key_backup="$(_backup_name "$key")"
+      cmd="$cmd; mv $(uninstall_q "$key") $(uninstall_q "$key_backup")"
+    fi
+    if [[ -e "$key.pub" ]]; then
+      pub_backup="$(_backup_name "$key.pub")"
+      cmd="$cmd; mv $(uninstall_q "$key.pub") $(uninstall_q "$pub_backup")"
+    fi
+    uninstall_note kept "$key: teeup never deletes an SSH key. Remove it yourself: $cmd"
   done
   gdir="$(user_config_dir)/git"
   _uninstall_generated "$gdir/identity" "your git identity ($gdir/identity)"
-  if [[ -e "$gdir/local" && ! -L "$gdir/local" ]]; then
+  if [[ -L "$gdir/local" ]]; then
+    uninstall_note kept "$gdir/local is a symlink; teeup does not move it."
+  elif [[ -e "$gdir/local" ]]; then
     if backup="$(backup_target "$gdir/local")"; then
       uninstall_note removed "$gdir/local (moved to $backup, since teeup never wrote it)"
     else
-      uninstall_note failed "$gdir/local: could not move it aside. Move it yourself with: mv $(uninstall_q "$gdir/local") $(uninstall_q "$gdir/local.old")"
+      # A fixed ".old" name would silently clobber (or be swallowed into) an
+      # earlier failed attempt's leftovers; _backup_name (lib/files.sh) is
+      # the same collision-checked naming backup_target itself would have
+      # used had it succeeded.
+      local_backup="$(_backup_name "$gdir/local")"
+      uninstall_note failed "$gdir/local: could not move it aside. Move it yourself with: mv $(uninstall_q "$gdir/local") $(uninstall_q "$local_backup")"
     fi
   fi
   uninstall_note kept "Public keys teeup uploaded to GitHub: they stay on your account. Delete them at https://github.com/settings/keys"
