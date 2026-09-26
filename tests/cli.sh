@@ -2356,6 +2356,21 @@ test_theme_set_without_a_name_opens_the_picker() {
   cleanup_test_env
 }
 
+# A pin added after the theme was set still gets its warning on a repeat set.
+test_theme_set_the_current_theme_still_warns_about_a_pin() {
+  setup
+  "$TEEUP" theme set catppuccin >/dev/null
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_THEME="nord"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  local out
+  out="$("$TEEUP" theme set catppuccin 2>&1)" || true
+  unset TEEUP_MACHINES_DIR
+  assert_contains "$out" "catppuccin is already the theme; nothing changed." || return 1
+  assert_contains "$out" "pins TEEUP_THEME=nord" || return 1
+  cleanup_test_env
+}
+
 test_theme_set_the_current_theme_says_nothing_changed() {
   setup
   "$TEEUP" theme set catppuccin >/dev/null
@@ -2482,6 +2497,7 @@ run_test "menu dry run prints the action" test_menu_dry_run_prints_the_action_in
 run_test "menu cancel inside a submenu goes back a level" test_menu_cancel_inside_a_submenu_goes_back_a_level
 run_test "theme set without a name opens the picker" test_theme_set_without_a_name_opens_the_picker
 run_test "theme set on the current theme says nothing changed" test_theme_set_the_current_theme_says_nothing_changed
+run_test "theme set the current theme still warns about a pin" test_theme_set_the_current_theme_still_warns_about_a_pin
 run_test "theme picker choosing the current theme says nothing changed" test_theme_picker_choosing_the_current_theme_says_nothing_changed
 run_test "migrate requires a known target" test_migrate_requires_a_known_target
 run_test "migrate legacy runs every step and closes with a real command" test_migrate_legacy_runs_every_step_and_closes_with_a_real_command

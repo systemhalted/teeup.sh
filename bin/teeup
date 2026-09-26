@@ -554,13 +554,16 @@ cmd_theme() {
       # Covers both the explicit name and a picker choice: the picker set $1
       # above and falls through to here. Nothing to render or record, so
       # this returns before theme_set touches anything.
+      # The pin warning comes either way: a machine file can pin another theme
+      # after this one was set, and that is the case a user fighting a pin
+      # hits when "nothing changed" is all they see.
       if [[ "$1" == "$(theme_current)" ]]; then
         log "$1 is already the theme; nothing changed."
-        return 0
+      else
+        theme_set "$1"
+        # Remembered, so the next ./bootstrap or teeup configure theme keeps it.
+        answers_set TEEUP_THEME "$1"
       fi
-      theme_set "$1"
-      # Remembered, so the next ./bootstrap or teeup configure theme keeps it.
-      answers_set TEEUP_THEME "$1"
       if pinned="$(machine_get TEEUP_THEME)" && [[ "${pinned:-$TEEUP_THEME_FALLBACK}" != "$1" ]]; then
         warn "$(machine_file) pins TEEUP_THEME=${pinned:-$TEEUP_THEME_FALLBACK}; the next ./bootstrap or teeup configure theme will switch back to it."
       fi
