@@ -222,6 +222,28 @@ tokyo-night light neovim_colorscheme tokyonight-day
 tokyo-night light vscode_theme Tokyo Night Light
 tokyo-night light vscode_extension enkia.tokyo-night
 tokyo-night light doom_theme doom-nord-light
+gruvbox dark background #282828
+gruvbox dark foreground #ebdbb2
+gruvbox dark accent #83a598
+gruvbox dark bat_theme gruvbox-dark
+gruvbox dark emacs_theme modus-vivendi
+gruvbox dark zed_theme Gruvbox Dark
+gruvbox dark zed_extension none
+gruvbox dark neovim_colorscheme gruvbox
+gruvbox dark vscode_theme Gruvbox Dark Medium
+gruvbox dark vscode_extension jdinhlife.gruvbox
+gruvbox dark doom_theme doom-gruvbox
+gruvbox light background #fbf1c7
+gruvbox light foreground #3c3836
+gruvbox light accent #076678
+gruvbox light bat_theme gruvbox-light
+gruvbox light emacs_theme modus-operandi-tinted
+gruvbox light zed_theme Gruvbox Light
+gruvbox light zed_extension none
+gruvbox light neovim_colorscheme gruvbox
+gruvbox light vscode_theme Gruvbox Light Medium
+gruvbox light vscode_extension jdinhlife.gruvbox
+gruvbox light doom_theme doom-gruvbox-light
 ANCHORS
 }
 
