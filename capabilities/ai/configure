@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Under DRY_RUN, no leaf recorded a done marker (mise_wrapper_write only
+# previews), so every child would show up "missing" here even when a real
+# run would finish clean -- and the repair line below would name the very
+# command already being previewed. Each leaf already printed its own preview
+# line; this script claims neither success nor incompleteness on a dry run.
+if [[ "$DRY_RUN" == "true" ]]; then
+  exit 0
+fi
 missing=""
 for child in ai-claude ai-codex ai-gemini ai-copilot ai-opencode; do
   if ! state_done check "cap-$child"; then missing="$missing $child"; fi
