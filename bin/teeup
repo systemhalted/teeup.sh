@@ -637,6 +637,22 @@ _config_key_known() {
   return 1
 }
 
+# _config_machine_edit_target -> the machine file to tell a user to edit.
+# machine_file() itself when it already exists, whichever of the two that
+# is; the personal overlay under TEEUP_CONFIG_DIR when neither exists yet.
+# machine_file()'s own fallback names the checkout's machines/<host>.conf,
+# which is not what R7.1 asked for: a user is told to edit their own
+# overlay, never the checkout, even before that overlay file exists.
+_config_machine_edit_target() {
+  local f
+  f="$(machine_file)"
+  if [[ -f "$f" ]]; then
+    printf '%s\n' "$f"
+  else
+    printf '%s/machines/%s.conf\n' "$TEEUP_CONFIG_DIR" "$(hostname -s 2>/dev/null || hostname)"
+  fi
+}
+
 # _config_edit_error <file> -> prints why <file> would be unsafe to keep as
 # the answers file, or nothing when it is fine. Two gates: every live line
 # must have the shape answers_set itself writes -- KEY="value" or a bare
@@ -765,7 +781,7 @@ cmd_config() {
       fi
       case "$key" in
         TEEUP_WORK_*)
-          die "$key is a work identity setting; work_get reads it from machines/<hostname>.conf only, never the answers file, so writing it here would change nothing (R7.1). Edit $(machine_file) instead (copy $TEEUP_PATH/machines/example.conf.sample for the shape)."
+          die "$key is a work identity setting; work_get reads it from machines/<hostname>.conf only, never the answers file, so writing it here would change nothing. Edit $(_config_machine_edit_target) instead (copy $TEEUP_PATH/machines/example.conf.sample for the shape)."
           ;;
       esac
       if [[ "$key" == "TEEUP_PACKAGE_MANAGER" ]] && state_done check "cap-package-manager"; then
