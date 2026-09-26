@@ -81,6 +81,22 @@ installed: each has a themed template that names the theme for the palette
 Catppuccin extension for Zed and VS Code) and a hook that tells a running
 editor to pick it up.
 
+### Terminals and file icons
+
+teeup's terminal is WezTerm, and the font teeup installs (JetBrainsMono Nerd
+Font, or whichever `teeup install font` chose) reaches WezTerm, Emacs, Zed,
+VS Code and Neovim. It does not reach Terminal.app or any other terminal you
+use: their fonts stay as you set them.
+
+That shows in `ls`, which the shell layer points at `eza --icons=auto`. In a
+terminal whose font is not a Nerd Font, some icons still appear -- macOS finds
+the older ones in the installed Nerd Font through font fallback -- but folders
+and most file types show as `?` boxes, because recent eza draws them with
+Material Design icons (code points U+F0000 and up) that Terminal.app does not
+take from a fallback font. Either work in WezTerm, or set the other
+terminal's font to the Nerd Font yourself. In Terminal.app that is
+Settings > Profiles > Text > Font > "JetBrainsMono Nerd Font".
+
 Per-machine overrides live in `~/.config/teeup/machines/<hostname>.conf` -- your own file, never in this checkout, so `git pull` never touches it -- sourced after your answers and winning over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs. (`machines/<hostname>.conf` in the checkout itself still works, checked second, for anyone who keeps a fork instead.) It is also the only place a work identity is configured -- teeup's own git/ssh/GitHub identity is a single one, `TEEUP_NAME`/`TEEUP_EMAIL` from the wizard, full stop; a machine that also needs a work identity sets `TEEUP_WORK_EMAIL` here (plus `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host, or `TEEUP_WORK_GH_ACCOUNT` when work is a second account on github.com), which gives that machine a second SSH key uploaded to that identity's own GitHub host and account. See `machines/example.conf.sample`.
 
 ### Lazy capabilities
