@@ -637,6 +637,12 @@ Happy contributing! 🚀
     `teeup dev check <name>`, which runs the metadata lint, the menu lint,
     shellcheck and that capability's suite -- the same four things CI runs.
     `teeup dev check` with no name runs the whole suite, which takes minutes.
+    Its exit status is 0 when everything passed, 1 when a check ran and found
+    a problem, and 2 when a check could not run at all -- shellcheck not
+    installed, say, which prints "could not check: shellcheck" and never
+    "everything passed", because a check that could not run is not a pass.
+    It refuses to run under `DRY_RUN=true`, exiting 1: it runs the real test
+    suites, and a dry run of those would not prove anything.
 30. A capability may ship an executable `doctor` beside its `install` and
     `configure`. It runs exactly like them (`bash -eu`, `lib/all.sh` loaded,
     answers sourced, `TEEUP_CAP` and `TEEUP_CAP_DIR` exported) and reports
