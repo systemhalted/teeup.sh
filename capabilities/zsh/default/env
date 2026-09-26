@@ -137,6 +137,11 @@ path_prepend "$HOME/.local/bin"
 # capabilities/teeup-runtime/doctor).
 export GOPATH="${GOPATH:-$HOME/Development/GoWorkspace}"
 path_append "$GOPATH/bin"
+# Doom Emacs's CLI (doom sync, doom doctor, doom upgrade) lives in its own
+# checkout, which the emacs capability clones into ~/.config/emacs for the
+# doom flavor. The starter and Spacemacs have no bin/ there, so this adds
+# nothing on their machines. Same rule as GOPATH: above the shims lines.
+path_append "${XDG_CONFIG_HOME:-$HOME/.config}/emacs/bin"
 # mise's own shims let shells without `mise activate` find mise tools. mise
 # itself resolves its data root from MISE_DATA_DIR, then XDG_DATA_HOME, then
 # ~/.local/share (in that order), so this has to match or the shims directory

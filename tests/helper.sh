@@ -40,6 +40,11 @@ setup_test_env() {
   # /opt/homebrew, past the TEEUP_PKG_PREFIX sandbox above. A test that wants
   # one sets it itself.
   unset HOMEBREW_PREFIX
+  # teeup's own env layer (capabilities/zsh/default/env) exports these only
+  # when they are unset, so on a Mac running teeup they arrive already set
+  # to the user's values and a test of that layer sees those instead of the
+  # defaults it checks (GOPATH on a real Mac, 2026-09-26).
+  unset GOPATH VISUAL SUDO_EDITOR BAT_THEME LESS SDKMAN_EL_DIR TRUSTRAIL_EL_DIR WORDWISE_EL_DIR
 }
 
 cleanup_test_env() {

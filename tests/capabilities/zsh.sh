@@ -806,6 +806,18 @@ test_env_layer_carries_the_cargo_and_go_paths() {
   cleanup_test_env
 }
 
+# Doom's CLI is not on PATH otherwise: `doom sync` said "command not found"
+# right after teeup installed Doom on a real Mac (2026-09-26).
+test_env_layer_puts_the_doom_cli_on_path() {
+  setup
+  local env_file="$TEEUP_PATH/capabilities/zsh/default/env"
+  mkdir -p "$TEST_HOME/.config/emacs/bin"
+  local out
+  out="$(HOME="$TEST_HOME" PATH="/usr/bin:/bin" bash -c 'set -eu; unset XDG_CONFIG_HOME; . "$1"; printf "%s\n" "$PATH"' _ "$env_file")"
+  assert_contains "$out" "$TEST_HOME/.config/emacs/bin" "doom sync and doom doctor must resolve" || return 1
+  cleanup_test_env
+}
+
 # ~/.local/bin must still win over ~/.cargo/bin: teeup's own wrappers live
 # there, and a cargo-installed binary of the same name must not shadow one.
 test_env_layer_keeps_local_bin_ahead_of_cargo() {
@@ -921,6 +933,7 @@ run_test "doctor reports an unreadable home file, not a replaceable one" test_do
 run_test "doctor says dscl could not answer when it fails" test_doctor_says_dscl_could_not_answer_when_it_fails
 run_test "doctor says dscl could not answer when it is blank" test_doctor_says_dscl_could_not_answer_when_it_is_blank
 run_test "env layer carries the cargo and go paths" test_env_layer_carries_the_cargo_and_go_paths
+run_test "env layer puts the doom cli on path" test_env_layer_puts_the_doom_cli_on_path
 run_test "env layer keeps local bin ahead of cargo" test_env_layer_keeps_local_bin_ahead_of_cargo
 run_test "env layer keeps the shims last" test_env_layer_keeps_the_shims_last
 run_test "env layer finds emacs packages across two roots" test_env_layer_finds_emacs_packages_across_two_roots
