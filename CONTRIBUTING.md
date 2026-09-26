@@ -564,9 +564,9 @@ Happy contributing! 🚀
     with `-C /`, so a project's `mise.toml` in the current directory cannot
     shadow the global file. Check registry names with `mise registry`. Give
     each AI command its own `tier=lazy` capability with one `provides=` token;
-    reserve `ai` for the
-    explicit aggregate. A wrapper's first install must print progress, append
-    to `$TEEUP_STATE_DIR/logs/lazy.log`, and remain retryable after interruption.
+    reserve `ai` for the explicit aggregate. A wrapper's first install must
+    print progress, append to `$TEEUP_STATE_DIR/logs/lazy.log`, and remain
+    retryable after interruption.
     Language runtimes use `teeup install dev-env <lang>` (`dev_env_install`),
     never a capability or a shim.
 20. Two test hooks join `TEEUP_TEST_MISSING`: `TEEUP_TEST_TTY=yes|no`
