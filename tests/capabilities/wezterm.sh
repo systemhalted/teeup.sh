@@ -4,9 +4,11 @@ source "$(dirname "$0")/../helper.sh"
 
 # Find lua and luac before the test harness narrows PATH. On macOS, homebrew
 # installs these to /opt/homebrew/bin or /usr/local/bin, which won't be in
-# the restricted PATH that setup_test_env() establishes.
-WEZTERM_LUAC="$(command -v luac || command -v luac5.4 || true)"
-WEZTERM_LUA="$(command -v lua || command -v lua5.4 || command -v lua5.3 || true)"
+# the restricted PATH that setup_test_env() establishes. Only a real Lua
+# counts (real_lua in helper.sh): CI installs one, so a missing one fails
+# these checks there and is reported as skipped anywhere else.
+WEZTERM_LUAC="$(real_lua luac luac5.4)"
+WEZTERM_LUA="$(real_lua lua lua5.4 lua5.3)"
 
 setup() {
   setup_test_env
@@ -272,7 +274,7 @@ test_local_config_passthrough_overrides_a_teeup_default() {
   if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   local out
   out="$(_wezterm_config_keys '{ config = { scrollback_lines = 42, window_decorations = "NONE" } }' scrollback_lines window_decorations enable_scroll_bar)"
@@ -287,7 +289,7 @@ test_teeup_defaults_stand_without_a_passthrough_table() {
   if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   local out
   out="$(_wezterm_config_keys '{}' scrollback_lines window_decorations)"
@@ -303,7 +305,7 @@ test_local_config_passthrough_ignores_a_non_table() {
   if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   local out
   out="$(_wezterm_config_keys '{ config = "oops" }' scrollback_lines)"
@@ -325,7 +327,7 @@ test_local_lua_absent_still_builds_a_working_config() {
   if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   rm -f "$WEZ/local.lua"
   local fake_dir driver out
@@ -356,7 +358,7 @@ test_local_lua_returning_a_non_table_still_builds_a_working_config() {
   if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   printf 'return "not a table"\n' > "$WEZ/local.lua"
   local fake_dir driver out
@@ -381,11 +383,12 @@ DRIVER
 test_lua_files_parse() {
   setup
   # This is the only gate on three shipped Lua files and the rendered scheme,
-  # so a missing luac is a failure, not a skip. CI installs lua5.4 / lua.
+  # so a missing luac fails on CI, which installs lua5.4 / lua, and is a
+  # reported skip, not a pass, anywhere else.
   if [[ -z "$WEZTERM_LUAC" ]]; then
     echo "luac is not installed: install lua5.4 (apt) or lua (brew) to run this suite"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   DRY_RUN=false "$TEEUP" configure wezterm >/dev/null
   DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
@@ -423,7 +426,7 @@ test_teeup_path_and_state_dir_survive_a_space() {
   if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   local lua_bin="$WEZTERM_LUA"
 
@@ -590,7 +593,7 @@ test_teeup_path_and_state_dir_survive_special_bytes() {
   if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
     cleanup_test_env
-    return 1
+    return "$(missing_tool_status)"
   fi
   local lua_bin="$WEZTERM_LUA"
 

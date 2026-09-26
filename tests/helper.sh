@@ -10,6 +10,7 @@ RESET='\033[0m'
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
+TESTS_SKIPPED=0
 FAILED_TESTS=()
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,6 +46,73 @@ setup_test_env() {
   # to the user's values and a test of that layer sees those instead of the
   # defaults it checks (GOPATH on a real Mac, 2026-09-26).
   unset GOPATH VISUAL SUDO_EDITOR BAT_THEME LESS SDKMAN_EL_DIR TRUSTRAIL_EL_DIR WORDWISE_EL_DIR
+  # app_installed and emacs configure fall back to the real /Applications when
+  # TEEUP_APPS_DIR is unset, and a Mac running teeup has Emacs.app there,
+  # which outranks the PATH emacs every emacs test mocks. An empty directory
+  # of the test's own, not ~/Applications, so the tests that tell the two
+  # folders apart still can; a test that sets the hook itself still wins.
+  export TEEUP_APPS_DIR="$TEST_HOME/root/Applications"
+  # The zsh env layer puts /opt/homebrew/bin (or /usr/local/bin) first on
+  # PATH whenever a brew is there, and on a Mac running teeup its emacsclient
+  # then became the editor a test expected to be vim. The same empty root
+  # relocates those prefixes; the tests that stage a prefix pass their own.
+  export TEEUP_TEST_PREFIX_ROOT="$TEST_HOME/root"
+  # The rest of what a teeup shell exports, from that layer, the theme env
+  # and the tools it activates. Each steers code under test off $TEST_HOME:
+  # EDITOR decides the editor the env layer picks, TEEUP_APPEARANCE is taken
+  # over asking `defaults` (so a light-mode Mac failed the dark-mode test),
+  # XDG_DATA_HOME and MISE_DATA_DIR name the mise shims directory put on
+  # PATH, and ZDOTDIR is where zsh configure writes and compinit dumps.
+  unset EDITOR ALTERNATE_EDITOR MANPAGER MANROFFOPT ZDOTDIR XDG_DATA_HOME XDG_CACHE_HOME
+  unset TEEUP_APPEARANCE TEEUP_THEME_MODE TEEUP_THEME_ACCENT
+  local var
+  for var in $(compgen -e); do
+    case "$var" in MISE_*|__MISE_*|STARSHIP_*) unset "$var" ;; esac
+  done
+}
+
+# real_lua <name...> -> the first of these commands on PATH that really is
+# Lua; prints nothing when none is. A suite calls it at the top, before
+# setup_test_env narrows PATH (Homebrew's lua lives outside the narrowed
+# one), so on a Mac running teeup it walks the user's PATH, and a bare
+# `command -v lua` can land on something that only looks like Lua. teeup's
+# lazy shims are never run (one would start `teeup lazy-run`), mise's shims
+# are skipped because they look the tool up under the user's $HOME, which
+# every test replaces, and whatever is left must answer -v with "Lua".
+real_lua() {
+  local name rest dir candidate
+  for name in "$@"; do
+    rest="$PATH:"
+    while [[ -n "$rest" ]]; do
+      dir="${rest%%:*}"
+      rest="${rest#*:}"
+      [[ -n "$dir" ]] || continue
+      candidate="${dir%/}/$name"
+      [[ -f "$candidate" && -x "$candidate" ]] || continue
+      case "${dir%/}" in */mise/shims) continue ;; esac
+      if [[ -L "$candidate" ]]; then
+        case "$(readlink "$candidate")" in mise|*/mise) continue ;; esac
+      fi
+      sed -n 2p "$candidate" 2>/dev/null | grep -q '^# teeup lazy shim' && continue
+      case "$("$candidate" -v 2>&1 </dev/null)" in
+        Lua*) printf '%s\n' "$candidate"; return 0 ;;
+      esac
+    done
+  done
+  return 0
+}
+
+# A test returns TEST_SKIPPED when a tool its checks need is missing and
+# the machine is not CI; run_test reports it as SKIP, with the reason the
+# test printed, rather than passing or failing it.
+TEST_SKIPPED=77
+
+# missing_tool_status -> the status for such a test to return: 1 on CI,
+# whose workflow installs every one of these tools, so a broken install step
+# still fails the run; TEST_SKIPPED anywhere else, so a Mac without Homebrew's
+# lua says the check did not run instead of failing it.
+missing_tool_status() {
+  if [[ "${CI:-}" == "true" ]]; then echo 1; else echo "$TEST_SKIPPED"; fi
 }
 
 cleanup_test_env() {
@@ -196,6 +264,12 @@ run_test() {
   if [[ $result -eq 0 ]]; then
     echo -e "${GREEN}PASS${RESET}"
     TESTS_PASSED=$((TESTS_PASSED + 1))
+  elif [[ $result -eq $TEST_SKIPPED ]]; then
+    # Shown, unlike a passing test's output: the reason is the only record
+    # that the check did not run.
+    echo "SKIP"
+    [[ -n "$output" ]] && echo "$output"
+    TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
   else
     echo -e "${RED}FAIL${RESET}"
     [[ -n "$output" ]] && echo "$output"
@@ -231,7 +305,11 @@ print_summary() {
     FAILED_TESTS+=("unregistered: $orphans")
   fi
   echo ""
-  echo "Summary: $TESTS_PASSED/$TESTS_RUN passed"
+  if [[ $TESTS_SKIPPED -gt 0 ]]; then
+    echo "Summary: $TESTS_PASSED/$TESTS_RUN passed, $TESTS_SKIPPED skipped"
+  else
+    echo "Summary: $TESTS_PASSED/$TESTS_RUN passed"
+  fi
   if [[ $TESTS_FAILED -gt 0 ]]; then
     echo -e "${RED}Failed: ${FAILED_TESTS[*]}${RESET}"
   fi
