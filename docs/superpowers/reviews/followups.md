@@ -9,6 +9,7 @@ here and done once the current phase of work is finished.
 
 | Raised on | Finding | Status |
 | --- | --- | --- |
+| Migrate reinstall fix (local Codex P2) | A `DRY_RUN=true teeup migrate legacy` does not preview the new reinstall step (owners are collected only for real moves); track owners separately and preview each configure | Open |
 | PR #41 (Codex P2) | dev check lints the personal menu against shipped parent ids only; build and validate the merged cache so cross-file duplicate labels and action/children conflicts are caught | Open |
 | PR #41 (Codex P2) | `lib/menu.awk` drops an empty row object (`"ghost": {}`), so an invalid menu passes `menu_check`; emit an id record or reject it | Open |
 | PR #40 (Codex P2) | README "Terminals and file icons" says teeup installs the Nerd Font; on MacPorts `cask_install` skips the font cask and configure only records the family, so qualify the claim for MacPorts | Open |
