@@ -374,6 +374,30 @@ test_dev_check_lints_the_users_menu_file_separately_without_failing_the_repo_che
   cleanup_test_env
 }
 
+# M4: the personal-menu lint must not report a false "no parent row" for the
+# README's own documented case -- a user row appended under a submenu that
+# is only defined in the SHIPPED file (e.g. install.editors.helix under
+# install.editors). Linting the user file alone can never see that parent,
+# so it has to be checked against the merged view; a row whose parent truly
+# does not exist in either file must still be reported.
+test_dev_check_lints_the_users_menu_against_the_merged_view() {
+  setup
+  seed_check_fixture
+  printf '{"install": {"label": "Install"}, "install.other": {"label": "Other", "action": "true"}}\n' \
+    > "$TEEUP_MENU_FILE"
+  local user_menu
+  user_menu="$(menu_user_file)"
+  mkdir -p "$(dirname "$user_menu")"
+  printf '{"install.helix": {"label": "Helix", "action": "true"}, "bogus.child": {"label": "Orphan", "action": "true"}}\n' \
+    > "$user_menu"
+  local rc=0 out
+  out="$(dev_check 2>&1)" || rc=$?
+  assert_success "$rc" "$out" "a broken personal menu must not fail the repo result" || return 1
+  assert_not_contains "$out" "install.helix has no parent row install" "a user row under a shipped submenu is not an orphan" || return 1
+  assert_contains "$out" "bogus.child has no parent row bogus" "a genuinely orphaned user row must still be reported" || return 1
+  cleanup_test_env
+}
+
 # R9.5: the first `teeup <word>` of a menu row has to be a real dispatch arm.
 test_dev_check_reports_an_unknown_verb_in_a_menu_row() {
   setup
@@ -502,6 +526,7 @@ run_test "dev check fails when the suite fails" test_dev_check_fails_when_the_su
 run_test "dev check refuses under dry run" test_dev_check_refuses_under_dry_run
 run_test "dev check runs the suite with a clean environment" test_dev_check_runs_the_suite_with_a_clean_environment
 run_test "dev check lints the user's menu file separately" test_dev_check_lints_the_users_menu_file_separately_without_failing_the_repo_check
+run_test "dev check lints the user's menu against the merged view" test_dev_check_lints_the_users_menu_against_the_merged_view
 run_test "dev check reports an unknown verb in a menu row" test_dev_check_reports_an_unknown_verb_in_a_menu_row
 run_test "dev check reports an unknown capability in a menu row" test_dev_check_reports_an_unknown_capability_in_a_menu_row
 run_test "dev check allows install dev-env and font" test_dev_check_allows_install_dev_env_and_font_without_a_capability

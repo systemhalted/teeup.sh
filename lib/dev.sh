@@ -199,21 +199,37 @@ _dev_check_menu_rows() {
   [[ $bad -eq 0 ]]
 }
 
-# _dev_check_menu_file <file> <label> -> prints problems (if any); 0 clean.
-# menu_check's structural lint and the R9.5 row-content lint both run on
-# whatever file is passed -- shipped or the user's -- so a mistake in either
-# is visible. It is the caller's job to decide whether a bad result here
-# changes dev_check's own exit status (R9.3: a broken shipped menu fails the
-# repo check, a broken personal one is only reported).
+# _dev_check_menu_file <file> <label> [<extra-parent-ids-file>] -> prints
+# problems (if any); 0 clean. menu_check's structural lint and the R9.5
+# row-content lint both run on whatever file is passed -- shipped or the
+# user's -- so a mistake in either is visible. It is the caller's job to
+# decide whether a bad result here changes dev_check's own exit status
+# (R9.3: a broken shipped menu fails the repo check, a broken personal one
+# is only reported).
+#
+# <extra-parent-ids-file>, when given, is parsed too and its ids count as
+# known parents for the "no parent row" check (M4): the personal menu.json
+# is linted on its own, so without this a row the README itself tells users
+# to append under a shipped submenu (install.editors.helix under
+# install.editors) reads as an orphan just because that submenu lives only
+# in the shipped file. A row whose parent is missing from BOTH files is
+# still reported.
 _dev_check_menu_file() {
-  local file="$1" label="$2" cache out1 out2 rc=0
+  local file="$1" label="$2" extra_file="${3:-}" cache extra_cache extra_ids="" out1 out2 rc=0
   cache="$(mktemp)"
   if ! menu_parse "$file" > "$cache"; then
     rm -f "$cache"
     err "Could not read $label."
     return 1
   fi
-  out1="$(menu_check "$cache")" || rc=1
+  if [[ -n "$extra_file" && -f "$extra_file" ]]; then
+    extra_cache="$(mktemp)"
+    if menu_parse "$extra_file" > "$extra_cache"; then
+      extra_ids="$(menu_ids "$extra_cache")"
+    fi
+    rm -f "$extra_cache"
+  fi
+  out1="$(menu_check "$cache" "$extra_ids")" || rc=1
   out2="$(_dev_check_menu_rows "$cache")" || rc=1
   rm -f "$cache"
   if [[ -n "$out1" ]]; then printf '%s\n' "$out1"; fi
@@ -283,7 +299,7 @@ dev_check() {
   user_menu="$(menu_user_file)"
   if [[ -f "$user_menu" ]]; then
     log "-- $user_menu (yours; does not affect this result) --"
-    _dev_check_menu_file "$user_menu" "$user_menu" || true
+    _dev_check_menu_file "$user_menu" "$user_menu" "$TEEUP_MENU_FILE" || true
   fi
 
   log "== shellcheck =="

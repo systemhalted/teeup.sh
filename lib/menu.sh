@@ -259,7 +259,7 @@ _menu_check_siblings() {
 }
 
 _menu_check_body() {
-  local cache="$1" id parent ids
+  local cache="$1" extra_ids="${2:-}" id parent ids
   ids="$(menu_ids "$cache")"
   _menu_check_siblings "$cache" ""
   for id in $ids; do
@@ -270,7 +270,8 @@ _menu_check_body() {
       printf 'menu: %s has the reserved label ".."; the menu uses it to mean "go back"\n' "$id"
     fi
     parent="${id%.*}"
-    if [[ "$parent" != "$id" ]] && ! printf '%s\n' "$ids" | grep -qxF "$parent"; then
+    if [[ "$parent" != "$id" ]] && ! printf '%s\n' "$ids" | grep -qxF "$parent" \
+        && ! printf '%s\n' "$extra_ids" | grep -qxF "$parent"; then
       printf 'menu: %s has no parent row %s\n' "$id" "$parent"
     fi
     if [[ -n "$(menu_field "$cache" "$id" action)" && -n "$(menu_children "$cache" "$id")" ]]; then
@@ -284,13 +285,19 @@ _menu_check_body() {
   return 0
 }
 
-# menu_check <cache> -> one problem per line on stdout; 0 when clean.
-# Two siblings with the same label are a real defect: the picker hands back a
-# label, which is mapped to an id by position, so the second of two identical
-# labels can never be chosen.
+# menu_check <cache> [<extra-ids>] -> one problem per line on stdout; 0 when
+# clean. Two siblings with the same label are a real defect: the picker
+# hands back a label, which is mapped to an id by position, so the second of
+# two identical labels can never be chosen.
+#
+# <extra-ids>, a newline-separated list, counts as known parents on top of
+# whatever <cache> itself contains, without adding those ids to the report:
+# a personal menu.json checked alone has no way to see that its own row's
+# parent lives in the shipped file (M4), so dev_check passes the shipped
+# ids here when linting the user's file.
 menu_check() {
   local out
-  out="$(_menu_check_body "$1")"
+  out="$(_menu_check_body "$1" "${2:-}")"
   if [[ -n "$out" ]]; then
     printf '%s\n' "$out"
     return 1
