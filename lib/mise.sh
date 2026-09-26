@@ -227,7 +227,8 @@ mise_tool_unuse() {
   if [[ "$(mise_global_state "$tool")" == "absent" ]]; then
     return 0
   fi
-  if ! have mise; then
+  # A dry run only previews the unuse through run_cmd, which needs no mise.
+  if [[ "$DRY_RUN" != "true" ]] && ! have mise; then
     warn "mise is not on PATH, so $tool is still requested in the global mise config. Once mise is back, run: mise unuse -g $tool"
     return 1
   fi
