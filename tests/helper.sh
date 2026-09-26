@@ -45,6 +45,12 @@ setup_test_env() {
   # to the user's values and a test of that layer sees those instead of the
   # defaults it checks (GOPATH on a real Mac, 2026-09-26).
   unset GOPATH VISUAL SUDO_EDITOR BAT_THEME LESS SDKMAN_EL_DIR TRUSTRAIL_EL_DIR WORDWISE_EL_DIR
+  # app_installed and emacs configure fall back to the real /Applications when
+  # TEEUP_APPS_DIR is unset, and a Mac running teeup has Emacs.app there,
+  # which outranks the PATH emacs every emacs test mocks. An empty directory
+  # of the test's own, not ~/Applications, so the tests that tell the two
+  # folders apart still can; a test that sets the hook itself still wins.
+  export TEEUP_APPS_DIR="$TEST_HOME/root/Applications"
 }
 
 cleanup_test_env() {
