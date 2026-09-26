@@ -91,6 +91,56 @@ test_tool_unuse_leaves_an_unrequested_tool_alone() {
   cleanup_test_env
 }
 
+# Codex on #46: with mise off PATH a tool the config file still requests must
+# fail the remove, or its marker clears while the request stays.
+test_tool_unuse_fails_without_mise_while_the_config_requests_the_tool() {
+  setup
+  # TEEUP_TEST_MISSING hides mise from `have`; the failing mock stands in for
+  # the host's own mise, which mise_global_state would otherwise run.
+  export TEEUP_TEST_MISSING=mise
+  printf '#!/bin/sh\nexit 127\n' > "$MOCK_BIN/mise"
+  chmod +x "$MOCK_BIN/mise"
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/mise-config.toml"
+  printf '[tools]\nclaude = "latest"\n' > "$MISE_GLOBAL_CONFIG_FILE"
+  local out rc=0
+  out="$(mise_tool_unuse claude 2>&1)" || rc=$?
+  unset MISE_GLOBAL_CONFIG_FILE TEEUP_TEST_MISSING
+  assert_equals "1" "$rc" "the remove must stay retryable" || return 1
+  assert_contains "$out" "mise unuse -g claude" "names the recovery command" || return 1
+  cleanup_test_env
+}
+
+test_tool_unuse_without_mise_still_previews_in_a_dry_run() {
+  setup
+  export TEEUP_TEST_MISSING=mise
+  printf '#!/bin/sh\nexit 127\n' > "$MOCK_BIN/mise"
+  chmod +x "$MOCK_BIN/mise"
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/mise-config.toml"
+  printf '[tools]\nclaude = "latest"\n' > "$MISE_GLOBAL_CONFIG_FILE"
+  local out rc=0
+  out="$(DRY_RUN=true mise_tool_unuse claude 2>&1)" || rc=$?
+  unset MISE_GLOBAL_CONFIG_FILE TEEUP_TEST_MISSING
+  assert_equals "0" "$rc" "a dry run needs no mise" || return 1
+  assert_contains "$out" "unuse -g claude" "the preview names the command" || return 1
+  cleanup_test_env
+}
+
+test_tool_unuse_without_mise_passes_a_tool_nothing_requests() {
+  setup
+  # TEEUP_TEST_MISSING hides mise from `have`; the failing mock stands in for
+  # the host's own mise, which mise_global_state would otherwise run.
+  export TEEUP_TEST_MISSING=mise
+  printf '#!/bin/sh\nexit 127\n' > "$MOCK_BIN/mise"
+  chmod +x "$MOCK_BIN/mise"
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/mise-config.toml"
+  printf '[tools]\nnode = "22"\n' > "$MISE_GLOBAL_CONFIG_FILE"
+  local rc=0
+  mise_tool_unuse claude >/dev/null 2>&1 || rc=$?
+  unset MISE_GLOBAL_CONFIG_FILE TEEUP_TEST_MISSING
+  assert_equals "0" "$rc" "nothing to drop is not a failure" || return 1
+  cleanup_test_env
+}
+
 test_tool_unuse_changes_nothing_in_a_dry_run() {
   setup
   printf 'claude\n' > "$TEST_HOME/mise-tools"
@@ -500,7 +550,7 @@ EOF2
   "$TEST_HOME/.local/bin/claude" --version >/dev/null
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / install claude" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "use -g" || return 1
-  unset MISE_GLOBAL_CONFIG_FILE
+  unset MISE_GLOBAL_CONFIG_FILE TEEUP_TEST_MISSING
   cleanup_test_env
 }
 
@@ -704,6 +754,9 @@ run_test "tool unuse drops a requested tool" test_tool_unuse_drops_a_requested_t
 run_test "tool unuse leaves an unrequested tool alone" test_tool_unuse_leaves_an_unrequested_tool_alone
 run_test "tool unuse changes nothing in a dry run" test_tool_unuse_changes_nothing_in_a_dry_run
 run_test "tool unuse reports a failed unuse" test_tool_unuse_reports_a_failed_unuse
+run_test "tool unuse fails without mise while the config requests the tool" test_tool_unuse_fails_without_mise_while_the_config_requests_the_tool
+run_test "tool unuse without mise passes a tool nothing requests" test_tool_unuse_without_mise_passes_a_tool_nothing_requests
+run_test "tool unuse without mise still previews in a dry run" test_tool_unuse_without_mise_still_previews_in_a_dry_run
 run_test "global state is not fooled by a project config" test_global_state_is_not_fooled_by_a_project_config
 run_test "global state falls back to the config file" test_global_state_falls_back_to_the_config_file
 run_test "global state fallback honours MISE_GLOBAL_CONFIG_FILE" test_global_state_fallback_honours_mise_global_config_file

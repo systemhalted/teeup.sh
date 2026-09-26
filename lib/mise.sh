@@ -219,11 +219,18 @@ mise_tool_unuse() {
     err "mise_tool_unuse: '$tool' is not a plain tool name"
     return 1
   fi
-  if ! have mise; then
-    return 0
-  fi
+  # mise_global_state falls back to reading the config file when mise itself
+  # cannot answer, so a tool still requested there is found even with mise
+  # off PATH. Reporting success then would clear the removal marker while the
+  # request stays, and the next `teeup update` with mise back would restore
+  # the tool with no way to retry the remove (Codex on #46).
   if [[ "$(mise_global_state "$tool")" == "absent" ]]; then
     return 0
+  fi
+  # A dry run only previews the unuse through run_cmd, which needs no mise.
+  if [[ "$DRY_RUN" != "true" ]] && ! have mise; then
+    warn "mise is not on PATH, so $tool is still requested in the global mise config. Once mise is back, run: mise unuse -g $tool"
+    return 1
   fi
   if ! run_cmd mise -C / unuse -g "$tool"; then
     warn "Could not remove $tool from the global mise config. Run: mise unuse -g $tool"
