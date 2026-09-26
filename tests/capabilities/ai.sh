@@ -184,9 +184,49 @@ test_ai_dry_run_writes_nothing_and_claims_nothing() {
   out="$(DRY_RUN=true "$TEEUP" install ai 2>&1)"
   assert_contains "$out" "Would write $BIN/claude" || return 1
   assert_not_contains "$out" "AI bundle ready" || return 1
+  # No leaf records a done marker under DRY_RUN (mise_wrapper_write only
+  # previews), so a naive incomplete check would call every leaf "missing"
+  # and tell the user to run the very command they are previewing (I1). The
+  # aggregate configure must claim neither success nor incompleteness here.
+  assert_not_contains "$out" "bundle is incomplete" || return 1
   for command in $AI_COMMANDS; do [[ ! -e "$BIN/$command" ]] || { echo "dry run wrote $command"; return 1; }; done
   for leaf in $AI_LEAVES; do "$TEEUP" has "$leaf" && { echo "dry run marked $leaf"; return 1; }; done
   [[ ! -e "$TEST_HOME/.local/state/teeup/logs/lazy.log" ]] || { echo "dry run wrote the lazy log"; return 1; }
+  cleanup_test_env
+}
+
+# I1 regression: a real (non-dry) configure of the aggregate must tell the
+# truth about a leaf whose done marker is gone (an interrupted install, or
+# one undone by hand), and the repair line it prints must actually repair it.
+test_ai_configure_warns_when_a_leaf_is_incomplete_then_repairs() {
+  setup
+  DRY_RUN=false "$TEEUP" install ai >/dev/null
+  rm -f "$TEST_HOME/.local/state/teeup/done/cap-ai-claude"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ai 2>&1)"
+  assert_contains "$out" "The ai bundle is incomplete (ai-claude). Repair it with: teeup install ai" || return 1
+  DRY_RUN=false "$TEEUP" install ai >/dev/null
+  out="$(DRY_RUN=false "$TEEUP" configure ai 2>&1)"
+  assert_not_contains "$out" "bundle is incomplete" || return 1
+  assert_contains "$out" "AI bundle ready: claude, codex, gemini, copilot and opencode." || return 1
+  cleanup_test_env
+}
+
+# I2 regression: a wrapper that cannot be deleted (its directory made
+# read-only here, standing in for a permissions problem on a real machine)
+# must fail teeup remove ai outright, name itself in the failure, and leave
+# the aggregate marked installed -- a retry has to see "ai" as still there to
+# remove, not silently already gone.
+test_aggregate_remove_fails_when_a_wrapper_will_not_delete() {
+  setup
+  DRY_RUN=false "$TEEUP" install ai >/dev/null
+  chmod 0555 "$BIN"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" remove ai 2>&1)" || rc=$?
+  chmod 0755 "$BIN"
+  assert_failure "$rc" "a wrapper left behind must fail the removal" || return 1
+  assert_contains "$out" "Could not finish removing:" || return 1
+  "$TEEUP" has ai || { echo "the ai marker must remain after a failed removal"; return 1; }
   cleanup_test_env
 }
 
@@ -201,4 +241,6 @@ run_test "leaf configure preserves a foreign command" test_leaf_configure_preser
 run_test "leaf remove touches only its wrapper" test_leaf_remove_touches_only_its_wrapper
 run_test "aggregate remove removes all leaf wrappers and state" test_aggregate_remove_removes_all_leaf_wrappers_and_state
 run_test "ai dry run writes nothing and claims nothing" test_ai_dry_run_writes_nothing_and_claims_nothing
+run_test "ai configure warns when a leaf is incomplete then repairs" test_ai_configure_warns_when_a_leaf_is_incomplete_then_repairs
+run_test "aggregate remove fails when a wrapper will not delete" test_aggregate_remove_fails_when_a_wrapper_will_not_delete
 print_summary
