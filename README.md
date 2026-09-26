@@ -136,6 +136,33 @@ installed: each has a themed template that names the theme for the palette
 Catppuccin extension for Zed and VS Code) and a hook that tells a running
 editor to pick it up.
 
+### Themes
+
+Every theme is a dark and a light palette; apps follow the macOS appearance
+between the two. `teeup theme list` shows what is available and
+`teeup theme set <name>` switches every app at once. Each palette also names
+the theme each tool should load:
+
+| Theme | Palettes | bat | Emacs | Zed | Neovim | VS Code |
+|---|---|---|---|---|---|---|
+| `catppuccin` | Mocha, Latte | `OneHalfDark`, `OneHalfLight` | `modus-vivendi`, `modus-operandi` | Catppuccin Mocha, Latte (extension `catppuccin`) | `catppuccin-mocha`, `catppuccin-latte` | Catppuccin Mocha, Latte (`Catppuccin.catppuccin-vsc`) |
+
+- **Emacs** gets a theme built into Emacs, because the starter configuration
+  installs no packages; Doom and Spacemacs keep the theme their own
+  configuration picks.
+- **Zed** installs a theme's extension the next time it starts; **VS Code**
+  gets its extension through the `code` command. A theme Zed ships needs no
+  extension.
+- **Neovim** fetches the colorscheme's plugin through lazy.nvim on its next
+  start.
+
+A theme of your own goes in `~/.config/teeup/themes/<name>/` as `dark.toml`
+and `light.toml`, and wins over a shipped theme of the same name. Copy a
+shipped theme and change the values: every key must stay, each value is a
+colour (`#rrggbb`) or a plain name, and the name is lower-case letters, digits
+and dashes. `tests/lib/themes.sh` renders every shipped theme through every
+template; a theme added to `themes/` needs a row in the table above.
+
 ### Terminals and file icons
 
 teeup's terminal is WezTerm, and the font teeup installs (JetBrainsMono Nerd
