@@ -20,8 +20,13 @@ menu_parse() { awk -f "$TEEUP_PATH/lib/menu.awk" "$1"; }
 # appended. FILENAME rather than FNR==NR tells the two apart, so an empty
 # shipped file cannot make the user file look like the first one.
 _menu_merge() {
-  awk -F'\t' -v first="$1" '
-    FILENAME == first {
+  # first="$1" awk, not -v first="$1": the path comes from mktemp, which
+  # honours $TMPDIR, and awk's -v processes backslash escapes in its value.
+  # A TMPDIR containing a backslash would then make this never equal awk's
+  # own FILENAME, silently dropping every user override (I4). ENVIRON does
+  # not process escapes.
+  first="$1" awk -F'\t' '
+    FILENAME == ENVIRON["first"] {
       if (!($1 in a)) { a[$1] = ""; aorder[++na] = $1 }
       a[$1] = a[$1] $0 "\n"
       next
