@@ -31,6 +31,9 @@ teeup - your Mac, as a distribution
   teeup reset <capability>       put its config files back to the shipped version (backups kept)
   teeup update [<capability>]    pull, migrate, upgrade packages, re-configure, re-theme
   teeup remove <capability>      undo what a capability installed
+  teeup uninstall [--packages] [--identity] [--yes]
+                                 take teeup off this Mac (asks first; keeps your
+                                  edits, identity and packages unless told)
   teeup list [--tier core|daily|lazy]
   teeup theme set|list|current   apply, list or print the cross-tool theme
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
@@ -222,6 +225,84 @@ cmd_remove() {
     exit 1
   fi
   ok_unless_dry "Removed $target."
+}
+
+# teeup uninstall [--packages] [--identity] [--yes]
+# Takes teeup off this Mac (spec amendment of 2026-09-25, lib/uninstall.sh).
+# The order is load-bearing:
+#   1. the zsh home files, before any tool the shell layer hooks is removed,
+#      so no new shell ever starts by calling a binary that is gone;
+#   2. every installed capability, dependents first, through the same
+#      cap_remove `teeup remove` uses -- packages only when asked;
+#   3. any LaunchAgent of teeup's still loaded;
+#   4. the config files, by the stock-checksum rule;
+#   5. with --identity, git's identity and git/local (never an SSH key);
+#   6. teeup's own command, config and state, only after a clean run.
+# It asks at most three questions and only on a terminal, each defaulting to
+# the answer that removes less. Without a terminal it needs --yes, which
+# also takes every default. A dry run asks nothing and changes nothing.
+cmd_uninstall() {
+  local arg yes=false tty=false rc=0 teeup_q
+  _UNINSTALL_PACKAGES=""
+  _UNINSTALL_IDENTITY=false
+  for arg in "$@"; do
+    case "$arg" in
+      --packages) _UNINSTALL_PACKAGES=true ;;
+      --identity) _UNINSTALL_IDENTITY=true ;;
+      --yes) yes=true ;;
+      *) die "Usage: teeup uninstall [--packages] [--identity] [--yes]" ;;
+    esac
+  done
+  if [[ "$(id -u)" == "0" ]]; then
+    die "Run teeup uninstall as yourself, not as root: it takes teeup out of your own home directory."
+  fi
+  if lazy_is_tty; then tty=true; fi
+  _UNINSTALL_ASK=false
+  if [[ "$DRY_RUN" != "true" ]]; then
+    if [[ "$tty" == "true" && "$yes" != "true" ]]; then
+      _UNINSTALL_ASK=true
+      if ! ui_confirm "Take teeup off this Mac? Your edited files, identity, package manager and the checkout stay." no; then
+        log "Nothing was changed."
+        return 0
+      fi
+    elif [[ "$yes" != "true" ]]; then
+      die "teeup uninstall asks before it removes anything, and there is no terminal to ask on. Preview it with: DRY_RUN=true teeup uninstall, then run: teeup uninstall --yes$(uninstall_active_flags)"
+    fi
+  fi
+  if [[ -z "$_UNINSTALL_PACKAGES" ]]; then
+    _UNINSTALL_PACKAGES=false
+    if uninstall_ask "Also uninstall the packages and apps teeup installed (ripgrep, WezTerm, Emacs and the rest)? Homebrew or MacPorts itself stays either way."; then
+      _UNINSTALL_PACKAGES=true
+    fi
+  fi
+  if [[ "$_UNINSTALL_IDENTITY" == "true" && "$_UNINSTALL_ASK" == "true" ]]; then
+    if ! ui_confirm "Also take off your git identity: remove teeup's generated git identity file and move git/local aside? teeup never deletes an SSH key; it will only print how to remove one by hand." no; then
+      _UNINSTALL_IDENTITY=false
+    fi
+  fi
+  uninstall_report_reset
+  _UNINSTALL_GONE=" "
+  uninstall_shell
+  uninstall_capabilities
+  uninstall_launchagents
+  uninstall_configs
+  if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then
+    uninstall_identity
+  fi
+  uninstall_teardown
+  uninstall_summary || rc=1
+  teeup_q="$(uninstall_q "$TEEUP_PATH/bin/teeup")"
+  echo ""
+  if [[ $rc -ne 0 ]]; then
+    err "Something above was refused or failed. Fix it, then run: $teeup_q uninstall$(uninstall_active_flags)"
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log "That was a preview. Run it for real with: $teeup_q uninstall"
+    return $rc
+  fi
+  log "The teeup checkout is still at $TEEUP_PATH. Delete it when you no longer want it: rm -rf $(uninstall_q "$TEEUP_PATH")"
+  log "Open a new terminal (or run: exec /bin/zsh -l). This shell loaded teeup's hooks when it started and keeps calling them until it is replaced."
+  return $rc
 }
 
 # _update_checkout -> 0 updated, 1 could not update, 2 must not update.
@@ -1281,6 +1362,7 @@ case "$verb" in
   reset) cmd_reset "$@" ;;
   update) cmd_update "$@" ;;
   remove) cmd_remove "$@" ;;
+  uninstall) cmd_uninstall "$@" ;;
   theme) cmd_theme "$@" ;;
   list) cmd_list "$@" ;;
   launch) cmd_launch "$@" ;;

@@ -94,6 +94,19 @@ uninstall_ask() {
 # into bash or zsh (both read bash's %q forms).
 uninstall_q() { printf '%q' "$1"; }
 
+# uninstall_active_flags -> " --packages" and/or " --identity", for whichever
+# of _UNINSTALL_PACKAGES and _UNINSTALL_IDENTITY is "true" right now. cmd_uninstall
+# calls this both before either is asked about (a no-terminal run's flags are
+# exactly what was typed) and after (once an answer may have changed them),
+# so a rerun command it prints always names the flags this run actually
+# needs repeated, not just the ones typed on the command line.
+uninstall_active_flags() {
+  local flags=""
+  if [[ "$_UNINSTALL_PACKAGES" == "true" ]]; then flags="$flags --packages"; fi
+  if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then flags="$flags --identity"; fi
+  printf '%s' "$flags"
+}
+
 # --- deleting -----------------------------------------------------------------
 
 # uninstall_rm <path> [label]
@@ -332,6 +345,28 @@ _uninstall_shell_file() {
   uninstall_note removed "teeup's lines in $file (your own lines stay; the file as it was is at $backup)"
 }
 
+# uninstall_old_zdotdirs <current dir> -> every OTHER directory that holds a
+# stock-recorded zsh home file, one per line, each printed once. ZDOTDIR can
+# change after install; a stock record for .zshenv, .zprofile or .zshrc at
+# the directory it pointed to then is still a zsh home file, wherever it is
+# now (Task 5's re-review observation).
+uninstall_old_zdotdirs() {
+  local current="$1" path dir seen=""
+  while IFS= read -r path; do
+    case "$path" in
+      */.zshenv|*/.zprofile|*/.zshrc) ;;
+      *) continue ;;
+    esac
+    dir="${path%/*}"
+    [[ "$dir" != "$current" ]] || continue
+    case " $seen " in *" $dir "*) continue ;; esac
+    seen="$seen $dir"
+    printf '%s\n' "$dir"
+  done <<STOCK
+$(uninstall_stock_paths)
+STOCK
+}
+
 # uninstall_shell
 # The first mutation of every uninstall, before any tool the layer hooks
 # (mise, starship, zoxide, fzf) is removed: a new shell must never start by
@@ -339,14 +374,25 @@ _uninstall_shell_file() {
 # already registered those hooks at startup and cannot be unhooked from here,
 # which is why cmd_uninstall ends by telling the user to open a new one.
 # The files are the ones zsh reads (${ZDOTDIR:-$HOME}), in the order it
-# reads them. When any of them changed, uninstall_path_hint says how to keep
-# the package manager on PATH without teeup.
+# reads them, plus any zsh home file still recorded at an OLD ZDOTDIR (Task
+# 5's re-review observation): those must go through this same handling too,
+# never uninstall_configs's plain stock-checksum removal. When any of them
+# changed, uninstall_path_hint says how to keep the package manager on PATH
+# without teeup.
 uninstall_shell() {
-  local dir f before="$_UNINSTALL_REMOVED"
+  local dir f old before="$_UNINSTALL_REMOVED"
   dir="${ZDOTDIR:-$HOME}"
   for f in .zshenv .zprofile .zshrc; do
     _uninstall_shell_file "$dir/$f"
   done
+  while IFS= read -r old; do
+    [[ -n "$old" ]] || continue
+    for f in .zshenv .zprofile .zshrc; do
+      _uninstall_shell_file "$old/$f"
+    done
+  done <<OLD
+$(uninstall_old_zdotdirs "$dir")
+OLD
   if [[ "$_UNINSTALL_REMOVED" != "$before" ]]; then
     uninstall_path_hint
   fi
@@ -735,19 +781,21 @@ _uninstall_is_identity_config() {
 # uninstall_configs
 # The stock-checksum rule (spec section 9) decides every file teeup copied:
 # pristine, it is teeup's and goes (after offering back whatever it replaced);
-# edited, it is the user's and stays. The zsh home files were already handled
-# by uninstall_shell. ~/.ssh/config waits for --identity; ~/.config/git/config
-# does not -- the user's decision is that git/config is kept only WITHOUT
-# --identity (Decision 8), so a pristine one goes here, like any other file,
-# once --identity is given.
+# edited, it is the user's and stays. Every zsh home file is skipped here by
+# name, wherever it is recorded -- at the current ZDOTDIR or an old one -- as
+# uninstall_shell already handled it (or, for an old ZDOTDIR, handles it
+# itself; Task 5's re-review observation, and this is where the plain
+# stock-checksum removal below would otherwise have caught it). ~/.ssh/config
+# waits for --identity; ~/.config/git/config does not -- the user's decision
+# is that git/config is kept only WITHOUT --identity (Decision 8), so a
+# pristine one goes here, like any other file, once --identity is given.
 uninstall_configs() {
-  local path zdot gdir key edited=""
-  zdot="${ZDOTDIR:-$HOME}"
+  local path gdir key edited="" id_files=""
   gdir="$(user_config_dir)/git"
   while IFS= read -r path; do
     [[ -n "$path" ]] || continue
     case "$path" in
-      "$zdot/.zshenv"|"$zdot/.zprofile"|"$zdot/.zshrc") continue ;;
+      */.zshenv|*/.zprofile|*/.zshrc) continue ;;
     esac
     if [[ "$_UNINSTALL_IDENTITY" != "true" ]] && _uninstall_is_identity_config "$path"; then
       continue
@@ -777,8 +825,16 @@ STOCK
   if [[ "$_UNINSTALL_IDENTITY" != "true" ]]; then
     # Not "run teeup uninstall --identity": a clean run tears teeup itself
     # down (Decision 11), so naming that command here would point at
-    # something already gone by the time this line is read.
-    uninstall_note kept "$gdir/config and $gdir/identity: git reads your name and email through them, so teeup leaves them in place without --identity."
+    # something already gone by the time this line is read. Named only when
+    # at least one is actually there: nothing was ever configured on a
+    # machine that never ran `teeup configure git`, and a rerun after a
+    # clean uninstall must not keep repeating a note about files that do
+    # not exist.
+    if [[ -e "$gdir/config" ]]; then id_files="$gdir/config"; fi
+    if [[ -e "$gdir/identity" ]]; then id_files="${id_files:+$id_files and }$gdir/identity"; fi
+    if [[ -n "$id_files" ]]; then
+      uninstall_note kept "$id_files: git reads your name and email through them, so teeup leaves them in place without --identity."
+    fi
   fi
   if [[ -f "$gdir/config" ]]; then
     # teeup-generated turned signing off until a key existed; if the key is
@@ -845,4 +901,92 @@ uninstall_identity() {
     fi
   fi
   uninstall_note kept "Public keys teeup uploaded to GitHub: they stay on your account. Delete them at https://github.com/settings/keys"
+}
+
+# --- teeup itself -----------------------------------------------------------------
+
+# _uninstall_config_dir
+# $TEEUP_CONFIG_DIR holds teeup's env file, the answers and the hook samples,
+# and may hold the user's own: a personal machine file, hooks, themes,
+# template overrides. teeup's go; the directory goes only when nothing of
+# the user's is left in it.
+_uninstall_config_dir() {
+  local dir="$TEEUP_CONFIG_DIR" teeup_files event f mine="" left=""
+  [[ -e "$dir" || -L "$dir" ]] || return 0
+  if [[ -L "$dir" ]]; then
+    uninstall_note refused "$dir is a symlink, so teeup did not touch it or what it points to. Remove it yourself if you mean to: rm $(uninstall_q "$dir")"
+    return 0
+  fi
+  teeup_files="$dir/env"$'\n'"$dir/answers"
+  for event in $TEEUP_HOOK_EVENTS; do
+    teeup_files="$teeup_files"$'\n'"$dir/hooks/$event.d/example.sample"
+  done
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    case $'\n'"$teeup_files"$'\n' in
+      *$'\n'"$f"$'\n'*) mine="${mine:+$mine$'\n'}$f" ;;
+      *) left="${left:+$left, }${f#"$dir"/}" ;;
+    esac
+  done <<FILES
+$(find "$dir" \( -type f -o -type l \) -print 2>/dev/null)
+FILES
+  if [[ -z "$left" ]]; then
+    uninstall_rm "$dir" "teeup's config ($dir)" || true
+    return 0
+  fi
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if uninstall_rm "$f" "teeup's $f"; then _uninstall_prune_dirs "$f"; fi
+  done <<MINE
+$mine
+MINE
+  uninstall_note kept "Your own files in $dir: $left. Delete them with: rm -rf $(uninstall_q "$dir")"
+}
+
+# uninstall_teardown
+# Last, and only after a clean run: the teeup command, $TEEUP_CONFIG_DIR and
+# $TEEUP_STATE_DIR. They are what a rerun needs -- the stock records that
+# tell a pristine file from an edited one, the install markers, the recorded
+# `defaults` values -- so after any refusal or failure they stay.
+uninstall_teardown() {
+  local link="$HOME/.local/bin/teeup" target d resolved
+  if ! uninstall_clean; then
+    uninstall_note kept "teeup's own state ($TEEUP_STATE_DIR), config ($TEEUP_CONFIG_DIR) and command: something above was refused or failed, and the rerun needs them."
+    return 0
+  fi
+  # Every target is checked before any is deleted. A clean run can still meet
+  # a refusal here -- a symlinked config dir, a state dir outside $HOME --
+  # and deleting the command first, then refusing the config, then deleting
+  # the state anyway breaks the promise that all three stay after any
+  # problem (Codex, on this plan). The same checks uninstall_rm makes, done
+  # up front.
+  for d in "$TEEUP_CONFIG_DIR" "$TEEUP_STATE_DIR"; do
+    [[ -e "$d" || -L "$d" ]] || continue
+    if [[ -L "$d" ]] || ! resolved="$(migrate_resolve "$d")" || ! migrate_path_is_safe "$resolved"; then
+      uninstall_note refused "$d is a symlink, outside your home directory, inside a git checkout or inside the chezmoi source, so teeup did not delete it -- nor teeup's state ($TEEUP_STATE_DIR), config ($TEEUP_CONFIG_DIR) or command, which a rerun needs. Remove it yourself if you mean to: rm -rf $(uninstall_q "$d")"
+      return 0
+    fi
+  done
+  # Config and state first, each followed by a fresh check, so a failure
+  # stops the teardown; the command last, since it is what a rerun calls.
+  _uninstall_config_dir
+  if ! uninstall_clean; then
+    uninstall_note kept "teeup's state ($TEEUP_STATE_DIR) and command: removing the config did not finish cleanly, and the rerun needs them."
+    return 0
+  fi
+  uninstall_rm "$TEEUP_STATE_DIR" "teeup's state ($TEEUP_STATE_DIR: install records, shims, the generated theme, logs)" || true
+  if ! uninstall_clean; then
+    uninstall_note kept "the teeup command: removing the state did not finish cleanly, and the rerun needs it."
+    return 0
+  fi
+  if [[ -L "$link" ]]; then
+    target="$(readlink "$link" 2>/dev/null || true)"
+    if [[ "$target" == "$TEEUP_PATH/bin/teeup" ]]; then
+      uninstall_rm "$link" "the teeup command ($link)" || true
+    else
+      uninstall_note kept "$link: it points at $target, not at this checkout."
+    fi
+  elif [[ -e "$link" ]]; then
+    uninstall_note kept "$link: it is a file, not teeup's link."
+  fi
 }

@@ -794,6 +794,137 @@ test_identity_local_backup_fix_avoids_a_name_already_taken() {
   cleanup_test_env
 }
 
+# teeup's own files as teeup-runtime/configure leaves them, the user's own
+# machine file among them.
+teeup_runtime_home() {
+  mkdir -p "$TEEUP_CONFIG_DIR/hooks/post-update.d" "$TEEUP_STATE_DIR/done" "$HOME/.local/bin"
+  printf 'export TEEUP_PATH=x\n' > "$TEEUP_CONFIG_DIR/env"
+  printf 'TEEUP_NAME="Ada"\n' > "$TEEUP_CONFIG_DIR/answers"
+  printf '# sample\n' > "$TEEUP_CONFIG_DIR/hooks/post-update.d/example.sample"
+  ln -s "$TEEUP_PATH/bin/teeup" "$HOME/.local/bin/teeup"
+}
+
+test_teardown_removes_teeups_command_config_and_state() {
+  setup
+  teeup_runtime_home
+  uninstall_teardown >/dev/null 2>&1
+  [[ ! -e "$TEEUP_CONFIG_DIR" ]] || { echo "the config dir goes when nothing of the user's is in it"; return 1; }
+  [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "the state dir goes"; return 1; }
+  [[ ! -L "$HOME/.local/bin/teeup" ]] || { echo "the command goes"; return 1; }
+  assert_file_exists "$TEEUP_PATH/bin/teeup" "the checkout stays" || return 1
+  cleanup_test_env
+}
+
+test_teardown_keeps_the_users_own_files_in_the_config_dir() {
+  setup
+  teeup_runtime_home
+  mkdir -p "$TEEUP_CONFIG_DIR/machines" "$TEEUP_CONFIG_DIR/hooks/post-update.d"
+  printf 'TEEUP_SKIP="aerospace"\n' > "$TEEUP_CONFIG_DIR/machines/testmac.conf"
+  printf 'echo mine\n' > "$TEEUP_CONFIG_DIR/hooks/post-update.d/mine"
+  uninstall_teardown >/dev/null 2>&1
+  assert_file_exists "$TEEUP_CONFIG_DIR/machines/testmac.conf" || return 1
+  assert_file_exists "$TEEUP_CONFIG_DIR/hooks/post-update.d/mine" || return 1
+  [[ ! -e "$TEEUP_CONFIG_DIR/env" && ! -e "$TEEUP_CONFIG_DIR/answers" ]] || { echo "teeup's own files go"; return 1; }
+  [[ ! -e "$TEEUP_CONFIG_DIR/hooks/post-update.d/example.sample" ]] || { echo "the sample goes"; return 1; }
+  assert_contains "$_UNINSTALL_KEPT" "machines/testmac.conf" || return 1
+  cleanup_test_env
+}
+
+# After any refusal or failure the rerun needs teeup's state, config and
+# command, so none of them is touched.
+test_teardown_waits_for_a_clean_run() {
+  setup
+  teeup_runtime_home
+  uninstall_note failed "something"
+  uninstall_teardown >/dev/null 2>&1
+  assert_dir_exists "$TEEUP_STATE_DIR" || return 1
+  assert_file_exists "$TEEUP_CONFIG_DIR/env" || return 1
+  [[ -L "$HOME/.local/bin/teeup" ]] || { echo "the command stays for the rerun"; return 1; }
+  cleanup_test_env
+}
+
+test_teardown_leaves_a_command_that_is_not_teeups() {
+  setup
+  mkdir -p "$HOME/.local/bin"
+  ln -s /somewhere/else "$HOME/.local/bin/teeup"
+  uninstall_teardown >/dev/null 2>&1
+  [[ -L "$HOME/.local/bin/teeup" ]] || { echo "a link to somewhere else is not teeup's"; return 1; }
+  assert_contains "$_UNINSTALL_KEPT" "not at this checkout" || return 1
+  cleanup_test_env
+}
+
+# A state directory outside $HOME is refused, and the printed rm removes it.
+test_teardown_refuses_a_state_dir_outside_home_with_a_fix_that_works() {
+  setup
+  export HOME="$TEST_HOME/home"
+  export TEEUP_STATE_DIR="$TEST_HOME/elsewhere/st ate \$x"
+  export TEEUP_CONFIG_DIR="$HOME/.config/teeup"
+  mkdir -p "$HOME" "$TEEUP_STATE_DIR/done"
+  mkdir -p "$TEEUP_CONFIG_DIR" "$HOME/.local/bin"
+  printf 'x\n' > "$TEEUP_CONFIG_DIR/answers"
+  ln -s "$TEEUP_PATH/bin/teeup" "$HOME/.local/bin/teeup"
+  uninstall_teardown >/dev/null 2>&1
+  assert_dir_exists "$TEEUP_STATE_DIR" || return 1
+  # Checked before anything was deleted: config and command stay too.
+  assert_file_exists "$TEEUP_CONFIG_DIR/answers" "a refused state dir must stop the whole teardown" || return 1
+  [[ -L "$HOME/.local/bin/teeup" ]] || { echo "the teeup command must stay for the rerun"; return 1; }
+  run_fix "${_UNINSTALL_REFUSED##*mean to: }" || { echo "the printed rm failed"; return 1; }
+  [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "the printed rm must remove it"; return 1; }
+  cleanup_test_env
+}
+
+# Codex P1 on the plan: a symlinked config dir was refused only after the
+# command was deleted, and the state was deleted after it anyway.
+test_teardown_keeps_everything_when_the_config_dir_is_a_symlink() {
+  setup
+  export HOME="$TEST_HOME/home"
+  export TEEUP_STATE_DIR="$HOME/.local/state/teeup"
+  export TEEUP_CONFIG_DIR="$HOME/.config/teeup"
+  mkdir -p "$TEST_HOME/dotfiles/teeup" "$HOME/.config" "$TEEUP_STATE_DIR/done" "$HOME/.local/bin"
+  ln -s "$TEST_HOME/dotfiles/teeup" "$TEEUP_CONFIG_DIR"
+  ln -s "$TEEUP_PATH/bin/teeup" "$HOME/.local/bin/teeup"
+  uninstall_teardown >/dev/null 2>&1
+  assert_dir_exists "$TEEUP_STATE_DIR/done" "the state must stay for the rerun" || return 1
+  [[ -L "$HOME/.local/bin/teeup" ]] || { echo "the teeup command must stay for the rerun"; return 1; }
+  [[ -L "$TEEUP_CONFIG_DIR" ]] || { echo "the symlinked config dir must be left as it was"; return 1; }
+  assert_contains "$_UNINSTALL_REFUSED" "symlink" || return 1
+  cleanup_test_env
+}
+
+# Task 6 carry (Task 5's re-review observation): a ZDOTDIR changed since
+# install leaves the old zsh home files still recorded in stock, at a
+# directory uninstall_shell no longer looks at by default. They must still
+# go through uninstall_shell's own handling -- the live-line check, the
+# symlink and git-checkout refusals, the .zshrc stub -- never uninstall_rm's
+# plain pristine-file removal by way of uninstall_configs.
+test_shell_handles_zsh_home_files_left_at_an_old_zdotdir() {
+  setup
+  local old="$TEST_HOME/old zdot" new="$TEST_HOME/newzdot"
+  export ZDOTDIR="$old"
+  zsh_home
+  mkdir -p "$new"
+  export ZDOTDIR="$new"
+  uninstall_shell >/dev/null 2>&1
+  [[ ! -e "$old/.zshenv" && ! -e "$old/.zprofile" ]] || { echo "pristine files at the old ZDOTDIR must go too"; return 1; }
+  assert_file_exists "$old/.zshrc" "a stub replaces the old ZDOTDIR's pristine .zshrc" || return 1
+  uninstall_shell_live "$old/.zshrc" && { echo "the old ZDOTDIR's .zshrc still has a live teeup line"; return 1; }
+  cleanup_test_env
+}
+
+test_configs_leaves_zsh_home_files_at_an_old_zdotdir_for_uninstall_shell() {
+  setup
+  local old="$TEST_HOME/old zdot" new="$TEST_HOME/newzdot"
+  export ZDOTDIR="$old"
+  zsh_home
+  mkdir -p "$new"
+  export ZDOTDIR="$new"
+  uninstall_configs >/dev/null 2>&1
+  assert_file_exists "$old/.zshenv" "uninstall_configs must leave the old ZDOTDIR's zsh files for uninstall_shell" || return 1
+  assert_file_exists "$old/.zprofile" || return 1
+  assert_file_exists "$old/.zshrc" || return 1
+  cleanup_test_env
+}
+
 echo "lib/uninstall.sh"
 run_test "rm removes a file, a directory and a link without following it" test_rm_removes_a_file_a_directory_and_a_link_without_following_it
 run_test "rm refuses outside HOME and in a git checkout, with a fix that works" test_rm_refuses_outside_home_and_in_a_git_checkout_with_a_fix_that_works
@@ -835,4 +966,12 @@ run_test "identity names a symlinked key and never touches it" test_identity_nam
 run_test "identity moves local aside and removes the generated identity file" test_identity_moves_local_aside_and_removes_the_generated_identity_file
 run_test "identity names a symlinked git/local and leaves it" test_identity_names_a_symlinked_git_local_and_leaves_it
 run_test "identity local backup fix avoids a name already taken" test_identity_local_backup_fix_avoids_a_name_already_taken
+run_test "teardown removes teeup's command, config and state" test_teardown_removes_teeups_command_config_and_state
+run_test "teardown keeps the user's own files in the config dir" test_teardown_keeps_the_users_own_files_in_the_config_dir
+run_test "teardown waits for a clean run" test_teardown_waits_for_a_clean_run
+run_test "teardown leaves a command that is not teeup's" test_teardown_leaves_a_command_that_is_not_teeups
+run_test "teardown refuses a state dir outside HOME, with a fix that works" test_teardown_refuses_a_state_dir_outside_home_with_a_fix_that_works
+run_test "teardown keeps everything when the config dir is a symlink" test_teardown_keeps_everything_when_the_config_dir_is_a_symlink
+run_test "shell handles zsh home files left at an old ZDOTDIR" test_shell_handles_zsh_home_files_left_at_an_old_zdotdir
+run_test "configs leaves zsh home files at an old ZDOTDIR for uninstall_shell" test_configs_leaves_zsh_home_files_at_an_old_zdotdir_for_uninstall_shell
 print_summary

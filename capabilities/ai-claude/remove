@@ -1,3 +1,12 @@
 #!/usr/bin/env bash
 mise_wrapper_remove ai-claude claude
-mise_tool_unuse claude
+
+# `teeup uninstall` without --packages keeps packages installed, and says so
+# through TEEUP_REMOVE_PACKAGES=false (lib/capability.sh's cap_remove).
+# Dropping claude from the global mise config and pruning its install
+# (mise_tool_unuse, PR #46) is package removal in effect, so it happens only
+# when packages are asked for; `teeup remove ai-claude` always passes true
+# and is unaffected.
+if [[ "${TEEUP_REMOVE_PACKAGES:-true}" == "true" ]]; then
+  mise_tool_unuse claude
+fi
