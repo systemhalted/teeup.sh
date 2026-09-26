@@ -299,8 +299,11 @@ test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file() {
   setup
   seed_shadowed_machine_files
   mock_command security 0 "s3cr3t"
-  local out errfile
+  local out errfile expected_themes d
   errfile="$TEST_HOME/stderr.out"
+  # Every shipped theme, sorted the way theme_list prints them, so this test
+  # keeps passing as themes/ grows instead of pinning today's single theme.
+  expected_themes="$(for d in "$TEEUP_PATH"/themes/*/; do basename "$d"; done | sort)"
 
   out="$("$TEEUP" version 2>"$errfile")"
   assert_equals "0.1.0-dev" "$out" "version stdout" || return 1
@@ -311,7 +314,7 @@ test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file() {
   assert_contains "$(cat "$errfile")" "also exists and is ignored" "theme current stderr" || return 1
 
   out="$("$TEEUP" theme list 2>"$errfile")"
-  assert_equals "catppuccin" "$out" "theme list stdout" || return 1
+  assert_equals "$expected_themes" "$out" "theme list stdout" || return 1
   assert_contains "$(cat "$errfile")" "also exists and is ignored" "theme list stderr" || return 1
 
   out="$("$TEEUP" secret get mysecret 2>"$errfile")"
