@@ -498,7 +498,7 @@ test_migrate_chezmoi_asks_before_moving_anything() {
   local out
   # Answer no.
   out="$(printf 'n\n' | migrate_chezmoi 2>&1)" || true
-  assert_contains "$out" "teeup will reinstall" "the prompt must name what teeup puts back" || return 1
+  assert_contains "$out" "teeup reinstalls its own version of these" "the prompt must name what teeup puts back" || return 1
   assert_contains "$out" ".tmux.conf" || return 1
   assert_contains "$out" "teeup does not ship" "the prompt must name what it will not put back" || return 1
   assert_equals "mine" "$(cat "$TEST_HOME/.zshrc")" "answering no must move nothing" || return 1
@@ -519,9 +519,41 @@ test_migrate_chezmoi_moves_the_files_when_told_to() {
   printf 'mine\n' > "$TEST_HOME/.zshrc"
   local out
   out="$(printf 'y\n' | migrate_chezmoi 2>&1)" || true
-  [[ ! -e "$TEST_HOME/.zshrc" ]] || { echo "the file was not moved aside"; return 1; }
   assert_equals "1" "$(find "$TEST_HOME" -name '.zshrc.teeup_backup_*' | wc -l | tr -d ' ')" || return 1
+  assert_equals "mine" "$(cat "$(find "$TEST_HOME" -name '.zshrc.teeup_backup_*')")" "the backup holds the user's file" || return 1
   assert_contains "$out" "Moved 1" || return 1
+  # Seen on a real Mac, 2026-09-25: migrate moved ~/.zshenv, ~/.zprofile and
+  # ~/.zshrc aside and left reinstalling them to a later `teeup update`, so
+  # the next shell had no teeup layer, no Homebrew on PATH, and no teeup.
+  # What migrate displaces from a capability installed here, it reinstalls
+  # before it says it is done.
+  assert_file_exists "$TEST_HOME/.zshrc" "teeup's own .zshrc must be back in place" || return 1
+  assert_contains "$(cat "$TEST_HOME/.zshrc")" "capabilities/zsh/default/rc" "the new .zshrc is teeup's stub" || return 1
+  assert_contains "$out" "Reinstalled" || return 1
+  cleanup_test_env
+}
+
+# A displaced file whose capability is not installed here is not
+# reinstalled: configure would lay down a capability the user never chose.
+test_migrate_chezmoi_leaves_a_file_of_an_uninstalled_capability_moved() {
+  setup
+  state_done mark cap-zsh
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  mkdir -p "$XDG_CONFIG_HOME/tmux"
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  local shipped
+  shipped="$(find "$TEEUP_CAPS_DIR/aerospace/config" -type f -name 'aerospace.toml' | head -1)"
+  [[ -n "$shipped" ]] || { echo "fixture: aerospace ships no config"; return 1; }
+  mkdir -p "$XDG_CONFIG_HOME/aerospace"
+  printf 'theirs\n' > "$XDG_CONFIG_HOME/aerospace/aerospace.toml"
+  printf '%s\n' "$XDG_CONFIG_HOME/aerospace/aerospace.toml" >> "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  local out
+  out="$(printf 'y\n' | migrate_chezmoi 2>&1)" || true
+  [[ ! -e "$XDG_CONFIG_HOME/aerospace/aerospace.toml" ]] || { echo "aerospace is not installed here, so its config must not be laid down"; return 1; }
+  assert_contains "$out" "aerospace is not installed here" || return 1
   cleanup_test_env
 }
 
@@ -665,6 +697,7 @@ run_test "migrate_disable_runtime_inits honours ZDOTDIR" test_migrate_disable_ru
 run_test "migrate_teeup_ships knows what it will reinstall" test_migrate_teeup_ships_knows_what_it_will_reinstall
 run_test "migrate_chezmoi asks before moving anything" test_migrate_chezmoi_asks_before_moving_anything
 run_test "migrate_chezmoi moves the files when told to" test_migrate_chezmoi_moves_the_files_when_told_to
+run_test "migrate_chezmoi leaves a file of an uninstalled capability moved" test_migrate_chezmoi_leaves_a_file_of_an_uninstalled_capability_moved
 run_test "migrate_chezmoi moves nothing without a tty" test_migrate_chezmoi_moves_nothing_without_a_tty
 run_test "migrate_chezmoi dry run claims no moves" test_migrate_chezmoi_dry_run_claims_no_moves
 run_test "migrate_backup separates a refusal from a failure" test_migrate_backup_separates_a_refusal_from_a_failure

@@ -335,6 +335,12 @@ EOF_RC
 # ${ZDOTDIR:-$HOME}/<name> for the zsh stubs or $HOME/<name> otherwise --
 # both are checked, since which one applies is the capability's business.
 migrate_teeup_ships() {
+  [[ -n "$(migrate_teeup_owner "$1")" ]]
+}
+
+# migrate_teeup_owner <absolute-path> -> the capability that ships <path>
+# (its config/ or home/ copy), or nothing when no capability does.
+migrate_teeup_owner() {
   local want="$1" cap_dir rel dest zdot="${ZDOTDIR:-$HOME}"
   for cap_dir in "$TEEUP_CAPS_DIR"/*; do
     [[ -d "$cap_dir" ]] || continue
@@ -343,6 +349,7 @@ migrate_teeup_ships() {
         [[ -n "$dest" ]] || continue
         rel="${dest#"$cap_dir/config/"}"
         if [[ "$(user_config_dir)/$rel" == "$want" ]]; then
+          basename "$cap_dir"
           return 0
         fi
       done <<EOF_CFG
@@ -354,6 +361,7 @@ EOF_CFG
         [[ -n "$dest" ]] || continue
         rel="${dest##*/}"
         if [[ "$HOME/$rel" == "$want" || "$zdot/$rel" == "$want" ]]; then
+          basename "$cap_dir"
           return 0
         fi
       done <<EOF_HOME
@@ -361,7 +369,7 @@ $(find "$cap_dir/home" -type f 2>/dev/null)
 EOF_HOME
     fi
   done
-  return 1
+  return 0
 }
 
 # migrate_backup <absolute-path>
@@ -415,7 +423,7 @@ migrate_backup() {
 # 0 when everything it tried succeeded, 1 when something was refused or failed.
 migrate_chezmoi() {
   local src managed line backup count=0 rc=0 chezmoi_config
-  local mine="" theirs="" refused=0 failed=0 migrate_backup_rc=0
+  local mine="" theirs="" refused=0 failed=0 migrate_backup_rc=0 owners="" owner
   if ! have chezmoi; then
     log "No chezmoi on this machine; nothing to take over."
     return 0
@@ -468,7 +476,7 @@ migrate_chezmoi() {
     rm -f "$managed"
   else
     if [[ -n "$theirs" ]]; then
-      echo "teeup will reinstall these on the next 'teeup update':"
+      echo "teeup reinstalls its own version of these straight after moving them (for capabilities installed here):"
       printf '%s' "$theirs"
     fi
     if [[ -n "$mine" ]]; then
@@ -502,6 +510,13 @@ migrate_chezmoi() {
           # move counts.
           if [[ -n "$backup" && "$DRY_RUN" != "true" ]]; then
             count=$((count + 1))
+            owner="$(migrate_teeup_owner "$line")"
+            if [[ -n "$owner" ]]; then
+              case " $owners " in
+                *" $owner "*) ;;
+                *) owners="$owners $owner" ;;
+              esac
+            fi
           fi
           ;;
         1) refused=$((refused + 1)); rc=1 ;;
@@ -509,7 +524,24 @@ migrate_chezmoi() {
       esac
     done < "$managed"
     rm -f "$managed"
-    ok_unless_dry "Moved $count chezmoi-managed file(s) aside. Run 'teeup update' and teeup reinstalls the ones it owns."
+    ok_unless_dry "Moved $count chezmoi-managed file(s) aside."
+    # Reinstall what was just displaced, now, rather than on a later
+    # `teeup update`: moving ~/.zshenv, ~/.zprofile and ~/.zshrc aside left a
+    # real Mac (2026-09-25) with no teeup layer, no Homebrew on PATH and no
+    # teeup in the next shell. Only capabilities installed here are
+    # configured -- anything else would lay down a capability nobody chose.
+    for owner in $owners; do
+      if cap_skipped "$owner" || state_na check "cap-$owner" || ! state_done check "cap-$owner"; then
+        log "$owner is not installed here, so its file stays moved aside; run 'teeup install $owner' to get teeup's version."
+        continue
+      fi
+      if cap_run "$owner" configure; then
+        ok "Reinstalled teeup's $owner configuration."
+      else
+        warn "Could not reinstall teeup's $owner configuration; run: teeup configure $owner"
+        rc=1
+      fi
+    done
     # Which of the two happened, named separately: a refusal is teeup
     # protecting something, a failure is a file still sitting there that
     # nobody will look at if it reads as a refusal.
