@@ -475,10 +475,15 @@ uninstall_policy() {
 _uninstall_keep_note() {
   case "$1" in
     xcode-clt)
+      # sudo rm -rf on a system directory is not a command a test runs, even
+      # against mocks: no test exercises this printed line.
       uninstall_note kept "Xcode Command Line Tools: git, compilers and the package manager need them. They are macOS's to manage; remove them by hand with: sudo rm -rf /Library/Developer/CommandLineTools"
       ;;
     package-manager)
       case "$(pkg_backend)" in
+        # curl | bash, and it uninstalls the package manager itself: not a
+        # command a test runs, even against mocks. No test exercises this
+        # printed line.
         homebrew) uninstall_note kept "Homebrew: teeup never uninstalls the package manager. Homebrew's own uninstaller is: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)\"" ;;
         macports) uninstall_note kept "MacPorts: teeup never uninstalls the package manager. MacPorts documents its removal at https://guide.macports.org/#installing.macports.uninstalling" ;;
       esac
@@ -535,6 +540,9 @@ _uninstall_remove_one() {
     login="$(uninstall_login_shell)"
     case "$login" in
       "$(pkg_prefix)"/*)
+        # chsh changes the account's login shell for real, even under a
+        # mock: not a command a test runs. No test exercises this printed
+        # line.
         uninstall_note refused "zsh's packages ($names): your login shell is $login, which they provide. Switch to macOS's own zsh first with: chsh -s /bin/zsh, then run: $(uninstall_q "$TEEUP_PATH/bin/teeup") uninstall --packages"
         return 0
         ;;
@@ -576,6 +584,12 @@ _uninstall_remove_one() {
 # how a retry becomes impossible.
 uninstall_capabilities() {
   local name blockers had
+  # Reset here, not just at source time: the ledger globals below must not
+  # accumulate if the caller (a test, most likely) runs this twice in one
+  # process.
+  _UNINSTALL_GONE=" "
+  _UNINSTALL_KEPT_PKGS=""
+  _UNINSTALL_KEPT_CASKS=""
   had=" $(uninstall_caps | tr '\n' ' ')"
   for name in $had; do
     blockers="$(uninstall_blockers "$name")"

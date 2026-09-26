@@ -389,6 +389,16 @@ test_capabilities_keep_packages_by_default_and_name_how_to_remove_them() {
   assert_contains "$_UNINSTALL_KEPT" "Remove them later with: brew uninstall --cask wezterm" || return 1
   state_done check cap-tool && { echo "tool is forgotten"; return 1; }
   uninstall_clean || return 1
+  # Both printed "remove them later" commands actually call brew the way
+  # they are spelled.
+  local fix
+  while IFS= read -r fix; do
+    case "$fix" in *"Remove them later with:"*) run_fix "${fix##*: }" || { echo "the printed fix failed: $fix"; return 1; } ;; esac
+  done <<EOF2
+$_UNINSTALL_KEPT
+EOF2
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm" || return 1
   cleanup_test_env
 }
 
@@ -492,6 +502,41 @@ test_launchagents_are_unloaded_removed_and_checked() {
   cleanup_test_env
 }
 
+# A symlinked plist is left exactly as it is: teeup never writes through a
+# link (the same rule uninstall_shell follows for a symlinked .zshrc).
+test_launchagents_refuses_a_symlinked_plist_and_leaves_it() {
+  setup
+  mock_command launchctl 0 ""
+  local dir="$TEST_HOME/Library/LaunchAgents" target="$TEST_HOME/elsewhere.plist"
+  mkdir -p "$dir"
+  printf '<plist/>\n' > "$target"
+  ln -s "$target" "$dir/sh.teeup.keyboard.plist"
+  uninstall_launchagents >/dev/null 2>&1
+  [[ -L "$dir/sh.teeup.keyboard.plist" ]] || { echo "the symlink must stay a link"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG")" "launchctl" "a symlinked agent must not be unloaded" || return 1
+  assert_contains "$_UNINSTALL_REFUSED" "$dir/sh.teeup.keyboard.plist is a symlink" || return 1
+  cleanup_test_env
+}
+
+# When the plist is still there after launchagent_remove ran, that is a
+# failure, not a silent success. A directory with no write bit for its owner
+# is what makes rm -f fail here: unlinking the plist needs write permission
+# on the directory that holds it, and this test does not have it.
+test_launchagents_notes_a_failure_when_one_is_still_there_after_removal() {
+  setup
+  mock_command launchctl 0 ""
+  local dir="$TEST_HOME/Library/LaunchAgents"
+  mkdir -p "$dir"
+  printf '<plist/>\n' > "$dir/sh.teeup.keyboard.plist"
+  chmod 500 "$dir"
+  uninstall_launchagents >/dev/null 2>&1
+  chmod 700 "$dir"
+  assert_contains "$(cat "$MOCK_LOG")" "launchctl bootout gui/501 $dir/sh.teeup.keyboard.plist" || return 1
+  assert_file_exists "$dir/sh.teeup.keyboard.plist" "the entry rm -f could not remove must still be there" || return 1
+  assert_contains "$_UNINSTALL_FAILED" "LaunchAgent sh.teeup.keyboard: $dir/sh.teeup.keyboard.plist is still there" || return 1
+  cleanup_test_env
+}
+
 test_secrets_are_named_with_commands_that_delete_them() {
   setup
   mock_command_script security <<'EOF2'
@@ -514,6 +559,41 @@ EOF2
   assert_contains "$_UNINSTALL_KEPT" "(gh token)" || return 1
   assert_contains "$_UNINSTALL_KEPT" "security delete-generic-password -s teeup -a gh\\ token" || return 1
   assert_not_contains "$_UNINSTALL_KEPT" "someone" || return 1
+  # The printed delete command really does call security the way it is
+  # spelled, with the account name as one argument.
+  run_fix "${_UNINSTALL_KEPT##*: }" || { echo "the printed delete command failed"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "delete-generic-password -s teeup -a gh token" || return 1
+  cleanup_test_env
+}
+
+# The macports arm of the package-manager kept note (the homebrew arm is
+# covered by test_capabilities_decide_each_of_the_seven_remove_refuses).
+test_capabilities_name_the_macports_removal_steps() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  make_cap package-manager core
+  state_done mark cap-package-manager
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_KEPT" "MacPorts: teeup never uninstalls the package manager" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "https://guide.macports.org/#installing.macports.uninstalling" || return 1
+  cleanup_test_env
+}
+
+# The macports arm of the "kept packages, remove them later" note (the
+# homebrew arm is covered by
+# test_capabilities_keep_packages_by_default_and_name_how_to_remove_them).
+test_capabilities_keep_macports_packages_by_default_and_name_how_to_remove_them() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command_script port <<'EOF2'
+[[ "$1" == "installed" ]] && echo "$2 @1.0 (active)"
+exit 0
+EOF2
+  make_cap tool lazy "" "ripgrep"
+  state_done mark cap-tool
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$(cat "$MOCK_LOG")" "port uninstall" "packages are kept by default" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "Remove them later with: sudo port uninstall ripgrep" || return 1
   cleanup_test_env
 }
 
@@ -542,5 +622,9 @@ run_test "capabilities decide each of the seven remove refuses" test_capabilitie
 run_test "capabilities refuse what a failed dependent still needs" test_capabilities_refuse_what_a_failed_dependent_still_needs
 run_test "capabilities keep the zsh the login shell runs" test_capabilities_keep_the_zsh_the_login_shell_runs
 run_test "launchagents are unloaded, removed and checked" test_launchagents_are_unloaded_removed_and_checked
+run_test "launchagents refuses a symlinked plist and leaves it" test_launchagents_refuses_a_symlinked_plist_and_leaves_it
+run_test "launchagents notes a failure when one is still there after removal" test_launchagents_notes_a_failure_when_one_is_still_there_after_removal
 run_test "secrets are named with commands that delete them" test_secrets_are_named_with_commands_that_delete_them
+run_test "capabilities name the macports removal steps" test_capabilities_name_the_macports_removal_steps
+run_test "capabilities keep macports packages by default and name how to remove them" test_capabilities_keep_macports_packages_by_default_and_name_how_to_remove_them
 print_summary
