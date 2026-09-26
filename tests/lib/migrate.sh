@@ -637,6 +637,34 @@ test_migrate_chezmoi_says_which_happened() {
   cleanup_test_env
 }
 
+# Codex P1 on the reinstall: when one of a capability's files is refused
+# (here ~/.zshenv resolves into the chezmoi source) and another is moved, the
+# capability's whole configure must not run -- it would write the path the
+# migration just promised not to touch.
+test_migrate_chezmoi_does_not_reinstall_a_capability_with_a_refused_file() {
+  setup
+  state_done mark cap-zsh
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  # The zsh config directory lives in the chezmoi source, so local.zsh
+  # resolves inside it and is refused, while ~/.zshrc is moved.
+  mkdir -p "$SIBLING/dot_config/zsh"
+  printf 'sibling local\n' > "$SIBLING/dot_config/zsh/local.zsh"
+  mkdir -p "$XDG_CONFIG_HOME"
+  ln -s "$SIBLING/dot_config/zsh" "$XDG_CONFIG_HOME/zsh"
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  printf '%s\n' "$TEST_HOME/.zshrc" "$XDG_CONFIG_HOME/zsh/local.zsh" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  local out rc=0
+  out="$(printf 'y\n' | migrate_chezmoi 2>&1)" || rc=$?
+  assert_failure "$rc" "a refusal still reaches the exit status" || return 1
+  assert_equals "sibling local" "$(cat "$SIBLING/dot_config/zsh/local.zsh")" "the source repo must be untouched" || return 1
+  assert_equals "0" "$(find "$SIBLING" -name '*.teeup_backup_*' | wc -l | tr -d ' ')" "nothing may be written inside the source repo" || return 1
+  assert_not_contains "$out" "Reinstalled teeup's zsh" || return 1
+  assert_contains "$out" "teeup configure zsh" "say how to reinstall once the refusal is dealt with" || return 1
+  cleanup_test_env
+}
+
 test_migrate_chezmoi_does_nothing_without_chezmoi() {
   setup
   no_chezmoi
@@ -702,6 +730,7 @@ run_test "migrate_chezmoi moves nothing without a tty" test_migrate_chezmoi_move
 run_test "migrate_chezmoi dry run claims no moves" test_migrate_chezmoi_dry_run_claims_no_moves
 run_test "migrate_backup separates a refusal from a failure" test_migrate_backup_separates_a_refusal_from_a_failure
 run_test "migrate_chezmoi says which happened" test_migrate_chezmoi_says_which_happened
+run_test "migrate_chezmoi does not reinstall a capability with a refused file" test_migrate_chezmoi_does_not_reinstall_a_capability_with_a_refused_file
 run_test "migrate_chezmoi does nothing without chezmoi" test_migrate_chezmoi_does_nothing_without_chezmoi
 run_test "migrate_chezmoi asks before removing the chezmoi config" test_migrate_chezmoi_asks_before_removing_the_chezmoi_config
 print_summary

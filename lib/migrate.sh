@@ -423,7 +423,7 @@ migrate_backup() {
 # 0 when everything it tried succeeded, 1 when something was refused or failed.
 migrate_chezmoi() {
   local src managed line backup count=0 rc=0 chezmoi_config
-  local mine="" theirs="" refused=0 failed=0 migrate_backup_rc=0 owners="" owner
+  local mine="" theirs="" refused=0 failed=0 migrate_backup_rc=0 owners="" owner blocked=""
   if ! have chezmoi; then
     log "No chezmoi on this machine; nothing to take over."
     return 0
@@ -522,6 +522,15 @@ migrate_chezmoi() {
         1) refused=$((refused + 1)); rc=1 ;;
         *) failed=$((failed + 1)); rc=1 ;;
       esac
+      # A capability with any file refused or failed is not reinstalled:
+      # its configure writes every file it ships, including the one the
+      # migration just refused to touch (Codex, on this reinstall).
+      if [[ "$migrate_backup_rc" -ne 0 ]]; then
+        owner="$(migrate_teeup_owner "$line")"
+        if [[ -n "$owner" ]]; then
+          blocked="$blocked $owner"
+        fi
+      fi
     done < "$managed"
     rm -f "$managed"
     ok_unless_dry "Moved $count chezmoi-managed file(s) aside."
@@ -531,6 +540,12 @@ migrate_chezmoi() {
     # teeup in the next shell. Only capabilities installed here are
     # configured -- anything else would lay down a capability nobody chose.
     for owner in $owners; do
+      case " $blocked " in
+        *" $owner "*)
+          warn "Not reinstalling teeup's $owner configuration: another of its files was left alone above, and configure would write it. Deal with that file, then run: teeup configure $owner"
+          continue
+          ;;
+      esac
       if cap_skipped "$owner" || state_na check "cap-$owner" || ! state_done check "cap-$owner"; then
         log "$owner is not installed here, so its file stays moved aside; run 'teeup install $owner' to get teeup's version."
         continue
