@@ -665,6 +665,45 @@ test_migrate_chezmoi_does_not_reinstall_a_capability_with_a_refused_file() {
   cleanup_test_env
 }
 
+# Codex P1 on #42: an installed capability in TEEUP_SKIP will not be
+# reinstalled, so its chezmoi file must stay where it is -- moving it would
+# leave nothing in its place (TEEUP_SKIP=zsh: no .zshrc at all).
+test_migrate_chezmoi_leaves_a_skipped_capabilitys_file_in_place() {
+  setup
+  state_done mark cap-zsh
+  export TEEUP_SKIP="zsh"
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  local out
+  out="$(printf 'y\n' | migrate_chezmoi 2>&1)" || true
+  assert_equals "mine" "$(cat "$TEST_HOME/.zshrc")" "a skipped capability's file stays exactly where it is" || return 1
+  assert_equals "0" "$(find "$TEST_HOME" -name '.zshrc.teeup_backup_*' | wc -l | tr -d ' ')" || return 1
+  assert_contains "$out" "TEEUP_SKIP" || return 1
+  cleanup_test_env
+}
+
+# Codex P1 on #42: configure scripts write more than the files they ship
+# (LaunchAgents, for one), so any refusal at all means no automatic
+# reinstall -- the commands are printed instead.
+test_migrate_chezmoi_reinstalls_nothing_after_any_refusal() {
+  setup
+  state_done mark cap-zsh
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  printf '%s\n' "$TEST_HOME/.zshrc" "$SIBLING/dot_zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  local out rc=0
+  out="$(printf 'y\n' | migrate_chezmoi 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_not_contains "$out" "Reinstalled teeup's" "a refusal anywhere stops every automatic reinstall" || return 1
+  assert_contains "$out" "teeup configure zsh" "name the command to run once the refusal is dealt with" || return 1
+  cleanup_test_env
+}
+
 test_migrate_chezmoi_does_nothing_without_chezmoi() {
   setup
   no_chezmoi
@@ -730,6 +769,8 @@ run_test "migrate_chezmoi moves nothing without a tty" test_migrate_chezmoi_move
 run_test "migrate_chezmoi dry run claims no moves" test_migrate_chezmoi_dry_run_claims_no_moves
 run_test "migrate_backup separates a refusal from a failure" test_migrate_backup_separates_a_refusal_from_a_failure
 run_test "migrate_chezmoi says which happened" test_migrate_chezmoi_says_which_happened
+run_test "migrate_chezmoi leaves a skipped capability's file in place" test_migrate_chezmoi_leaves_a_skipped_capabilitys_file_in_place
+run_test "migrate_chezmoi reinstalls nothing after any refusal" test_migrate_chezmoi_reinstalls_nothing_after_any_refusal
 run_test "migrate_chezmoi does not reinstall a capability with a refused file" test_migrate_chezmoi_does_not_reinstall_a_capability_with_a_refused_file
 run_test "migrate_chezmoi does nothing without chezmoi" test_migrate_chezmoi_does_nothing_without_chezmoi
 run_test "migrate_chezmoi asks before removing the chezmoi config" test_migrate_chezmoi_asks_before_removing_the_chezmoi_config
