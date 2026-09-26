@@ -174,10 +174,10 @@ teeup install colima              # explicit install form for a capability
   `PATH`. `teeup lazy-run` executes a real command when one exists elsewhere
   on `PATH` or under the package-manager prefix. At a terminal, a missing
   command prompts before installing and configuring its capability, skips
-  requirements already recorded done, then runs with the original arguments.
-  A missing requirement is still installed. Without a terminal it prints the corresponding
-  `teeup install` command and exits 127. `TEEUP_SKIP` removes a capability's
-  shims and makes `lazy-run` refuse it.
+  requirements already recorded done, then runs with the original arguments. A
+  missing requirement is still installed. Without a terminal it prints the
+  corresponding `teeup install` command and exits 127. `TEEUP_SKIP` removes a
+  capability's shims and makes `lazy-run` refuse it.
 - **Launchers.** `teeup launch <app|capability>` uses `open -a` for an app in
   `/Applications` or `~/Applications`, installing the capability first when
   the bundle is absent. A cask-only capability such as Cursor is recorded as

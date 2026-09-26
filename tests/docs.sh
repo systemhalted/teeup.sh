@@ -166,7 +166,10 @@ test_menu_offers_each_ai_leaf_and_the_bundle() {
   menu="$(cat "$REPO/share/teeup/menu.json")"
   local target
   for target in ai-claude ai-codex ai-gemini ai-copilot ai-opencode ai; do
-    assert_contains "$menu" "teeup install $target" "menu must offer $target" || return 1
+    # The trailing quote makes this an exact action value: without it, "ai"
+    # is a substring of "ai-claude" and the bundle row could be deleted
+    # without failing this test.
+    assert_contains "$menu" "teeup install $target\"" "menu must offer $target" || return 1
   done
 }
 
