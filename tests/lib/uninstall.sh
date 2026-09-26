@@ -365,6 +365,158 @@ test_shell_notes_a_failure_instead_of_silence_when_it_cannot_read_the_zshrc() {
   cleanup_test_env
 }
 
+# make_remove_script <name> [exit status]
+make_remove_script() {
+  printf '#!/usr/bin/env bash\necho "remove:%s" >> "$MOCK_LOG"\nexit %s\n' "$1" "${2:-0}" > "$TEEUP_CAPS_DIR/$1/remove"
+  chmod +x "$TEEUP_CAPS_DIR/$1/remove"
+}
+
+# A brew that says every formula and cask is installed and logs each call.
+mock_brew_all_installed() {
+  mock_command brew 0 ""
+}
+
+test_capabilities_keep_packages_by_default_and_name_how_to_remove_them() {
+  setup
+  mock_brew_all_installed
+  make_cap tool lazy "" "ripgrep" "wezterm"
+  make_remove_script tool
+  state_done mark cap-tool
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$(cat "$MOCK_LOG")" "remove:tool" "the remove script still runs" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall" "packages are kept by default" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "Remove them later with: brew uninstall ripgrep" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "Remove them later with: brew uninstall --cask wezterm" || return 1
+  state_done check cap-tool && { echo "tool is forgotten"; return 1; }
+  uninstall_clean || return 1
+  cleanup_test_env
+}
+
+test_capabilities_name_what_the_tools_made_for_themselves() {
+  setup
+  make_cap mise core
+  make_cap other lazy
+  state_done mark cap-other
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_KEPT" "made for themselves" "nothing to say without those tools" || return 1
+  state_done mark cap-mise
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_KEPT" "runtimes mise installed ($HOME/.local/share/mise)" || return 1
+  cleanup_test_env
+}
+
+test_capabilities_uninstall_packages_when_asked() {
+  setup
+  mock_brew_all_installed
+  make_cap tool lazy "" "ripgrep" "wezterm"
+  state_done mark cap-tool
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm" || return 1
+  assert_contains "$_UNINSTALL_REMOVED" "tool's packages: ripgrep wezterm" || return 1
+  cleanup_test_env
+}
+
+# The seven `teeup remove` refuses. Each is decided, none is run, and none
+# counts as a problem.
+test_capabilities_decide_each_of_the_seven_remove_refuses() {
+  setup
+  mock_brew_all_installed
+  mock_command security 0 ""
+  local name
+  for name in xcode-clt package-manager teeup-runtime dev-dirs secrets ssh theme; do
+    make_cap "$name" core
+    state_done mark "cap-$name"
+  done
+  uninstall_capabilities >/dev/null 2>&1
+  uninstall_clean || { echo "a policy decision is not a problem: $_UNINSTALL_REFUSED$_UNINSTALL_FAILED"; return 1; }
+  assert_contains "$_UNINSTALL_KEPT" "Xcode Command Line Tools" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "teeup never uninstalls the package manager" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "$HOME/Work" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "Your SSH keys and ~/.ssh/config" || return 1
+  for name in xcode-clt package-manager teeup-runtime dev-dirs secrets ssh theme; do
+    case "$_UNINSTALL_GONE" in *" $name "*) ;; *) echo "$name was not handled"; return 1 ;; esac
+  done
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  cleanup_test_env
+}
+
+# A capability whose dependent failed stays, and is refused rather than
+# pulled out from under it.
+test_capabilities_refuse_what_a_failed_dependent_still_needs() {
+  setup
+  mock_brew_all_installed
+  make_cap base core
+  make_remove_script base
+  make_cap top lazy base
+  make_remove_script top 1
+  state_done mark cap-base
+  state_done mark cap-top
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_FAILED" "top: its remove script failed" || return 1
+  assert_contains "$_UNINSTALL_REFUSED" "base: still required by top" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "remove:base" "base's remove must not run" || return 1
+  state_done check cap-base || { echo "base stays marked for the rerun"; return 1; }
+  state_done check cap-top || { echo "top stays marked for the rerun"; return 1; }
+  cleanup_test_env
+}
+
+# --packages must not take away the zsh the login shell runs.
+test_capabilities_keep_the_zsh_the_login_shell_runs() {
+  setup
+  mock_brew_all_installed
+  mock_command dscl 0 "UserShell: $TEEUP_PKG_PREFIX/bin/zsh"
+  make_cap zsh core "" "zsh zsh-completions"
+  state_done mark cap-zsh
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall" || return 1
+  assert_contains "$_UNINSTALL_REFUSED" "chsh -s /bin/zsh" || return 1
+  state_done check cap-zsh || { echo "zsh stays marked so the rerun can finish"; return 1; }
+  cleanup_test_env
+}
+
+test_launchagents_are_unloaded_removed_and_checked() {
+  setup
+  mock_command launchctl 0 ""
+  local dir="$TEST_HOME/Library/LaunchAgents"
+  mkdir -p "$dir"
+  printf '<plist/>\n' > "$dir/sh.teeup.keyboard.plist"
+  printf '<plist/>\n' > "$dir/com.other.agent.plist"
+  uninstall_launchagents >/dev/null 2>&1
+  [[ ! -e "$dir/sh.teeup.keyboard.plist" ]] || { echo "teeup's agent must go"; return 1; }
+  assert_file_exists "$dir/com.other.agent.plist" "someone else's agent stays" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "launchctl bootout gui/501 $dir/sh.teeup.keyboard.plist" || return 1
+  assert_contains "$_UNINSTALL_REMOVED" "LaunchAgent sh.teeup.keyboard" || return 1
+  cleanup_test_env
+}
+
+test_secrets_are_named_with_commands_that_delete_them() {
+  setup
+  mock_command_script security <<'EOF2'
+cat <<'DUMP'
+keychain: "/Users/x/Library/Keychains/login.keychain-db"
+class: "genp"
+attributes:
+    "acct"<blob>="gh token"
+    "svce"<blob>="teeup"
+keychain: "/Users/x/Library/Keychains/login.keychain-db"
+class: "genp"
+attributes:
+    "acct"<blob>="someone"
+    "svce"<blob>="other-app"
+DUMP
+EOF2
+  make_cap secrets core
+  state_done mark cap-secrets
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_KEPT" "(gh token)" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "security delete-generic-password -s teeup -a gh\\ token" || return 1
+  assert_not_contains "$_UNINSTALL_KEPT" "someone" || return 1
+  cleanup_test_env
+}
+
 echo "lib/uninstall.sh"
 run_test "rm removes a file, a directory and a link without following it" test_rm_removes_a_file_a_directory_and_a_link_without_following_it
 run_test "rm refuses outside HOME and in a git checkout, with a fix that works" test_rm_refuses_outside_home_and_in_a_git_checkout_with_a_fix_that_works
@@ -383,4 +535,12 @@ run_test "path hint prints a command that works" test_path_hint_prints_a_command
 run_test "path hint prints a macports command that works" test_path_hint_prints_a_macports_command_that_works
 run_test "path hint needs an active working line to stop" test_path_hint_needs_an_active_working_line_to_stop
 run_test "shell notes a failure instead of silence when it cannot read the zshrc" test_shell_notes_a_failure_instead_of_silence_when_it_cannot_read_the_zshrc
+run_test "capabilities keep packages by default and name how to remove them" test_capabilities_keep_packages_by_default_and_name_how_to_remove_them
+run_test "capabilities name what the tools made for themselves" test_capabilities_name_what_the_tools_made_for_themselves
+run_test "capabilities uninstall packages when asked" test_capabilities_uninstall_packages_when_asked
+run_test "capabilities decide each of the seven remove refuses" test_capabilities_decide_each_of_the_seven_remove_refuses
+run_test "capabilities refuse what a failed dependent still needs" test_capabilities_refuse_what_a_failed_dependent_still_needs
+run_test "capabilities keep the zsh the login shell runs" test_capabilities_keep_the_zsh_the_login_shell_runs
+run_test "launchagents are unloaded, removed and checked" test_launchagents_are_unloaded_removed_and_checked
+run_test "secrets are named with commands that delete them" test_secrets_are_named_with_commands_that_delete_them
 print_summary

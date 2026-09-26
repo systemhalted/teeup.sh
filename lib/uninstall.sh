@@ -400,3 +400,247 @@ uninstall_path_hint() {
   esac
   uninstall_note kept "$(pkg_backend_label) at $prefix. teeup's shell layer put it on PATH; to keep it there in new shells run: echo $(uninstall_q "$line") >> $(uninstall_q "$zprofile")"
 }
+
+# --- capabilities ---------------------------------------------------------------
+
+# Set by cmd_uninstall: "true" to uninstall the packages and casks each
+# capability's metadata names, "true" to remove the identity as well.
+_UNINSTALL_PACKAGES="${_UNINSTALL_PACKAGES:-false}"
+_UNINSTALL_IDENTITY="${_UNINSTALL_IDENTITY:-false}"
+# Capabilities handled this run (removed, or kept by policy), space-padded.
+_UNINSTALL_GONE=" "
+# Installed package and cask names left on the machine, for the one "kept"
+# line that says how to remove them later.
+_UNINSTALL_KEPT_PKGS=""
+_UNINSTALL_KEPT_CASKS=""
+
+# uninstall_login_shell -> the login shell macOS has on record for this user.
+uninstall_login_shell() {
+  dscl . -read "/Users/${USER:-$(id -un)}" UserShell 2>/dev/null | awk '{print $2}'
+}
+
+# uninstall_blockers <name> -> the installed capabilities that still require
+# <name> and were not handled this run, space separated (empty when none).
+uninstall_blockers() {
+  local target="$1" name out=""
+  for name in $(cap_list); do
+    if [[ "$name" == "$target" ]]; then continue; fi
+    case "$_UNINSTALL_GONE" in *" $name "*) continue ;; esac
+    state_done check "cap-$name" || continue
+    case " $(cap_meta_get "$name" requires) " in
+      *" $target "*) out="$out $name" ;;
+    esac
+  done
+  printf '%s\n' "${out# }"
+}
+
+# _uninstall_keep_packages <name>
+# Adds whichever of <name>'s packages and casks are installed here to the
+# kept lists, under the name the package manager knows them by.
+_uninstall_keep_packages() {
+  local name="$1" pkg candidate cask
+  for pkg in $(cap_meta_get "$name" packages); do
+    for candidate in $(package_candidates "$pkg"); do
+      if pkg_installed "$candidate" >/dev/null 2>&1; then
+        case " $_UNINSTALL_KEPT_PKGS " in
+          *" $candidate "*) ;;
+          *) _UNINSTALL_KEPT_PKGS="${_UNINSTALL_KEPT_PKGS:+$_UNINSTALL_KEPT_PKGS }$candidate" ;;
+        esac
+        break
+      fi
+    done
+  done
+  casks_supported || return 0
+  for cask in $(cap_meta_get "$name" casks); do
+    if cask_installed "$cask" >/dev/null 2>&1; then
+      _UNINSTALL_KEPT_CASKS="${_UNINSTALL_KEPT_CASKS:+$_UNINSTALL_KEPT_CASKS }$cask"
+    fi
+  done
+}
+
+# uninstall_policy <name> -> what uninstall does with a capability that
+# `teeup remove` refuses (it ships no remove script and names no packages),
+# or "remove" for every other one. Spec amendment 2026-09-25 gives the reason
+# for each; the short form is in the kept line each one writes.
+uninstall_policy() {
+  case "$1" in
+    xcode-clt|package-manager|dev-dirs|secrets) echo keep ;;
+    ssh) echo identity ;;
+    teeup-runtime|theme) echo state ;;
+    *) echo remove ;;
+  esac
+}
+
+# _uninstall_keep_note <name>
+_uninstall_keep_note() {
+  case "$1" in
+    xcode-clt)
+      uninstall_note kept "Xcode Command Line Tools: git, compilers and the package manager need them. They are macOS's to manage; remove them by hand with: sudo rm -rf /Library/Developer/CommandLineTools"
+      ;;
+    package-manager)
+      case "$(pkg_backend)" in
+        homebrew) uninstall_note kept "Homebrew: teeup never uninstalls the package manager. Homebrew's own uninstaller is: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)\"" ;;
+        macports) uninstall_note kept "MacPorts: teeup never uninstalls the package manager. MacPorts documents its removal at https://guide.macports.org/#installing.macports.uninstalling" ;;
+      esac
+      ;;
+    dev-dirs)
+      uninstall_note kept "$HOME/Work: your projects live there."
+      ;;
+    secrets)
+      _uninstall_secrets_note
+      ;;
+  esac
+}
+
+# uninstall_secret_names -> the account name of every login-Keychain item
+# stored under the service "teeup" (what `teeup secret set` writes), one per
+# line. `security dump-keychain` without -d prints attributes only, never a
+# secret, and asks for nothing.
+uninstall_secret_names() {
+  have security || return 0
+  security dump-keychain 2>/dev/null | awk '
+    /^keychain: / { if (svce == "teeup" && acct != "") print acct; svce = ""; acct = "" }
+    /"svce"<blob>="/ { v = $0; sub(/^.*"svce"<blob>="/, "", v); sub(/"$/, "", v); svce = v }
+    /"acct"<blob>="/ { v = $0; sub(/^.*"acct"<blob>="/, "", v); sub(/"$/, "", v); acct = v }
+    END { if (svce == "teeup" && acct != "") print acct }
+  '
+}
+
+# _uninstall_secrets_note -> one kept line naming each teeup secret and the
+# command that deletes it. Secrets are the user's data, not teeup's
+# configuration, so uninstall never deletes them itself.
+_uninstall_secrets_note() {
+  local secret names="" cmds=""
+  while IFS= read -r secret; do
+    [[ -n "$secret" ]] || continue
+    names="${names:+$names, }$secret"
+    cmds="${cmds:+$cmds; }security delete-generic-password -s teeup -a $(uninstall_q "$secret")"
+  done <<EOF
+$(uninstall_secret_names)
+EOF
+  [[ -n "$names" ]] || return 0
+  uninstall_note kept "Secrets in your login Keychain ($names). Delete them with: $cmds"
+}
+
+# _uninstall_remove_one <name>
+_uninstall_remove_one() {
+  local name="$1" rc=0 with="$_UNINSTALL_PACKAGES" names login
+  names="$(cap_meta_get "$name" packages) $(cap_meta_get "$name" casks)"
+  names="$(printf '%s' "$names" | awk '{$1=$1; print}')"
+  # The login shell must survive. zsh's packages include zsh itself; when
+  # the login shell is the package manager's zsh, uninstalling it would
+  # leave Terminal nothing to start. The capability stays marked installed,
+  # so the rerun this note names can finish it.
+  if [[ "$name" == "zsh" && "$with" == "true" ]]; then
+    login="$(uninstall_login_shell)"
+    case "$login" in
+      "$(pkg_prefix)"/*)
+        uninstall_note refused "zsh's packages ($names): your login shell is $login, which they provide. Switch to macOS's own zsh first with: chsh -s /bin/zsh, then run: $(uninstall_q "$TEEUP_PATH/bin/teeup") uninstall --packages"
+        return 0
+        ;;
+    esac
+  fi
+  cap_remove "$name" "$with" || rc=$?
+  case "$rc" in
+    0)
+      _UNINSTALL_GONE="$_UNINSTALL_GONE$name "
+      if [[ -f "$(cap_dir "$name")/remove" && "$TEEUP_CAP_NA" != "true" ]]; then
+        uninstall_note removed "$name: what its remove script set up"
+      fi
+      if [[ -n "$names" ]]; then
+        if [[ "$with" == "true" ]]; then
+          uninstall_note removed "$name's packages: $names"
+        else
+          _uninstall_keep_packages "$name"
+        fi
+      fi
+      ;;
+    2)
+      # Nothing teeup tracks for it beyond its own record, which goes with
+      # the state directory.
+      _UNINSTALL_GONE="$_UNINSTALL_GONE$name "
+      ;;
+    3)
+      uninstall_note failed "$name: its remove script failed (the output above says why), so nothing of it was uninstalled. Fix that, then run: $(uninstall_q "$TEEUP_PATH/bin/teeup") uninstall"
+      ;;
+    *)
+      uninstall_note failed "$name: a package or cask would not uninstall (the output above says which). Fix that, then run: $(uninstall_q "$TEEUP_PATH/bin/teeup") uninstall --packages"
+      ;;
+  esac
+}
+
+# uninstall_capabilities
+# Every installed capability, dependents first. A capability another one
+# still needs (because that one failed or was refused) is refused in turn:
+# pulling the package manager out from under a half-removed capability is
+# how a retry becomes impossible.
+uninstall_capabilities() {
+  local name blockers had
+  had=" $(uninstall_caps | tr '\n' ' ')"
+  for name in $had; do
+    blockers="$(uninstall_blockers "$name")"
+    if [[ -n "$blockers" ]]; then
+      uninstall_note refused "$name: still required by $blockers, which could not be removed. It goes on the rerun, once those do."
+      continue
+    fi
+    case "$(uninstall_policy "$name")" in
+      keep)
+        _uninstall_keep_note "$name"
+        _UNINSTALL_GONE="$_UNINSTALL_GONE$name "
+        ;;
+      identity)
+        if [[ "$_UNINSTALL_IDENTITY" != "true" ]]; then
+          uninstall_note kept "Your SSH keys and ~/.ssh/config: they are your identity. teeup uninstall --identity removes the keys teeup generated."
+        fi
+        _UNINSTALL_GONE="$_UNINSTALL_GONE$name "
+        ;;
+      state)
+        _UNINSTALL_GONE="$_UNINSTALL_GONE$name "
+        ;;
+      remove)
+        _uninstall_remove_one "$name"
+        ;;
+    esac
+  done
+  if [[ -n "$_UNINSTALL_KEPT_PKGS" ]]; then
+    case "$(pkg_backend)" in
+      homebrew) uninstall_note kept "Packages: $_UNINSTALL_KEPT_PKGS. Remove them later with: brew uninstall $_UNINSTALL_KEPT_PKGS" ;;
+      macports) uninstall_note kept "Packages: $_UNINSTALL_KEPT_PKGS. Remove them later with: sudo port uninstall $_UNINSTALL_KEPT_PKGS" ;;
+    esac
+  fi
+  if [[ -n "$_UNINSTALL_KEPT_CASKS" ]]; then
+    uninstall_note kept "Apps: $_UNINSTALL_KEPT_CASKS. Remove them later with: brew uninstall --cask $_UNINSTALL_KEPT_CASKS"
+  fi
+  # What a tool made for itself was never teeup's to track, so it is named
+  # rather than silently left behind.
+  case "$had" in
+    *" mise "*|*" emacs "*|*" zed "*|*" vscode "*)
+      uninstall_note kept "What the tools made for themselves: runtimes mise installed (${MISE_DATA_DIR:-$HOME/.local/share/mise}), a Doom or Spacemacs checkout, and the theme and font keys teeup set inside Zed's and VS Code's own settings."
+      ;;
+  esac
+  return 0
+}
+
+# uninstall_launchagents
+# Every sh.teeup.* agent still in ~/Library/LaunchAgents: the capability
+# loop's remove scripts took their own (emacs, keyboard), so anything here
+# belongs to a capability no longer marked installed. Unloaded and deleted
+# through launchagent_remove, then checked on disk.
+uninstall_launchagents() {
+  local plist label
+  for plist in "$HOME/Library/LaunchAgents"/sh.teeup.*.plist; do
+    [[ -e "$plist" || -L "$plist" ]] || continue
+    label="${plist##*/}"
+    label="${label%.plist}"
+    if [[ -L "$plist" ]]; then
+      uninstall_note refused "LaunchAgent $label: $plist is a symlink, so teeup left it. Unload and delete it with: launchctl bootout gui/$(id -u) $(uninstall_q "$plist"); rm $(uninstall_q "$plist")"
+      continue
+    fi
+    launchagent_remove "$label" || true
+    if [[ "$DRY_RUN" != "true" && -e "$plist" ]]; then
+      uninstall_note failed "LaunchAgent $label: $plist is still there. Unload and delete it with: launchctl bootout gui/$(id -u) $(uninstall_q "$plist"); rm $(uninstall_q "$plist")"
+      continue
+    fi
+    uninstall_note removed "LaunchAgent $label"
+  done
+}
