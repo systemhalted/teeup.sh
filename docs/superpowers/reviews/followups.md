@@ -9,6 +9,13 @@ here and done once the current phase of work is finished.
 
 | Raised on | Finding | Status |
 | --- | --- | --- |
+| AI wrappers (task reviews) | `mise where` runs twice per tool on every wrapper launch; iterate the missing list in the install loop | Open |
+| AI wrappers (task reviews) | `mise_wrapper_remove` builds its path from raw `$2` before validating; untested remove branches and owner interpolation | Open |
+| AI wrappers (task reviews) | The generated wrapper lost the comment explaining its mise global-config fallback | Open |
+| AI wrappers (task reviews) | Bundle members are hardcoded in three places; read them from `cap_meta_get ai requires` | Open |
+| AI wrappers (task reviews) | `teeup remove ai-claude` is refused while `ai` is installed; the README remove bullet does not say so | Open |
+| AI wrappers (task reviews) | The skip notice and install failure reason do not reach the log file; the explicit `TEEUP_LOG_FILE` branch is untested | Open |
+| AI wrappers (task reviews) | "All AI command-line tools" stays in the menu after installing all five leaves individually | Open |
 | PR #43 uninstall plan (Codex P2) | The printed rerun command after a refusal drops the active flags (`--yes --packages --identity`); carry them through | Open (fold in when executing the plan) |
 | PR #43 uninstall plan (Codex P2) | On MacPorts the kept-package ledger omits the emacs/wezterm ports that their remove scripts map casks to | Open (fold in when executing the plan) |
 | Migrate reinstall fix (local Codex P2) | A `DRY_RUN=true teeup migrate legacy` does not preview the new reinstall step (owners are collected only for real moves); track owners separately and preview each configure | Open |
@@ -67,3 +74,4 @@ Doctor follow-ups stop here (decision 2026-09-25): P2/P3 findings on `capabiliti
 - `capabilities/theme/doctor`: the stale-render check uses `-nt`, which under bash 3.2 compares whole seconds, so a template edited in the same second as its render is not flagged. `stat -f %m` and `-c %Y` are whole seconds too; `find <tpl> -newer <render>` compares sub-second times, if it ever matters.
 - `tests/run.sh`: nothing stops a test writing into the checkout (two package-manager tests wrote `machines/testmac.conf` there, racing every suite that loads it). Snapshot `machines/` before the run and fail when it changed.
 - Phase 4b 5-10 (task reviews): `_menu_check_body` reads a label twice; `cmd_config get` repeats the machine-file lookup a third time (share `machine_file`); the `cmd_menu` trap rationale comment is written twice; `lib/dev.sh` render-failure cleanup is duplicated for the test file; the new-capability probe copies with `cp -Rp` rather than `git ls-files`; a dry-run chmod preview names files a dry run never created; `install.dev-env.*` menu rows have no `when` guard; `dev check` refuses DRY_RUN with exit 1 rather than 2; `config edit`'s quoted-value pattern was verified on glibc only.
+- AI wrappers: no test of two captured `run_logged` calls in one shell; nested interactive note printed into a captured stream; new leaf suites are mode 644 while others are 755; a spaced-HOME wrapper test was dropped; the registry mapping comment (aqua backends) was lost; CONTRIBUTING's "-C /" claim is not tree-wide.
