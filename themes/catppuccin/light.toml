@@ -13,6 +13,12 @@ neovim_colorscheme = "catppuccin-latte"
 vscode_theme = "Catppuccin Latte"
 vscode_extension = "Catppuccin.catppuccin-vsc"
 
+# The closest doom-themes match for Latte (same upstream commit as
+# dark.toml): doom-acario-light's background #F5F5F9 is within 6 units per
+# channel of Latte's #eff1f5, and its base4 text colour #585C6C sits in the
+# same slate-blue family as Latte's foreground #4c4f69.
+doom_theme = "doom-acario-light"
+
 accent = "#1e66f5"
 selection = "#ccd0da"
 muted = "#acb0be"

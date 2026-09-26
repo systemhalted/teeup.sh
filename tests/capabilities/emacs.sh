@@ -65,7 +65,19 @@ esac
 EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
   EMACS_DIR="$TEST_HOME/.config/emacs"
+  DOOM_DIR="$TEST_HOME/.config/doom"
   PLIST="$TEST_HOME/Library/LaunchAgents/sh.teeup.emacs.plist"
+}
+
+# A Doom checkout and a private module already in place, so configure skips
+# the clone and `doom install` and goes straight to the part a test wants:
+# neither runs a real git clone nor a real `doom install --no-env` (there is
+# no real doom binary behind the stub), which would otherwise warn.
+stub_doom_checkout() {
+  mkdir -p "$EMACS_DIR/bin" "$DOOM_DIR"
+  printf '#!/bin/sh\n' > "$EMACS_DIR/bin/doom"
+  chmod +x "$EMACS_DIR/bin/doom"
+  printf ';; mine\n' > "$DOOM_DIR/init.el"
 }
 
 set_flavor() {
@@ -385,6 +397,56 @@ test_a_legacy_emacs_d_is_reported_not_moved() {
   cleanup_test_env
 }
 
+test_doom_flavor_adds_the_theme_line_once() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  printf ';;; config.el -*- lexical-binding: t; -*-\n(setq doom-theme (quote doom-one))\n' > "$DOOM_DIR/config.el"
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  local body
+  body="$(cat "$DOOM_DIR/config.el")"
+  assert_equals ";; teeup: theme (managed by teeup; remove this line to opt out)" "$(head -n1 "$DOOM_DIR/config.el")" \
+    "the line sits at the top, so it is read before the user's own setq" || return 1
+  assert_contains "$body" "(load! \"$TEST_HOME/.local/state/teeup/current/theme/light/doom-theme.el\" \"\" t)" || return 1
+  assert_contains "$body" "(setq doom-theme (quote doom-one))" "the user's own line is kept" || return 1
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  assert_equals "1" "$(grep -c "teeup: theme" "$DOOM_DIR/config.el")" "the line is never duplicated" || return 1
+  cleanup_test_env
+}
+
+test_doom_flavor_dry_run_leaves_config_el_untouched() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  printf ';;; config.el\n' > "$DOOM_DIR/config.el"
+  local before out
+  before="$(cat "$DOOM_DIR/config.el")"
+  out="$(DRY_RUN=true "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would add to $DOOM_DIR/config.el: ;; teeup: theme" || return 1
+  assert_equals "$before" "$(cat "$DOOM_DIR/config.el")" "a dry run writes nothing" || return 1
+  cleanup_test_env
+}
+
+test_doom_flavor_without_config_el_writes_nothing() {
+  setup
+  set_flavor doom
+  local out rc=0
+  out="$(DRY_RUN=true "$TEEUP" configure emacs 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  [[ ! -e "$DOOM_DIR/config.el" ]] || { echo "config.el appeared with no Doom install"; return 1; }
+  assert_not_contains "$out" "teeup: theme" "nothing to add a theme line to yet" || return 1
+  cleanup_test_env
+}
+
+test_starter_flavor_leaves_doom_config_el_untouched() {
+  setup
+  mkdir -p "$DOOM_DIR"
+  printf ';; mine\n' > "$DOOM_DIR/config.el"
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  assert_equals ";; mine" "$(cat "$DOOM_DIR/config.el")" "the starter never touches Doom's config.el" || return 1
+  cleanup_test_env
+}
+
 test_plist_escapes_metacharacters_in_paths() {
   setup
   # A state dir and a TMPDIR with a space and an ampersand: the plist must
@@ -491,6 +553,21 @@ test_theme_apply_reloads_a_running_daemon() {
   rm -f "$TEST_HOME/daemon-up"
   out="$(DRY_RUN=true "$TEEUP" install font Hack 2>&1)"
   assert_contains "$out" "No Emacs daemon is running; the font is read at the next start." || return 1
+  cleanup_test_env
+}
+
+# The hook itself takes no flavor branch: it calls `teeup-apply` for every
+# flavor, and Doom now defines that function too (via the marked config.el
+# line and the rendered doom-theme.el), so the same call fires unchanged.
+test_theme_apply_reloads_a_running_daemon_for_doom() {
+  setup
+  set_flavor doom
+  mkdir -p "$TEST_HOME/.local/state/teeup/done"
+  : > "$TEST_HOME/.local/state/teeup/done/cap-emacs"
+  : > "$TEST_HOME/daemon-up"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" theme set catppuccin 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: emacsclient -a false -e (when (fboundp 'teeup-apply) (teeup-apply))" || return 1
   cleanup_test_env
 }
 
@@ -659,12 +736,17 @@ run_test "flavor none touches no config" test_flavor_none_touches_no_config
 run_test "the machine file wins over the answer" test_the_machine_file_wins_over_the_answer
 run_test "unknown flavor warns and uses the starter" test_unknown_flavor_warns_and_uses_the_starter
 run_test "a legacy ~/.emacs.d is reported, not moved" test_a_legacy_emacs_d_is_reported_not_moved
+run_test "doom flavor adds the theme line once" test_doom_flavor_adds_the_theme_line_once
+run_test "doom flavor dry run leaves config.el untouched" test_doom_flavor_dry_run_leaves_config_el_untouched
+run_test "doom flavor without config.el writes nothing" test_doom_flavor_without_config_el_writes_nothing
+run_test "starter flavor leaves Doom's config.el untouched" test_starter_flavor_leaves_doom_config_el_untouched
 run_test "plist escapes metacharacters in paths" test_plist_escapes_metacharacters_in_paths
 run_test "the TMPDIR gate holds across a different session" test_the_tmpdir_gate_holds_across_a_different_session
 run_test "the daemon probe never starts a daemon" test_the_daemon_probe_never_starts_a_daemon
 run_test "theme renders the emacs palette" test_theme_renders_the_emacs_palette
 run_test "hooks wait until teeup installed emacs" test_hooks_wait_until_teeup_installed_emacs
 run_test "theme-apply reloads a running daemon" test_theme_apply_reloads_a_running_daemon
+run_test "theme-apply reloads a running daemon for doom" test_theme_apply_reloads_a_running_daemon_for_doom
 run_test "remove unloads the agent through lib/macos" test_remove_unloads_the_agent_through_lib_macos
 run_test "remove keeps the port when packages are kept" test_remove_keeps_the_port_when_packages_are_kept
 run_test "configure points git at emacsclient" test_configure_points_git_at_emacsclient

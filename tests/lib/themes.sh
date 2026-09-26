@@ -13,6 +13,11 @@ THEMES_UNDER_TEST="${THEMES_UNDER_TEST:-$TEEUP_PATH/themes}"
 # fails the parse test rather than skipping it.
 THEMES_JQ="$(command -v jq || true)"
 THEMES_LUAC="$(command -v luac || command -v luac5.4 || true)"
+# Resolved for the same reason, and to the same effect: if present, the
+# rendered doom-theme.el files are parsed for real; if not (a developer
+# machine, or a macOS CI runner, which never installs Emacs), the check below
+# falls back to a paren-balance count instead of skipping outright.
+THEMES_EMACS="$(command -v emacs || true)"
 
 # bat 0.26.1's built-in themes, as `bat --list-themes` prints them. Homebrew
 # and MacPorts both ship 0.26.1.
@@ -84,6 +89,89 @@ Gruvbox Light
 Gruvbox Light Hard
 Gruvbox Light Soft'
 
+# Every theme in github.com/doomemacs/themes' themes/ directory, commit
+# a59202912ad55014e53a685eee6cd94130bdd4fd (checked 2026-09-26, via
+# api.github.com/repos/doomemacs/themes/contents/themes), as the `doom-theme'
+# symbol each one defines (its filename without "-theme.el"). Doom has no
+# Catppuccin port, so a palette's doom_theme names the closest one instead.
+DOOM_BUILTIN_THEMES='doom-1337
+doom-Iosvkem
+doom-acario-dark
+doom-acario-light
+doom-ayu-dark
+doom-ayu-light
+doom-ayu-mirage
+doom-badger
+doom-bluloco-dark
+doom-bluloco-light
+doom-challenger-deep
+doom-city-lights
+doom-dark+
+doom-dracula
+doom-earl-grey
+doom-ephemeral
+doom-fairy-floss
+doom-feather-dark
+doom-feather-light
+doom-flatwhite
+doom-gruvbox-light
+doom-gruvbox
+doom-henna
+doom-homage-black
+doom-homage-white
+doom-horizon
+doom-ir-black
+doom-lantern
+doom-laserwave
+doom-manegarm
+doom-material-dark
+doom-material
+doom-meltbus
+doom-miramare
+doom-molokai
+doom-monokai-classic
+doom-monokai-machine
+doom-monokai-octagon
+doom-monokai-pro
+doom-monokai-ristretto
+doom-monokai-spectrum
+doom-moonlight
+doom-nord-aurora
+doom-nord-light
+doom-nord
+doom-nova
+doom-oceanic-next
+doom-oksolar-dark
+doom-oksolar-light
+doom-old-hope
+doom-one-light
+doom-one
+doom-opera-light
+doom-opera
+doom-outrun-electric
+doom-palenight
+doom-peacock
+doom-pine
+doom-plain-dark
+doom-plain
+doom-rouge
+doom-shades-of-purple
+doom-snazzy
+doom-solarized-dark-high-contrast
+doom-solarized-dark
+doom-solarized-light
+doom-sourcerer
+doom-spacegrey
+doom-tokyo-night
+doom-tomorrow-day
+doom-tomorrow-night
+doom-vibrant
+doom-wilmersdorf
+doom-winter-is-coming-dark-blue
+doom-winter-is-coming-light
+doom-xcode
+doom-zenburn'
+
 # Values checked against each theme's upstream sources when it was added:
 # "<theme> <mode> <key> <value>", the value running to the end of the line.
 # A row for a theme that is not shipped fails; a shipped theme without rows
@@ -100,6 +188,7 @@ catppuccin dark zed_extension catppuccin
 catppuccin dark neovim_colorscheme catppuccin-mocha
 catppuccin dark vscode_theme Catppuccin Mocha
 catppuccin dark vscode_extension Catppuccin.catppuccin-vsc
+catppuccin dark doom_theme doom-dracula
 catppuccin light background #eff1f5
 catppuccin light foreground #4c4f69
 catppuccin light accent #1e66f5
@@ -110,6 +199,7 @@ catppuccin light zed_extension catppuccin
 catppuccin light neovim_colorscheme catppuccin-latte
 catppuccin light vscode_theme Catppuccin Latte
 catppuccin light vscode_extension Catppuccin.catppuccin-vsc
+catppuccin light doom_theme doom-acario-light
 ANCHORS
 }
 
@@ -271,6 +361,38 @@ test_every_rendered_json_and_lua_file_parses() {
   cleanup_test_env
 }
 
+# doom-theme.el is not JSON or Lua: it is checked separately, by naming the
+# palette's own doom_theme and, when a real Emacs is on PATH, actually reading
+# it. Without one (a developer's machine, or a macOS CI runner, neither of
+# which installs Emacs), a paren-balance count stands in, the same fallback
+# the JSON/Lua check above has no need of because jq and luac are required on
+# every CI runner.
+test_every_rendered_doom_theme_file_names_the_palette_and_parses() {
+  setup
+  template_caps
+  local name mode state file want open close
+  state="$XDG_STATE_HOME/teeup"
+  for name in $(shipped_themes); do
+    render_theme "$name" || return 1
+    for mode in dark light; do
+      file="$state/current/theme/$mode/doom-theme.el"
+      assert_file_exists "$file" "$name $mode ships a doom-theme.el" || return 1
+      want="$(palette_value "$THEMES_UNDER_TEST/$name/$mode.toml" doom_theme)"
+      assert_contains "$(cat "$file")" "(setq doom-theme (intern \"$want\"))" || return 1
+      if [[ -n "$THEMES_EMACS" ]]; then
+        "$THEMES_EMACS" -Q --batch -l "$file" >/dev/null 2>&1 ||
+          { echo "$name $mode: $file did not load in emacs --batch"; return 1; }
+      else
+        open="$(tr -cd '(' < "$file" | wc -c | tr -d ' ')"
+        close="$(tr -cd ')' < "$file" | wc -c | tr -d ' ')"
+        [[ "$open" == "$close" ]] ||
+          { echo "$name $mode: $file has unbalanced parentheses ($open open, $close close)"; return 1; }
+      fi
+    done
+  done
+  cleanup_test_env
+}
+
 test_every_palette_names_themes_the_tools_ship() {
   setup
   local name mode file value word
@@ -283,6 +405,9 @@ test_every_palette_names_themes_the_tools_ship() {
       value="$(palette_value "$file" emacs_theme)"
       printf '%s\n' "$EMACS_BUILTIN_THEMES" | grep -qxF "$value" ||
         { echo "themes/$name/$mode.toml: '$value' is not a theme built into Emacs"; return 1; }
+      value="$(palette_value "$file" doom_theme)"
+      printf '%s\n' "$DOOM_BUILTIN_THEMES" | grep -qxF "$value" ||
+        { echo "themes/$name/$mode.toml: '$value' is not a theme built into doom-themes"; return 1; }
       # teeup's Neovim layer picks the plugin by the colorscheme's first word.
       value="$(palette_value "$file" neovim_colorscheme)"
       word="${value%%[!A-Za-z0-9]*}"
@@ -345,6 +470,7 @@ run_test "every palette loads for its own mode" test_every_palette_loads_for_its
 run_test "every palette has the fallback theme's keys" test_every_palette_has_the_fallback_themes_keys
 run_test "every theme renders every template" test_every_theme_renders_every_template
 run_test "every rendered JSON and Lua file parses" test_every_rendered_json_and_lua_file_parses
+run_test "every rendered doom-theme.el names the palette and parses" test_every_rendered_doom_theme_file_names_the_palette_and_parses
 run_test "every palette names themes the tools ship" test_every_palette_names_themes_the_tools_ship
 run_test "every editor theme has its extension" test_every_editor_theme_has_its_extension
 run_test "every theme is in the README" test_every_theme_is_in_the_readme

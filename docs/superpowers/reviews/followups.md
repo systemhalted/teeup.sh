@@ -82,3 +82,4 @@ Doctor follow-ups stop here (decision 2026-09-25): P2/P3 findings on `capabiliti
 - `teeup config edit` does not refuse a TEEUP_PACKAGE_MANAGER change once package-manager is installed, which `config set` does (Codex on #48, P2); the edit should roll back like a parse failure.
 - `teeup uninstall` final re-review minors (M1-M6 in the branch's final-rereview notes): a dry run with --identity still prints the git-config package note; no test pins that note's silence when packages are kept; plus the parked chmod-000/500 root-assumption tests and the DRY_RUN no-TTY rerun missing --yes.
 - Stock-record names turn "/" into "__" (phase 1 deferred item 8), so a path with a literal "__" decodes wrongly in uninstall_stock_paths and could map to another path with identical content (Codex P2 on #52). Give records an unambiguous encoding.
+- Spacemacs has the same theming gap Doom had (`dotspacemacs-themes` is never set from a teeup palette); left for a later pass, not this beta.

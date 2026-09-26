@@ -148,8 +148,9 @@ the theme each tool should load:
 | `catppuccin` | Mocha, Latte | `OneHalfDark`, `OneHalfLight` | `modus-vivendi`, `modus-operandi` | Catppuccin Mocha, Latte (extension `catppuccin`) | `catppuccin-mocha`, `catppuccin-latte` | Catppuccin Mocha, Latte (`Catppuccin.catppuccin-vsc`) |
 
 - **Emacs** gets a theme built into Emacs, because the starter configuration
-  installs no packages; Doom and Spacemacs keep the theme their own
-  configuration picks.
+  installs no packages. Doom follows the palette's `doom_theme` too, through
+  one marked line teeup adds near the top of `config.el`; Spacemacs keeps the
+  theme its own configuration picks.
 - **Zed** installs a theme's extension the next time it starts; **VS Code**
   gets its extension through the `code` command. A theme Zed ships needs no
   extension.

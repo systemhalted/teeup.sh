@@ -17,6 +17,14 @@ neovim_colorscheme = "catppuccin-mocha"
 vscode_theme = "Catppuccin Mocha"
 vscode_extension = "Catppuccin.catppuccin-vsc"
 
+# doom-themes has no Catppuccin port (github.com/doomemacs/themes, commit
+# a59202912ad55014e53a685eee6cd94130bdd4fd, checked 2026-09-26: no
+# doom-catppuccin* file under themes/). doom-dracula is the closest built-in
+# match for Mocha: its background #282a36 is within 18 units per channel of
+# Mocha's #1e1e2e, and Dracula's own pastel purple/pink/green/cyan accents
+# are the same family as Mocha's.
+doom_theme = "doom-dracula"
+
 accent = "#89b4fa"
 selection = "#45475a"
 muted = "#585b70"
