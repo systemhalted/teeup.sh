@@ -2,7 +2,7 @@
 
 Date: 2026-09-11
 Status: approved design, pre-implementation
-Amended: 2026-09-13, the daily tier (user decision; see the Editors, Browsers, Productivity and Essential set rows of the interview table); 2026-09-17, one identity (user decision; see the Git, SSH/signing, Dev dirs and Work vs personal rows of the interview table, section 4b, section 8 and section 10); 2026-09-18, personal overlay (a machine file is looked up in the user's own config dir before the checkout's, so recording a machine setting never requires a fork -- see section 7 and section 8)
+Amended: 2026-09-13, the daily tier (user decision; see the Editors, Browsers, Productivity and Essential set rows of the interview table); 2026-09-17, one identity (user decision; see the Git, SSH/signing, Dev dirs and Work vs personal rows of the interview table, section 4b, section 8 and section 10); 2026-09-18, personal overlay (a machine file is looked up in the user's own config dir before the checkout's, so recording a machine setting never requires a fork -- see section 7 and section 8); 2026-09-25, `teeup uninstall` (user decision; see "Amendment 2026-09-25: `teeup uninstall`" under the CLI surface)
 
 ## Context
 
@@ -377,10 +377,39 @@ teeup menu                                          teeup launch <app>
 teeup theme set|list|current                        teeup config get|set|edit
 teeup has <cap>   (exit code only)                  teeup migrate legacy
 teeup secret get|set|rm <name>                      teeup dev new-capability|add-migration|check
-teeup commands [--check]
+teeup commands [--check]                            teeup uninstall [--packages] [--identity] [--yes]
 ```
 
 `bin/teeup` resolves `<verb> <cap>` to `capabilities/<cap>/<verb>`, falling back to generic implementations for `update` and `remove` from metadata. Help and completion derive from metadata files.
+
+#### Amendment 2026-09-25: `teeup uninstall`
+
+*User decision; this section had no verb for taking teeup off a machine, only `teeup remove <cap>` for one capability. The CLI surface above gained the `uninstall` row the same day. Plan: `docs/superpowers/plans/2026-09-25-teeup-uninstall.md`.*
+
+`teeup uninstall` takes teeup off the Mac it runs on, in this order, and the order is part of the contract:
+
+1. **The zsh home files first.** teeup's lines come out of `${ZDOTDIR:-$HOME}/.zshenv`, `.zprofile` and `.zshrc` before any tool the shell layer hooks (mise, starship, zoxide, fzf) is removed, because a shell that sources a hook for a binary that is already gone fails at every prompt -- which is what a real Mac did on 2026-09-25 when the same machine was emptied with a loop of `teeup remove`. A pristine `.zshrc` is replaced by a short file of the user's own, never deleted; pristine `.zshenv` and `.zprofile` go; in an edited file only teeup's lines are neutralised (`disable_matching_lines`, backup beside it). A symlinked home file, or one inside a git checkout, is refused rather than written. The shell that ran the command registered its hooks at startup and cannot be unhooked, so the run ends by telling the user to open a new terminal (or `exec /bin/zsh -l`).
+2. **Every installed capability, dependents first,** through the same removal `teeup remove` uses (its `remove` script, then its metadata's packages and casks). A capability still required by one that failed is refused, not removed.
+3. **teeup's LaunchAgents** (`sh.teeup.*`), whatever is still loaded after step 2.
+4. **Config files by the stock-checksum rule** (section 9): pristine copies go, edited ones stay, and a `.teeup_backup_*` copy of what teeup replaced at install time is offered back.
+5. **The identity, only with `--identity`**: the keys at teeup's own naming convention (`~/.ssh/id_ed25519_<identity>`), a pristine `~/.ssh/config`, and the git identity. Without the flag they are never touched, and neither is `~/.config/git/config`, through which git reads that identity.
+6. **teeup itself, last and only after a clean run**: `~/.local/bin/teeup`, `$TEEUP_CONFIG_DIR` (teeup's own files; the user's machine file, hooks and themes stay) and `$TEEUP_STATE_DIR`. After any refusal or failure they stay, because they are what a rerun needs.
+
+Packages and casks the metadata names are uninstalled only when the user says so: a question on a terminal defaulting to no, or `--packages`; with `--yes` or no terminal they stay, and the summary names them with the command that removes them. A real run with no terminal requires `--yes`. `DRY_RUN=true` asks nothing and changes nothing. The run ends with a summary in four columns -- removed, kept, refused, failed -- and exits non-zero when anything was refused or failed. A second run on a clean machine changes nothing and exits 0.
+
+Never touched: Homebrew and MacPorts, config files the user edited, and the checkout (the summary prints the `rm -rf` that deletes it). The login shell is protected too: `--packages` will not uninstall the zsh the login shell runs.
+
+The seven capabilities `teeup remove` refuses, because they ship no `remove` script and name no packages, each get a fixed answer here:
+
+| Capability | Uninstall does | Why |
+|---|---|---|
+| `xcode-clt` | keeps it, names `sudo rm -rf /Library/Developer/CommandLineTools` | git, compilers and the package manager depend on it; it is macOS's component, like the package manager |
+| `package-manager` | keeps it, names the package manager's own uninstaller | the user's decision: never |
+| `dev-dirs` | keeps `~/Work` | it holds the user's projects |
+| `secrets` | keeps the Keychain items, names each with the `security delete-generic-password` that deletes it | they are the user's data, not teeup's configuration |
+| `ssh` | keeps keys and `~/.ssh/config` unless `--identity` | they are the identity |
+| `teeup-runtime` | removed in step 6 | its state, env file, shims and command are teeup itself |
+| `theme` | removed with `$TEEUP_STATE_DIR` in step 6 | everything it generated lives there; palette regions inside user files follow the stock-checksum rule in step 4 |
 
 ### Reused from the current repo
 
