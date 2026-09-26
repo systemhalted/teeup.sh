@@ -290,6 +290,7 @@ cmd_uninstall() {
   fi
   uninstall_report_reset
   _UNINSTALL_GONE=" "
+  uninstall_mark_state_dir
   uninstall_shell
   uninstall_capabilities
   uninstall_launchagents

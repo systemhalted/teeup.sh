@@ -949,20 +949,56 @@ MINE
   uninstall_note kept "Your own files in $dir: $left. Delete them with: rm -rf $(uninstall_q "$dir")"
 }
 
-# _uninstall_looks_like_state_dir <dir> -> 0 when <dir> holds at least one of
-# teeup's own markers: the done, na, toggles and migrations directories
-# lib/state.sh writes under a real $TEEUP_STATE_DIR, or stock, shims and
-# current, which the rest of teeup writes there. TEEUP_STATE_DIR is a
-# user-settable override, and `rm -rf` on it must never run against a
-# directory that merely happens to be named or pointed at that way without
-# actually being teeup's -- $HOME, /, ~/.local, ~/.config, the checkout, or
-# an empty or unrelated directory a careless override names.
-_uninstall_looks_like_state_dir() {
-  local dir="$1" name
-  for name in "done" na toggles migrations stock shims current; do
-    if [[ -e "$dir/$name" ]]; then return 0; fi
+# uninstall_mark_state_dir
+# Decides, once and before anything is removed, whether $TEEUP_STATE_DIR is
+# recognisably teeup's: its done/ holds at least one cap-<name> install
+# marker as a plain file. Generic names alone prove nothing -- mise's own
+# ~/.local/share/mise has shims/ and migrations/ -- and TEEUP_STATE_DIR is a
+# user-settable override, so a careless one must never lead to teeup
+# deleting a directory it does not own. Called by cmd_uninstall before the
+# capabilities are removed, since removing them clears those very markers;
+# uninstall_teardown asks on its own when nothing asked earlier.
+uninstall_mark_state_dir() {
+  local marker
+  _UNINSTALL_STATE_OWNED=false
+  for marker in "$TEEUP_STATE_DIR"/done/cap-*; do
+    if [[ -f "$marker" && ! -L "$marker" ]]; then
+      _UNINSTALL_STATE_OWNED=true
+      return 0
+    fi
   done
-  return 1
+  return 0
+}
+
+# _uninstall_state_dir
+# Removes only the entries teeup itself writes under $TEEUP_STATE_DIR, then
+# the directory once it is empty. Anything else in there is not teeup's and
+# stays, named, so the directory stays with it.
+_uninstall_state_dir() {
+  local name left=""
+  for name in "done" na toggles migrations stock shims current logs; do
+    uninstall_rm "$TEEUP_STATE_DIR/$name" "teeup's $name records ($TEEUP_STATE_DIR/$name)" || true
+  done
+  for name in "$TEEUP_STATE_DIR"/* "$TEEUP_STATE_DIR"/.[!.]* "$TEEUP_STATE_DIR"/..?*; do
+    if [[ -e "$name" || -L "$name" ]]; then
+      # A dry run leaves teeup's own entries in place; they are not leftovers.
+      case "${name##*/}" in
+        done|na|toggles|migrations|stock|shims|current|logs) continue ;;
+      esac
+      left="$left ${name##*/}"
+    fi
+  done
+  if [[ -n "$left" ]]; then
+    uninstall_note kept "$TEEUP_STATE_DIR holds files teeup did not write ($left ), so it stays. Delete it yourself if you mean to: rm -rf $(uninstall_q "$TEEUP_STATE_DIR")"
+  elif [[ -d "$TEEUP_STATE_DIR" ]]; then
+    if [[ "$DRY_RUN" == "true" ]]; then
+      uninstall_note removed "$TEEUP_STATE_DIR"
+    elif rmdir "$TEEUP_STATE_DIR" 2>/dev/null; then
+      uninstall_note removed "$TEEUP_STATE_DIR"
+    else
+      uninstall_note failed "$TEEUP_STATE_DIR could not be removed. Run: rmdir $(uninstall_q "$TEEUP_STATE_DIR")"
+    fi
+  fi
 }
 
 # uninstall_teardown
@@ -989,13 +1025,13 @@ uninstall_teardown() {
       return 0
     fi
   done
-  # $TEEUP_STATE_DIR is `rm -rf`'d outright below, with no content check like
-  # the config dir's own (_uninstall_config_dir keeps anything it cannot
-  # positively identify as teeup's). A directory with none of teeup's own
-  # markers is not recognisably teeup's state, whatever its name or an
-  # override pointed it at, so nothing here is touched at all.
-  if [[ -e "$TEEUP_STATE_DIR" ]] && ! _uninstall_looks_like_state_dir "$TEEUP_STATE_DIR"; then
-    uninstall_note kept "$TEEUP_STATE_DIR does not look like teeup's own state (none of its done, na, toggles, migrations, stock, shims or current markers is there), so teeup left it alone, along with its config ($TEEUP_CONFIG_DIR) and command. Delete it yourself if you mean to: rm -rf $(uninstall_q "$TEEUP_STATE_DIR")"
+  # Only a state dir that uninstall_mark_state_dir recognised is emptied
+  # below; anything else is left alone whole, with the config and command.
+  if [[ -z "${_UNINSTALL_STATE_OWNED:-}" ]]; then
+    uninstall_mark_state_dir
+  fi
+  if [[ -e "$TEEUP_STATE_DIR" && "$_UNINSTALL_STATE_OWNED" != "true" ]]; then
+    uninstall_note kept "$TEEUP_STATE_DIR does not look like teeup's own state (no cap-* install marker in its done/ directory), so teeup left it alone, along with its config ($TEEUP_CONFIG_DIR) and command. Delete it yourself if you mean to: rm -rf $(uninstall_q "$TEEUP_STATE_DIR")"
     return 0
   fi
   # Config and state first, each followed by a fresh check, so a failure
@@ -1005,7 +1041,7 @@ uninstall_teardown() {
     uninstall_note kept "teeup's state ($TEEUP_STATE_DIR) and command: removing the config did not finish cleanly, and the rerun needs them."
     return 0
   fi
-  uninstall_rm "$TEEUP_STATE_DIR" "teeup's state ($TEEUP_STATE_DIR: install records, shims, the generated theme, logs)" || true
+  _uninstall_state_dir
   if ! uninstall_clean; then
     uninstall_note kept "the teeup command: removing the state did not finish cleanly, and the rerun needs it."
     return 0

@@ -798,6 +798,7 @@ test_identity_local_backup_fix_avoids_a_name_already_taken() {
 # machine file among them.
 teeup_runtime_home() {
   mkdir -p "$TEEUP_CONFIG_DIR/hooks/post-update.d" "$TEEUP_STATE_DIR/done" "$HOME/.local/bin"
+  : > "$TEEUP_STATE_DIR/done/cap-teeup-runtime"
   printf 'export TEEUP_PATH=x\n' > "$TEEUP_CONFIG_DIR/env"
   printf 'TEEUP_NAME="Ada"\n' > "$TEEUP_CONFIG_DIR/answers"
   printf '# sample\n' > "$TEEUP_CONFIG_DIR/hooks/post-update.d/example.sample"
@@ -928,6 +929,35 @@ test_teardown_refuses_a_state_dir_with_no_teeup_markers() {
   cleanup_test_env
 }
 
+# The re-review's case: mise's own data dir has shims/ and migrations/, so a
+# TEEUP_STATE_DIR override pointed at it passed a check on generic names.
+test_teardown_refuses_a_state_dir_that_only_shares_generic_names() {
+  setup
+  teeup_runtime_home
+  rm -rf "$TEEUP_STATE_DIR"
+  mkdir -p "$TEEUP_STATE_DIR/shims" "$TEEUP_STATE_DIR/migrations" "$TEEUP_STATE_DIR/done"
+  printf 'x\n' > "$TEEUP_STATE_DIR/shims/node"
+  unset _UNINSTALL_STATE_OWNED
+  uninstall_teardown >/dev/null 2>&1
+  assert_file_exists "$TEEUP_STATE_DIR/shims/node" "a directory that is not teeup's must stay whole" || return 1
+  assert_file_exists "$TEEUP_CONFIG_DIR/env" "the config must stay too" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "no cap-* install marker" || return 1
+  cleanup_test_env
+}
+
+# Even teeup's own state dir keeps a file teeup did not write, and so stays.
+test_teardown_keeps_a_file_it_did_not_write_in_the_state_dir() {
+  setup
+  teeup_runtime_home
+  printf 'mine\n' > "$TEEUP_STATE_DIR/notes.txt"
+  unset _UNINSTALL_STATE_OWNED
+  uninstall_teardown >/dev/null 2>&1
+  assert_file_exists "$TEEUP_STATE_DIR/notes.txt" || return 1
+  [[ ! -e "$TEEUP_STATE_DIR/done" ]] || { echo "teeup's own records still go"; return 1; }
+  assert_contains "$_UNINSTALL_KEPT" "notes.txt" || return 1
+  cleanup_test_env
+}
+
 # The normal state dir (teeup_runtime_home's own "done" marker) is still
 # removed -- the new guard must not make every real teardown refuse itself.
 test_teardown_still_removes_a_real_state_dir() {
@@ -1022,6 +1052,8 @@ run_test "teardown refuses a state dir outside HOME, with a fix that works" test
 run_test "teardown keeps everything when the config dir is a symlink" test_teardown_keeps_everything_when_the_config_dir_is_a_symlink
 run_test "teardown refuses a state dir with no teeup markers" test_teardown_refuses_a_state_dir_with_no_teeup_markers
 run_test "teardown still removes a real state dir" test_teardown_still_removes_a_real_state_dir
+run_test "teardown refuses a state dir that only shares generic names" test_teardown_refuses_a_state_dir_that_only_shares_generic_names
+run_test "teardown keeps a file it did not write in the state dir" test_teardown_keeps_a_file_it_did_not_write_in_the_state_dir
 run_test "shell handles zsh home files left at an old ZDOTDIR" test_shell_handles_zsh_home_files_left_at_an_old_zdotdir
 run_test "configs leaves zsh home files at an old ZDOTDIR for uninstall_shell" test_configs_leaves_zsh_home_files_at_an_old_zdotdir_for_uninstall_shell
 print_summary
