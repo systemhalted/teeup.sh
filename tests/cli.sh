@@ -1847,6 +1847,40 @@ test_config_get_header_lists_both_machine_files_when_both_exist() {
   cleanup_test_env
 }
 
+# I3: work_get (lib/answers.sh) never reads the answers file, only
+# machines/<hostname>.conf -- so a leftover TEEUP_WORK_* answer must not be
+# shown as though teeup will actually use it. `get` promises "prints what
+# the rest of teeup will actually see"; for a work key that is work_get's
+# answer, marked as ignored when it is only sitting in the answers file.
+test_config_get_shows_a_leftover_work_answer_as_ignored() {
+  setup
+  seed_config_answers
+  printf 'TEEUP_WORK_EMAIL="old@corp.example"\n' >> "$TEST_HOME/.config/teeup/answers"
+  local out
+  out="$("$TEEUP" config get 2>&1)"
+  assert_contains "$out" "TEEUP_WORK_EMAIL" || return 1
+  assert_contains "$out" "ignored: work settings are read from the machine file only" || return 1
+  assert_not_contains "$out" "old@corp.example   [pinned" "a leftover value must never read as pinned/live" || return 1
+  assert_equals "" "$("$TEEUP" config get TEEUP_WORK_EMAIL)" "get TEEUP_WORK_EMAIL must match work_get, which ignores the answers file" || return 1
+  cleanup_test_env
+}
+
+# I3, positive case: once the machine file actually pins the work key,
+# both the listing and the single-key form must show that real value.
+test_config_get_shows_the_machine_files_work_answer_as_pinned() {
+  setup
+  seed_config_answers
+  printf 'TEEUP_WORK_EMAIL="old@corp.example"\n' >> "$TEST_HOME/.config/teeup/answers"
+  pin_machine 'TEEUP_WORK_EMAIL="boss@work.example"'
+  local out
+  out="$("$TEEUP" config get 2>&1)"
+  assert_contains "$out" "boss@work.example   [pinned by testmac.conf]" || return 1
+  assert_not_contains "$out" "old@corp.example" "the answers-file leftover must not appear once the machine file pins it" || return 1
+  assert_equals "boss@work.example" "$("$TEEUP" config get TEEUP_WORK_EMAIL)" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 test_config_edit_runs_the_editor_and_keeps_a_good_edit() {
   setup
   seed_config_answers
@@ -1891,6 +1925,52 @@ EOF2
   assert_failure "$rc" || return 1
   assert_contains "$out" "rolled back" || return 1
   assert_equals "Ada Lovelace" "$("$TEEUP" config get TEEUP_NAME)" "the original answer must survive the rollback" || return 1
+  local mode
+  mode="$(stat -c '%a' "$TEST_HOME/.config/teeup/answers" 2>/dev/null || stat -f '%Lp' "$TEST_HOME/.config/teeup/answers")"
+  assert_equals "600" "$mode" "the restored file keeps its mode" || return 1
+  cleanup_test_env
+}
+
+# I1: a bare value with no spaces can still carry `;`, `|`, `&`, `$`, a
+# backtick or parens, and answers_load sources the file under `set -e`, so
+# `TEEUP_NAME=a;false` makes every other verb exit 1 with no message at all
+# once it is saved. The bare form must accept only a safe character class.
+test_config_edit_rolls_back_a_bare_value_with_a_semicolon() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_NAME=a;false\n' >> "$1"
+EOF2
+  local rc=0 out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "rolled back" || return 1
+  assert_equals "Ada Lovelace" "$("$TEEUP" config get TEEUP_NAME)" "the original answer must survive the rollback" || return 1
+  rc=0
+  "$TEEUP" version >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "a rolled-back edit must not leave every other verb exiting 1" || return 1
+  cleanup_test_env
+}
+
+# I2: an editor that writes a bad line and then exits non-zero (":w" then
+# ":cq" in vim does exactly this) must not leave that line in place. The
+# backup has to be restored before the die, or "$f is unchanged" is a lie
+# and the bad line breaks every subsequent verb.
+test_config_edit_restores_the_backup_when_the_editor_exits_non_zero() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_NAME=Ada Lovelace\n' >> "$1"
+exit 1
+EOF2
+  local rc=0 out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "is unchanged" || return 1
+  assert_equals "Ada Lovelace" "$("$TEEUP" config get TEEUP_NAME)" "the original file must actually be restored, not just described as unchanged" || return 1
+  rc=0
+  "$TEEUP" version >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "the bad line the editor half-wrote must not linger and break every other verb" || return 1
   local mode
   mode="$(stat -c '%a' "$TEST_HOME/.config/teeup/answers" 2>/dev/null || stat -f '%Lp' "$TEST_HOME/.config/teeup/answers")"
   assert_equals "600" "$mode" "the restored file keeps its mode" || return 1
@@ -2181,9 +2261,13 @@ run_test "config set refuses package manager once installed" test_config_set_ref
 run_test "config set warns when nothing known applies the change" test_config_set_warns_when_nothing_known_applies_the_change
 run_test "config keys accepts an exported machine line" test_config_keys_accepts_an_exported_machine_line
 run_test "config get header lists both machine files" test_config_get_header_lists_both_machine_files_when_both_exist
+run_test "config get shows a leftover work answer as ignored" test_config_get_shows_a_leftover_work_answer_as_ignored
+run_test "config get shows the machine file's work answer as pinned" test_config_get_shows_the_machine_files_work_answer_as_pinned
 run_test "config edit keeps a good edit" test_config_edit_runs_the_editor_and_keeps_a_good_edit
 run_test "config edit rolls back a broken edit" test_config_edit_rolls_back_an_edit_that_will_not_parse
 run_test "config edit rolls back a line that would run as a command" test_config_edit_rolls_back_a_line_that_would_run_as_a_command
+run_test "config edit rolls back a bare value with a semicolon" test_config_edit_rolls_back_a_bare_value_with_a_semicolon
+run_test "config edit restores the backup when the editor exits non-zero" test_config_edit_restores_the_backup_when_the_editor_exits_non_zero
 run_test "config edit accepts a value answers_set itself escaped" test_config_edit_accepts_a_value_answers_set_itself_escaped
 run_test "config edit rejects unescaped command substitution" test_config_edit_rejects_unescaped_command_substitution_in_a_quoted_value
 run_test "config edit passes flags in EDITOR" test_config_edit_passes_flags_in_the_editor_variable
