@@ -82,3 +82,10 @@ and tick the entry here. This file sits outside `src/`, so it is not published.
   Edition) on workspace 1.
 
 ## Part 4: Configuration
+
+## Part 6: Help
+
+### Doctor and troubleshooting (`src/doctor-and-troubleshooting.md`)
+
+- [ ] `teeup doctor` on a healthy Mac, ending with "teeup doctor: everything
+  checked is healthy."

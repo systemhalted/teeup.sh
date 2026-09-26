@@ -28,3 +28,8 @@
 - [Secrets](secrets.md)
 - [macOS defaults](macos-defaults.md)
 - [Hooks and extending](hooks-and-extending.md)
+
+# Part 6: Help
+
+- [Doctor and troubleshooting](doctor-and-troubleshooting.md)
+- [FAQ](faq.md)
