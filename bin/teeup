@@ -661,7 +661,7 @@ _config_key_known() {
 _config_edit_error() {
   local f="$1" line lineno=0 quoted_pat bare_pat syntax_error
   quoted_pat='^TEEUP_[A-Z0-9_]+="([^"\$`]|\\[\"$`])*"$'
-  bare_pat='^TEEUP_[A-Z0-9_]+=[^[:space:]"]+$'
+  bare_pat='^TEEUP_[A-Z0-9_]+=[A-Za-z0-9_.,:/@%+=-]*$'
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
     if [[ "$line" =~ ^[[:space:]]*$ ]]; then continue; fi
@@ -696,7 +696,13 @@ cmd_config() {
       key="${1:-}"
       if [[ -n "$key" ]]; then
         if [[ "$key" =~ ^TEEUP_[A-Z0-9_]+$ ]] && _config_key_known "$key"; then
-          printf '%s\n' "${!key:-}"
+          case "$key" in
+            # work_get (lib/answers.sh) never reads the answers file, only
+            # machines/<hostname>.conf -- so this has to match it, or a
+            # leftover answers-file TEEUP_WORK_* value reads as live (I3).
+            TEEUP_WORK_*) printf '%s\n' "$(work_get "$key")" ;;
+            *) printf '%s\n' "${!key:-}" ;;
+          esac
           return 0
         fi
         die "No answer named $key. List what there is with: teeup config get"
@@ -720,11 +726,27 @@ cmd_config() {
         echo "Machine: $(machine_file)  (sourced last, so it wins)"
       fi
       for key in $(_config_keys); do
-        if machine_get "$key" >/dev/null; then
-          printf '  %-26s %s   [pinned by %s]\n' "$key" "${!key:-}" "$(basename "$(machine_file)")"
-        else
-          printf '  %-26s %s\n' "$key" "${!key:-}"
-        fi
+        case "$key" in
+          # A TEEUP_WORK_* key in _config_keys can only have come from the
+          # answers file or the machine file (that is everywhere _config_keys
+          # looks); work_get reads only the machine file, so whichever this
+          # is, the listing has to say what teeup will actually use, not the
+          # raw sourced value (I3).
+          TEEUP_WORK_*)
+            if machine_get "$key" >/dev/null; then
+              printf '  %-26s %s   [pinned by %s]\n' "$key" "$(work_get "$key")" "$(basename "$(machine_file)")"
+            else
+              printf '  %-26s %s   (ignored: work settings are read from the machine file only)\n' "$key" "${!key:-}"
+            fi
+            ;;
+          *)
+            if machine_get "$key" >/dev/null; then
+              printf '  %-26s %s   [pinned by %s]\n' "$key" "${!key:-}" "$(basename "$(machine_file)")"
+            else
+              printf '  %-26s %s\n' "$key" "${!key:-}"
+            fi
+            ;;
+        esac
       done
       ;;
     set)
@@ -789,6 +811,8 @@ cmd_config() {
       # flags ("code -w", "emacsclient -t") works and a path with spaces or
       # metacharacters in it is still one argument.
       if ! run_cmd bash -c "$editor \"\$1\"" bash "$f"; then
+        cp "$backup" "$f"
+        chmod 600 "$f"
         rm -f "$backup"
         die "$editor did not finish; $f is unchanged."
       fi
