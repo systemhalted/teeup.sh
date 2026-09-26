@@ -176,6 +176,91 @@ test_new_without_git_history_uses_the_clock_and_dry_run_writes_nothing() {
   cleanup_test_env
 }
 
+AI_SPLIT_MIGRATION=1790403216.sh
+
+copy_ai_split_migration() {
+  cp "$TEEUP_PATH/migrations/$AI_SPLIT_MIGRATION" "$TEEUP_MIGRATIONS_DIR/$AI_SPLIT_MIGRATION"
+}
+
+write_legacy_ai_path() {
+  local command="$1"
+  mkdir -p "$HOME/.local/bin"
+  printf '#!/bin/bash\n%s\necho legacy-%s\n' "$TEEUP_MISE_WRAPPER_MARKER" "$command" > "$HOME/.local/bin/$command"
+  chmod +x "$HOME/.local/bin/$command"
+}
+
+test_ai_split_migration_maps_complete_legacy_state_and_refreshes_shims() {
+  setup
+  copy_ai_split_migration
+  state_done mark cap-ai
+  state_done mark cap-teeup-runtime
+  local command leaf
+  for command in claude codex gemini copilot opencode; do write_legacy_ai_path "$command"; done
+  mkdir -p "$(shims_dir)"
+  shim_write ai claude >/dev/null
+  assert_contains "$(cat "$(shims_dir)/claude")" "lazy-run ai claude" || return 1
+
+  migration_run "$AI_SPLIT_MIGRATION" >/dev/null
+  for leaf in ai-claude ai-codex ai-gemini ai-copilot ai-opencode; do
+    state_done check "cap-$leaf" || { echo "$leaf was not migrated"; return 1; }
+  done
+  state_done check cap-ai || { echo "a complete aggregate must stay installed"; return 1; }
+  assert_contains "$(cat "$(shims_dir)/claude")" 'lazy-run ai-claude claude "$@"' || return 1
+  assert_file_exists "$MARKS/$AI_SPLIT_MIGRATION" || return 1
+  cleanup_test_env
+}
+
+test_ai_split_migration_clears_an_incomplete_aggregate() {
+  setup
+  copy_ai_split_migration
+  state_done mark cap-ai
+  write_legacy_ai_path claude
+  mkdir -p "$HOME/.local/bin"
+  printf '#!/bin/sh\necho native\n' > "$HOME/.local/bin/codex"
+  local out
+  out="$(migration_run "$AI_SPLIT_MIGRATION" 2>&1)"
+  state_done check cap-ai-claude || { echo "claude path was not mapped"; return 1; }
+  state_done check cap-ai-codex || { echo "foreign codex path was not mapped"; return 1; }
+  state_done check cap-ai-gemini && { echo "missing gemini was marked"; return 1; }
+  state_done check cap-ai && { echo "incomplete aggregate stayed marked"; return 1; }
+  assert_contains "$out" "The legacy ai setup is incomplete" || return 1
+  assert_contains "$out" "teeup install ai" || return 1
+  assert_contains "$(cat "$HOME/.local/bin/codex")" "echo native" || return 1
+  cleanup_test_env
+}
+
+test_ai_split_migration_dry_run_changes_no_state_or_shim() {
+  setup
+  copy_ai_split_migration
+  state_done mark cap-ai
+  state_done mark cap-teeup-runtime
+  write_legacy_ai_path claude
+  mkdir -p "$(shims_dir)"
+  shim_write ai claude >/dev/null
+  local before out
+  before="$(cat "$(shims_dir)/claude")"
+  out="$(DRY_RUN=true migration_run "$AI_SPLIT_MIGRATION" 2>&1)"
+  assert_contains "$out" "Would record state: done/cap-ai-claude" || return 1
+  assert_contains "$out" "Would clear state: done/cap-ai" || return 1
+  state_done check cap-ai-claude && { echo "dry run marked a leaf"; return 1; }
+  state_done check cap-ai || { echo "dry run cleared the aggregate"; return 1; }
+  assert_equals "$before" "$(cat "$(shims_dir)/claude")" "dry run rewrote a shim" || return 1
+  [[ ! -e "$MARKS/$AI_SPLIT_MIGRATION" ]] || { echo "dry run marked the migration"; return 1; }
+  cleanup_test_env
+}
+
+test_ai_split_migration_tolerates_a_fixture_tree_without_ai() {
+  setup
+  copy_ai_split_migration
+  export TEEUP_CAPS_DIR="$TEST_HOME/fixture-caps"
+  mkdir -p "$TEEUP_CAPS_DIR"
+  state_done mark cap-ai
+  migration_run "$AI_SPLIT_MIGRATION" >/dev/null
+  state_done check cap-ai || { echo "a migration for absent capabilities changed fixture state"; return 1; }
+  state_done check cap-ai-claude && { echo "fixture gained a nonexistent capability"; return 1; }
+  cleanup_test_env
+}
+
 echo "lib/migrations.sh"
 # A file whose name is not <epoch>.sh: the glob accepts it, everything else
 # must not. It is announced rather than silently ignored, it never appears in
@@ -221,6 +306,10 @@ test_run_pending_counts_correctly_with_an_odd_name_present() {
   cleanup_test_env
 }
 
+run_test "ai split migration maps complete legacy state and refreshes shims" test_ai_split_migration_maps_complete_legacy_state_and_refreshes_shims
+run_test "ai split migration clears an incomplete aggregate" test_ai_split_migration_clears_an_incomplete_aggregate
+run_test "ai split migration dry run changes no state or shim" test_ai_split_migration_dry_run_changes_no_state_or_shim
+run_test "ai split migration tolerates a fixture tree without ai" test_ai_split_migration_tolerates_a_fixture_tree_without_ai
 run_test "a file that is not a migration name is skipped loudly" test_a_file_that_is_not_a_migration_name_is_skipped_loudly
 run_test "run_pending counts correctly with an odd name present" test_run_pending_counts_correctly_with_an_odd_name_present
 run_test "list is oldest first and ignores other files" test_list_is_oldest_first_and_ignores_other_files

@@ -1447,11 +1447,13 @@ test_the_shipped_migration_refreshes_a_pristine_git_config() {
   printf '[alias]\n\ts = status\n' > "$cfg"
   stock_record "$cfg" "$(file_sha "$cfg")"
   # T8.2: the name comes from ./bin/teeup dev add-migration, never a number
-  # written into a test.
+  # written into a test. Found by what it does, not by being the newest file:
+  # a later migration for something else (the ai split, say) still sorts
+  # last, and would otherwise silently replace the one this test means to run.
   local mig
-  mig="$(cd "$TEEUP_PATH" && ls migrations/*.sh 2>/dev/null | tail -1)"
+  mig="$(grep -l 'migration_refresh git' "$TEEUP_PATH"/migrations/*.sh 2>/dev/null | tail -1)"
   mig="$(basename "${mig:-none}")"
-  [[ "$mig" != "none" ]] || { echo "fixture: no migration is shipped"; return 1; }
+  [[ "$mig" != "none" ]] || { echo "fixture: no shipped migration refreshes git"; return 1; }
   DRY_RUN=false migration_run "$mig" >/dev/null 2>&1 || { echo "the migration failed"; return 1; }
   assert_contains "$(cat "$cfg")" "llg = log --color --graph" "a pristine copy must be refreshed to the new shipped version" || return 1
   # And an edited copy survives untouched: that is the rule that lets anyone
