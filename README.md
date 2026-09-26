@@ -32,6 +32,8 @@ teeup install font "Fira Code"    # switch every tool to another Nerd Font
 teeup secret set <name>   # store a secret in the macOS Keychain
 teeup launch cursor       # open an app, installing its cask on first use
 teeup install dev-env go  # install a language runtime through mise
+teeup menu                # every teeup action as a keyboard-driven list
+teeup config get          # the answers, and which of them a machine file pins
 teeup migrate legacy      # retire the old teeup and chezmoi wiring on this Mac
 ```
 
@@ -44,6 +46,59 @@ The core tier is complete: `xcode-clt`, `package-manager`, `teeup-runtime`,
 `obsidian`) installs at bootstrap when you say yes to it. `neovim`, `vscode`
 and `chrome` are lazy: `teeup install <name>` brings one in when you want it.
 `teeup list` is always the source of truth.
+
+### Finding your way around
+
+`teeup menu` puts every action behind one list. It uses `gum` when gum is
+installed, `fzf` when it is not, and a plain numbered list when neither is
+there, so it works over ssh and inside a script. `teeup menu install` opens
+straight at the Install submenu; inside a submenu, an empty line, `q` or
+Escape goes back one level, and doing the same at the top level leaves the
+menu.
+
+The menu is `share/teeup/menu.json`: one JSON object whose keys are dotted
+ids, so `install.editors.zed` is a row under `install.editors`. Each row is an
+object of one-line strings:
+
+| Field | Meaning |
+|---|---|
+| `label` | required; what the row shows |
+| `icon` | optional; printed before the label |
+| `action` | a shell command line; a row with one is a leaf, a row without one is a submenu |
+| `when` | a shell condition; the row is hidden when it exits non-zero |
+| `title` | header shown when the submenu is open; defaults to `label` |
+
+`when` is why the Install list shrinks as the machine fills up: each row asks
+`! teeup has <capability>`, and `teeup has` exits 0 only for something already
+installed. Conditions and actions run with the checkout's `bin/` first on
+`PATH`.
+
+To add or change rows, write `~/.config/teeup/menu.json` in the same format.
+An id that is also in the shipped file replaces that row **whole** and keeps
+its position; an id that is not is appended. To hide a shipped row, give it
+`"when": "false"`.
+
+`teeup config` manages the answers file:
+
+```bash
+teeup config get                       # every answer, and which ones are pinned
+teeup config get TEEUP_THEME           # the value the rest of teeup will see
+teeup config set TEEUP_NAME Ada Lovelace
+teeup config edit                      # $VISUAL or $EDITOR on the file itself
+```
+
+Precedence is your answers, then the first of `~/.config/teeup/machines/<hostname>.conf`
+and the checkout's own `machines/<hostname>.conf` that exists -- that one file
+wins outright, and the two are never merged, because a half-applied machine
+file is worse than one file that is clearly in charge. `teeup config set`
+never writes the machine file; when the machine file pins the key you are
+setting, it says so, because a write that has no effect is otherwise
+impossible to notice. A work identity (`TEEUP_WORK_EMAIL` and its companions)
+is read only from the machine file, never from the answers, so `teeup config
+set TEEUP_WORK_EMAIL ...` refuses and names the machine file to edit instead.
+`teeup config edit` checks that the file still parses as shell and rolls your
+edit back if it does not -- teeup sources it at the start of every command, so
+a broken line would break the verb that would fix it.
 
 ### Editors
 
