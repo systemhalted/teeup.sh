@@ -295,9 +295,13 @@ Then the chezmoi half. Files chezmoi manages in your home directory are
 **moved aside**, never deleted, as `<name>.teeup_backup_<timestamp>` beside the
 original, so teeup can install its own version into the gap and you can lift
 anything personal out of the backup. Before moving anything it lists them in
-two groups -- the ones teeup ships a config for and will reinstall, and the
-ones it does not, which only the backup copy will hold -- and asks once. The
-default is no, and a run with no terminal attached moves nothing at all.
+two groups -- the ones teeup ships a config for, and the ones it does not,
+which only the backup copy will hold -- and asks once. The default is no, and
+a run with no terminal attached moves nothing at all. Straight after moving
+them, it reinstalls teeup's own version of each file it ships, for every
+capability installed on this machine -- so `~/.zshrc` and the other shell
+files are back before the migration says it is done, and the next terminal
+has teeup's layer.
 
 What it will never do:
 
