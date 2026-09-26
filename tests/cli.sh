@@ -1124,6 +1124,54 @@ test_update_skips_core_capabilities_it_never_installed() {
   cleanup_test_env
 }
 
+# 2026-09-26 decision (spec section 9): a changed answer such as the Emacs
+# flavor only takes effect on `teeup update` once it also re-runs configure
+# for the daily tier, since emacs lives in daily.list, not core.list.
+test_update_configures_an_installed_daily_capability_after_core() {
+  setup
+  mock_update_world
+  make_cap gamma daily
+  printf 'gamma\n' > "$TEEUP_CAPS_DIR/daily.list"
+  "$TEEUP" install alpha >/dev/null
+  "$TEEUP" install gamma >/dev/null
+  local out core_line daily_line
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "configure:gamma" || return 1
+  core_line="$(printf '%s\n' "$out" | grep -n 'configure:alpha' | head -1 | cut -d: -f1)"
+  daily_line="$(printf '%s\n' "$out" | grep -n 'configure:gamma' | head -1 | cut -d: -f1)"
+  [[ -n "$core_line" && -n "$daily_line" ]] || { echo "fixture: both steps must appear"; return 1; }
+  [[ "$core_line" -lt "$daily_line" ]] || { echo "daily configure must run after core"; return 1; }
+  cleanup_test_env
+}
+
+test_update_skips_a_daily_capability_never_installed_or_skipped() {
+  setup
+  mock_update_world
+  make_cap gamma daily
+  make_cap delta daily
+  printf 'gamma\ndelta\n' > "$TEEUP_CAPS_DIR/daily.list"
+  "$TEEUP" install gamma >/dev/null
+  local out
+  out="$(TEEUP_SKIP=gamma "$TEEUP" update 2>&1)"
+  assert_contains "$out" "Skipping gamma (TEEUP_SKIP)" || return 1
+  assert_contains "$out" "delta has never been installed here; run: teeup install delta" || return 1
+  assert_not_contains "$out" "configure:gamma" || return 1
+  assert_not_contains "$out" "configure:delta" || return 1
+  cleanup_test_env
+}
+
+# lazyone is tier lazy (declared in setup()); its configure can start a VM,
+# so whole-machine update must never run it, installed or not.
+test_update_does_not_configure_a_lazy_capability() {
+  setup
+  mock_update_world
+  "$TEEUP" install lazyone >/dev/null
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_not_contains "$out" "configure:lazyone" "a lazy capability's configure can start a VM; update must never run it" || return 1
+  cleanup_test_env
+}
+
 test_update_refuses_a_dirty_checkout() {
   setup
   mock_command_script git <<'EOF2'
@@ -2135,6 +2183,60 @@ test_config_edit_dry_run_creates_and_touches_nothing() {
   cleanup_test_env
 }
 
+# The bug this closes: the wizard writes TEEUP_EMACS_FLAVOR, a user runs
+# `teeup config edit` from the menu and changes it, and nothing said what to
+# run next -- only `config set` named the fix. `config edit` must print the
+# same hint `config set` prints, for every key the edit actually changed.
+test_config_edit_that_changes_emacs_flavor_prints_the_configure_emacs_hint() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_EMACS_FLAVOR="doom"\n' >> "$1"
+EOF2
+  local out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "teeup configure emacs" || return 1
+  assert_equals "doom" "$("$TEEUP" config get TEEUP_EMACS_FLAVOR)" || return 1
+  cleanup_test_env
+}
+
+# An edit that opens the editor but changes nothing (saved with no edits, or
+# edited back to the same values) must print no hint at all -- the whole
+# point is naming only what actually needs re-applying.
+# A machine-file pin wins over the edited answer, so the edit must say so
+# instead of naming a command that would change nothing (Codex on #48).
+test_config_edit_of_a_pinned_key_warns_instead_of_hinting() {
+  setup
+  seed_config_answers
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_EMACS_FLAVOR="starter"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_EMACS_FLAVOR="doom"\n' >> "$1"
+EOF2
+  local out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "pins TEEUP_EMACS_FLAVOR=starter" || return 1
+  assert_not_contains "$out" "teeup configure emacs" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_config_edit_that_changes_nothing_prints_no_hint() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+true
+EOF2
+  local out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "Saved" || return 1
+  assert_not_contains "$out" "teeup configure" || return 1
+  assert_not_contains "$out" "./bootstrap" || return 1
+  assert_not_contains "$out" "teeup theme set" || return 1
+  assert_not_contains "$out" "not one of the answers" || return 1
+  cleanup_test_env
+}
 
 # A menu of the fixture capabilities, so these tests never depend on what
 # share/teeup/menu.json happens to contain.
@@ -2308,6 +2410,9 @@ run_test "update upgrades packages before running migrations" test_update_upgrad
 run_test "update runs migrations before configuring" test_update_runs_migrations_before_configuring
 run_test "update walks every step in order" test_update_walks_every_step_in_order
 run_test "update skips core capabilities it never installed" test_update_skips_core_capabilities_it_never_installed
+run_test "update configures an installed daily capability after core" test_update_configures_an_installed_daily_capability_after_core
+run_test "update skips a daily capability never installed or skipped" test_update_skips_a_daily_capability_never_installed_or_skipped
+run_test "update does not configure a lazy capability" test_update_does_not_configure_a_lazy_capability
 run_test "update refuses a dirty checkout" test_update_refuses_a_dirty_checkout
 run_test "update carries on when the pull fails" test_update_carries_on_when_the_pull_fails
 run_test "update one capability upgrades its packages and configures" test_update_one_capability_upgrades_its_packages_and_configures
@@ -2381,4 +2486,7 @@ run_test "config edit accepts a value answers_set itself escaped" test_config_ed
 run_test "config edit rejects unescaped command substitution" test_config_edit_rejects_unescaped_command_substitution_in_a_quoted_value
 run_test "config edit passes flags in EDITOR" test_config_edit_passes_flags_in_the_editor_variable
 run_test "config edit dry run creates and touches nothing" test_config_edit_dry_run_creates_and_touches_nothing
+run_test "config edit that changes emacs flavor prints the configure emacs hint" test_config_edit_that_changes_emacs_flavor_prints_the_configure_emacs_hint
+run_test "config edit that changes nothing prints no hint" test_config_edit_that_changes_nothing_prints_no_hint
+run_test "config edit of a pinned key warns instead of hinting" test_config_edit_of_a_pinned_key_warns_instead_of_hinting
 print_summary

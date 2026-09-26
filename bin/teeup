@@ -282,6 +282,51 @@ _update_checkout() {
   return 0
 }
 
+# _update_configure_tier <core|daily>
+# The per-capability configure loop whole-machine `teeup update` runs for one
+# tier: skip what is not implemented, skipped, not-applicable or never
+# installed, else re-run configure and apply the same install-to-NA
+# transition cap_run's single-capability caller applies. Factored out so
+# core and daily share one copy of the guard logic (spec section 9's
+# 2026-09-26 decision extended it from core-only to core then daily) rather
+# than two loops slowly drifting apart. Mutates the caller's $failed and, for
+# the theme capability, $theme_done -- ordinary bash dynamic scoping: both
+# are declared local in cmd_update, this helper's only caller, and never
+# shadowed here.
+_update_configure_tier() {
+  local tier="$1" name
+  for name in $(cap_tier_list "$tier"); do
+    if ! cap_exists "$name"; then
+      warn "$name is listed in $tier.list but not implemented yet; skipping."
+      continue
+    fi
+    if cap_skipped "$name"; then
+      log "Skipping $name (TEEUP_SKIP)"
+      continue
+    fi
+    if state_na check "cap-$name"; then
+      log "$name is not applicable on this machine; skipping."
+      continue
+    fi
+    if ! state_done check "cap-$name"; then
+      log "$name has never been installed here; run: teeup install $name"
+      continue
+    fi
+    if cap_run "$name" configure; then
+      if [[ "$TEEUP_CAP_NA" == "true" ]]; then
+        # Same transition as cmd_update's single-capability path.
+        state_done clear "cap-$name" || true
+        state_na mark "cap-$name"
+        log "$name is not applicable on this machine any more; it is no longer marked installed."
+      fi
+      if [[ "$name" == "theme" && "$TEEUP_CAP_NA" != "true" ]]; then theme_done=true; fi
+    else
+      warn "$name configure failed; continuing."
+      failed=1
+    fi
+  done
+}
+
 # teeup update [<capability>]
 # Spec section 9. Every step is idempotent, so this is also the repair path
 # for a bootstrap that stopped half way. Failures are collected rather than
@@ -366,39 +411,14 @@ cmd_update() {
   # run on top of a migration that has not been applied.
   migrations_run_pending || exit 1
 
-  # core.list only (spec section 9). A capability this machine never installed
-  # has no configuration to re-run, and a lazy capability's configure can
-  # start a VM.
-  for name in $(cap_tier_list core); do
-    if ! cap_exists "$name"; then
-      warn "$name is listed in core.list but not implemented yet; skipping."
-      continue
-    fi
-    if cap_skipped "$name"; then
-      log "Skipping $name (TEEUP_SKIP)"
-      continue
-    fi
-    if state_na check "cap-$name"; then
-      log "$name is not applicable on this machine; skipping."
-      continue
-    fi
-    if ! state_done check "cap-$name"; then
-      log "$name has never been installed here; run: teeup install $name"
-      continue
-    fi
-    if cap_run "$name" configure; then
-      if [[ "$TEEUP_CAP_NA" == "true" ]]; then
-        # Same transition as the single-capability path above.
-        state_done clear "cap-$name" || true
-        state_na mark "cap-$name"
-        log "$name is not applicable on this machine any more; it is no longer marked installed."
-      fi
-      if [[ "$name" == "theme" && "$TEEUP_CAP_NA" != "true" ]]; then theme_done=true; fi
-    else
-      warn "$name configure failed; continuing."
-      failed=1
-    fi
-  done
+  # core.list then daily.list (spec section 9; 2026-09-26 decision: a changed
+  # answer such as the Emacs flavor must take effect on `teeup update`, and
+  # emacs is a daily capability, not core). lazy stays out of both: a
+  # capability this machine never installed has no configuration to re-run,
+  # and a lazy capability's configure can start a VM. theme is core-only, so
+  # theme_done is only ever set while the core call runs.
+  _update_configure_tier core
+  _update_configure_tier daily
 
   # The theme capability's configure already renders every template, so this
   # only covers a run where it did not happen (skipped, not installed, or the
@@ -709,6 +729,81 @@ _config_edit_error() {
   return 0
 }
 
+# _config_apply_hint <key> <value> -> names the one command that actually
+# applies a changed answer, or says that teeup does not know of one. Shared
+# by `config set` (right after answers_set writes the new value) and `config
+# edit` (once per key a validated edit changed), so the wording lives in one
+# place instead of two case statements slowly drifting apart (R7.5). Nothing
+# here re-reads $key elsewhere, so this list is deliberately narrow -- only
+# the answers the wizard itself writes.
+_config_apply_hint() {
+  local key="$1" value="$2"
+  case "$key" in
+    TEEUP_NAME|TEEUP_EMAIL) log "Run: teeup configure git -- that is what reads $key." ;;
+    # 2026-09-26: teeup update now re-runs configure for the daily tier too
+    # (emacs lives in daily.list), so it also applies this answer -- but
+    # teeup configure emacs stays the one named first, since it is the
+    # narrower command and does not touch anything else.
+    TEEUP_EMACS_FLAVOR) log "Run: teeup configure emacs -- that is what reads $key (teeup update now covers it too)." ;;
+    TEEUP_DAILY) log "Run: ./bootstrap -- that is what reads $key." ;;
+    TEEUP_THEME) log "Run: teeup theme set${value:+ $value} -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
+    TEEUP_PACKAGE_MANAGER) warn "$key only takes effect the next time ./bootstrap or teeup install package-manager runs; nothing on this machine changed yet." ;;
+    *) warn "$key is not one of the answers ./bootstrap writes (TEEUP_NAME, TEEUP_EMAIL, TEEUP_EMACS_FLAVOR, TEEUP_DAILY, TEEUP_PACKAGE_MANAGER, TEEUP_THEME); teeup config cannot say what, if anything, reads it." ;;
+  esac
+}
+
+# _config_file_keys <file> -> every TEEUP_* key <file> assigns, sorted, once
+# each. Unlike _config_keys, this reads exactly one file -- `config edit`
+# uses it on the pre-edit backup and the post-edit answers file, neither of
+# which is answers_file() or machine_file().
+_config_file_keys() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  sed -n 's/^\(TEEUP_[A-Z0-9_]*\)=.*/\1/p' "$f" | sort -u
+}
+
+# _config_file_get <file> <key> -> the value <key> gets from <file> alone,
+# exit 1 (printing nothing) when <file> does not set it. Sourced in a
+# subshell, same as machine_get, so the lookup is never polluted by a KEY
+# this shell already has exported from answers_load.
+_config_file_get() {
+  local f="$1" key="$2"
+  [[ -f "$f" ]] || return 1
+  (
+    unset "$key"
+    # shellcheck source=/dev/null
+    source "$f"
+    [[ -n "${!key+x}" ]] || exit 1
+    printf '%s\n' "${!key}"
+  )
+}
+
+# _config_report_changed_answers <old file> <new file> -> one apply hint per
+# key that <new file> gives a different value than <old file>, including a
+# key either side is missing (added or removed). Called after a `config
+# edit` has already been validated by _config_edit_error, so both files are
+# known to hold nothing but KEY="value" lines -- reading them this way is
+# safe.
+_config_report_changed_answers() {
+  local old="$1" new="$2" key old_val new_val old_set new_set keys pinned
+  keys="$( { _config_file_keys "$old"; _config_file_keys "$new"; } | sort -u )"
+  for key in $keys; do
+    if old_val="$(_config_file_get "$old" "$key")"; then old_set=true; else old_set=false; old_val=""; fi
+    if new_val="$(_config_file_get "$new" "$key")"; then new_set=true; else new_set=false; new_val=""; fi
+    if [[ "$old_set" == "$new_set" && "$old_val" == "$new_val" ]]; then
+      continue
+    fi
+    # Same check `config set` makes: answers_load sources the machine file
+    # last, so a pinned key keeps the pin whatever the edit says, and the
+    # hint would send the user to a command that changes nothing.
+    if pinned="$(machine_get "$key")" && [[ "$pinned" != "$new_val" ]]; then
+      warn "$(machine_file) pins $key=${pinned:-<empty>}, which is sourced after the answers file, so this edit has no effect until that line changes."
+      continue
+    fi
+    _config_apply_hint "$key" "$new_val"
+  done
+}
+
 # teeup config get [<KEY>] | set <KEY> <value> | edit
 # Over the answers file only (spec section 7). answers_load has already
 # layered machines/<hostname>.conf on top, so `get` prints what the rest of
@@ -810,18 +905,9 @@ cmd_config() {
       # answers_set validates the key shape and refuses a newline in the value.
       answers_set "$key" "$value"
       ok_unless_dry "Set $key in $(answers_file)"
-      # R7.5: name the one command that actually applies the change. Nothing
-      # here re-reads $key elsewhere, so this list is deliberately narrow --
-      # only the answers the wizard itself writes.
+      # R7.5: name the one command that actually applies the change.
       if [[ "$DRY_RUN" != "true" ]]; then
-        case "$key" in
-          TEEUP_NAME|TEEUP_EMAIL) log "Run: teeup configure git -- that is what reads $key." ;;
-          TEEUP_EMACS_FLAVOR) log "Run: teeup configure emacs -- that is what reads $key." ;;
-          TEEUP_DAILY) log "Run: ./bootstrap -- that is what reads $key." ;;
-          TEEUP_THEME) log "Run: teeup theme set $value -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
-          TEEUP_PACKAGE_MANAGER) warn "$key only takes effect the next time ./bootstrap or teeup install package-manager runs; nothing on this machine changed yet." ;;
-          *) warn "$key is not one of the answers ./bootstrap writes (TEEUP_NAME, TEEUP_EMAIL, TEEUP_EMACS_FLAVOR, TEEUP_DAILY, TEEUP_PACKAGE_MANAGER, TEEUP_THEME); teeup config cannot say what, if anything, reads it." ;;
-        esac
+        _config_apply_hint "$key" "$value"
       fi
       ;;
     edit)
@@ -853,8 +939,13 @@ cmd_config() {
       parse_error="$(_config_edit_error "$f")"
       if [[ -z "$parse_error" ]]; then
         chmod 600 "$f"
-        rm -f "$backup"
         ok "Saved $f"
+        # Same hint `config set` prints, once per key the edit actually
+        # changed (added, removed or given a new value) -- an edit that
+        # touched TEEUP_EMACS_FLAVOR, say, must not leave the user to
+        # discover teeup update or teeup configure emacs on their own.
+        _config_report_changed_answers "$backup" "$f"
+        rm -f "$backup"
       else
         cp "$backup" "$f"
         chmod 600 "$f"
