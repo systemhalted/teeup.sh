@@ -17,18 +17,22 @@
 # actually put in place, not every command this capability knows about (I4)
 # -- claiming a wrapper is wired up when teeup left a foreign file untouched
 # would send the user to run a command that will not do what they are told.
+# Every wrapper is owned by this aggregate capability until the leaf split;
+# each call also names the display text mise_wrapper_write prints and logs.
 written=""
 add_wrapper() {
-  mise_wrapper_write "$@"
+  local display_name="$1"
+  shift
+  mise_wrapper_write "ai" "$display_name" "$@"
   if [[ "$MISE_WRAPPER_WRITTEN" == "true" ]]; then
     written="$written $1"
   fi
 }
-add_wrapper claude claude
-add_wrapper codex codex
-add_wrapper gemini gemini-cli node
-add_wrapper copilot copilot
-add_wrapper opencode opencode
+add_wrapper "Claude Code" claude claude
+add_wrapper "Codex" codex codex
+add_wrapper "Gemini CLI" gemini gemini-cli node
+add_wrapper "Copilot" copilot copilot
+add_wrapper "OpenCode" opencode opencode
 written="${written# }"
 if [[ -n "$written" ]]; then
   ai_count=0

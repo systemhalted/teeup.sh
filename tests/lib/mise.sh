@@ -191,7 +191,7 @@ test_ensure_global_warns_and_fails_when_mise_cannot_install() {
 
 test_wrapper_installs_on_first_call_and_execs_after() {
   setup
-  mise_wrapper_write claude claude >/dev/null
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
   local w="$TEST_HOME/.local/bin/claude" out
   [[ -x "$w" ]] || { echo "wrapper must be executable"; return 1; }
   assert_equals "$TEEUP_MISE_WRAPPER_MARKER" "$(sed -n 2p "$w")" || return 1
@@ -216,7 +216,7 @@ test_wrapper_installs_a_requested_tool_without_rewriting_the_pin() {
   setup
   printf 'claude\n' > "$TEST_HOME/mise-tools"
   : > "$TEST_HOME/mise-installed"
-  mise_wrapper_write claude claude >/dev/null
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
   local out
   out="$("$TEST_HOME/.local/bin/claude" --version)"
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / install claude" || return 1
@@ -227,11 +227,112 @@ test_wrapper_installs_a_requested_tool_without_rewriting_the_pin() {
   cleanup_test_env
 }
 
+test_wrapper_prints_progress_to_stderr_and_logs_the_install() {
+  setup
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
+  local wrapper="$TEST_HOME/.local/bin/claude"
+  local log="$TEST_HOME/.local/state/teeup/logs/lazy.log" out err
+  out="$("$wrapper" --version 2>"$TEST_HOME/err")"
+  err="$(cat "$TEST_HOME/err")"
+  assert_contains "$err" "Installing Claude Code through mise (first run, can take a minute)..." || return 1
+  assert_equals "mise-x:claude:claude --version" "$out" || return 1
+  assert_file_exists "$log" || return 1
+  assert_contains "$(cat "$log")" "Installing Claude Code through mise (first run, can take a minute)..." || return 1
+  assert_contains "$(cat "$log")" "Installed Claude Code through mise." || return 1
+  assert_equals "1" "$(grep -c 'Installing Claude Code through mise' "$log" || true)" || return 1
+
+  : > "$TEST_HOME/err"
+  "$wrapper" --version >/dev/null 2>"$TEST_HOME/err"
+  assert_equals "" "$(cat "$TEST_HOME/err")" "an installed tool needs no first-run line" || return 1
+  assert_equals "1" "$(grep -c 'Installing Claude Code through mise' "$log" || true)" || return 1
+  cleanup_test_env
+}
+
+test_wrapper_dry_run_creates_no_lazy_log() {
+  setup
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
+  local log="$TEST_HOME/.local/state/teeup/logs/lazy.log"
+  DRY_RUN=true "$TEST_HOME/.local/bin/claude" --version >/dev/null 2>&1
+  [[ ! -e "$log" ]] || { echo "wrapper dry run created $log"; return 1; }
+  [[ ! -d "${log%/*}" ]] || { echo "wrapper dry run created the logs directory"; return 1; }
+  cleanup_test_env
+}
+
+test_wrapper_retries_an_interrupted_global_request() {
+  setup
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+case "$*" in
+  "ls --global"*)
+    [ -f "$HOME/mise-requested" ] && printf 'claude latest (missing) ~/.config/mise/config.toml latest\n'
+    ;;
+  "where "*) [ -f "$HOME/mise-installed" ] || exit 1 ;;
+  "use "*)
+    : > "$HOME/mise-requested"
+    echo "download started, then interrupted"
+    exit 130
+    ;;
+  "install claude")
+    : > "$HOME/mise-installed"
+    echo "download resumed"
+    ;;
+  "x claude -- claude --version") echo "claude-ready" ;;
+  *) : ;;
+esac
+exit 0
+EOF2
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
+  local wrapper="$TEST_HOME/.local/bin/claude" log="$TEST_HOME/.local/state/teeup/logs/lazy.log"
+  local rc=0 out
+  out="$("$wrapper" --version 2>&1)" || rc=$?
+  assert_equals "130" "$rc" "the interrupted mise status must survive tee" || return 1
+  assert_contains "$out" "Installing Claude Code through mise" || return 1
+  assert_contains "$out" "download started, then interrupted" || return 1
+  [[ ! -e "$TEST_HOME/mise-installed" ]] || { echo "the failed attempt claimed an install"; return 1; }
+  assert_file_exists "$TEST_HOME/mise-requested" || return 1
+
+  : > "$MOCK_LOG"
+  out="$("$wrapper" --version 2>&1)"
+  assert_contains "$out" "download resumed" || return 1
+  assert_contains "$out" "claude-ready" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install claude" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "use -g" || return 1
+  assert_contains "$(cat "$log")" "Install failed for Claude Code through mise (exit 130)." || return 1
+  assert_contains "$(cat "$log")" "Installed Claude Code through mise." || return 1
+  cleanup_test_env
+}
+
+test_wrapper_remove_deletes_only_a_teeup_wrapper() {
+  setup
+  mise_wrapper_write ai-codex "Codex" codex codex >/dev/null
+  local wrapper="$TEST_HOME/.local/bin/codex" out
+  out="$(mise_wrapper_remove ai-codex codex)"
+  assert_contains "$out" "Removed the mise wrapper: codex" || return 1
+  [[ ! -e "$wrapper" ]] || { echo "teeup wrapper remains"; return 1; }
+
+  printf '#!/bin/sh\necho mine\n' > "$wrapper"
+  out="$(mise_wrapper_remove ai-codex codex 2>&1)"
+  assert_contains "$out" "Keeping $wrapper: it was not written by teeup" || return 1
+  assert_file_exists "$wrapper" || return 1
+  cleanup_test_env
+}
+
+test_wrapper_remove_dry_run_claims_no_removal() {
+  setup
+  mise_wrapper_write ai-codex "Codex" codex codex >/dev/null
+  local wrapper="$TEST_HOME/.local/bin/codex" out
+  out="$(DRY_RUN=true mise_wrapper_remove ai-codex codex 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: rm -f $wrapper" || return 1
+  assert_not_contains "$out" "Removed the mise wrapper" || return 1
+  assert_file_exists "$wrapper" || return 1
+  cleanup_test_env
+}
+
 # The wrapper is teeup's own "install on first call", so a dry run previews
 # the install and downloads nothing -- the same contract teeup lazy-run has.
 test_wrapper_run_under_dry_run_installs_nothing() {
   setup
-  mise_wrapper_write claude claude >/dev/null
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
   : > "$MOCK_LOG"
   local rc=0 out
   out="$(DRY_RUN=true "$TEST_HOME/.local/bin/claude" --version 2>&1)" || rc=$?
@@ -272,7 +373,7 @@ case "$*" in
 esac
 exit 0
 EOF2
-  mise_wrapper_write claude claude >/dev/null
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
   local out
   out="$("$TEST_HOME/.local/bin/claude" --version)"
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / install claude" || return 1
@@ -299,7 +400,7 @@ case "$*" in
 esac
 exit 0
 EOF2
-  mise_wrapper_write claude claude >/dev/null
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
   "$TEST_HOME/.local/bin/claude" --version >/dev/null
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / install claude" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "use -g" || return 1
@@ -311,7 +412,7 @@ EOF2
 # contract's 127 with a command to run, not a raw "mise: command not found".
 test_wrapper_without_mise_exits_127_with_a_hint() {
   setup
-  mise_wrapper_write claude claude >/dev/null
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
   local rc=0 out
   # The wrapper is a standalone script, so it does not consult
   # TEEUP_TEST_MISSING the way teeup's own `have` does. An empty PATH is what
@@ -335,7 +436,7 @@ case "$*" in
   *) exit 0 ;;
 esac
 EOF2
-  mise_wrapper_write codex codex >/dev/null
+  mise_wrapper_write ai-codex "Codex" codex codex >/dev/null
   "$TEST_HOME/.local/bin/codex" >/dev/null
   assert_contains "$(cat "$MOCK_LOG")" "AGE=0" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "AGE=unset" || return 1
@@ -344,7 +445,7 @@ EOF2
 
 test_wrapper_installs_a_runtime_first_and_loads_it() {
   setup
-  mise_wrapper_write gemini gemini node >/dev/null
+  mise_wrapper_write ai-gemini "Gemini CLI" gemini gemini node >/dev/null
   local out
   out="$("$TEST_HOME/.local/bin/gemini" chat)"
   assert_equals "mise-x:node,gemini:gemini chat" "$out" || return 1
@@ -357,7 +458,7 @@ test_wrapper_installs_a_runtime_first_and_loads_it() {
 # one line, not just the first it happens to check.
 test_wrapper_dry_run_previews_every_missing_tool() {
   setup
-  mise_wrapper_write gemini gemini node >/dev/null
+  mise_wrapper_write ai-gemini "Gemini CLI" gemini gemini node >/dev/null
   local out
   out="$(DRY_RUN=true "$TEST_HOME/.local/bin/gemini" chat 2>&1)"
   assert_contains "$out" "[DRY-RUN] Would install node gemini through mise, then run gemini." || return 1
@@ -373,15 +474,15 @@ test_wrapper_leaves_a_foreign_command_alone() {
   ln -s "$TEST_HOME/.local/share/claude/versions/2.1.0" "$TEST_HOME/.local/bin/claude"
   printf '#!/bin/sh\necho mine\n' > "$TEST_HOME/.local/bin/codex"
   local out
-  out="$(mise_wrapper_write claude claude 2>&1)"
+  out="$(mise_wrapper_write ai-claude "Claude Code" claude claude 2>&1)"
   assert_contains "$out" "Keeping $TEST_HOME/.local/bin/claude: it was not written by teeup" || return 1
   [[ -L "$TEST_HOME/.local/bin/claude" ]] || { echo "the native symlink must survive"; return 1; }
-  out="$(mise_wrapper_write codex codex 2>&1)"
+  out="$(mise_wrapper_write ai-codex "Codex" codex codex 2>&1)"
   assert_contains "$out" "Keeping $TEST_HOME/.local/bin/codex" || return 1
   assert_contains "$(cat "$TEST_HOME/.local/bin/codex")" "echo mine" || return 1
   # A wrapper teeup wrote is teeup's to rewrite.
-  mise_wrapper_write gemini gemini >/dev/null
-  out="$(mise_wrapper_write gemini gemini node)"
+  mise_wrapper_write ai-gemini "Gemini CLI" gemini gemini >/dev/null
+  out="$(mise_wrapper_write ai-gemini "Gemini CLI" gemini gemini node)"
   assert_contains "$out" "Wrote $TEST_HOME/.local/bin/gemini" || return 1
   assert_contains "$(cat "$TEST_HOME/.local/bin/gemini")" "exec mise x node gemini -- gemini" || return 1
   cleanup_test_env
@@ -390,11 +491,11 @@ test_wrapper_leaves_a_foreign_command_alone() {
 test_wrapper_rejects_a_name_that_is_not_plain() {
   setup
   local rc=0 out
-  out="$(mise_wrapper_write ../evil claude 2>&1)" || rc=$?
+  out="$(mise_wrapper_write ai-claude "Claude Code" ../evil claude 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "'../evil' is not a plain command or tool name" || return 1
+  assert_contains "$out" "'../evil' is not a plain capability, command or tool name" || return 1
   rc=0
-  out="$(mise_wrapper_write ok 'x;y' 2>&1)" || rc=$?
+  out="$(mise_wrapper_write ai-test "Test CLI" ok 'x;y' 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   [[ ! -e "$TEST_HOME/.local/bin/ok" ]] || { echo "nothing may be written"; return 1; }
   cleanup_test_env
@@ -402,11 +503,11 @@ test_wrapper_rejects_a_name_that_is_not_plain() {
 
 test_wrapper_write_is_idempotent_and_dry_run_safe() {
   setup
-  mise_wrapper_write gemini gemini >/dev/null
+  mise_wrapper_write ai-gemini "Gemini CLI" gemini gemini >/dev/null
   local out
-  out="$(mise_wrapper_write gemini gemini)"
+  out="$(mise_wrapper_write ai-gemini "Gemini CLI" gemini gemini)"
   assert_contains "$out" "Already current: $TEST_HOME/.local/bin/gemini" || return 1
-  out="$(DRY_RUN=true mise_wrapper_write opencode opencode)"
+  out="$(DRY_RUN=true mise_wrapper_write ai-opencode "OpenCode" opencode opencode)"
   assert_contains "$out" "Would write $TEST_HOME/.local/bin/opencode" || return 1
   [[ ! -e "$TEST_HOME/.local/bin/opencode" ]] || { echo "dry run wrote a wrapper"; return 1; }
   cleanup_test_env
@@ -511,6 +612,11 @@ run_test "dev env dry run only previews" test_ensure_global_dry_run_only_prints
 run_test "ensure_global warns and fails when mise cannot install" test_ensure_global_warns_and_fails_when_mise_cannot_install
 run_test "wrapper installs on first call and execs after" test_wrapper_installs_on_first_call_and_execs_after
 run_test "wrapper installs a requested tool without rewriting the pin" test_wrapper_installs_a_requested_tool_without_rewriting_the_pin
+run_test "wrapper prints progress and logs the install" test_wrapper_prints_progress_to_stderr_and_logs_the_install
+run_test "wrapper dry run creates no lazy log" test_wrapper_dry_run_creates_no_lazy_log
+run_test "wrapper retries an interrupted global request" test_wrapper_retries_an_interrupted_global_request
+run_test "wrapper remove deletes only a teeup wrapper" test_wrapper_remove_deletes_only_a_teeup_wrapper
+run_test "wrapper remove dry run claims no removal" test_wrapper_remove_dry_run_claims_no_removal
 run_test "wrapper run under dry run installs nothing" test_wrapper_run_under_dry_run_installs_nothing
 run_test "wrapper reads the config when ls --global fails" test_wrapper_reads_the_config_when_ls_global_fails
 run_test "wrapper fallback honours MISE_GLOBAL_CONFIG_FILE" test_wrapper_fallback_honours_mise_global_config_file
