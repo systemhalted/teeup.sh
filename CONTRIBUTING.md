@@ -557,13 +557,18 @@ Happy contributing! 🚀
     Tests point `TEEUP_APPS_DIR` at an empty directory.
 19. mise-managed tools go through `lib/mise.sh`. `mise_ensure_global <tool>
     [version]` adds a tool to the global config without rewriting a version
-    the user pinned; `mise_wrapper_write <command> <tool> [runtime...]` writes
-    an install-on-first-call wrapper into `~/.local/bin` (the `ai`
-    capability) and never replaces a file there that it did not write. Every
-    mise call except the wrapper's `mise x` runs with `-C /`, so a project's
-    `mise.toml` in the current directory cannot shadow the global file. Check
-    registry names with `mise registry`. Language runtimes use `teeup install
-    dev-env <lang>` (`dev_env_install`), never a capability or a shim.
+    the user pinned; `mise_wrapper_write <owner> <display-name> <command>
+    <tool> [runtime...]` writes an install-on-first-call wrapper into
+    `~/.local/bin`, and `mise_wrapper_remove <owner> <command>` removes only a
+    wrapper teeup wrote. Every mise call except the wrapper's `mise x` runs
+    with `-C /`, so a project's `mise.toml` in the current directory cannot
+    shadow the global file. Check registry names with `mise registry`. Give
+    each AI command its own `tier=lazy` capability with one `provides=` token;
+    reserve `ai` for the
+    explicit aggregate. A wrapper's first install must print progress, append
+    to `$TEEUP_STATE_DIR/logs/lazy.log`, and remain retryable after interruption.
+    Language runtimes use `teeup install dev-env <lang>` (`dev_env_install`),
+    never a capability or a shim.
 20. Two test hooks join `TEEUP_TEST_MISSING`: `TEEUP_TEST_TTY=yes|no`
     overrides the terminal check in `teeup lazy-run`, so a piped `y` can
     answer its question, and `hide_host_commands <name...>`

@@ -173,8 +173,9 @@ teeup install colima              # explicit install form for a capability
   `~/.local/state/teeup/shims`. The shell appends that directory last on
   `PATH`. `teeup lazy-run` executes a real command when one exists elsewhere
   on `PATH` or under the package-manager prefix. At a terminal, a missing
-  command prompts before installing and configuring its capability, then runs
-  with the original arguments. Without a terminal it prints the corresponding
+  command prompts before installing and configuring its capability, skips
+  requirements already recorded done, then runs with the original arguments.
+  A missing requirement is still installed. Without a terminal it prints the corresponding
   `teeup install` command and exits 127. `TEEUP_SKIP` removes a capability's
   shims and makes `lazy-run` refuse it.
 - **Launchers.** `teeup launch <app|capability>` uses `open -a` for an app in
@@ -187,15 +188,22 @@ teeup install colima              # explicit install form for a capability
   `uv`; Rust uses mise's rust backend and rustup. Runtimes do not get shims,
   because macOS already provides some of their command names. `javav 21`
   switches Java for one shell.
-- **AI CLIs.** The `ai` capability provides `claude`, `codex`, `gemini`,
-  `copilot` and `opencode`. Its configure script writes small wrappers under
-  `~/.local/bin`; each wrapper installs its tool through mise on first use and
-  runs it with `mise x` afterward. Gemini also loads Node. A file at one of
-  those paths that teeup did not write, including Claude Code's native
-  launcher, is preserved.
+- **AI CLIs.** Each command has one lazy capability: `ai-claude`, `ai-codex`,
+  `ai-gemini`, `ai-copilot` and `ai-opencode`. Calling `claude` offers to set up
+  only `ai-claude`; `teeup install ai` installs all five as an explicit bundle.
+  Each leaf writes one wrapper under `~/.local/bin`, which installs its tool
+  through mise on first use and runs it with `mise x` afterward. Gemini also
+  loads Node. Before a download the wrapper prints
+  `Installing Claude Code through mise (first run, can take a minute)...`;
+  lazy capability and wrapper output is appended to
+  `$TEEUP_STATE_DIR/logs/lazy.log`. An interrupted first
+  download can be retried by calling the command again. A file at one of those
+  paths that teeup did not write, including Claude Code's native launcher, is
+  preserved.
 - **Shipped lazy capabilities.** `neovim`, `vscode` and `chrome` come from the
   daily-tier phase. This phase adds `colima` (Colima, Docker CLI and Compose),
-  `ai`, `herdr`, `tmux`, `ollama` (app and CLI where available, without model
+  the five `ai-*` leaves and their `ai` bundle, `herdr`, `tmux`, `ollama` (app
+  and CLI where available, without model
   downloads) and `cursor`. The tmux config is copied once and remains
   user-owned; teeup skips that copy when `~/.tmux.conf` exists. `teeup status`
   lists generated shims and installed development environments.
@@ -254,11 +262,11 @@ pull and the package manager warn and the rest still runs, which makes
 - **`teeup remove <cap>`** runs the capability's own `remove` script when it
   has one (eleven capabilities ship one today: `macos-defaults` puts every
   preference back the way it found it, `emacs` and `keyboard` unload their
-  LaunchAgents, `colima` stops the VM before Homebrew can orphan it, `ai` and
-  its five leaves (`ai-claude`, `ai-codex`, `ai-gemini`, `ai-copilot`,
-  `ai-opencode`) each delete only the mise wrapper they own, and `emacs` and
-  `wezterm` also uninstall the MacPorts port their install put there when
-  casks were unavailable), then uninstalls the casks and packages
+  LaunchAgents, `colima` stops the VM before Homebrew can orphan it, each of the
+  five `ai-*` leaves deletes its one teeup-written wrapper, the `ai` bundle
+  removes all five leaves, and `emacs` and `wezterm` also uninstall the
+  MacPorts port their install put there when casks were unavailable), then
+  uninstalls the casks and packages
   its metadata names, then forgets it. Your configuration files stay where
   they are. It refuses while another installed capability requires it, and it
   refuses outright rather than claim success when a capability ships no

@@ -149,10 +149,33 @@ test_readme_menu_field_table_matches_menu_awk() {
   return 0
 }
 
+test_readme_documents_ai_leaves_progress_and_lazy_log() {
+  local readme
+  readme="$(cat "$REPO/README.md")"
+  local leaf
+  for leaf in ai-claude ai-codex ai-gemini ai-copilot ai-opencode; do
+    assert_contains "$readme" "\`$leaf\`" "README must name $leaf" || return 1
+  done
+  assert_contains "$readme" 'Installing Claude Code through mise (first run, can take a minute)...' || return 1
+  assert_contains "$readme" '$TEEUP_STATE_DIR/logs/lazy.log' || return 1
+  assert_contains "$readme" '`teeup install ai` installs all five' || return 1
+}
+
+test_menu_offers_each_ai_leaf_and_the_bundle() {
+  local menu
+  menu="$(cat "$REPO/share/teeup/menu.json")"
+  local target
+  for target in ai-claude ai-codex ai-gemini ai-copilot ai-opencode ai; do
+    assert_contains "$menu" "teeup install $target" "menu must offer $target" || return 1
+  done
+}
+
 echo "docs"
 run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
 run_test "README's remove count matches the tree" test_readme_remove_count_matches_the_tree
 run_test "README's remove-script count matches the tree" test_readme_remove_script_count_matches_the_tree
 run_test "README's menu field table matches menu.awk" test_readme_menu_field_table_matches_menu_awk
+run_test "README documents AI leaves, progress and lazy log" test_readme_documents_ai_leaves_progress_and_lazy_log
+run_test "menu offers each AI leaf and the bundle" test_menu_offers_each_ai_leaf_and_the_bundle
 print_summary
