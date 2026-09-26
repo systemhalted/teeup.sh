@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
 mise_wrapper_remove ai-codex codex
+mise_tool_unuse codex

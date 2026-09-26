@@ -205,6 +205,33 @@ WRAPPER
   fi
 }
 
+# mise_tool_unuse <tool>
+# Takes <tool> out of the global mise config and prunes its install -- what
+# `teeup remove` owes a tool its wrapper asked for with `mise use -g`.
+# Removing only the wrapper left the tool installed and still requested, so
+# the next `teeup update` (mise upgrade) put it back (real Mac, 2026-09-26).
+# A tool the global config does not request is left alone: teeup never asked
+# for it. Only the capability's own tool is passed here, never a shared
+# runtime such as node. 0 done or nothing to do; 1 the unuse failed.
+mise_tool_unuse() {
+  local tool="$1"
+  if ! [[ "$tool" =~ ^[A-Za-z0-9][A-Za-z0-9_.+-]*$ ]]; then
+    err "mise_tool_unuse: '$tool' is not a plain tool name"
+    return 1
+  fi
+  if ! have mise; then
+    return 0
+  fi
+  if [[ "$(mise_global_state "$tool")" == "absent" ]]; then
+    return 0
+  fi
+  if ! run_cmd mise -C / unuse -g "$tool"; then
+    warn "Could not remove $tool from the global mise config. Run: mise unuse -g $tool"
+    return 1
+  fi
+  ok_unless_dry "Removed $tool from the global mise config"
+}
+
 # mise_wrapper_remove <owner> <command>
 # Deletes only a wrapper carrying the stable marker. Absence and a foreign file
 # are successful no-ops; an owned path that remains after rm is a failure.

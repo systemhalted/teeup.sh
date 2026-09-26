@@ -178,6 +178,31 @@ test_aggregate_remove_removes_all_leaf_wrappers_and_state() {
   cleanup_test_env
 }
 
+# Real Mac, 2026-09-26: teeup remove ai left every tool installed and still
+# requested in the global mise config, so teeup update would reinstall them.
+# Removing the bundle drops each leaf's own tool -- never the shared node.
+test_aggregate_remove_drops_each_tool_from_mise_but_not_node() {
+  setup
+  printf '%s\n' claude codex gemini-cli node copilot opencode > "$TEST_HOME/mise-installed"
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+case "$*" in
+  "ls --global"*) while read -r t; do printf '%s latest ~/.config/mise/config.toml latest\n' "$t"; done < "$HOME/mise-installed" ;;
+  *) : ;;
+esac
+exit 0
+EOF2
+  DRY_RUN=false "$TEEUP" install ai >/dev/null
+  DRY_RUN=false "$TEEUP" remove ai >/dev/null 2>&1 || { echo "remove failed"; return 1; }
+  local tool log
+  log="$(cat "$MOCK_LOG")"
+  for tool in claude codex gemini-cli copilot opencode; do
+    assert_contains "$log" "mise -C / unuse -g $tool" "remove must drop $tool from the global mise config" || return 1
+  done
+  assert_not_contains "$log" "unuse -g node" "node is a shared runtime, never removed with gemini" || return 1
+  cleanup_test_env
+}
+
 test_ai_dry_run_writes_nothing_and_claims_nothing() {
   setup
   local out command leaf
@@ -265,6 +290,7 @@ run_test "gemini leaf brings node and gemini-cli" test_gemini_leaf_brings_node_a
 run_test "leaf configure preserves a foreign command" test_leaf_configure_preserves_a_foreign_command
 run_test "leaf remove touches only its wrapper" test_leaf_remove_touches_only_its_wrapper
 run_test "aggregate remove removes all leaf wrappers and state" test_aggregate_remove_removes_all_leaf_wrappers_and_state
+run_test "aggregate remove drops each tool from mise but not node" test_aggregate_remove_drops_each_tool_from_mise_but_not_node
 run_test "ai dry run writes nothing and claims nothing" test_ai_dry_run_writes_nothing_and_claims_nothing
 run_test "ai configure warns when a leaf is incomplete then repairs" test_ai_configure_warns_when_a_leaf_is_incomplete_then_repairs
 run_test "aggregate remove fails when a wrapper will not delete" test_aggregate_remove_fails_when_a_wrapper_will_not_delete

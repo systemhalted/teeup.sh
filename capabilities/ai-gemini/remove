@@ -1,2 +1,4 @@
 #!/usr/bin/env bash
+# gemini-cli only: node is a shared runtime other tools may use.
 mise_wrapper_remove ai-gemini gemini
+mise_tool_unuse gemini-cli

@@ -71,6 +71,52 @@ setup() {
   export DRY_RUN=false
 }
 
+# Real Mac, 2026-09-26: teeup remove ai deleted the wrappers but left each
+# tool installed and still requested in the global mise config, so the next
+# teeup update (mise upgrade) would bring it back. Removing a tool teeup
+# requested takes the request out too.
+test_tool_unuse_drops_a_requested_tool() {
+  setup
+  printf 'claude\n' > "$TEST_HOME/mise-tools"
+  printf 'claude\n' > "$TEST_HOME/mise-installed"
+  mise_tool_unuse claude >/dev/null 2>&1 || { echo "unuse failed"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / unuse -g claude" || return 1
+  cleanup_test_env
+}
+
+test_tool_unuse_leaves_an_unrequested_tool_alone() {
+  setup
+  mise_tool_unuse claude >/dev/null 2>&1 || { echo "nothing to drop is not a failure"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG" 2>/dev/null)" "unuse" || return 1
+  cleanup_test_env
+}
+
+test_tool_unuse_changes_nothing_in_a_dry_run() {
+  setup
+  printf 'claude\n' > "$TEST_HOME/mise-tools"
+  local out
+  out="$(DRY_RUN=true mise_tool_unuse claude 2>&1)"
+  assert_not_contains "$(cat "$MOCK_LOG" 2>/dev/null)" "unuse" || return 1
+  assert_contains "$out" "unuse -g claude" "the preview names the command" || return 1
+  cleanup_test_env
+}
+
+test_tool_unuse_reports_a_failed_unuse() {
+  setup
+  printf 'claude\n' > "$TEST_HOME/mise-tools"
+  mock_command_script mise <<'EOF2'
+case "$*" in
+  "-C / ls --global"*) echo "claude latest ~/.config/mise/config.toml latest" ;;
+  *unuse*) exit 1 ;;
+esac
+EOF2
+  local rc=0 out
+  out="$(mise_tool_unuse claude 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "mise unuse -g claude" "name the command to run by hand" || return 1
+  cleanup_test_env
+}
+
 test_global_state_distinguishes_the_three_cases() {
   setup
   assert_equals "absent" "$(mise_global_state uv)" || return 1
@@ -654,6 +700,10 @@ test_upgrade_covers_the_global_config_and_tolerates_no_mise() {
 
 echo "lib/mise.sh"
 run_test "global state distinguishes the three cases" test_global_state_distinguishes_the_three_cases
+run_test "tool unuse drops a requested tool" test_tool_unuse_drops_a_requested_tool
+run_test "tool unuse leaves an unrequested tool alone" test_tool_unuse_leaves_an_unrequested_tool_alone
+run_test "tool unuse changes nothing in a dry run" test_tool_unuse_changes_nothing_in_a_dry_run
+run_test "tool unuse reports a failed unuse" test_tool_unuse_reports_a_failed_unuse
 run_test "global state is not fooled by a project config" test_global_state_is_not_fooled_by_a_project_config
 run_test "global state falls back to the config file" test_global_state_falls_back_to_the_config_file
 run_test "global state fallback honours MISE_GLOBAL_CONFIG_FILE" test_global_state_fallback_honours_mise_global_config_file
