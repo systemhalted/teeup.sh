@@ -62,3 +62,6 @@ ACTION_ITEMS.md
 
 # Per-machine overrides are committed deliberately; keep drafts out.
 machines/*.draft
+
+# mdBook output for the manual (docs/manual); built locally and in CI, never committed.
+/docs/manual/book/

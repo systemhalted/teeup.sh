@@ -173,6 +173,121 @@ test_menu_offers_each_ai_leaf_and_the_bundle() {
   done
 }
 
+# The manual (docs/manual, an mdBook) is the longest document teeup ships,
+# so it gets the same guard as the README: every `teeup <verb>` it shows as
+# code must be a verb bin/teeup accepts. Code is an inline `...` span or a
+# line of a fenced block; prose ("teeup installs") is not checked.
+# _manual_code_verbs <src dir> -> "file: verb" for every code-formatted
+# teeup command, one per line.
+_manual_code_verbs() {
+  local dir="$1" f
+  for f in "$dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    awk -v file="${f##*/}" '
+      function verb(text,   w) {
+        sub(/^[[:space:]]+/, "", text)
+        sub(/^DRY_RUN=[^ ]* +/, "", text)
+        if (text !~ /^teeup +[^ ]/) return
+        sub(/^teeup +/, "", text)
+        w = text
+        sub(/[^a-z_-].*$/, "", w)
+        if (w != "") print file ": " w
+      }
+      /^```/ { fence = !fence; next }
+      fence { verb($0); next }
+      {
+        line = $0
+        while (match(line, /`[^`]+`/)) {
+          verb(substr(line, RSTART + 1, RLENGTH - 2))
+          line = substr(line, RSTART + RLENGTH)
+        }
+      }
+    ' "$f"
+  done
+}
+
+# _manual_bad_verbs <src dir> -> the "file: verb" lines whose verb bin/teeup
+# does not accept.
+_manual_bad_verbs() {
+  local verbs line
+  verbs=" $(teeup_verbs | tr '\n' ' ') "
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    case "$verbs" in
+      *" ${line##*: } "*) ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done < <(_manual_code_verbs "$1")
+}
+
+# _manual_summary_problems <src dir> -> one line per SUMMARY.md link to a
+# missing file, and per .md page SUMMARY.md does not link. mdBook quietly
+# creates an empty page for a missing link, and never builds a page nobody
+# links, so either mistake publishes without a warning.
+_manual_summary_problems() {
+  local dir="$1" link f name
+  [[ -f "$dir/SUMMARY.md" ]] || { echo "no SUMMARY.md in $dir"; return 0; }
+  while IFS= read -r link; do
+    [[ -n "$link" ]] || continue
+    [[ -f "$dir/$link" ]] || echo "SUMMARY.md links to a missing file: $link"
+  done < <(grep -oE '\]\([^)]+\.md\)' "$dir/SUMMARY.md" | sed -e 's/^](//' -e 's/)$//')
+  for f in "$dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    name="${f##*/}"
+    [[ "$name" == "SUMMARY.md" ]] && continue
+    grep -qF "]($name)" "$dir/SUMMARY.md" || echo "SUMMARY.md does not list: $name"
+  done
+  return 0
+}
+
+test_manual_only_shows_verbs_that_exist() {
+  local bad
+  bad="$(_manual_bad_verbs "$REPO/docs/manual/src")"
+  if [[ -n "$bad" ]]; then
+    echo "The manual shows teeup commands bin/teeup does not accept:"
+    printf '%s\n' "$bad"
+    return 1
+  fi
+  [[ -n "$(_manual_code_verbs "$REPO/docs/manual/src")" ]] || { echo "found no teeup commands in the manual at all; the scan is broken"; return 1; }
+  return 0
+}
+
+test_manual_verb_check_catches_an_unknown_verb() {
+  local dir bad
+  dir="$(mktemp -d)"
+  # shellcheck disable=SC2016  # the backticks are Markdown, not a substitution
+  printf '%s\n' 'Run `teeup instal git`, then:' '```sh' 'DRY_RUN=true teeup frobnicate' 'teeup status' '```' 'Prose: teeup installs things.' > "$dir/page.md"
+  bad="$(_manual_bad_verbs "$dir")"
+  rm -rf "$dir"
+  assert_contains "$bad" "page.md: instal" || return 1
+  assert_contains "$bad" "page.md: frobnicate" || return 1
+  assert_not_contains "$bad" "status" || return 1
+  assert_not_contains "$bad" "installs" || return 1
+}
+
+test_manual_summary_matches_the_pages() {
+  local problems
+  problems="$(_manual_summary_problems "$REPO/docs/manual/src")"
+  if [[ -n "$problems" ]]; then
+    printf '%s\n' "$problems"
+    return 1
+  fi
+  return 0
+}
+
+test_manual_summary_check_catches_both_mistakes() {
+  local dir problems
+  dir="$(mktemp -d)"
+  printf '%s\n' '# Part 1: The Basics' '' '- [Here](here.md)' '- [Gone](gone.md)' > "$dir/SUMMARY.md"
+  : > "$dir/here.md"
+  : > "$dir/stray.md"
+  problems="$(_manual_summary_problems "$dir")"
+  rm -rf "$dir"
+  assert_contains "$problems" "missing file: gone.md" || return 1
+  assert_contains "$problems" "does not list: stray.md" || return 1
+  assert_not_contains "$problems" "here.md" || return 1
+}
+
 echo "docs"
 run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
@@ -181,4 +296,8 @@ run_test "README's remove-script count matches the tree" test_readme_remove_scri
 run_test "README's menu field table matches menu.awk" test_readme_menu_field_table_matches_menu_awk
 run_test "README documents AI leaves, progress and lazy log" test_readme_documents_ai_leaves_progress_and_lazy_log
 run_test "menu offers each AI leaf and the bundle" test_menu_offers_each_ai_leaf_and_the_bundle
+run_test "manual only shows verbs that exist" test_manual_only_shows_verbs_that_exist
+run_test "manual verb check catches an unknown verb" test_manual_verb_check_catches_an_unknown_verb
+run_test "manual SUMMARY.md matches the pages" test_manual_summary_matches_the_pages
+run_test "manual SUMMARY.md check catches both mistakes" test_manual_summary_check_catches_both_mistakes
 print_summary
