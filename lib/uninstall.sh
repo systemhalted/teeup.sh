@@ -190,3 +190,151 @@ uninstall_caps() {
     printf '%s\n' "$name"
   done
 }
+
+# --- the shell layer ----------------------------------------------------------
+
+# uninstall_shell_pattern -> the ERE for a line of teeup's in a zsh home file.
+# Three things mark one: the env file line as capabilities/zsh/configure
+# renders it (the %q-quoted path of $TEEUP_CONFIG_DIR/env), the same line
+# unrendered (a file installed before rendering existed), and TEEUP_PATH,
+# which every line that sources the default layer names. A user line that
+# names TEEUP_PATH is dead after the uninstall anyway: nothing sets it.
+uninstall_shell_pattern() {
+  printf '%s|%s|TEEUP_PATH\n' \
+    "$(ere_quote "$(printf '%q' "$TEEUP_CONFIG_DIR/env")")" \
+    "$(ere_quote '${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env')"
+}
+
+# uninstall_shell_live <file> -> 0 when <file> still has a live teeup line:
+# one matching uninstall_shell_pattern that is not a comment, not already
+# neutralised (": # Disabled by teeup ..."), and not a block opener, which
+# disable_matching_lines leaves in place on purpose and which does nothing
+# once its body is disabled and TEEUP_PATH is unset.
+uninstall_shell_live() {
+  TEEUP_UNS_PATTERN="$(uninstall_shell_pattern)" TEEUP_UNS_OPENER="$(block_opener_ere)" awk '
+    $0 ~ ENVIRON["TEEUP_UNS_PATTERN"] && $0 !~ /^[ \t]*[:#]/ && $0 !~ ENVIRON["TEEUP_UNS_OPENER"] { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$1" 2>/dev/null
+}
+
+# _uninstall_zshrc_stub -> the ~/.zshrc left in place of a pristine teeup
+# copy. A shell must always find one: removing it outright is how the old
+# migration nearly left a Mac with no working shell setup at all. It sources
+# local.zsh only when that file stays (the user edited it), rendered the
+# way capabilities/zsh/configure renders it.
+_uninstall_zshrc_stub() {
+  local local_zsh
+  local_zsh="$(user_config_dir)/zsh/local.zsh"
+  echo "# ~/.zshrc - left by teeup uninstall on $(date '+%Y-%m-%d'). teeup's shell"
+  echo "# setup is gone; this file is yours, and is here so zsh always has one."
+  if [[ -e "$local_zsh" ]] && ! config_is_pristine "$local_zsh"; then
+    echo "[ -r $(printf '%q' "$local_zsh") ] && . $(printf '%q' "$local_zsh")"
+  fi
+}
+
+# _uninstall_shell_file <path>
+_uninstall_shell_file() {
+  local file="$1" name resolved target backup parsed_before=false
+  name="${file##*/}"
+  [[ -e "$file" || -L "$file" ]] || return 0
+  if [[ -L "$file" ]]; then
+    target="$(readlink "$file" 2>/dev/null || true)"
+    if [[ -f "$file" ]] && uninstall_shell_live "$file"; then
+      uninstall_note refused "$file is a symlink (to $target), so teeup did not write through it. Delete the lines that mention TEEUP_PATH or teeup/env from the file it points to."
+    fi
+    return 0
+  fi
+  uninstall_shell_live "$file" || return 0
+  resolved="$(migrate_resolve "$file")" || resolved="$file"
+  if migrate_in_git_checkout "$resolved"; then
+    uninstall_note refused "$file is inside a git checkout, so teeup did not edit it. Delete the lines that mention TEEUP_PATH or teeup/env yourself."
+    return 0
+  fi
+  if config_is_pristine "$file"; then
+    # teeup's own copy, never edited: it goes, and an earlier copy of the
+    # user's comes back if they want it.
+    if uninstall_offer_restore "$file"; then return 0; fi
+    if [[ "$name" != ".zshrc" ]]; then
+      uninstall_rm "$file" "teeup's $file" || true
+      return 0
+    fi
+    if _uninstall_zshrc_stub | write_managed_file "$file" "a zshrc of your own"; then
+      uninstall_note removed "teeup's $file (a short one of your own is in its place)"
+    else
+      uninstall_note failed "$file: could not replace teeup's copy; it still sources teeup's shell layer. Edit it by hand."
+    fi
+    return 0
+  fi
+  # Edited by the user: their lines stay, teeup's are neutralised in place
+  # with a backup beside the file (disable_matching_lines). zsh itself is
+  # asked whether the file still parses, when it did before. -f, because
+  # without it zsh sources ~/.zshenv first -- teeup's shell layer, running
+  # in the middle of its own removal.
+  if have zsh && zsh -f -n "$file" 2>/dev/null; then parsed_before=true; fi
+  disable_matching_lines "$file" "$(uninstall_shell_pattern)" "teeup uninstall"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    uninstall_note removed "teeup's lines in $file (your own lines stay)"
+    return 0
+  fi
+  backup="$(uninstall_newest_backup "$file" || true)"
+  if uninstall_shell_live "$file"; then
+    uninstall_note failed "$file: teeup's lines are still live (see the warnings above). Delete the lines that mention TEEUP_PATH or teeup/env by hand."
+    return 0
+  fi
+  if [[ "$parsed_before" == "true" ]] && ! zsh -f -n "$file" 2>/dev/null; then
+    if [[ -n "$backup" ]] && cat "$backup" > "$file"; then
+      uninstall_note failed "$file: zsh could not parse it with teeup's lines disabled, so it was put back as it was. Delete the lines that mention TEEUP_PATH or teeup/env by hand."
+    else
+      uninstall_note failed "$file: zsh cannot parse it with teeup's lines disabled. Your copy from before is ${backup:-missing}."
+    fi
+    return 0
+  fi
+  uninstall_note removed "teeup's lines in $file (your own lines stay; the file as it was is at $backup)"
+}
+
+# uninstall_shell
+# The first mutation of every uninstall, before any tool the layer hooks
+# (mise, starship, zoxide, fzf) is removed: a new shell must never start by
+# sourcing a hook for a binary that is already gone. A shell that is running
+# already registered those hooks at startup and cannot be unhooked from here,
+# which is why cmd_uninstall ends by telling the user to open a new one.
+# The files are the ones zsh reads (${ZDOTDIR:-$HOME}), in the order it
+# reads them. When any of them changed, uninstall_path_hint says how to keep
+# the package manager on PATH without teeup.
+uninstall_shell() {
+  local dir f before="$_UNINSTALL_REMOVED"
+  dir="${ZDOTDIR:-$HOME}"
+  for f in .zshenv .zprofile .zshrc; do
+    _uninstall_shell_file "$dir/$f"
+  done
+  if [[ "$_UNINSTALL_REMOVED" != "$before" ]]; then
+    uninstall_path_hint
+  fi
+}
+
+# uninstall_path_hint
+# teeup's shell layer is what put the package manager on PATH (default/env
+# and `brew shellenv` in default/profile). With the layer gone, a new shell
+# on Apple Silicon or MacPorts no longer finds brew, port or anything they
+# installed, although both stay. The line each package manager documents
+# for this is noted, with the command that adds it, unless the user's own
+# .zprofile already has one. /usr/local/bin (Intel Homebrew) is on macOS's
+# default PATH already.
+uninstall_path_hint() {
+  local prefix zprofile line
+  zprofile="${ZDOTDIR:-$HOME}/.zprofile"
+  prefix="$(pkg_prefix)"
+  case "$(pkg_backend)" in
+    homebrew)
+      [[ "$prefix" != "/usr/local" && -x "$prefix/bin/brew" ]] || return 0
+      if grep -qs 'brew shellenv' "$zprofile"; then return 0; fi
+      line="eval \"\$($prefix/bin/brew shellenv)\""
+      ;;
+    macports)
+      [[ -x "$prefix/bin/port" ]] || return 0
+      if grep -qsF "$prefix/bin" "$zprofile"; then return 0; fi
+      line="export PATH=\"$prefix/bin:$prefix/sbin:\$PATH\""
+      ;;
+  esac
+  uninstall_note kept "$(pkg_backend_label) at $prefix. teeup's shell layer put it on PATH; to keep it there in new shells run: echo $(uninstall_q "$line") >> $(uninstall_q "$zprofile")"
+}

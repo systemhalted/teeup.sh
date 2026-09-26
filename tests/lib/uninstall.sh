@@ -201,6 +201,112 @@ test_offer_restore_without_a_terminal_notes_a_command_that_works() {
   cleanup_test_env
 }
 
+# zsh_home: the three home files exactly as `teeup configure zsh` leaves them,
+# rendered and stock-recorded, from the real capability in the checkout.
+# The checkout is only read; everything written lands under $TEST_HOME.
+zsh_home() {
+  TEEUP_CAPS_DIR="$TEEUP_PATH/capabilities" cap_run zsh configure >/dev/null 2>&1
+  ZH="${ZDOTDIR:-$HOME}"
+}
+
+test_shell_strips_teeups_lines_from_an_edited_zshrc_and_keeps_the_users() {
+  setup
+  export TEEUP_CONFIG_DIR="$TEST_HOME/con fig \$x"
+  zsh_home
+  printf 'export MINE=1\n' >> "$ZH/.zshrc"
+  uninstall_shell >/dev/null 2>&1
+  assert_contains "$(cat "$ZH/.zshrc")" "export MINE=1" || return 1
+  assert_contains "$(cat "$ZH/.zshrc")" ": # Disabled by teeup (teeup uninstall):" || return 1
+  uninstall_shell_live "$ZH/.zshrc" && { echo "a live teeup line is left"; return 1; }
+  if have zsh; then zsh -f -n "$ZH/.zshrc" || { echo "zsh cannot parse the result"; return 1; }; fi
+  [[ -n "$(uninstall_newest_backup "$ZH/.zshrc")" ]] || { echo "a copy of the file as it was must be beside it"; return 1; }
+  uninstall_clean || { echo "nothing was refused: $_UNINSTALL_REFUSED$_UNINSTALL_FAILED"; return 1; }
+  cleanup_test_env
+}
+
+# Pristine: .zshenv and .zprofile go; .zshrc is replaced, never removed, and
+# the replacement sources an edited local.zsh so the user's own lines load.
+test_shell_replaces_a_pristine_zshrc_and_removes_the_other_two() {
+  setup
+  zsh_home
+  printf 'export LOCAL=1\n' >> "$(user_config_dir)/zsh/local.zsh"
+  uninstall_shell >/dev/null 2>&1
+  [[ ! -e "$ZH/.zshenv" && ! -e "$ZH/.zprofile" ]] || { echo "pristine .zshenv and .zprofile go"; return 1; }
+  assert_file_exists "$ZH/.zshrc" "a .zshrc must always be left" || return 1
+  uninstall_shell_live "$ZH/.zshrc" && { echo "the new .zshrc has a teeup line"; return 1; }
+  assert_contains "$(cat "$ZH/.zshrc")" "zsh/local.zsh" || return 1
+  if have zsh; then
+    assert_equals "1" "$(zsh -f -c ". $(printf '%q' "$ZH/.zshrc"); echo \$LOCAL")" "the new .zshrc loads local.zsh" || return 1
+  fi
+  cleanup_test_env
+}
+
+test_shell_refuses_a_symlinked_zshrc_and_writes_nothing() {
+  setup
+  zsh_home
+  mkdir -p "$TEST_HOME/dotfiles/.git"
+  cp "$ZH/.zshrc" "$TEST_HOME/dotfiles/zshrc"
+  rm -f "$ZH/.zshrc"
+  ln -s "$TEST_HOME/dotfiles/zshrc" "$ZH/.zshrc"
+  local before
+  before="$(cat "$TEST_HOME/dotfiles/zshrc")"
+  uninstall_shell >/dev/null 2>&1
+  [[ -L "$ZH/.zshrc" ]] || { echo "the link must stay a link"; return 1; }
+  assert_equals "$before" "$(cat "$TEST_HOME/dotfiles/zshrc")" "nothing is written through the link" || return 1
+  assert_contains "$_UNINSTALL_REFUSED" "$ZH/.zshrc is a symlink" || return 1
+  cleanup_test_env
+}
+
+test_shell_honours_zdotdir_and_refuses_one_inside_a_git_checkout() {
+  setup
+  export ZDOTDIR="$TEST_HOME/.config/zsh"
+  zsh_home
+  printf 'export MINE=1\n' >> "$ZDOTDIR/.zshrc"
+  uninstall_shell >/dev/null 2>&1
+  uninstall_shell_live "$ZDOTDIR/.zshrc" && { echo "ZDOTDIR's .zshrc was not handled"; return 1; }
+  cleanup_test_env
+  setup
+  export ZDOTDIR="$TEST_HOME/dots/zsh"
+  mkdir -p "$TEST_HOME/dots/.git"
+  zsh_home
+  printf 'export MINE=1\n' >> "$ZDOTDIR/.zshrc"
+  uninstall_shell >/dev/null 2>&1
+  uninstall_shell_live "$ZDOTDIR/.zshrc" || { echo "a file in a git checkout must not be edited"; return 1; }
+  assert_contains "$_UNINSTALL_REFUSED" "is inside a git checkout" || return 1
+  cleanup_test_env
+}
+
+test_shell_dry_run_changes_nothing() {
+  setup
+  zsh_home
+  printf 'export MINE=1\n' >> "$ZH/.zshrc"
+  local before after out
+  before="$(ls -l "$ZH/.zshenv" "$ZH/.zprofile" "$ZH/.zshrc"; ls -A "$ZH"; cat "$ZH/.zshrc")"
+  out="$(DRY_RUN=true uninstall_shell 2>&1)"
+  after="$(ls -l "$ZH/.zshenv" "$ZH/.zprofile" "$ZH/.zshrc"; ls -A "$ZH"; cat "$ZH/.zshrc")"
+  assert_equals "$before" "$after" || return 1
+  assert_contains "$out" "[DRY-RUN]" || return 1
+  cleanup_test_env
+}
+
+# The package manager stays, but the shell layer that put it on PATH goes.
+# The printed command must put it back, into the .zprofile zsh reads.
+test_path_hint_prints_a_command_that_works() {
+  setup
+  export ZDOTDIR="$TEST_HOME/z dot"
+  mkdir -p "$ZDOTDIR" "$TEEUP_PKG_PREFIX/bin"
+  printf '#!/bin/sh\n' > "$TEEUP_PKG_PREFIX/bin/brew"
+  chmod +x "$TEEUP_PKG_PREFIX/bin/brew"
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  uninstall_path_hint
+  run_fix "${_UNINSTALL_KEPT##*run: }" || { echo "the printed command failed"; return 1; }
+  assert_contains "$(cat "$ZDOTDIR/.zprofile")" "eval \"\$($TEEUP_PKG_PREFIX/bin/brew shellenv)\"" || return 1
+  uninstall_report_reset
+  uninstall_path_hint
+  assert_equals "" "$_UNINSTALL_KEPT" "no hint once the line is there" || return 1
+  cleanup_test_env
+}
+
 echo "lib/uninstall.sh"
 run_test "rm removes a file, a directory and a link without following it" test_rm_removes_a_file_a_directory_and_a_link_without_following_it
 run_test "rm refuses outside HOME and in a git checkout, with a fix that works" test_rm_refuses_outside_home_and_in_a_git_checkout_with_a_fix_that_works
@@ -210,4 +316,10 @@ run_test "caps lists installed capabilities dependents first" test_caps_lists_in
 run_test "caps orders a bundle before its leaves and leaves before their shared base" test_caps_orders_a_bundle_before_its_leaves_and_leaves_before_their_shared_base
 run_test "offer_restore asks and puts the earlier copy back" test_offer_restore_asks_and_puts_the_earlier_copy_back
 run_test "offer_restore without a terminal notes a command that works" test_offer_restore_without_a_terminal_notes_a_command_that_works
+run_test "shell strips teeup's lines from an edited zshrc and keeps the user's" test_shell_strips_teeups_lines_from_an_edited_zshrc_and_keeps_the_users
+run_test "shell replaces a pristine zshrc and removes the other two" test_shell_replaces_a_pristine_zshrc_and_removes_the_other_two
+run_test "shell refuses a symlinked zshrc and writes nothing" test_shell_refuses_a_symlinked_zshrc_and_writes_nothing
+run_test "shell honours ZDOTDIR and refuses one inside a git checkout" test_shell_honours_zdotdir_and_refuses_one_inside_a_git_checkout
+run_test "shell dry run changes nothing" test_shell_dry_run_changes_nothing
+run_test "path hint prints a command that works" test_path_hint_prints_a_command_that_works
 print_summary

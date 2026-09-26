@@ -705,6 +705,27 @@ test_disable_matching_lines_handles_a_path_with_spaces_and_metacharacters() {
 }
 
 echo "lib/files.sh"
+
+# ere_quote: the quoted text matches itself, through awk's ENVIRON the way
+# disable_matching_lines passes a pattern, and a near miss does not match --
+# every ERE metacharacter, a %q-escaped space and a dollar included.
+test_ere_quote_matches_only_the_literal_text() {
+  setup
+  local text q
+  for text in '/Users/a b/.config/teeup/env' '${XDG_CONFIG_HOME:-$HOME/.config}/teeup/env' \
+    '/x/con\ fig\ \$x/env' 'a.b*c+d?e(f)g[h]i{j}k|l^m\n'; do
+    q="$(ere_quote "$text")"
+    printf '%s\n' "pre $text post" | TEEUP_T="$q" awk '$0 ~ ENVIRON["TEEUP_T"] { found = 1 } END { exit found ? 0 : 1 }' ||
+      { echo "does not match itself: $text (as $q)"; return 1; }
+    printf '%s\n' "pre ${text%?}Z post" | TEEUP_T="$q" awk '$0 ~ ENVIRON["TEEUP_T"] { found = 1 } END { exit found ? 0 : 1 }' &&
+      { echo "matches a near miss: $text (as $q)"; return 1; }
+  done
+  printf 'axb\n' | TEEUP_T="$(ere_quote 'a.b')" awk '$0 ~ ENVIRON["TEEUP_T"] { found = 1 } END { exit found ? 0 : 1 }' &&
+    { echo "a quoted dot matched any character"; return 1; }
+  cleanup_test_env
+}
+
+echo "lib/files.sh"
 # A dangling symlink answers "does not exist" to `-e`, so an install path
 # that tests existence first would replace the LINK with a regular file --
 # silently detaching a config whose target has simply moved.
@@ -908,4 +929,5 @@ run_test "disable_matching_lines dry run changes nothing" test_disable_matching_
 run_test "disable_matching_lines does not rewrite when the backup failed" test_disable_matching_lines_does_not_rewrite_when_the_backup_failed
 run_test "disable_matching_lines refuses a file it cannot write" test_disable_matching_lines_refuses_a_file_it_cannot_write
 run_test "disable_matching_lines handles an awkward path" test_disable_matching_lines_handles_a_path_with_spaces_and_metacharacters
+run_test "ere_quote matches only the literal text" test_ere_quote_matches_only_the_literal_text
 print_summary
