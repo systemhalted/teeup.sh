@@ -12,6 +12,16 @@
 # after this script returns, and `brew uninstall colima` under a VM that is
 # still running is the exact damage this script exists to prevent. Warning
 # and carrying on would do it anyway and then report "Removed".
+#
+# `teeup uninstall` without --packages keeps colima, docker and Compose
+# installed (TEEUP_REMOVE_PACKAGES=false, from lib/capability.sh's
+# cap_remove). Then there is no formula coming off to protect the VM from,
+# and the Compose link is what makes the docker the user keeps work, so both
+# stay exactly as they are.
+if [[ "${TEEUP_REMOVE_PACKAGES:-true}" != "true" ]]; then
+  log "Keeping colima, docker and Compose installed, so the VM and the docker compose link stay as they are."
+  exit 0
+fi
 if have colima; then
   if colima status >/dev/null 2>&1; then
     if run_cmd colima stop; then

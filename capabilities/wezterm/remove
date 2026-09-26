@@ -4,8 +4,12 @@
 # cmd_remove's own loop would uninstall nothing and still report the
 # capability gone. Undo what install actually did on this backend; on
 # Homebrew the cask in the metadata is the whole story and this script has
-# nothing to add.
-if ! casks_supported; then
+# nothing to add. `teeup uninstall` without --packages keeps packages, and
+# says so through TEEUP_REMOVE_PACKAGES=false (lib/capability.sh's
+# cap_remove); the port is a package like any other then.
+if [[ "${TEEUP_REMOVE_PACKAGES:-true}" != "true" ]]; then
+  log "Keeping WezTerm; packages stay installed."
+elif ! casks_supported; then
   if pkg_installed wezterm; then
     pkg_uninstall wezterm || exit 1
   else

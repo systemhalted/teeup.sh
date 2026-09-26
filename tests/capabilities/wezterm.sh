@@ -636,6 +636,27 @@ test_reset_leaves_the_local_override_alone() {
   cleanup_test_env
 }
 
+# `teeup uninstall` without --packages keeps the port; `teeup remove` (no
+# variable set) still uninstalls it.
+test_remove_keeps_the_port_when_packages_are_kept() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command_script port <<'EOF2'
+case "$1" in
+  installed) echo "  $2 @1.0_0 (active)" ;;
+esac
+exit 0
+EOF2
+  source "$TEEUP_PATH/lib/all.sh"
+  local out
+  out="$(DRY_RUN=false TEEUP_REMOVE_PACKAGES=false cap_run wezterm remove 2>&1)"
+  assert_contains "$out" "Keeping WezTerm; packages stay installed." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "port uninstall" || return 1
+  out="$(DRY_RUN=false cap_run wezterm remove 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "sudo port uninstall wezterm" "teeup remove still takes the port off" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/wezterm"
 run_test "reset leaves the local override alone" test_reset_leaves_the_local_override_alone
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
@@ -661,4 +682,5 @@ run_test "theme renders a wezterm scheme" test_theme_renders_a_wezterm_scheme
 run_test "shipped and rendered Lua parses" test_lua_files_parse
 run_test "TEEUP_PATH and TEEUP_STATE_DIR survive a space" test_teeup_path_and_state_dir_survive_a_space
 run_test "TEEUP_PATH and TEEUP_STATE_DIR survive special bytes" test_teeup_path_and_state_dir_survive_special_bytes
+run_test "remove keeps the port when packages are kept" test_remove_keeps_the_port_when_packages_are_kept
 print_summary

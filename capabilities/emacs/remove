@@ -6,8 +6,12 @@ launchagent_remove sh.teeup.emacs
 # On MacPorts install put the `emacs` port on this machine, because there is
 # no cask machinery there -- and the metadata names only the cask, so
 # cmd_remove's own loop would uninstall nothing and still report the
-# capability gone. Undo what install actually did on this backend.
-if ! casks_supported; then
+# capability gone. Undo what install actually did on this backend, unless
+# the caller is keeping packages (`teeup uninstall` without --packages sets
+# TEEUP_REMOVE_PACKAGES=false; lib/capability.sh's cap_remove).
+if [[ "${TEEUP_REMOVE_PACKAGES:-true}" != "true" ]]; then
+  log "Keeping the Emacs application; packages stay installed."
+elif ! casks_supported; then
   if pkg_installed emacs; then
     pkg_uninstall emacs || exit 1
   else

@@ -614,6 +614,27 @@ test_unquote_degrades_without_string_search() {
   cleanup_test_env
 }
 
+# `teeup uninstall` without --packages: the agent still goes, the port the
+# MacPorts install put here stays.
+test_remove_keeps_the_port_when_packages_are_kept() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command_script port <<'EOF2'
+case "$1" in
+  installed) echo "  $2 @1.0_0 (active)" ;;
+esac
+exit 0
+EOF2
+  source "$TEEUP_PATH/lib/all.sh"
+  local out
+  out="$(DRY_RUN=false TEEUP_REMOVE_PACKAGES=false cap_run emacs remove 2>&1)"
+  assert_contains "$out" "Keeping the Emacs application; packages stay installed." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "port uninstall" || return 1
+  out="$(DRY_RUN=false cap_run emacs remove 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "sudo port uninstall emacs" "teeup remove still takes the port off" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/emacs"
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install falls back to the port on macports" test_install_falls_back_to_the_port_on_macports
@@ -645,6 +666,7 @@ run_test "theme renders the emacs palette" test_theme_renders_the_emacs_palette
 run_test "hooks wait until teeup installed emacs" test_hooks_wait_until_teeup_installed_emacs
 run_test "theme-apply reloads a running daemon" test_theme_apply_reloads_a_running_daemon
 run_test "remove unloads the agent through lib/macos" test_remove_unloads_the_agent_through_lib_macos
+run_test "remove keeps the port when packages are kept" test_remove_keeps_the_port_when_packages_are_kept
 run_test "configure points git at emacsclient" test_configure_points_git_at_emacsclient
 run_test "starter loads in a real emacs" test_starter_loads_in_a_real_emacs
 run_test "env file paths survive special bytes" test_env_file_paths_survive_special_bytes
