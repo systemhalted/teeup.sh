@@ -9,6 +9,11 @@ setup() {
   # ampersand in its path: file names reach bash, run_logged and the markers.
   export TEEUP_MIGRATIONS_DIR="$TEST_HOME/mig rations 'q' \$x & co"
   mkdir -p "$TEEUP_MIGRATIONS_DIR"
+  # The ai-split migration's regenerated leaf refresh now runs a capability's
+  # configure through cap_run, which calls answers_load; keep it off the
+  # checkout's own machines/ (Global Constraints: any test that can load a
+  # machine file exports this to a temp dir).
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
   source "$TEEUP_PATH/lib/all.sh"
   # shellcheck disable=SC2034  # read by the library functions under test
   DRY_RUN=false
@@ -210,6 +215,35 @@ test_ai_split_migration_maps_complete_legacy_state_and_refreshes_shims() {
   cleanup_test_env
 }
 
+# I1 regression: a legacy managed wrapper (the aggregate `ai` capability's
+# old configure wrote it) must be rewritten with the leaf's current
+# implementation -- the progress line, retry and lazy log the old stub never
+# had. A foreign file at the same path (no marker) is not teeup's, and must
+# come through byte for byte.
+test_ai_split_migration_refreshes_a_legacy_managed_wrapper() {
+  setup
+  copy_ai_split_migration
+  state_done mark cap-ai
+  write_legacy_ai_path claude
+  local before
+  before="$(cat "$HOME/.local/bin/claude")"
+  printf '#!/bin/sh\necho native\n' > "$HOME/.local/bin/codex"
+  chmod +x "$HOME/.local/bin/codex"
+
+  migration_run "$AI_SPLIT_MIGRATION" >/dev/null
+
+  state_done check cap-ai-claude || { echo "claude was not migrated"; return 1; }
+  local after
+  after="$(cat "$HOME/.local/bin/claude")"
+  [[ "$before" != "$after" ]] || { echo "the legacy stub must be rewritten"; return 1; }
+  assert_contains "$after" "Installing Claude Code through mise (first run, can take a minute)..." || return 1
+  assert_not_contains "$after" "echo legacy-claude" || return 1
+
+  state_done check cap-ai-codex || { echo "the foreign codex path was not mapped"; return 1; }
+  assert_equals "$(printf '#!/bin/sh\necho native\n')" "$(cat "$HOME/.local/bin/codex")" "a foreign command file must stay untouched" || return 1
+  cleanup_test_env
+}
+
 test_ai_split_migration_clears_an_incomplete_aggregate() {
   setup
   copy_ai_split_migration
@@ -261,6 +295,49 @@ test_ai_split_migration_tolerates_a_fixture_tree_without_ai() {
   cleanup_test_env
 }
 
+# The migration's own leaf check is `-e || -L`, covering a symlink the -e
+# alone would miss. A working symlink still resolves, so mise_wrapper_write's
+# marker read succeeds and (finding correctly, no marker on line 2) leaves it
+# alone; its target is not teeup's to inspect or change.
+test_ai_split_migration_marks_a_working_symlink_leaf() {
+  setup
+  copy_ai_split_migration
+  state_done mark cap-ai
+  printf '#!/bin/sh\necho real-codex\n' > "$HOME/real-codex"
+  chmod +x "$HOME/real-codex"
+  mkdir -p "$HOME/.local/bin"
+  ln -s "$HOME/real-codex" "$HOME/.local/bin/codex"
+  for command in claude gemini copilot opencode; do write_legacy_ai_path "$command"; done
+
+  migration_run "$AI_SPLIT_MIGRATION" >/dev/null
+
+  state_done check cap-ai-codex || { echo "a working symlink leaf was not marked"; return 1; }
+  [[ -L "$HOME/.local/bin/codex" ]] || { echo "the symlink was replaced with a regular file"; return 1; }
+  assert_equals "$HOME/real-codex" "$(readlink "$HOME/.local/bin/codex")" "a foreign symlink target must stay as it was" || return 1
+  cleanup_test_env
+}
+
+# A dangling symlink: -e is false (the target is gone) but -L is true, so the
+# migration must still count the leaf as set up, and mise_wrapper_write's own
+# marker read (which cannot follow the broken link) must leave it alone
+# rather than crash the migration.
+test_ai_split_migration_marks_a_dangling_symlink_leaf() {
+  setup
+  copy_ai_split_migration
+  state_done mark cap-ai
+  mkdir -p "$HOME/.local/bin"
+  ln -s "$HOME/.local/bin/no-such-target" "$HOME/.local/bin/gemini"
+  for command in claude codex copilot opencode; do write_legacy_ai_path "$command"; done
+
+  migration_run "$AI_SPLIT_MIGRATION" >/dev/null
+
+  state_done check cap-ai-gemini || { echo "a dangling symlink leaf was not marked"; return 1; }
+  [[ -L "$HOME/.local/bin/gemini" ]] || { echo "the dangling symlink was replaced"; return 1; }
+  [[ ! -e "$HOME/.local/bin/gemini" ]] || { echo "the symlink target must stay missing"; return 1; }
+  assert_file_exists "$MARKS/$AI_SPLIT_MIGRATION" "the migration must finish, not crash on the broken link" || return 1
+  cleanup_test_env
+}
+
 echo "lib/migrations.sh"
 # A file whose name is not <epoch>.sh: the glob accepts it, everything else
 # must not. It is announced rather than silently ignored, it never appears in
@@ -307,9 +384,12 @@ test_run_pending_counts_correctly_with_an_odd_name_present() {
 }
 
 run_test "ai split migration maps complete legacy state and refreshes shims" test_ai_split_migration_maps_complete_legacy_state_and_refreshes_shims
+run_test "ai split migration refreshes a legacy managed wrapper" test_ai_split_migration_refreshes_a_legacy_managed_wrapper
 run_test "ai split migration clears an incomplete aggregate" test_ai_split_migration_clears_an_incomplete_aggregate
 run_test "ai split migration dry run changes no state or shim" test_ai_split_migration_dry_run_changes_no_state_or_shim
 run_test "ai split migration tolerates a fixture tree without ai" test_ai_split_migration_tolerates_a_fixture_tree_without_ai
+run_test "ai split migration marks a working symlink leaf" test_ai_split_migration_marks_a_working_symlink_leaf
+run_test "ai split migration marks a dangling symlink leaf" test_ai_split_migration_marks_a_dangling_symlink_leaf
 run_test "a file that is not a migration name is skipped loudly" test_a_file_that_is_not_a_migration_name_is_skipped_loudly
 run_test "run_pending counts correctly with an odd name present" test_run_pending_counts_correctly_with_an_odd_name_present
 run_test "list is oldest first and ignores other files" test_list_is_oldest_first_and_ignores_other_files
