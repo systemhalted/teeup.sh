@@ -14,7 +14,6 @@ Everything teeup does after the first run goes through one command, `teeup`. It 
 | `teeup update` | Update the whole machine: pull the checkout, upgrade packages and mise tools, run migrations, configure the core and daily tiers again, render the theme, and run your hooks. |
 | `teeup update <capability>` | Upgrade one capability's packages, or run its own update script if it has one, then configure it again. |
 | `teeup remove <capability>` | Undo what a capability installed. Your config files stay. |
-| `teeup uninstall` | Take teeup off this Mac. It asks first. Add `--packages` to uninstall the packages too, `--identity` to remove your git identity, and `--yes` to run without a terminal. |
 | `teeup theme set <name>` | Apply a theme to every themed tool. With no name, it shows a picker. |
 | `teeup theme list` | List the themes. |
 | `teeup theme current` | Print the current theme. This is also what plain `teeup theme` does. |
@@ -80,4 +79,4 @@ Each skipped command shows up like this:
 
 `./bootstrap` spells the same thing as a flag, `./bootstrap --dry-run`.
 
-Preview first whenever a command removes something, such as `teeup remove`, `teeup uninstall` or `teeup migrate legacy`.
+Preview first whenever a command removes something, such as `teeup remove` or `teeup migrate legacy`.
