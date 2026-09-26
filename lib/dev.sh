@@ -56,6 +56,14 @@ dev_new_capability() {
   fi
   dir="$(cap_dir "$name")"
   test_file="$TEEUP_TESTS_DIR/capabilities/$name.sh"
+  # M3: refuse a hand-written test the same way an existing capability
+  # directory is refused, before anything is written -- silently overwriting
+  # someone's own test with the skeleton is the one thing the capability-dir
+  # check above already exists to prevent, just for the other file.
+  if [[ -f "$test_file" ]]; then
+    err "$test_file already exists."
+    return 1
+  fi
   for f in capability install configure; do
     if ! _dev_render "$TEEUP_SKELETON_DIR/$f" "$dir/$f" "$name"; then
       run_cmd rm -rf "$dir"

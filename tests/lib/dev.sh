@@ -101,6 +101,25 @@ test_new_capability_refuses_a_bad_or_taken_name() {
   cleanup_test_env
 }
 
+# M3: a hand-written tests/capabilities/<name>.sh must refuse the scaffold
+# the same way an existing capability directory does -- silently overwriting
+# a contributor's own test with the skeleton is exactly the surprise the
+# capability-dir refusal already exists to prevent.
+test_new_capability_refuses_when_the_test_file_already_exists() {
+  setup
+  local test_file="$TEEUP_TESTS_DIR/capabilities/widget.sh"
+  printf '#!/usr/bin/env bash\necho "hand-written"\n' > "$test_file"
+  local before
+  before="$(cat "$test_file")"
+  local rc=0 out
+  out="$(dev_new_capability widget 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "already exists" || return 1
+  assert_equals "$before" "$(cat "$test_file")" "the hand-written test must survive untouched" || return 1
+  [[ ! -e "$TEEUP_CAPS_DIR/widget" ]] || { echo "a refused scaffold must write no capability directory either"; return 1; }
+  cleanup_test_env
+}
+
 test_new_capability_writes_nothing_in_a_dry_run() {
   setup
   local out
@@ -466,6 +485,7 @@ run_test "new-capability replaces every token" test_new_capability_replaces_ever
 run_test "the scaffolded files are valid shell" test_the_scaffolded_files_are_valid_shell
 run_test "the scaffolded metadata passes the lint" test_the_scaffolded_metadata_passes_the_lint
 run_test "new-capability refuses a bad or taken name" test_new_capability_refuses_a_bad_or_taken_name
+run_test "new-capability refuses when the test file already exists" test_new_capability_refuses_when_the_test_file_already_exists
 run_test "new-capability writes nothing in a dry run" test_new_capability_writes_nothing_in_a_dry_run
 run_test "new-capability removes a partial scaffold when a render fails" test_new_capability_removes_a_partial_scaffold_when_a_render_fails
 run_test "the scaffold passes its own generated suite" test_the_scaffolded_capability_passes_its_own_generated_suite
