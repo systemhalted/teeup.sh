@@ -830,6 +830,23 @@ test_teardown_keeps_the_users_own_files_in_the_config_dir() {
   cleanup_test_env
 }
 
+# Review I2: the "Delete them with: rm -rf <config dir>" fix is a real
+# command, run for real here (Global Constraint 15), against a config dir
+# named with a space -- the suites' usual awkward-path check -- to prove
+# uninstall_q's quoting round-trips through zsh/bash.
+test_teardown_config_dir_leftover_fix_removes_it() {
+  setup
+  export TEEUP_CONFIG_DIR="$TEST_HOME/con fig \$x"
+  teeup_runtime_home
+  mkdir -p "$TEEUP_CONFIG_DIR/machines"
+  printf 'TEEUP_SKIP="aerospace"\n' > "$TEEUP_CONFIG_DIR/machines/testmac.conf"
+  uninstall_teardown >/dev/null 2>&1
+  assert_dir_exists "$TEEUP_CONFIG_DIR" "the config dir stays while the user's own file is in it" || return 1
+  run_fix "${_UNINSTALL_KEPT##*Delete them with: }" || { echo "the printed rm -rf failed"; return 1; }
+  [[ ! -e "$TEEUP_CONFIG_DIR" ]] || { echo "the printed rm -rf must remove the whole config dir"; return 1; }
+  cleanup_test_env
+}
+
 # After any refusal or failure the rerun needs teeup's state, config and
 # command, so none of them is touched.
 test_teardown_waits_for_a_clean_run() {
@@ -888,6 +905,36 @@ test_teardown_keeps_everything_when_the_config_dir_is_a_symlink() {
   [[ -L "$HOME/.local/bin/teeup" ]] || { echo "the teeup command must stay for the rerun"; return 1; }
   [[ -L "$TEEUP_CONFIG_DIR" ]] || { echo "the symlinked config dir must be left as it was"; return 1; }
   assert_contains "$_UNINSTALL_REFUSED" "symlink" || return 1
+  cleanup_test_env
+}
+
+# Review M4 (data loss): TEEUP_STATE_DIR is a user-settable override, and the
+# state dir was `rm -rf`'d outright with no check that it is actually
+# teeup's. A directory that merely happens to be named or pointed at that way
+# -- holding none of teeup's own markers -- must be left alone entirely,
+# config and command included, not silently `rm -rf`'d.
+test_teardown_refuses_a_state_dir_with_no_teeup_markers() {
+  setup
+  teeup_runtime_home
+  rm -rf "$TEEUP_STATE_DIR"
+  mkdir -p "$TEEUP_STATE_DIR"
+  printf 'unrelated\n' > "$TEEUP_STATE_DIR/some-other-file"
+  uninstall_teardown >/dev/null 2>&1
+  assert_dir_exists "$TEEUP_STATE_DIR" "an unrecognisable state dir must stay" || return 1
+  assert_file_exists "$TEEUP_STATE_DIR/some-other-file" "nothing inside it is touched either" || return 1
+  assert_file_exists "$TEEUP_CONFIG_DIR/env" "the config must stay too" || return 1
+  [[ -L "$HOME/.local/bin/teeup" ]] || { echo "the command must stay too"; return 1; }
+  assert_contains "$_UNINSTALL_KEPT" "$TEEUP_STATE_DIR" || return 1
+  cleanup_test_env
+}
+
+# The normal state dir (teeup_runtime_home's own "done" marker) is still
+# removed -- the new guard must not make every real teardown refuse itself.
+test_teardown_still_removes_a_real_state_dir() {
+  setup
+  teeup_runtime_home
+  uninstall_teardown >/dev/null 2>&1
+  [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "a state dir with teeup's own markers must still go"; return 1; }
   cleanup_test_env
 }
 
@@ -968,10 +1015,13 @@ run_test "identity names a symlinked git/local and leaves it" test_identity_name
 run_test "identity local backup fix avoids a name already taken" test_identity_local_backup_fix_avoids_a_name_already_taken
 run_test "teardown removes teeup's command, config and state" test_teardown_removes_teeups_command_config_and_state
 run_test "teardown keeps the user's own files in the config dir" test_teardown_keeps_the_users_own_files_in_the_config_dir
+run_test "teardown config dir leftover fix removes it" test_teardown_config_dir_leftover_fix_removes_it
 run_test "teardown waits for a clean run" test_teardown_waits_for_a_clean_run
 run_test "teardown leaves a command that is not teeup's" test_teardown_leaves_a_command_that_is_not_teeups
 run_test "teardown refuses a state dir outside HOME, with a fix that works" test_teardown_refuses_a_state_dir_outside_home_with_a_fix_that_works
 run_test "teardown keeps everything when the config dir is a symlink" test_teardown_keeps_everything_when_the_config_dir_is_a_symlink
+run_test "teardown refuses a state dir with no teeup markers" test_teardown_refuses_a_state_dir_with_no_teeup_markers
+run_test "teardown still removes a real state dir" test_teardown_still_removes_a_real_state_dir
 run_test "shell handles zsh home files left at an old ZDOTDIR" test_shell_handles_zsh_home_files_left_at_an_old_zdotdir
 run_test "configs leaves zsh home files at an old ZDOTDIR for uninstall_shell" test_configs_leaves_zsh_home_files_at_an_old_zdotdir_for_uninstall_shell
 print_summary

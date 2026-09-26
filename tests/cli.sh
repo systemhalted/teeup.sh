@@ -2670,6 +2670,71 @@ test_uninstall_no_terminal_hint_carries_the_active_flags() {
   cleanup_test_env
 }
 
+# Review I1: the no-terminal die's preview hint carries the active flags too
+# -- previously only the "then run: ... --yes" half did, so pasting the
+# preview command silently dropped --identity.
+test_uninstall_no_terminal_preview_hint_carries_the_active_flags() {
+  setup
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --packages --identity 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Preview it with: DRY_RUN=true teeup uninstall --packages --identity" || return 1
+  assert_contains "$out" "then run: teeup uninstall --yes --packages --identity" || return 1
+  cleanup_test_env
+}
+
+# Review I1: a dry run's "run it for real" hint must carry --packages and
+# --identity too, or pasting it drops the identity removal (only confirmed
+# when the flag is present) silently, and a clean real run tears teeup down
+# right after.
+test_uninstall_dry_run_prints_the_active_flags_in_the_real_run_hint() {
+  setup
+  uninstall_fixture
+  local out
+  out="$(DRY_RUN=true TEEUP_TEST_TTY=yes "$TEEUP" uninstall --packages --identity 2>&1 </dev/null)"
+  assert_contains "$out" "Run it for real with: $(printf '%q' "$TEEUP_PATH/bin/teeup") uninstall --packages --identity" || return 1
+  cleanup_test_env
+}
+
+# Review I1: a dry run that hits a refusal must print exactly one next step
+# (fix it, then run the real command), never both "Fix it, then run" and
+# "Run it for real with" -- the second used to contradict the first by
+# omitting the very flags the first named.
+test_uninstall_dry_run_with_a_refusal_prints_one_rerun_line() {
+  setup
+  uninstall_fixture
+  mkdir -p "$TEST_HOME/dotfiles/.git"
+  mv "$HOME/.zshrc" "$TEST_HOME/dotfiles/zshrc"
+  ln -s "$TEST_HOME/dotfiles/zshrc" "$HOME/.zshrc"
+  local out
+  out="$(DRY_RUN=true TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1 </dev/null)"
+  assert_contains "$out" "Fix it, then run:" || return 1
+  assert_not_contains "$out" "Run it for real with" "a refusal must print one next step, not two" || return 1
+  cleanup_test_env
+}
+
+# Review I2: the printed rerun must actually work when pasted back into the
+# same no-terminal context that produced it -- which means it must carry
+# --yes, since reaching this failure with no terminal was only possible
+# because --yes was given in the first place.
+test_uninstall_rerun_command_works_without_a_terminal_once_fixed() {
+  setup
+  uninstall_fixture
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TEEUP_CAPS_DIR/mise/remove"
+  local out rc=0 fix
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  fix="${out##*then run: }"
+  fix="${fix%%$'\n'*}"
+  assert_contains "$fix" "--yes" "the printed rerun must carry --yes since this run needed it" || return 1
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/mise/remove"
+  rc=0
+  TEEUP_TEST_TTY=no eval "$fix" >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "the printed rerun command must actually succeed with no terminal" || return 1
+  [[ ! -e "$TEST_HOME/.local/state/teeup" ]] || { echo "the rerun must tear down"; return 1; }
+  cleanup_test_env
+}
+
 # A refusal anywhere must reach the summary and the exit status, never end
 # the run early: bin/teeup runs under `set -e`, and a step that returned a
 # refusal's status as a plain statement would stop the verb before it said
@@ -2716,6 +2781,10 @@ run_test "uninstall twice does nothing the second time" test_uninstall_twice_doe
 run_test "uninstall fails loudly and keeps what a rerun needs" test_uninstall_fails_loudly_and_keeps_what_a_rerun_needs
 run_test "uninstall rerun command carries the active flags" test_uninstall_rerun_command_carries_the_active_flags
 run_test "uninstall no-terminal hint carries the active flags" test_uninstall_no_terminal_hint_carries_the_active_flags
+run_test "uninstall no-terminal preview hint carries the active flags" test_uninstall_no_terminal_preview_hint_carries_the_active_flags
+run_test "uninstall dry run prints the active flags in the real-run hint" test_uninstall_dry_run_prints_the_active_flags_in_the_real_run_hint
+run_test "uninstall dry run with a refusal prints one rerun line" test_uninstall_dry_run_with_a_refusal_prints_one_rerun_line
+run_test "uninstall rerun command works without a terminal once fixed" test_uninstall_rerun_command_works_without_a_terminal_once_fixed
 run_test "uninstall reports a refused home file and still finishes" test_uninstall_reports_a_refused_home_file_and_still_finishes
 run_test "uninstall reports a refused state dir and still finishes" test_uninstall_reports_a_refused_state_dir_and_still_finishes
 print_summary

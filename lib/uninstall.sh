@@ -94,16 +94,22 @@ uninstall_ask() {
 # into bash or zsh (both read bash's %q forms).
 uninstall_q() { printf '%q' "$1"; }
 
-# uninstall_active_flags -> " --packages" and/or " --identity", for whichever
-# of _UNINSTALL_PACKAGES and _UNINSTALL_IDENTITY is "true" right now. cmd_uninstall
+# uninstall_active_flags [yes] -> " --packages" and/or " --identity", for
+# whichever of _UNINSTALL_PACKAGES and _UNINSTALL_IDENTITY is "true" right
+# now, and " --yes" when the caller passes "true" for <yes>. cmd_uninstall
 # calls this both before either is asked about (a no-terminal run's flags are
 # exactly what was typed) and after (once an answer may have changed them),
-# so a rerun command it prints always names the flags this run actually
-# needs repeated, not just the ones typed on the command line.
+# so every rerun or preview command it prints names the flags this run
+# actually needs repeated, not just the ones typed on the command line. The
+# optional <yes> argument exists because a run that reached this point with
+# no terminal only did so because --yes was given (bin/teeup dies before
+# here otherwise), so the rerun it names must carry --yes too, or pasting it
+# back into that same no-terminal context dies all over again.
 uninstall_active_flags() {
-  local flags=""
+  local flags="" yes="${1:-false}"
   if [[ "$_UNINSTALL_PACKAGES" == "true" ]]; then flags="$flags --packages"; fi
   if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then flags="$flags --identity"; fi
+  if [[ "$yes" == "true" ]]; then flags="$flags --yes"; fi
   printf '%s' "$flags"
 }
 
@@ -359,8 +365,8 @@ uninstall_old_zdotdirs() {
     esac
     dir="${path%/*}"
     [[ "$dir" != "$current" ]] || continue
-    case " $seen " in *" $dir "*) continue ;; esac
-    seen="$seen $dir"
+    case $'\n'"$seen"$'\n' in *$'\n'"$dir"$'\n'*) continue ;; esac
+    seen="$seen$dir"$'\n'
     printf '%s\n' "$dir"
   done <<STOCK
 $(uninstall_stock_paths)
@@ -943,6 +949,22 @@ MINE
   uninstall_note kept "Your own files in $dir: $left. Delete them with: rm -rf $(uninstall_q "$dir")"
 }
 
+# _uninstall_looks_like_state_dir <dir> -> 0 when <dir> holds at least one of
+# teeup's own markers: the done, na, toggles and migrations directories
+# lib/state.sh writes under a real $TEEUP_STATE_DIR, or stock, shims and
+# current, which the rest of teeup writes there. TEEUP_STATE_DIR is a
+# user-settable override, and `rm -rf` on it must never run against a
+# directory that merely happens to be named or pointed at that way without
+# actually being teeup's -- $HOME, /, ~/.local, ~/.config, the checkout, or
+# an empty or unrelated directory a careless override names.
+_uninstall_looks_like_state_dir() {
+  local dir="$1" name
+  for name in "done" na toggles migrations stock shims current; do
+    if [[ -e "$dir/$name" ]]; then return 0; fi
+  done
+  return 1
+}
+
 # uninstall_teardown
 # Last, and only after a clean run: the teeup command, $TEEUP_CONFIG_DIR and
 # $TEEUP_STATE_DIR. They are what a rerun needs -- the stock records that
@@ -967,6 +989,15 @@ uninstall_teardown() {
       return 0
     fi
   done
+  # $TEEUP_STATE_DIR is `rm -rf`'d outright below, with no content check like
+  # the config dir's own (_uninstall_config_dir keeps anything it cannot
+  # positively identify as teeup's). A directory with none of teeup's own
+  # markers is not recognisably teeup's state, whatever its name or an
+  # override pointed it at, so nothing here is touched at all.
+  if [[ -e "$TEEUP_STATE_DIR" ]] && ! _uninstall_looks_like_state_dir "$TEEUP_STATE_DIR"; then
+    uninstall_note kept "$TEEUP_STATE_DIR does not look like teeup's own state (none of its done, na, toggles, migrations, stock, shims or current markers is there), so teeup left it alone, along with its config ($TEEUP_CONFIG_DIR) and command. Delete it yourself if you mean to: rm -rf $(uninstall_q "$TEEUP_STATE_DIR")"
+    return 0
+  fi
   # Config and state first, each followed by a fresh check, so a failure
   # stops the teardown; the command last, since it is what a rerun calls.
   _uninstall_config_dir

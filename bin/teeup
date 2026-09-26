@@ -238,11 +238,13 @@ cmd_remove() {
 #   4. the config files, by the stock-checksum rule;
 #   5. with --identity, git's identity and git/local (never an SSH key);
 #   6. teeup's own command, config and state, only after a clean run.
-# It asks at most three questions and only on a terminal, each defaulting to
-# the answer that removes less. Without a terminal it needs --yes, which
-# also takes every default. A dry run asks nothing and changes nothing.
+# It asks several questions, only on a terminal, each defaulting to the
+# answer that removes less (plus one more per pristine file it can restore an
+# earlier copy of, uninstall_offer_restore). Without a terminal it needs
+# --yes, which also takes every default. A dry run asks nothing and changes
+# nothing.
 cmd_uninstall() {
-  local arg yes=false tty=false rc=0 teeup_q
+  local arg yes=false tty=false rc=0 teeup_q confirm_msg
   _UNINSTALL_PACKAGES=""
   _UNINSTALL_IDENTITY=false
   for arg in "$@"; do
@@ -261,12 +263,18 @@ cmd_uninstall() {
   if [[ "$DRY_RUN" != "true" ]]; then
     if [[ "$tty" == "true" && "$yes" != "true" ]]; then
       _UNINSTALL_ASK=true
-      if ! ui_confirm "Take teeup off this Mac? Your edited files, identity, package manager and the checkout stay." no; then
+      confirm_msg="Take teeup off this Mac? Your edited files, package manager and the checkout stay."
+      if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then
+        confirm_msg="$confirm_msg Your identity comes off if you confirm the next question."
+      else
+        confirm_msg="$confirm_msg Your identity stays too."
+      fi
+      if ! ui_confirm "$confirm_msg" no; then
         log "Nothing was changed."
         return 0
       fi
     elif [[ "$yes" != "true" ]]; then
-      die "teeup uninstall asks before it removes anything, and there is no terminal to ask on. Preview it with: DRY_RUN=true teeup uninstall, then run: teeup uninstall --yes$(uninstall_active_flags)"
+      die "teeup uninstall asks before it removes anything, and there is no terminal to ask on. Preview it with: DRY_RUN=true teeup uninstall$(uninstall_active_flags), then run: teeup uninstall --yes$(uninstall_active_flags)"
     fi
   fi
   if [[ -z "$_UNINSTALL_PACKAGES" ]]; then
@@ -276,7 +284,7 @@ cmd_uninstall() {
     fi
   fi
   if [[ "$_UNINSTALL_IDENTITY" == "true" && "$_UNINSTALL_ASK" == "true" ]]; then
-    if ! ui_confirm "Also take off your git identity: remove teeup's generated git identity file and move git/local aside? teeup never deletes an SSH key; it will only print how to remove one by hand." no; then
+    if ! ui_confirm "Also take off your git identity: remove teeup's generated git identity file, move git/local aside, and (if teeup put them there unedited) remove ~/.ssh/config and $(user_config_dir)/git/config? teeup never deletes an SSH key; it will only print how to remove one by hand." no; then
       _UNINSTALL_IDENTITY=false
     fi
   fi
@@ -293,11 +301,19 @@ cmd_uninstall() {
   uninstall_summary || rc=1
   teeup_q="$(uninstall_q "$TEEUP_PATH/bin/teeup")"
   echo ""
+  # Exactly one next step, never two contradictory ones: a refusal or a
+  # failure always wins over "run it for real" -- printing both here once
+  # sent a dry run that hit a refusal two commands, one of which undid the
+  # other's advice. The rerun after a refusal carries --yes when this run
+  # needed it (no terminal, so it could only have gotten this far because
+  # --yes was given): pasting it back into that same no-terminal context
+  # must not die all over again for lacking the flag that got it this far.
   if [[ $rc -ne 0 ]]; then
-    err "Something above was refused or failed. Fix it, then run: $teeup_q uninstall$(uninstall_active_flags)"
+    err "Something above was refused or failed. Fix it, then run: $teeup_q uninstall$(uninstall_active_flags "$yes")"
+  elif [[ "$DRY_RUN" == "true" ]]; then
+    log "That was a preview. Run it for real with: $teeup_q uninstall$(uninstall_active_flags)"
   fi
   if [[ "$DRY_RUN" == "true" ]]; then
-    log "That was a preview. Run it for real with: $teeup_q uninstall"
     return $rc
   fi
   log "The teeup checkout is still at $TEEUP_PATH. Delete it when you no longer want it: rm -rf $(uninstall_q "$TEEUP_PATH")"
