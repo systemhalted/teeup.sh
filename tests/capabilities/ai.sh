@@ -230,6 +230,31 @@ test_aggregate_remove_fails_when_a_wrapper_will_not_delete() {
   cleanup_test_env
 }
 
+# I2 regression: the only retry the failure names must actually work. Before
+# the fix, the leaf's own mise_wrapper_remove named itself ("teeup remove
+# ai-claude"), which cmd_remove refuses outright while the still-installed
+# `ai` bundle requires ai-claude -- an unusable retry. Fix its cause (make
+# the bin directory writable again) and run the printed "teeup remove ai";
+# it must succeed.
+test_aggregate_remove_retry_succeeds_once_the_cause_is_fixed() {
+  setup
+  DRY_RUN=false "$TEEUP" install ai >/dev/null
+  chmod 0555 "$BIN"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" remove ai 2>&1)" || rc=$?
+  chmod 0755 "$BIN"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "then run: teeup remove ai" || return 1
+  assert_not_contains "$out" "teeup remove ai-claude" "a leaf-only retry cannot succeed while ai still requires it" || return 1
+  local rc2=0 out2
+  out2="$(DRY_RUN=false "$TEEUP" remove ai 2>&1)" || rc2=$?
+  assert_success "$rc2" "the printed retry command must actually succeed" || return 1
+  assert_contains "$out2" "Removed ai." || return 1
+  "$TEEUP" has ai && { echo "ai should be gone once the retry succeeds"; return 1; }
+  for command in $AI_COMMANDS; do [[ ! -e "$BIN/$command" ]] || { echo "$command wrapper survived the retry"; return 1; }; done
+  cleanup_test_env
+}
+
 echo "capabilities/ai"
 run_test "each command has one leaf provider" test_each_command_has_one_leaf_provider
 run_test "runtime shims route to individual leaves" test_runtime_shims_route_to_individual_leaves
@@ -243,4 +268,5 @@ run_test "aggregate remove removes all leaf wrappers and state" test_aggregate_r
 run_test "ai dry run writes nothing and claims nothing" test_ai_dry_run_writes_nothing_and_claims_nothing
 run_test "ai configure warns when a leaf is incomplete then repairs" test_ai_configure_warns_when_a_leaf_is_incomplete_then_repairs
 run_test "aggregate remove fails when a wrapper will not delete" test_aggregate_remove_fails_when_a_wrapper_will_not_delete
+run_test "aggregate remove retry succeeds once the cause is fixed" test_aggregate_remove_retry_succeeds_once_the_cause_is_fixed
 print_summary

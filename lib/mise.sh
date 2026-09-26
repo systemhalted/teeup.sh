@@ -225,11 +225,11 @@ mise_wrapper_remove() {
     return 0
   fi
   if ! run_cmd rm -f "$file"; then
-    warn "Could not remove $file. Fix its permissions, then run: teeup remove $owner"
+    warn "Could not remove $file. Fix its permissions and try again."
     return 1
   fi
   if [[ "$DRY_RUN" != "true" && ( -e "$file" || -L "$file" ) ]]; then
-    warn "$file is still there. Remove it, then run: teeup remove $owner"
+    warn "$file is still there. Remove it and try again."
     return 1
   fi
   ok_unless_dry "Removed the mise wrapper: $command"
