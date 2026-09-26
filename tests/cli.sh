@@ -2183,6 +2183,42 @@ test_config_edit_dry_run_creates_and_touches_nothing() {
   cleanup_test_env
 }
 
+# The bug this closes: the wizard writes TEEUP_EMACS_FLAVOR, a user runs
+# `teeup config edit` from the menu and changes it, and nothing said what to
+# run next -- only `config set` named the fix. `config edit` must print the
+# same hint `config set` prints, for every key the edit actually changed.
+test_config_edit_that_changes_emacs_flavor_prints_the_configure_emacs_hint() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_EMACS_FLAVOR="doom"\n' >> "$1"
+EOF2
+  local out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "teeup configure emacs" || return 1
+  assert_equals "doom" "$("$TEEUP" config get TEEUP_EMACS_FLAVOR)" || return 1
+  cleanup_test_env
+}
+
+# An edit that opens the editor but changes nothing (saved with no edits, or
+# edited back to the same values) must print no hint at all -- the whole
+# point is naming only what actually needs re-applying.
+test_config_edit_that_changes_nothing_prints_no_hint() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+true
+EOF2
+  local out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "Saved" || return 1
+  assert_not_contains "$out" "teeup configure" || return 1
+  assert_not_contains "$out" "./bootstrap" || return 1
+  assert_not_contains "$out" "teeup theme set" || return 1
+  assert_not_contains "$out" "not one of the answers" || return 1
+  cleanup_test_env
+}
+
 # A menu of the fixture capabilities, so these tests never depend on what
 # share/teeup/menu.json happens to contain.
 write_test_menu() {
@@ -2431,4 +2467,6 @@ run_test "config edit accepts a value answers_set itself escaped" test_config_ed
 run_test "config edit rejects unescaped command substitution" test_config_edit_rejects_unescaped_command_substitution_in_a_quoted_value
 run_test "config edit passes flags in EDITOR" test_config_edit_passes_flags_in_the_editor_variable
 run_test "config edit dry run creates and touches nothing" test_config_edit_dry_run_creates_and_touches_nothing
+run_test "config edit that changes emacs flavor prints the configure emacs hint" test_config_edit_that_changes_emacs_flavor_prints_the_configure_emacs_hint
+run_test "config edit that changes nothing prints no hint" test_config_edit_that_changes_nothing_prints_no_hint
 print_summary
