@@ -4,13 +4,41 @@
 ;; does not load that starter layer), so this file plays the starter's role
 ;; for the {{ mode }} appearance: capabilities/emacs/configure adds one marked
 ;; line to Doom's config.el that loads whichever mode's copy of this file
-;; matches the machine's current appearance. `teeup-apply' is what the daemon
-;; hook (capabilities/emacs/theme-apply) calls after `teeup theme set'; the
-;; starter and Spacemacs never define it, so the call is a no-op there.
+;; matches the machine's current appearance, at Doom startup.
+;;
+;; `teeup-apply' is what the daemon hook (capabilities/emacs/theme-apply)
+;; calls after `teeup theme set'; the starter and Spacemacs never define it,
+;; so the call is a no-op there. Unlike the starter's own teeup-apply-theme, a
+;; running Doom's `doom-theme' was only ever set once, when config.el's
+;; `load!' first read this file, so `teeup-apply' has to re-read the
+;; currently rendered file itself before reapplying -- otherwise a second
+;; `teeup theme set' while the daemon is up would just reload the theme this
+;; Emacs already has. `teeup--doom-appearance' is the same rule
+;; capabilities/emacs/default/teeup/init.el's `teeup-appearance' uses,
+;; duplicated here because Doom never loads that file either, so a `teeup
+;; theme set` that also crosses light/dark reloads the matching mode's file.
 (setq doom-theme (intern "{{ doom_theme }}"))
 
+(defun teeup--doom-appearance ()
+  "Return \"dark\" or \"light\", the same way the starter's teeup-appearance does."
+  (let ((env (getenv "TEEUP_APPEARANCE")))
+    (cond
+     ((member env '("dark" "light")) env)
+     ((and (executable-find "defaults")
+           (string= "Dark"
+                    (string-trim
+                     (with-output-to-string
+                       (with-current-buffer standard-output
+                         (call-process "defaults" nil t nil "read" "-g" "AppleInterfaceStyle"))))))
+      "dark")
+     (t "light"))))
+
 (defun teeup-apply ()
-  "Reload the Doom theme teeup set."
+  "Reload the theme teeup last set for the current appearance, and apply it."
   (interactive)
+  (let ((rendered (expand-file-name
+                    (concat "current/theme/" (teeup--doom-appearance) "/doom-theme.el")
+                    "~/.local/state/teeup")))
+    (when (file-readable-p rendered) (load rendered nil t)))
   (mapc #'disable-theme custom-enabled-themes)
   (load-theme doom-theme t))

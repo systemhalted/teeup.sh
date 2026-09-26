@@ -662,6 +662,46 @@ test_env_file_paths_survive_special_bytes() {
   cleanup_test_env
 }
 
+# A running Doom's `doom-theme' is only ever set once, when config.el's
+# `load!' first loads a rendered doom-theme.el; `teeup-apply', called via
+# emacsclient after every `teeup theme set', has to re-read that same path
+# from disk before reapplying, or a second `teeup theme set' to a different
+# theme would just reload the theme this Emacs already has. This renders
+# theme A's doom-theme.el, loads it in a real Emacs, overwrites the same path
+# with theme B's rendered file (simulating the `teeup theme set` that ran
+# while this Emacs was up), then calls `teeup-apply' and checks `doom-theme'
+# picked up B's value. `load-theme' is stubbed: doom-themes is not installed
+# here, and a real `load-theme' would error on an unknown theme.
+test_doom_theme_apply_picks_up_a_new_theme_without_restarting() {
+  setup
+  local NO_EMACS_RC=0
+  if no_real_emacs; then
+    cleanup_test_env
+    return "$NO_EMACS_RC"
+  fi
+  source "$TEEUP_PATH/lib/all.sh"
+  local mode="dark" rendered rendered_b palette_a palette_b out
+  rendered="$TEST_HOME/.local/state/teeup/current/theme/$mode/doom-theme.el"
+  rendered_b="$TEST_HOME/doom-theme-b.el"
+  mkdir -p "$(dirname "$rendered")"
+  palette_a="$TEST_HOME/palette-a.toml"
+  palette_b="$TEST_HOME/palette-b.toml"
+  printf 'mode = "dark"\ndoom_theme = "doom-dracula"\n' > "$palette_a"
+  printf 'mode = "dark"\ndoom_theme = "doom-nord"\n' > "$palette_b"
+  theme_palette_load "$palette_a" "$mode" || { echo "palette A did not load"; return 1; }
+  theme_render "$TEEUP_PATH/capabilities/emacs/themed/doom-theme.el.tpl" "$rendered" || { echo "theme A did not render"; return 1; }
+  theme_palette_load "$palette_b" "$mode" || { echo "palette B did not load"; return 1; }
+  theme_render "$TEEUP_PATH/capabilities/emacs/themed/doom-theme.el.tpl" "$rendered_b" || { echo "theme B did not render"; return 1; }
+  out="$(TEEUP_APPEARANCE="$mode" "$EMACS_REAL" -Q --batch \
+    --eval "(defun load-theme (&rest _) t)" \
+    -l "$rendered" \
+    --eval "(copy-file \"$rendered_b\" \"$rendered\" t)" \
+    --eval "(teeup-apply)" \
+    --eval "(princ (symbol-name doom-theme))" 2>&1)"
+  assert_equals "doom-nord" "$out" "teeup-apply re-reads the rendered file, so a running Doom picks up a new theme" || return 1
+  cleanup_test_env
+}
+
 # M8: `teeup--find-quote` (the `string-search` call `teeup--unquote` makes
 # for '...' quoting) must degrade to `string-match` on an Emacs without
 # `string-search` (28 and earlier) rather than erroring out of init. Run
@@ -752,5 +792,6 @@ run_test "remove keeps the port when packages are kept" test_remove_keeps_the_po
 run_test "configure points git at emacsclient" test_configure_points_git_at_emacsclient
 run_test "starter loads in a real emacs" test_starter_loads_in_a_real_emacs
 run_test "env file paths survive special bytes" test_env_file_paths_survive_special_bytes
+run_test "doom theme-apply picks up a new theme without restarting" test_doom_theme_apply_picks_up_a_new_theme_without_restarting
 run_test "unquote degrades without string-search" test_unquote_degrades_without_string_search
 print_summary
