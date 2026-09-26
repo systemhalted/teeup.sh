@@ -1,9 +1,3 @@
 #!/usr/bin/env bash
-# Nothing to download here. Each CLI installs itself through mise the first
-# time its wrapper is called (configure writes the wrappers), so a machine
-# that never runs `claude` never fetches it. mise itself is the requires=.
-if have mise; then
-  log "AI CLIs install on first call through mise; nothing to download now."
-else
-  warn "mise is not installed; the wrappers will fail until it is (teeup install mise)."
-fi
+# cap_order has already installed every leaf before this aggregate target.
+log "The ai bundle uses its five required AI CLI capabilities."

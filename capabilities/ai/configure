@@ -1,53 +1,11 @@
 #!/usr/bin/env bash
-# One wrapper per CLI in ~/.local/bin, which the zsh layer puts first on
-# PATH (Omarchy's omarchy-mise-install pattern, lib/mise.sh): the first call
-# installs the tool through mise, every later call execs it through `mise x`,
-# and `mise upgrade` keeps it current. Arguments are the command, the mise
-# registry name, then any runtime the tool needs. Registry names checked with
-# `mise registry` on 2026.9.4: claude -> aqua:anthropics/claude-code,
-# codex -> aqua:openai/codex, gemini-cli (alias gemini) ->
-# npm:@google/gemini-cli, copilot -> aqua:github/copilot-cli,
-# opencode -> aqua:anomalyco/opencode.
-# gemini-cli is the one npm package: mise's npm backend installs it without
-# Node but does not add Node, and the CLI runs on Node, so its wrapper brings
-# node.
-# mise_wrapper_write leaves a foreign file alone (a symlink Claude Code's own
-# installer put at ~/.local/bin/claude, say) and sets MISE_WRAPPER_WRITTEN to
-# say which it was: the summary line below must name only the commands it
-# actually put in place, not every command this capability knows about (I4)
-# -- claiming a wrapper is wired up when teeup left a foreign file untouched
-# would send the user to run a command that will not do what they are told.
-# Every wrapper is owned by this aggregate capability until the leaf split;
-# each call also names the display text mise_wrapper_write prints and logs.
-written=""
-add_wrapper() {
-  local display_name="$1"
-  shift
-  mise_wrapper_write "ai" "$display_name" "$@"
-  if [[ "$MISE_WRAPPER_WRITTEN" == "true" ]]; then
-    written="$written $1"
-  fi
-}
-add_wrapper "Claude Code" claude claude
-add_wrapper "Codex" codex codex
-add_wrapper "Gemini CLI" gemini gemini-cli node
-add_wrapper "Copilot" copilot copilot
-add_wrapper "OpenCode" opencode opencode
-written="${written# }"
-if [[ -n "$written" ]]; then
-  ai_count=0
-  for ai_cmd in $written; do ai_count=$((ai_count + 1)); done
-  ai_i=0
-  ai_list=""
-  for ai_cmd in $written; do
-    ai_i=$((ai_i + 1))
-    if [[ $ai_i -eq 1 ]]; then
-      ai_list="$ai_cmd"
-    elif [[ $ai_i -eq $ai_count ]]; then
-      ai_list="$ai_list or $ai_cmd"
-    else
-      ai_list="$ai_list, $ai_cmd"
-    fi
-  done
-  log "The first call of $ai_list installs it through mise."
+missing=""
+for child in ai-claude ai-codex ai-gemini ai-copilot ai-opencode; do
+  if ! state_done check "cap-$child"; then missing="$missing $child"; fi
+done
+missing="${missing# }"
+if [[ -n "$missing" ]]; then
+  warn "The ai bundle is incomplete ($missing). Repair it with: teeup install ai"
+else
+  ok_unless_dry "AI bundle ready: claude, codex, gemini, copilot and opencode."
 fi

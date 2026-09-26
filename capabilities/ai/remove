@@ -1,48 +1,21 @@
 #!/usr/bin/env bash
-# Delete only the wrappers teeup itself wrote at ~/.local/bin: a wrapper is
-# recognised by TEEUP_MISE_WRAPPER_MARKER on its second line (lib/mise.sh),
-# the same check mise_wrapper_write makes before overwriting one. A file a
-# native installer put there instead (Claude Code's own installer manages
-# ~/.local/bin/claude as a symlink, say) is left alone -- I4's rule for
-# configure ("name only what teeup actually touched") applies to remove too.
-removed=""
-left=""
-for ai_cmd in claude codex gemini copilot opencode; do
-  file="$HOME/.local/bin/$ai_cmd"
-  if [[ ! -e "$file" && ! -L "$file" ]]; then
+# The aggregate is the one explicit request for all five, so removing it owns
+# the symmetric all-five cleanup. Continue across leaves to remove everything
+# safe, but keep cap-ai marked when any wrapper or state marker fails.
+failed=""
+for child in ai-claude ai-codex ai-gemini ai-copilot ai-opencode; do
+  if ! cap_run "$child" remove; then
+    failed="$failed $child"
     continue
   fi
-  if ! sed -n 2p "$file" 2>/dev/null | grep -qxF "$TEEUP_MISE_WRAPPER_MARKER"; then
-    warn "Keeping $file: it was not written by teeup."
+  if ! state_done clear "cap-$child"; then
+    failed="$failed $child"
     continue
   fi
-  # One wrapper that will not delete (a read-only ~/.local/bin) must not abort
-  # the loop under `bash -eu`, leaving the rest in place while the summary
-  # below names only the ones that came before it. The file is checked as well
-  # as the exit status, because `rm -f` on a file it cannot unlink in an
-  # unwritable directory can still exit 0 -- but only on a real run: under
-  # DRY_RUN nothing was deleted and nothing should be claimed.
-  if ! run_cmd rm -f "$file"; then
-    warn "Could not remove $file; remove it by hand."
-    left="$left $ai_cmd"
-  elif [[ "$DRY_RUN" != "true" && -e "$file" ]]; then
-    warn "$file is still there; remove it by hand."
-    left="$left $ai_cmd"
-  else
-    removed="$removed $ai_cmd"
-  fi
+  state_na clear "cap-$child" || true
 done
-removed="${removed# }"
-left="${left# }"
-if [[ -n "$removed" ]]; then
-  ok_unless_dry "Removed the mise wrapper(s): $removed"
-elif [[ -z "$left" ]]; then
-  log "No teeup-written wrappers were found in ~/.local/bin."
-fi
-# A wrapper teeup wrote and could not delete is still on PATH, so the removal
-# did not finish: exit non-zero rather than let cmd_remove go on to print
-# "Removed ai." over the top of the warnings above (I3).
-if [[ -n "$left" ]]; then
-  err "Still installed: $left. Remove the file(s) by hand, then run: teeup remove ai"
+failed="${failed# }"
+if [[ -n "$failed" ]]; then
+  err "Could not finish removing:$failed. Fix the warnings, then run: teeup remove ai"
   exit 1
 fi

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+mise_wrapper_write ai-opencode "OpenCode" opencode opencode
+if [[ "$MISE_WRAPPER_WRITTEN" == "true" ]]; then
+  log "The first call of opencode installs OpenCode through mise."
+fi

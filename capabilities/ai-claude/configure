@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+mise_wrapper_write ai-claude "Claude Code" claude claude
+if [[ "$MISE_WRAPPER_WRITTEN" == "true" ]]; then
+  log "The first call of claude installs Claude Code through mise."
+fi

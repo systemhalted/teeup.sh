@@ -1,0 +1,9 @@
+summary="Codex CLI through mise, installed on first call"
+group=ai
+tier=lazy
+requires="mise"
+provides="codex"
+packages=""
+casks=""
+apps=""
+interactive=false

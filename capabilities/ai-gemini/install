@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+log "Gemini CLI downloads through mise when gemini is first called."

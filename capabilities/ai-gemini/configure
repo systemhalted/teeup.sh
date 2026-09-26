@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# mise's npm backend installs gemini-cli without Node; load both at runtime.
+mise_wrapper_write ai-gemini "Gemini CLI" gemini gemini-cli node
+if [[ "$MISE_WRAPPER_WRITTEN" == "true" ]]; then
+  log "The first call of gemini installs Gemini CLI and Node through mise."
+fi

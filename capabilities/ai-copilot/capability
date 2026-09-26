@@ -1,0 +1,9 @@
+summary="GitHub Copilot CLI through mise, installed on first call"
+group=ai
+tier=lazy
+requires="mise"
+provides="copilot"
+packages=""
+casks=""
+apps=""
+interactive=false

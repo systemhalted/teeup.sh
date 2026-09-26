@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+mise_wrapper_write ai-copilot "GitHub Copilot CLI" copilot copilot
+if [[ "$MISE_WRAPPER_WRITTEN" == "true" ]]; then
+  log "The first call of copilot installs GitHub Copilot CLI through mise."
+fi
