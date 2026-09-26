@@ -887,6 +887,18 @@ _menu_loop() {
     err "No menu row with the id '$current'."
     return 1
   fi
+  # M2: a route straight to a leaf (`teeup menu style.theme`, matching the
+  # `omarchy menu summon style.theme` example in cmd_menu's own comment) runs
+  # that row's action outright, rather than falling into the loop below,
+  # which only ever lists CHILDREN of $current and would report a leaf's
+  # empty child list as "Nothing left to show".
+  if [[ -n "$current" ]]; then
+    action="$(menu_field "$cache" "$current" action)"
+    if [[ -n "$action" ]]; then
+      menu_run "$action"
+      return $?
+    fi
+  fi
   while :; do
     rows=()
     labels=()

@@ -2128,6 +2128,21 @@ test_menu_rejects_an_unknown_route() {
   cleanup_test_env
 }
 
+# M2: `teeup menu <leaf id>` must run that row's action outright, the way
+# the cmd_menu comment's own `omarchy menu summon style.theme` example says
+# it does, rather than trying to list children under a route that has none
+# and falling back with "Nothing left to show".
+test_menu_route_to_a_leaf_runs_its_action() {
+  setup
+  write_test_menu
+  local out rc=0
+  out="$("$TEEUP" menu install.beta 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "install:beta" "the leaf's action must actually run" || return 1
+  assert_not_contains "$out" "Nothing left to show" || return 1
+  cleanup_test_env
+}
+
 test_menu_dry_run_prints_the_action_instead_of_running_it() {
   setup
   write_test_menu
@@ -2257,6 +2272,7 @@ run_test "menu walks into a submenu and runs the action" test_menu_walks_into_a_
 run_test "menu hides a row whose when fails" test_menu_hides_a_row_whose_when_predicate_fails
 run_test "menu takes a route and offers a way back" test_menu_takes_a_route_and_offers_a_way_back
 run_test "menu rejects an unknown route" test_menu_rejects_an_unknown_route
+run_test "menu route to a leaf runs its action" test_menu_route_to_a_leaf_runs_its_action
 run_test "menu dry run prints the action" test_menu_dry_run_prints_the_action_instead_of_running_it
 run_test "menu cancel inside a submenu goes back a level" test_menu_cancel_inside_a_submenu_goes_back_a_level
 run_test "theme set without a name opens the picker" test_theme_set_without_a_name_opens_the_picker
