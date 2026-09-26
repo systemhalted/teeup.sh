@@ -80,6 +80,30 @@ test_run_logged_captures_output_to_log_and_terminal() {
   cleanup_test_env
 }
 
+# A run_logged command may call another capability, migration or hook, which
+# starts another run_logged in the child shell. The inner runner's own append
+# and the outer runner's tee used to put every inner line in the same log twice.
+test_run_logged_nested_output_is_logged_once() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  TEEUP_LOG_FILE="$TEST_HOME/log"
+  export TEEUP_LOG_FILE
+  local out log needle count
+  out="$(run_logged "outer" false bash -c '
+    source "$TEEUP_PATH/lib/core.sh"
+    run_logged "inner" false bash -c "echo nested-out; echo nested-err >&2"
+  ' 2>&1)"
+  log="$(cat "$TEEUP_LOG_FILE")"
+  for needle in "Starting: inner" "nested-out" "nested-err" "Completed: inner"; do
+    count="$(printf '%s\n' "$log" | grep -c "$needle" || true)"
+    assert_equals "1" "$count" "$needle must be appended once" || return 1
+    assert_contains "$out" "$needle" "$needle must still reach the terminal" || return 1
+  done
+  assert_equals "1" "$(printf '%s\n' "$log" | grep -c 'Starting: outer' || true)" || return 1
+  assert_equals "1" "$(printf '%s\n' "$log" | grep -c 'Completed: outer' || true)" || return 1
+  cleanup_test_env
+}
+
 # A capability's stderr (every warn(), every err()) must keep landing on fd 2
 # on its own -- `./bootstrap >out.log` must still show warnings on the
 # terminal, and a caller piping only stdout elsewhere must not lose stderr.
@@ -234,6 +258,7 @@ run_test "run_logged records start and completion" test_run_logged_records_start
 run_test "run_logged reports failure" test_run_logged_reports_failure_without_aborting
 run_test "run_logged closes stdin unless interactive" test_run_logged_closes_stdin_unless_interactive
 run_test "run_logged captures output to log and terminal" test_run_logged_captures_output_to_log_and_terminal
+run_test "nested run_logged output is logged once" test_run_logged_nested_output_is_logged_once
 run_test "run_logged keeps stdout and stderr on separate fds" test_run_logged_keeps_stdout_and_stderr_on_separate_fds
 run_test "run_logged waits for a large capture to drain" test_run_logged_waits_for_a_large_capture_to_drain
 run_test "run_logged exit status survives capture" test_run_logged_exit_status_survives_capture

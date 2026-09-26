@@ -64,7 +64,9 @@ run_cmd() {
 _teeup_log_line() {
   local line
   line="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-  if [[ -n "$TEEUP_LOG_FILE" ]]; then
+  # When an outer run_logged already owns the tee, printing this line feeds it
+  # to that tee. Appending here as well would put the same line in the log twice.
+  if [[ -n "$TEEUP_LOG_FILE" && "${TEEUP_RUN_LOG_CAPTURED:-false}" != "true" ]]; then
     mkdir -p "$(dirname "$TEEUP_LOG_FILE")"
     printf '%s\n' "$line" >> "$TEEUP_LOG_FILE"
   fi
@@ -112,6 +114,12 @@ _teeup_log_line() {
 # `rc=$?` on the next line) keeps it on the losing side of `||`, which is
 # exempt from `set -e`, so a failing command cannot abort this function
 # before its exit code is saved.
+#
+# Nested runners inherit TEEUP_RUN_LOG_CAPTURED=true from the command owned by
+# the outer tee. Their bracket lines and command output still flow through the
+# inherited stdout/stderr, but they neither append directly nor start another
+# tee pair. The variable is scoped to the child command, so later independent
+# run_logged calls in this shell remain outermost and capture normally.
 run_logged() {
   local name="$1" interactive="$2"
   shift 2
@@ -121,7 +129,7 @@ run_logged() {
     [[ -n "$TEEUP_LOG_FILE" ]] &&
       _teeup_log_line "($name is interactive; its output was not captured -- it needs a real terminal.)"
     "$@" || rc=$?
-  elif [[ -n "$TEEUP_LOG_FILE" ]]; then
+  elif [[ -n "$TEEUP_LOG_FILE" && "${TEEUP_RUN_LOG_CAPTURED:-false}" != "true" ]]; then
     local fifo_dir out_fifo err_fifo out_tee_pid err_tee_pid
     fifo_dir="$(mktemp -d)"
     out_fifo="$fifo_dir/stdout"
@@ -131,7 +139,7 @@ run_logged() {
     out_tee_pid=$!
     tee -a "$TEEUP_LOG_FILE" < "$err_fifo" >&2 &
     err_tee_pid=$!
-    "$@" </dev/null > "$out_fifo" 2> "$err_fifo" || rc=$?
+    TEEUP_RUN_LOG_CAPTURED=true "$@" </dev/null > "$out_fifo" 2> "$err_fifo" || rc=$?
     wait "$out_tee_pid" "$err_tee_pid" || true
     rm -rf "$fifo_dir"
   else
