@@ -258,6 +258,34 @@ test_wrapper_dry_run_creates_no_lazy_log() {
   cleanup_test_env
 }
 
+# When the wrapper runs as the command of an outer run_logged, TEEUP_RUN_LOG_CAPTURED=true
+# is already inherited and that outer tee already captures this process's
+# stdout and stderr. The wrapper must not also append or tee to
+# TEEUP_LOG_FILE itself, matching the same rule Task 1 enforces for nested
+# run_logged calls -- otherwise the transcript is duplicated.
+test_wrapper_skips_its_own_log_under_an_outer_run_logged() {
+  setup
+  mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
+  mise_wrapper_write ai-codex "Codex" codex codex >/dev/null
+  local captured_log="$TEST_HOME/captured.log"
+  local default_log="$TEST_HOME/.local/state/teeup/logs/lazy.log"
+  local out err
+  out="$(TEEUP_RUN_LOG_CAPTURED=true TEEUP_LOG_FILE="$captured_log" "$TEST_HOME/.local/bin/claude" --version 2>"$TEST_HOME/err")"
+  err="$(cat "$TEST_HOME/err")"
+  assert_contains "$err" "Installing Claude Code through mise (first run, can take a minute)..." || return 1
+  assert_equals "mise-x:claude:claude --version" "$out" || return 1
+  [[ ! -e "$captured_log" ]] || { echo "a captured wrapper must not create its own log file"; return 1; }
+
+  # Without TEEUP_RUN_LOG_CAPTURED (a direct call, or the outermost one) the
+  # wrapper still owns its own transcript.
+  out="$("$TEST_HOME/.local/bin/codex" --version)"
+  assert_equals "mise-x:codex:codex --version" "$out" || return 1
+  assert_file_exists "$default_log" || return 1
+  assert_contains "$(cat "$default_log")" "Installing Codex through mise (first run, can take a minute)..." || return 1
+  assert_contains "$(cat "$default_log")" "Installed Codex through mise." || return 1
+  cleanup_test_env
+}
+
 test_wrapper_retries_an_interrupted_global_request() {
   setup
   mock_command_script mise <<'EOF2'
@@ -614,6 +642,7 @@ run_test "wrapper installs on first call and execs after" test_wrapper_installs_
 run_test "wrapper installs a requested tool without rewriting the pin" test_wrapper_installs_a_requested_tool_without_rewriting_the_pin
 run_test "wrapper prints progress and logs the install" test_wrapper_prints_progress_to_stderr_and_logs_the_install
 run_test "wrapper dry run creates no lazy log" test_wrapper_dry_run_creates_no_lazy_log
+run_test "wrapper skips its own log under an outer run_logged" test_wrapper_skips_its_own_log_under_an_outer_run_logged
 run_test "wrapper retries an interrupted global request" test_wrapper_retries_an_interrupted_global_request
 run_test "wrapper remove deletes only a teeup wrapper" test_wrapper_remove_deletes_only_a_teeup_wrapper
 run_test "wrapper remove dry run claims no removal" test_wrapper_remove_dry_run_claims_no_removal
