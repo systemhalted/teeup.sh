@@ -1,0 +1,17 @@
+[book]
+title = "The teeup Manual"
+description = "How to set up, use and change a Mac with teeup."
+authors = ["Palak Mathur"]
+language = "en"
+src = "src"
+
+[build]
+# The output stays out of the repository; .gitignore lists it.
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/systemhalted/teeup.sh"
+edit-url-template = "https://github.com/systemhalted/teeup.sh/edit/main/docs/manual/{path}"
+
+[output.html.search]
+enable = true
