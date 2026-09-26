@@ -324,6 +324,29 @@ EOF2
   cleanup_test_env
 }
 
+# Package retention gates the packages, not the running VM: a colima teeup
+# started stays teeup's to stop even when the formula stays installed, so
+# the running VM is stopped before the retained-packages exit. The link
+# stays, since it is what makes the retained docker and Compose work.
+test_remove_stops_the_vm_but_keeps_packages_and_the_link() {
+  setup
+  mock_colima_stopped
+  local plugin="$TEEUP_PKG_PREFIX/lib/docker/cli-plugins/docker-compose"
+  mkdir -p "$(dirname "$plugin")"
+  printf '#!/bin/sh\n' > "$plugin"
+  chmod +x "$plugin"
+  DRY_RUN=false "$TEEUP" configure colima >/dev/null
+  local link="$TEST_HOME/.docker/cli-plugins/docker-compose"
+  : > "$MOCK_LOG"
+  source "$TEEUP_PATH/lib/all.sh"
+  local out
+  out="$(DRY_RUN=false TEEUP_REMOVE_PACKAGES=false cap_run colima remove 2>&1)"
+  assert_contains "$out" "Keeping colima, docker and Compose installed" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "colima stop" "the VM teeup started must still be stopped" || return 1
+  [[ -L "$link" ]] || { echo "the compose link must stay"; return 1; }
+  cleanup_test_env
+}
+
 echo "capabilities/colima"
 run_test "doctor finds the macports compose plugin" test_doctor_finds_the_macports_compose_plugin
 run_test "install dry run gets colima, docker and compose" test_install_dry_run_gets_colima_docker_and_compose
@@ -340,4 +363,5 @@ run_test "remove stops colima and drops the compose link" test_remove_stops_coli
 run_test "remove stops when colima will not stop" test_remove_stops_when_colima_will_not_stop
 run_test "remove dry run stops and removes nothing" test_remove_dry_run_stops_and_removes_nothing
 run_test "remove when colima is not installed is quiet" test_remove_when_colima_is_not_installed_is_quiet
+run_test "remove stops the vm but keeps packages and the link" test_remove_stops_the_vm_but_keeps_packages_and_the_link
 print_summary

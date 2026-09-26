@@ -324,6 +324,92 @@ test_run_restores_the_outer_capability_after_a_nested_run() {
   cleanup_test_env
 }
 
+# A capability with a remove script that reports what it was told, and a
+# package and a cask for cap_remove's own loop. brew answers "installed" to
+# every list query and logs every call.
+make_removable() {
+  cat >> "$TEEUP_CAPS_DIR/alpha/capability" <<'EOF2'
+packages="ripgrep"
+casks="wezterm"
+EOF2
+  printf '#!/usr/bin/env bash\necho "remove:alpha packages=${TEEUP_REMOVE_PACKAGES:-unset}"\n' > "$TEEUP_CAPS_DIR/alpha/remove"
+  chmod +x "$TEEUP_CAPS_DIR/alpha/remove"
+  mock_command brew 0 ""
+  state_done mark cap-alpha
+}
+
+test_cap_remove_with_packages_runs_the_script_then_uninstalls() {
+  setup
+  make_removable
+  # Not `out="$(cap_remove ... )"`: that runs cap_remove in a nested
+  # subshell, so an export it forgets to unset dies with that subshell and
+  # the check below would pass either way. Redirecting to a file instead
+  # runs cap_remove in this function's own shell, where a leaked
+  # TEEUP_REMOVE_PACKAGES would actually be seen.
+  local out_file="$TEST_HOME/cap-remove.out" rc=0
+  cap_remove alpha true >"$out_file" 2>&1 || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$(cat "$out_file")" "remove:alpha packages=true" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
+  state_done check cap-alpha && { echo "the marker must be cleared"; return 1; }
+  [[ -z "${TEEUP_REMOVE_PACKAGES:-}" ]] || { echo "the variable must not outlive the script"; return 1; }
+  cleanup_test_env
+}
+
+# `teeup uninstall` keeps packages unless asked: the remove script still runs
+# (it owns machine state such as a LaunchAgent), nothing is uninstalled, and
+# the capability is forgotten all the same.
+test_cap_remove_without_packages_keeps_them_and_tells_the_script() {
+  setup
+  make_removable
+  local out rc=0
+  out="$(cap_remove alpha false 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "remove:alpha packages=false" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" "packages were kept" || return 1
+  state_done check cap-alpha && { echo "the marker must be cleared"; return 1; }
+  cleanup_test_env
+}
+
+# The metadata keys are read by cap_meta_get in a subshell that can see the
+# caller's locals, so a local named after a key would answer for a
+# capability that does not set it. beta sets no packages= at all.
+test_cap_remove_reads_packages_from_the_metadata_only() {
+  setup
+  mock_command brew 0 ""
+  state_done mark cap-beta
+  local rc=0
+  cap_remove beta true >/dev/null 2>&1 || rc=$?
+  assert_equals "2" "$rc" "beta has nothing to undo" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  state_done check cap-beta || { echo "nothing was removed, so the marker stays"; return 1; }
+  cleanup_test_env
+}
+
+test_cap_remove_reports_a_failed_script_and_a_failed_uninstall() {
+  setup
+  make_removable
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TEEUP_CAPS_DIR/alpha/remove"
+  local rc=0
+  cap_remove alpha true >/dev/null 2>&1 || rc=$?
+  assert_equals "3" "$rc" "a failed remove script" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" "nothing is uninstalled after the script failed" || return 1
+  state_done check cap-alpha || { echo "the marker stays"; return 1; }
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/alpha/remove"
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-}" in
+  "uninstall --cask") exit 1 ;;
+esac
+exit 0
+EOF2
+  rc=0
+  cap_remove alpha true >/dev/null 2>&1 || rc=$?
+  assert_equals "1" "$rc" "a failed uninstall" || return 1
+  state_done check cap-alpha || { echo "the marker stays so a retry finds the cask"; return 1; }
+  cleanup_test_env
+}
+
 echo "lib/capability.sh"
 run_test "list and exists" test_list_and_exists
 run_test "meta get with default" test_meta_get_with_default
@@ -351,4 +437,8 @@ run_test "run_optional warns but succeeds on failure" test_run_optional_warns_bu
 run_test "hook eligible needs the marker or a running configure" test_hook_eligible_needs_the_marker_or_a_running_configure
 run_test "run restores the outer capability after a nested run" test_run_restores_the_outer_capability_after_a_nested_run
 run_test "run_hooks skips capabilities that were never installed" test_run_hooks_skips_capabilities_that_were_never_installed
+run_test "cap_remove with packages runs the script then uninstalls" test_cap_remove_with_packages_runs_the_script_then_uninstalls
+run_test "cap_remove without packages keeps them and tells the script" test_cap_remove_without_packages_keeps_them_and_tells_the_script
+run_test "cap_remove reads packages from the metadata only" test_cap_remove_reads_packages_from_the_metadata_only
+run_test "cap_remove reports a failed script and a failed uninstall" test_cap_remove_reports_a_failed_script_and_a_failed_uninstall
 print_summary

@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
 # gemini-cli only: node is a shared runtime other tools may use.
 mise_wrapper_remove ai-gemini gemini
-mise_tool_unuse gemini-cli
+
+# `teeup uninstall` without --packages keeps packages installed, and says so
+# through TEEUP_REMOVE_PACKAGES=false (lib/capability.sh's cap_remove).
+# Dropping gemini-cli from the global mise config and pruning its install
+# (mise_tool_unuse, PR #46) is package removal in effect, so it happens only
+# when packages are asked for; `teeup remove ai-gemini` always passes true
+# and is unaffected.
+if [[ "${TEEUP_REMOVE_PACKAGES:-true}" == "true" ]]; then
+  mise_tool_unuse gemini-cli
+fi

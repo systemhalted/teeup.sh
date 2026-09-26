@@ -2489,4 +2489,328 @@ run_test "config edit dry run creates and touches nothing" test_config_edit_dry_
 run_test "config edit that changes emacs flavor prints the configure emacs hint" test_config_edit_that_changes_emacs_flavor_prints_the_configure_emacs_hint
 run_test "config edit that changes nothing prints no hint" test_config_edit_that_changes_nothing_prints_no_hint
 run_test "config edit of a pinned key warns instead of hinting" test_config_edit_of_a_pinned_key_warns_instead_of_hinting
+
+# A machine teeup set up, in miniature: the real zsh home files (rendered by
+# the checkout's own zsh capability, which only reads the checkout), and two
+# fixture capabilities named after tools the shell layer hooks. Each one's
+# remove script records whether ~/.zshrc still sources teeup's layer at the
+# moment the tool comes off.
+uninstall_fixture() {
+  hide_host_commands chezmoi
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  TEEUP_CAPS_DIR="$TEEUP_PATH/capabilities" "$TEEUP" configure zsh >/dev/null 2>&1
+  local name
+  for name in mise starship; do
+    make_cap "$name" core
+    cat > "$TEEUP_CAPS_DIR/$name/remove" <<EOF2
+#!/usr/bin/env bash
+if grep -qs 'TEEUP_PATH' "\$HOME/.zshrc" || [[ -e "\$HOME/.zshenv" ]]; then
+  echo "remove:$name shell-layer=live" >> "\$MOCK_LOG"
+else
+  echo "remove:$name shell-layer=gone" >> "\$MOCK_LOG"
+fi
+echo "remove:$name"
+EOF2
+    chmod +x "$TEEUP_CAPS_DIR/$name/remove"
+  done
+  printf 'alpha\nbeta\nmise\nstarship\n' > "$TEEUP_CAPS_DIR/core.list"
+  mock_command brew 0 ""
+  mock_command launchctl 0 ""
+  "$TEEUP" install mise >/dev/null
+  "$TEEUP" install starship >/dev/null
+  : > "$MOCK_LOG"
+}
+
+# home_snapshot: every path under the test HOME with its checksum, except
+# the mock log, which the mocks themselves append to.
+home_snapshot() {
+  find "$TEST_HOME" ! -name mock.log -print | LC_ALL=C sort
+  find "$TEST_HOME" -type f ! -name mock.log -exec cksum {} + | LC_ALL=C sort
+}
+
+# The order a real Mac proved matters (2026-09-25): mise and starship were
+# removed while ~/.zshrc still loaded their hooks, and every prompt of every
+# shell after that failed. The layer comes off first.
+test_uninstall_takes_the_shell_layer_off_before_what_it_hooks() {
+  setup
+  uninstall_fixture
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "remove:mise shell-layer=gone" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "remove:starship shell-layer=gone" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "shell-layer=live" || return 1
+  assert_file_exists "$HOME/.zshrc" "a .zshrc is always left" || return 1
+  assert_contains "$(printf '%s\n' "$out" | tail -1)" "Open a new terminal (or run: exec /bin/zsh -l)" || return 1
+  assert_contains "$out" "rm -rf $(printf '%q' "$TEEUP_PATH")" "the checkout stays, with how to delete it" || return 1
+  [[ ! -e "$TEST_HOME/.local/state/teeup" && ! -e "$TEST_HOME/.config/teeup" ]] || { echo "teeup's state and config go after a clean run"; return 1; }
+  cleanup_test_env
+}
+
+test_uninstall_refuses_to_run_unasked() {
+  setup
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "teeup uninstall --yes" || return 1
+  rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --frobnicate 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Usage: teeup uninstall [--packages] [--identity] [--yes]" || return 1
+  mock_command id 0 "0"
+  rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "not as root" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup uninstall [--packages] [--identity] [--yes]" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_on_a_terminal_asks_first_and_no_changes_nothing() {
+  setup
+  uninstall_fixture
+  local before out
+  before="$(home_snapshot)"
+  out="$(printf 'n\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
+  assert_contains "$out" "Take teeup off this Mac?" || return 1
+  assert_contains "$out" "Nothing was changed." || return 1
+  assert_equals "$before" "$(home_snapshot)" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_asks_about_packages_and_keeps_them_by_default() {
+  setup
+  uninstall_fixture
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/mise/capability"
+  local out
+  out="$(printf 'y\n\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
+  assert_contains "$out" "Also uninstall the packages and apps teeup installed" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall" "an empty answer keeps the packages" || return 1
+  assert_contains "$out" "brew uninstall ripgrep" "and says how to remove them later" || return 1
+  cleanup_test_env
+  setup
+  uninstall_fixture
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/mise/capability"
+  out="$(printf 'y\ny\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" "a yes uninstalls them" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_dry_run_changes_nothing() {
+  setup
+  uninstall_fixture
+  local before out rc=0
+  before="$(home_snapshot)"
+  out="$(DRY_RUN=true TEEUP_TEST_TTY=yes "$TEEUP" uninstall --packages 2>&1 </dev/null)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_equals "$before" "$(home_snapshot)" "a dry run changes nothing" || return 1
+  assert_not_contains "$out" "Take teeup off this Mac?" "a dry run asks nothing" || return 1
+  assert_contains "$out" "Would remove (dry run; nothing was changed):" || return 1
+  assert_not_contains "$out" "✅" "a dry run claims nothing" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_twice_does_nothing_the_second_time() {
+  setup
+  uninstall_fixture
+  TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes >/dev/null 2>&1
+  : > "$MOCK_LOG"
+  local before out rc=0
+  before="$(home_snapshot)"
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Nothing of teeup's was left to remove." || return 1
+  assert_equals "$before" "$(home_snapshot)" || return 1
+  cleanup_test_env
+}
+
+# Final review I1: a real Mac's state dir has a defaults/ directory
+# (macos-defaults records each preference it touches there), which was
+# missing from teeup's own list -- the state dir never went, and a rerun
+# called it "not teeup's own". A clean run removes it, defaults/ included,
+# and a rerun afterwards is still a no-op.
+test_uninstall_removes_a_defaults_directory_and_a_rerun_is_a_no_op() {
+  setup
+  uninstall_fixture
+  mkdir -p "$TEST_HOME/.local/state/teeup/defaults"
+  printf 'string:1\n' > "$TEST_HOME/.local/state/teeup/defaults/com.example.foo"
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  [[ ! -e "$TEST_HOME/.local/state/teeup" ]] || { echo "the state dir, defaults/ included, must be removed"; return 1; }
+  : > "$MOCK_LOG"
+  local before
+  before="$(home_snapshot)"
+  rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Nothing of teeup's was left to remove." || return 1
+  assert_equals "$before" "$(home_snapshot)" || return 1
+  cleanup_test_env
+}
+
+# A failure keeps the run's exit status, and keeps teeup's state and command
+# so the rerun the output names can finish.
+test_uninstall_fails_loudly_and_keeps_what_a_rerun_needs() {
+  setup
+  uninstall_fixture
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TEEUP_CAPS_DIR/mise/remove"
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "mise: its remove script failed" || return 1
+  assert_contains "$out" "then run: $(printf '%q' "$TEEUP_PATH/bin/teeup") uninstall" || return 1
+  assert_dir_exists "$TEST_HOME/.local/state/teeup" || return 1
+  "$TEEUP" has mise || { echo "mise stays marked for the rerun"; return 1; }
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/mise/remove"
+  rc=0
+  TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "the rerun finishes" || return 1
+  [[ ! -e "$TEST_HOME/.local/state/teeup" ]] || { echo "the rerun tears down"; return 1; }
+  cleanup_test_env
+}
+
+# Task 6 carry (decision 5): the printed rerun command repeats whichever of
+# --packages and --identity this run actually had active, so pasting it does
+# not silently drop back to the defaults.
+test_uninstall_rerun_command_carries_the_active_flags() {
+  setup
+  uninstall_fixture
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TEEUP_CAPS_DIR/mise/remove"
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes --packages --identity 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "then run: $(printf '%q' "$TEEUP_PATH/bin/teeup") uninstall --packages --identity" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_no_terminal_hint_carries_the_active_flags() {
+  setup
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --packages 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "then run: teeup uninstall --yes --packages" || return 1
+  cleanup_test_env
+}
+
+# Review I1: the no-terminal die's preview hint carries the active flags too
+# -- previously only the "then run: ... --yes" half did, so pasting the
+# preview command silently dropped --identity.
+test_uninstall_no_terminal_preview_hint_carries_the_active_flags() {
+  setup
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --packages --identity 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Preview it with: DRY_RUN=true teeup uninstall --packages --identity" || return 1
+  assert_contains "$out" "then run: teeup uninstall --yes --packages --identity" || return 1
+  cleanup_test_env
+}
+
+# Review I1: a dry run's "run it for real" hint must carry --packages and
+# --identity too, or pasting it drops the identity removal (only confirmed
+# when the flag is present) silently, and a clean real run tears teeup down
+# right after.
+test_uninstall_dry_run_prints_the_active_flags_in_the_real_run_hint() {
+  setup
+  uninstall_fixture
+  local out
+  out="$(DRY_RUN=true TEEUP_TEST_TTY=yes "$TEEUP" uninstall --packages --identity 2>&1 </dev/null)"
+  assert_contains "$out" "Run it for real with: $(printf '%q' "$TEEUP_PATH/bin/teeup") uninstall --packages --identity" || return 1
+  cleanup_test_env
+}
+
+# Review I1: a dry run that hits a refusal must print exactly one next step
+# (fix it, then run the real command), never both "Fix it, then run" and
+# "Run it for real with" -- the second used to contradict the first by
+# omitting the very flags the first named.
+test_uninstall_dry_run_with_a_refusal_prints_one_rerun_line() {
+  setup
+  uninstall_fixture
+  mkdir -p "$TEST_HOME/dotfiles/.git"
+  mv "$HOME/.zshrc" "$TEST_HOME/dotfiles/zshrc"
+  ln -s "$TEST_HOME/dotfiles/zshrc" "$HOME/.zshrc"
+  local out
+  out="$(DRY_RUN=true TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1 </dev/null)"
+  assert_contains "$out" "Fix it, then run:" || return 1
+  assert_not_contains "$out" "Run it for real with" "a refusal must print one next step, not two" || return 1
+  cleanup_test_env
+}
+
+# Review I2: the printed rerun must actually work when pasted back into the
+# same no-terminal context that produced it -- which means it must carry
+# --yes, since reaching this failure with no terminal was only possible
+# because --yes was given in the first place.
+test_uninstall_rerun_command_works_without_a_terminal_once_fixed() {
+  setup
+  uninstall_fixture
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TEEUP_CAPS_DIR/mise/remove"
+  local out rc=0 fix
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  fix="${out##*then run: }"
+  fix="${fix%%$'\n'*}"
+  assert_contains "$fix" "--yes" "the printed rerun must carry --yes since this run needed it" || return 1
+  printf '#!/usr/bin/env bash\n:\n' > "$TEEUP_CAPS_DIR/mise/remove"
+  rc=0
+  TEEUP_TEST_TTY=no eval "$fix" >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "the printed rerun command must actually succeed with no terminal" || return 1
+  [[ ! -e "$TEST_HOME/.local/state/teeup" ]] || { echo "the rerun must tear down"; return 1; }
+  cleanup_test_env
+}
+
+# A refusal anywhere must reach the summary and the exit status, never end
+# the run early: bin/teeup runs under `set -e`, and a step that returned a
+# refusal's status as a plain statement would stop the verb before it said
+# anything. One refusal in the first step, one in the last.
+test_uninstall_reports_a_refused_home_file_and_still_finishes() {
+  setup
+  uninstall_fixture
+  mkdir -p "$TEST_HOME/dotfiles/.git"
+  mv "$HOME/.zshrc" "$TEST_HOME/dotfiles/zshrc"
+  ln -s "$TEST_HOME/dotfiles/zshrc" "$HOME/.zshrc"
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "teeup uninstall summary" || return 1
+  assert_contains "$out" "$HOME/.zshrc is a symlink" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "remove:mise" "the rest of the run still happened" || return 1
+  assert_contains "$(printf '%s\n' "$out" | tail -1)" "Open a new terminal" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_reports_a_refused_state_dir_and_still_finishes() {
+  setup
+  export HOME="$TEST_HOME/home"
+  export XDG_CONFIG_HOME="$HOME/.config"
+  export TEEUP_STATE_DIR="$TEST_HOME/elsewhere/state"
+  mkdir -p "$HOME"
+  uninstall_fixture
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "teeup uninstall summary" || return 1
+  assert_contains "$out" "teeup's state" || return 1
+  assert_dir_exists "$TEEUP_STATE_DIR" || return 1
+  assert_contains "$(printf '%s\n' "$out" | tail -1)" "Open a new terminal" || return 1
+  cleanup_test_env
+}
+
+run_test "uninstall takes the shell layer off before what it hooks" test_uninstall_takes_the_shell_layer_off_before_what_it_hooks
+run_test "uninstall refuses to run unasked" test_uninstall_refuses_to_run_unasked
+run_test "uninstall on a terminal asks first, and no changes nothing" test_uninstall_on_a_terminal_asks_first_and_no_changes_nothing
+run_test "uninstall asks about packages and keeps them by default" test_uninstall_asks_about_packages_and_keeps_them_by_default
+run_test "uninstall dry run changes nothing" test_uninstall_dry_run_changes_nothing
+run_test "uninstall twice does nothing the second time" test_uninstall_twice_does_nothing_the_second_time
+run_test "uninstall removes a defaults directory and a rerun is a no-op" test_uninstall_removes_a_defaults_directory_and_a_rerun_is_a_no_op
+run_test "uninstall fails loudly and keeps what a rerun needs" test_uninstall_fails_loudly_and_keeps_what_a_rerun_needs
+run_test "uninstall rerun command carries the active flags" test_uninstall_rerun_command_carries_the_active_flags
+run_test "uninstall no-terminal hint carries the active flags" test_uninstall_no_terminal_hint_carries_the_active_flags
+run_test "uninstall no-terminal preview hint carries the active flags" test_uninstall_no_terminal_preview_hint_carries_the_active_flags
+run_test "uninstall dry run prints the active flags in the real-run hint" test_uninstall_dry_run_prints_the_active_flags_in_the_real_run_hint
+run_test "uninstall dry run with a refusal prints one rerun line" test_uninstall_dry_run_with_a_refusal_prints_one_rerun_line
+run_test "uninstall rerun command works without a terminal once fixed" test_uninstall_rerun_command_works_without_a_terminal_once_fixed
+run_test "uninstall reports a refused home file and still finishes" test_uninstall_reports_a_refused_home_file_and_still_finishes
+run_test "uninstall reports a refused state dir and still finishes" test_uninstall_reports_a_refused_state_dir_and_still_finishes
 print_summary

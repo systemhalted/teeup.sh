@@ -905,3 +905,23 @@ disable_matching_lines() {
   rm -f "$tmp" "$tmp.openers"
   ok "Disabled $reason lines in $file"
 }
+
+# ere_quote <text> -> <text> as an extended regular expression that matches
+# exactly that text. Each ERE metacharacter ( \ ^ $ . [ ( ) * + ? { } | ) gets
+# a backslash; everything else, spaces and slashes and non-ASCII bytes
+# included, stands for itself. POSIX defines a backslash before any of those
+# characters as that literal character, which BSD awk, gawk and grep -E all
+# honour. For disable_matching_lines, whose pattern is an ERE, when the thing
+# to match is a path that may hold any of them -- a %q-quoted
+# TEEUP_CONFIG_DIR carries backslashes and dollars.
+ere_quote() {
+  local text="$1" out="" c i
+  for ((i = 0; i < ${#text}; i++)); do
+    c="${text:i:1}"
+    case "$c" in
+      '\' | '^' | '$' | '.' | '[' | '(' | ')' | '*' | '+' | '?' | '{' | '}' | '|') out="$out\\$c" ;;
+      *) out="$out$c" ;;
+    esac
+  done
+  printf '%s\n' "$out"
+}

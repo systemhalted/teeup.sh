@@ -31,6 +31,9 @@ teeup - your Mac, as a distribution
   teeup reset <capability>       put its config files back to the shipped version (backups kept)
   teeup update [<capability>]    pull, migrate, upgrade packages, re-configure, re-theme
   teeup remove <capability>      undo what a capability installed
+  teeup uninstall [--packages] [--identity] [--yes]
+                                 take teeup off this Mac (asks first; keeps your
+                                  edits, identity and packages unless told)
   teeup list [--tier core|daily|lazy]
   teeup theme set|list|current   apply, list or print the cross-tool theme
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
@@ -169,10 +172,10 @@ cmd_reset() {
 # install it again. A capability with neither a remove script nor any
 # packages or casks (xcode-clt, package-manager before a wrapper capability
 # like ai grows one) has nothing teeup can undo, so it dies rather than
-# claim a removal that never happened.
+# claim a removal that never happened. The removal itself is cap_remove
+# (lib/capability.sh), which `teeup uninstall` shares.
 cmd_remove() {
-  local target="${1:-}" dependents="" name cask pkg failed=0 tier
-  local has_remove=false pkgs casks_meta
+  local target="${1:-}" dependents="" name tier rc=0
   [[ -n "$target" ]] || die "Usage: teeup remove <capability>"
   cap_exists "$target" || die "Unknown capability: $target"
   if state_na check "cap-$target"; then
@@ -189,49 +192,25 @@ cmd_remove() {
   if [[ -n "$dependents" ]]; then
     die "$target is required by:$dependents. Remove those first, then $target."
   fi
-  pkgs="$(cap_meta_get "$target" packages)"
-  casks_meta="$(cap_meta_get "$target" casks)"
-  [[ -f "$(cap_dir "$target")/remove" ]] && has_remove=true
-  if [[ "$has_remove" != "true" && -z "$pkgs" && -z "$casks_meta" ]]; then
-    die "$target ships no remove script and installs no packages or casks that teeup tracks, so teeup remove cannot undo it; $target is still marked installed."
+  cap_remove "$target" true || rc=$?
+  case "$rc" in
+    2) die "$target ships no remove script and installs no packages or casks that teeup tracks, so teeup remove cannot undo it; $target is still marked installed." ;;
+    3) die "$target's remove script failed; nothing was uninstalled." ;;
+  esac
+  # cap_run turns the not-applicable exit into a success for every verb, so
+  # a remove script that answered "this machine cannot have it" gets here
+  # having undone nothing. Saying "Removed $target." after that would be a
+  # claim about work that did not happen; the packages were still taken off,
+  # since metadata is the other half of a removal.
+  if [[ "$TEEUP_CAP_NA" == "true" ]]; then
+    warn "$target's remove script reported it is not applicable on this machine, so it undid nothing of its own."
   fi
-  if [[ "$has_remove" == "true" ]]; then
-    cap_run "$target" remove || die "$target's remove script failed; nothing was uninstalled."
-    # cap_run turns the not-applicable exit into a success for every verb, so
-    # a remove script that answered "this machine cannot have it" gets here
-    # having undone nothing. Saying "Removed $target." after that would be a
-    # claim about work that did not happen; the packages below are still
-    # taken off, since metadata is the other half of a removal.
-    if [[ "$TEEUP_CAP_NA" == "true" ]]; then
-      warn "$target's remove script reported it is not applicable on this machine, so it undid nothing of its own."
-    fi
-  fi
-  for cask in $casks_meta; do
-    cask_uninstall "$cask" || failed=1
-  done
-  for pkg in $pkgs; do
-    pkg_uninstall "$pkg" || failed=1
-  done
-  # Only clear the done marker once every cask and package is actually gone.
-  # Clearing it after a failed uninstall would make a retry see the
-  # capability as not installed, and the leftover software could then never
-  # be removed: cmd_install would skip it ("Already installed") and
-  # cmd_remove itself would refuse with "not installed here".
-  if [[ $failed -eq 0 ]]; then
-    # `|| true`: state_done warns for itself when the marker will not clear,
-    # and the packages are already off by here -- aborting would leave the
-    # user with no teeup message at all.
-    state_done clear "cap-$target" || true
-    # Defensive, and unreachable today: cmd_remove refuses a capability that
-    # is marked not-applicable before it gets here, and a `remove` script that
-    # answers not_applicable only trips cap_run's own temp sentinel -- the
-    # state_na marker is written by cap_install_verbs, which removal does not
-    # call. It stays so that a future path that can set the marker cannot
-    # leave `teeup status` calling a removed capability "not applicable on
-    # this machine" (R-7.3). Do not write a test for it: there is nothing it
-    # could assert that would not be vacuous.
-    state_na clear "cap-$target" || true
-  else
+  # cap_remove clears the done marker only once every cask and package is
+  # actually gone. Clearing it after a failed uninstall would make a retry
+  # see the capability as not installed, and the leftover software could
+  # then never be removed: cmd_install would skip it ("Already installed")
+  # and cmd_remove itself would refuse with "not installed here".
+  if [[ $rc -ne 0 ]]; then
     warn "Leaving $target marked installed since something above failed; fix it and run teeup remove $target again."
   fi
   if [[ -d "$(cap_dir "$target")/config" || -d "$(cap_dir "$target")/home" ]]; then
@@ -241,11 +220,106 @@ cmd_remove() {
   if [[ "$tier" != "lazy" ]]; then
     log "$target is in the $tier tier, so the next ./bootstrap installs it again unless machines/<hostname>.conf sets TEEUP_SKIP."
   fi
-  if [[ $failed -ne 0 ]]; then
+  if [[ $rc -ne 0 ]]; then
     err "teeup remove $target finished, with the problems above."
     exit 1
   fi
   ok_unless_dry "Removed $target."
+}
+
+# teeup uninstall [--packages] [--identity] [--yes]
+# Takes teeup off this Mac (spec amendment of 2026-09-25, lib/uninstall.sh).
+# The order is load-bearing:
+#   1. the zsh home files, before any tool the shell layer hooks is removed,
+#      so no new shell ever starts by calling a binary that is gone;
+#   2. every installed capability, dependents first, through the same
+#      cap_remove `teeup remove` uses -- packages only when asked;
+#   3. any LaunchAgent of teeup's still loaded;
+#   4. the config files, by the stock-checksum rule;
+#   5. with --identity, git's identity and git/local (never an SSH key);
+#   6. teeup's own command, config and state, only after a clean run.
+# It asks several questions, only on a terminal, each defaulting to the
+# answer that removes less (plus one more per pristine file it can restore an
+# earlier copy of, uninstall_offer_restore). Without a terminal it needs
+# --yes, which also takes every default. A dry run asks nothing and changes
+# nothing.
+cmd_uninstall() {
+  local arg yes=false tty=false rc=0 teeup_q confirm_msg
+  _UNINSTALL_PACKAGES=""
+  _UNINSTALL_IDENTITY=false
+  for arg in "$@"; do
+    case "$arg" in
+      --packages) _UNINSTALL_PACKAGES=true ;;
+      --identity) _UNINSTALL_IDENTITY=true ;;
+      --yes) yes=true ;;
+      *) die "Usage: teeup uninstall [--packages] [--identity] [--yes]" ;;
+    esac
+  done
+  if [[ "$(id -u)" == "0" ]]; then
+    die "Run teeup uninstall as yourself, not as root: it takes teeup out of your own home directory."
+  fi
+  if lazy_is_tty; then tty=true; fi
+  _UNINSTALL_ASK=false
+  if [[ "$DRY_RUN" != "true" ]]; then
+    if [[ "$tty" == "true" && "$yes" != "true" ]]; then
+      _UNINSTALL_ASK=true
+      confirm_msg="Take teeup off this Mac? Your edited files, package manager and the checkout stay."
+      if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then
+        confirm_msg="$confirm_msg Your identity comes off if you confirm the next question."
+      else
+        confirm_msg="$confirm_msg Your identity stays too."
+      fi
+      if ! ui_confirm "$confirm_msg" no; then
+        log "Nothing was changed."
+        return 0
+      fi
+    elif [[ "$yes" != "true" ]]; then
+      die "teeup uninstall asks before it removes anything, and there is no terminal to ask on. Preview it with: DRY_RUN=true teeup uninstall$(uninstall_active_flags), then run: teeup uninstall --yes$(uninstall_active_flags)"
+    fi
+  fi
+  if [[ -z "$_UNINSTALL_PACKAGES" ]]; then
+    _UNINSTALL_PACKAGES=false
+    if uninstall_ask "Also uninstall the packages and apps teeup installed (ripgrep, WezTerm, Emacs and the rest)? Homebrew or MacPorts itself stays either way."; then
+      _UNINSTALL_PACKAGES=true
+    fi
+  fi
+  if [[ "$_UNINSTALL_IDENTITY" == "true" && "$_UNINSTALL_ASK" == "true" ]]; then
+    if ! ui_confirm "Also take off your git identity: remove teeup's generated git identity file, move git/local aside, and (if teeup put them there unedited) remove ~/.ssh/config and $(user_config_dir)/git/config? teeup never deletes an SSH key; it will only print how to remove one by hand." no; then
+      _UNINSTALL_IDENTITY=false
+    fi
+  fi
+  uninstall_report_reset
+  _UNINSTALL_GONE=" "
+  uninstall_mark_state_dir
+  uninstall_shell
+  uninstall_capabilities
+  uninstall_launchagents
+  uninstall_configs
+  if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then
+    uninstall_identity
+  fi
+  uninstall_teardown
+  uninstall_summary || rc=1
+  teeup_q="$(uninstall_q "$TEEUP_PATH/bin/teeup")"
+  echo ""
+  # Exactly one next step, never two contradictory ones: a refusal or a
+  # failure always wins over "run it for real" -- printing both here once
+  # sent a dry run that hit a refusal two commands, one of which undid the
+  # other's advice. The rerun after a refusal carries --yes when this run
+  # needed it (no terminal, so it could only have gotten this far because
+  # --yes was given): pasting it back into that same no-terminal context
+  # must not die all over again for lacking the flag that got it this far.
+  if [[ $rc -ne 0 ]]; then
+    err "Something above was refused or failed. Fix it, then run: $teeup_q uninstall$(uninstall_active_flags "$yes")"
+  elif [[ "$DRY_RUN" == "true" ]]; then
+    log "That was a preview. Run it for real with: $teeup_q uninstall$(uninstall_active_flags)"
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    return $rc
+  fi
+  log "The teeup checkout is still at $TEEUP_PATH. Delete it when you no longer want it: rm -rf $(uninstall_q "$TEEUP_PATH")"
+  log "Open a new terminal (or run: exec /bin/zsh -l). This shell loaded teeup's hooks when it started and keeps calling them until it is replaced."
+  return $rc
 }
 
 # _update_checkout -> 0 updated, 1 could not update, 2 must not update.
@@ -1305,6 +1379,7 @@ case "$verb" in
   reset) cmd_reset "$@" ;;
   update) cmd_update "$@" ;;
   remove) cmd_remove "$@" ;;
+  uninstall) cmd_uninstall "$@" ;;
   theme) cmd_theme "$@" ;;
   list) cmd_list "$@" ;;
   launch) cmd_launch "$@" ;;

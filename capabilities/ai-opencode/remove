@@ -1,3 +1,12 @@
 #!/usr/bin/env bash
 mise_wrapper_remove ai-opencode opencode
-mise_tool_unuse opencode
+
+# `teeup uninstall` without --packages keeps packages installed, and says so
+# through TEEUP_REMOVE_PACKAGES=false (lib/capability.sh's cap_remove).
+# Dropping opencode from the global mise config and pruning its install
+# (mise_tool_unuse, PR #46) is package removal in effect, so it happens only
+# when packages are asked for; `teeup remove ai-opencode` always passes true
+# and is unaffected.
+if [[ "${TEEUP_REMOVE_PACKAGES:-true}" == "true" ]]; then
+  mise_tool_unuse opencode
+fi

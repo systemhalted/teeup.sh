@@ -318,3 +318,62 @@ cap_run_hooks() {
   done
   return 0
 }
+
+# cap_remove <name> <true|false>
+# The removal half of `teeup remove`, shared with `teeup uninstall`. Runs the
+# capability's remove script when it ships one, then -- only when the second
+# argument is true -- uninstalls the casks and packages its metadata names,
+# then forgets the capability. The caller has already checked that it is
+# installed and that nothing installed still requires it.
+#
+# The second argument is also exported to the remove script as
+# TEEUP_REMOVE_PACKAGES, because three scripts do package work of their own:
+# emacs and wezterm uninstall the MacPorts port their install used in place
+# of a cask, and colima stops its VM only because the formula is about to
+# come off. With false, all three leave the software alone. A script that
+# never reads the variable is unaffected, and `teeup remove` always passes
+# true, so its behaviour is unchanged.
+#
+# Returns:
+#   0  removed, and the done marker cleared
+#   1  a cask or package would not uninstall; the marker is kept so a retry
+#      can find what is left
+#   2  nothing to undo: no remove script, and no packages or casks named.
+#      Nothing was run and the marker is kept
+#   3  the remove script failed; nothing was uninstalled and the marker is kept
+# Leaves TEEUP_CAP_NA set to what the remove script answered ("false" when
+# there was no script), for a caller that reports it.
+cap_remove() {
+  local target="$1" with_packages="$2" cask pkg failed=0 pkgs casks_meta has_remove=false
+  pkgs="$(cap_meta_get "$target" packages)"
+  casks_meta="$(cap_meta_get "$target" casks)"
+  [[ -f "$(cap_dir "$target")/remove" ]] && has_remove=true
+  TEEUP_CAP_NA=false
+  if [[ "$has_remove" != "true" && -z "$pkgs" && -z "$casks_meta" ]]; then
+    return 2
+  fi
+  if [[ "$has_remove" == "true" ]]; then
+    export TEEUP_REMOVE_PACKAGES="$with_packages"
+    if ! cap_run "$target" remove; then
+      unset TEEUP_REMOVE_PACKAGES
+      return 3
+    fi
+    unset TEEUP_REMOVE_PACKAGES
+  fi
+  if [[ "$with_packages" == "true" ]]; then
+    for cask in $casks_meta; do
+      cask_uninstall "$cask" || failed=1
+    done
+    for pkg in $pkgs; do
+      pkg_uninstall "$pkg" || failed=1
+    done
+  fi
+  if [[ $failed -ne 0 ]]; then
+    return 1
+  fi
+  # `|| true`: state_done and state_na warn for themselves when a marker
+  # will not clear, and the software is already off by here.
+  state_done clear "cap-$target" || true
+  state_na clear "cap-$target" || true
+  return 0
+}

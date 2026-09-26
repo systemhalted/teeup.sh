@@ -203,6 +203,38 @@ EOF2
   cleanup_test_env
 }
 
+# Task 6 carry: `teeup uninstall` without --packages runs cap_remove with
+# TEEUP_REMOVE_PACKAGES=false (lib/capability.sh's cap_remove), and PR #46
+# made each leaf's remove script call mise_tool_unuse -- package removal in
+# effect, since it drops the tool from the global mise config and prunes its
+# install. Keeping packages must still drop the wrapper (so a lazy shim does
+# not silently point at a tool teeup no longer manages) but leave every tool
+# alone in mise's config, or the very next teeup update brings it right back
+# even though this run was told to keep it.
+test_uninstall_keeps_packages_skips_mise_unuse_but_still_drops_the_wrapper() {
+  setup
+  printf '%s\n' claude codex gemini-cli node copilot opencode > "$TEST_HOME/mise-installed"
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+case "$*" in
+  "ls --global"*) while read -r t; do printf '%s latest ~/.config/mise/config.toml latest\n' "$t"; done < "$HOME/mise-installed" ;;
+  *) : ;;
+esac
+exit 0
+EOF2
+  DRY_RUN=false "$TEEUP" install ai >/dev/null
+  source "$TEEUP_PATH/lib/all.sh"
+  local leaf command
+  for leaf in $AI_LEAVES; do
+    DRY_RUN=false TEEUP_REMOVE_PACKAGES=false cap_run "$leaf" remove >/dev/null 2>&1
+  done
+  assert_not_contains "$(cat "$MOCK_LOG")" "unuse -g" "packages kept must leave the global mise config alone" || return 1
+  for command in $AI_COMMANDS; do
+    [[ ! -e "$BIN/$command" && ! -L "$BIN/$command" ]] || { echo "$command wrapper must still go when packages are kept"; return 1; }
+  done
+  cleanup_test_env
+}
+
 test_ai_dry_run_writes_nothing_and_claims_nothing() {
   setup
   local out command leaf
@@ -291,6 +323,7 @@ run_test "leaf configure preserves a foreign command" test_leaf_configure_preser
 run_test "leaf remove touches only its wrapper" test_leaf_remove_touches_only_its_wrapper
 run_test "aggregate remove removes all leaf wrappers and state" test_aggregate_remove_removes_all_leaf_wrappers_and_state
 run_test "aggregate remove drops each tool from mise but not node" test_aggregate_remove_drops_each_tool_from_mise_but_not_node
+run_test "uninstall keeps packages: skips mise unuse but still drops the wrapper" test_uninstall_keeps_packages_skips_mise_unuse_but_still_drops_the_wrapper
 run_test "ai dry run writes nothing and claims nothing" test_ai_dry_run_writes_nothing_and_claims_nothing
 run_test "ai configure warns when a leaf is incomplete then repairs" test_ai_configure_warns_when_a_leaf_is_incomplete_then_repairs
 run_test "aggregate remove fails when a wrapper will not delete" test_aggregate_remove_fails_when_a_wrapper_will_not_delete

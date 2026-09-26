@@ -338,6 +338,64 @@ chezmoi still pointing at a source directory, or a `~/.gitconfig.local` whose
 `[user]` block git still reads. Each finding comes with the command that
 fixes it.
 
+### Taking teeup off a Mac
+
+```bash
+DRY_RUN=true teeup uninstall        # a preview: no questions, and nothing is changed
+teeup uninstall                     # asks first; keeps packages unless you say yes
+teeup uninstall --packages          # also uninstall what the capabilities installed
+teeup uninstall --identity          # also the git identity teeup generated, and (if teeup put them there and you never touched them) ~/.ssh/config and git/config
+teeup uninstall --yes               # no questions (needed without a terminal); takes every default
+```
+
+`teeup uninstall` works in a fixed order. First it takes teeup's lines out of
+your zsh home files, before anything they load is removed: a `~/.zshrc`
+teeup installed and you never edited is replaced by a short one of your own
+(never deleted, so zsh always has one), `~/.zshenv` and `~/.zprofile` go, and
+in a file you edited only teeup's lines are disabled, with a copy of the file
+as it was beside it. Then every installed capability comes off, dependents
+first, through the same removal `teeup remove` uses -- packages only when you
+ask for them, which is also true of what the AI tools installed through
+mise. teeup's LaunchAgents are unloaded next; then every config file teeup
+copied and you never edited is removed, and every one you edited stays; and
+last, once the run has gone cleanly, teeup's own command, config and state
+come off: `~/.config/teeup` loses only the files teeup wrote, and stays --
+with anything of yours in it named instead -- when a machine file, a hook or
+a theme of your own is there too; `~/.local/state/teeup` loses only the
+entries teeup itself wrote there, and only once teeup can tell the directory
+is really its own (a `cap-*` install marker inside its `done/` directory) --
+anything else it finds there stays, named; and `~/.local/bin/teeup` goes
+last (wherever `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `TEEUP_CONFIG_DIR` and
+`TEEUP_STATE_DIR` put the first two).
+
+What it keeps unless you say otherwise: the packages and apps (it asks,
+defaulting to no; Homebrew or MacPorts itself stays either way; while the
+packages stay, so do mise and the tools it manages, and a new shell needs
+the printed `mise activate` line the same way it needs Homebrew's or
+MacPorts' own); your SSH
+keys, always -- teeup never deletes one, with or without `--identity`, and
+instead names each one with the commands that drop its Keychain passphrase
+and move it aside by hand; and, without `--identity`, your git identity and
+a pristine `~/.ssh/config` or `~/.config/git/config`. `--identity` takes off
+what it can of that: the git identity file teeup generated,
+`~/.config/git/local` (moved aside rather than deleted, since teeup never
+wrote it), and `~/.ssh/config` and `~/.config/git/config` if teeup put them
+there and you left them alone. What it never removes: Homebrew or MacPorts,
+the Xcode Command Line Tools, `~/Work`, the secrets in your Keychain, and
+the checkout itself. The summary names each one with the command that
+removes it by hand, and when a file teeup replaced at install time is still
+beside it as a `.teeup_backup_*` copy, it offers to put that back.
+
+It refuses anything outside your home directory, anything inside a git
+checkout, and any symlink it would have to write through, and it will not
+uninstall the zsh your login shell runs. A refusal or a failure makes it exit
+non-zero and keeps teeup's own state and command in place, so running it
+again after you fix the cause finishes the job -- the command it prints
+carries whichever of `--packages`, `--identity` and `--yes` this run needed,
+so pasting it back just works. A second run on a clean Mac changes nothing.
+The shell you ran it from still has teeup's hooks loaded, so open a new
+terminal afterwards.
+
 This repository contains `teeup.sh`, a cross-platform developer setup script. It configures your workspace and installs essential tooling so you can get straight to work.
 
 Through an interactive wizard, teeup provisions a complete development environment, including: 

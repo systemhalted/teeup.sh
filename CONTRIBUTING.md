@@ -685,3 +685,19 @@ Happy contributing! 🚀
     widget. A test that wants the fzf branch specifically sets
     `TEEUP_MENU_PICKER=fzf` and mocks `fzf`; no test may need either program
     installed.
+33. `teeup uninstall` finds what to remove from teeup's own records, not
+    from a list in `lib/uninstall.sh`: installed capabilities from the done
+    markers, config files from the stock records, LaunchAgents by the
+    `sh.teeup.` label prefix. A new capability is covered by following the
+    rules above -- a `remove` script for machine state, `packages`/`casks`
+    in metadata, `copy_config_once` for shipped files, `launchagent_install`
+    for agents. A `remove` script that uninstalls software itself (a
+    MacPorts port in place of a cask) must skip it when
+    `TEEUP_REMOVE_PACKAGES` is `false`, which is how `teeup uninstall` keeps
+    packages. A capability with no `remove` script and no packages needs a
+    line in `uninstall_policy`, or uninstall treats it as having nothing to
+    undo. Every deletion goes through `uninstall_rm`. A new top-level entry
+    under `$TEEUP_STATE_DIR` (a writer such as `lib/state.sh`, `lib/theme.sh`
+    or `lib/macos.sh` gaining its own directory there) must be added to
+    `_UNINSTALL_STATE_ENTRIES` in `lib/uninstall.sh`, or the state directory
+    is never recognised as fully teeup's and never goes.

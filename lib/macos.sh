@@ -212,12 +212,25 @@ launchagent_install() {
 # The inverse of launchagent_install: unload the agent and delete its plist.
 # bootout exits non-zero when the agent is not loaded, which is already the
 # goal, so that failure is ignored. No plist means nothing to do.
+#
+# The plist is deleted only when it is a regular file directly inside the
+# physical ~/Library/LaunchAgents. A symlinked plist, or a LaunchAgents
+# directory that is itself a link (into a dotfiles checkout, say), would
+# make that rm delete a file somewhere teeup does not own, so both are
+# refused with the commands that do it by hand. 0 removed or nothing
+# there; 2 refused; anything else is rm's own failure.
 launchagent_remove() {
-  local label="$1" plist
+  local label="$1" plist home_dir real_dir
   plist="$(_launchagent_plist "$label")"
-  if [[ ! -f "$plist" ]]; then
+  if [[ ! -e "$plist" && ! -L "$plist" ]]; then
     log "No $plist; nothing to unload."
     return 0
+  fi
+  home_dir="$(cd "$HOME" 2>/dev/null && pwd -P)/Library/LaunchAgents"
+  real_dir="$(cd "$(dirname "$plist")" 2>/dev/null && pwd -P)" || real_dir=""
+  if [[ -L "$plist" || ! -f "$plist" || "$real_dir" != "$home_dir" ]]; then
+    warn "$plist is a symlink, or sits in a linked LaunchAgents directory, so teeup did not delete it. Unload and delete it by hand: launchctl bootout gui/$(id -u) $plist; rm $plist"
+    return 2
   fi
   run_cmd launchctl bootout "gui/$(id -u)" "$plist" || true
   run_cmd rm -f "$plist"
