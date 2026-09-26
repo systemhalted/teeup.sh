@@ -200,6 +200,28 @@ catppuccin light neovim_colorscheme catppuccin-latte
 catppuccin light vscode_theme Catppuccin Latte
 catppuccin light vscode_extension Catppuccin.catppuccin-vsc
 catppuccin light doom_theme doom-acario-light
+tokyo-night dark background #1a1b26
+tokyo-night dark foreground #c0caf5
+tokyo-night dark accent #7aa2f7
+tokyo-night dark bat_theme base16
+tokyo-night dark emacs_theme modus-vivendi-tinted
+tokyo-night dark zed_theme Tokyo Night
+tokyo-night dark zed_extension tokyo-night
+tokyo-night dark neovim_colorscheme tokyonight-night
+tokyo-night dark vscode_theme Tokyo Night
+tokyo-night dark vscode_extension enkia.tokyo-night
+tokyo-night dark doom_theme doom-tokyo-night
+tokyo-night light background #e1e2e7
+tokyo-night light foreground #3760bf
+tokyo-night light accent #2e7de9
+tokyo-night light bat_theme base16
+tokyo-night light emacs_theme modus-operandi
+tokyo-night light zed_theme Tokyo Night Light
+tokyo-night light zed_extension tokyo-night
+tokyo-night light neovim_colorscheme tokyonight-day
+tokyo-night light vscode_theme Tokyo Night Light
+tokyo-night light vscode_extension enkia.tokyo-night
+tokyo-night light doom_theme doom-nord-light
 ANCHORS
 }
 

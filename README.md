@@ -146,11 +146,17 @@ the theme each tool should load:
 | Theme | Palettes | bat | Emacs | Zed | Neovim | VS Code |
 |---|---|---|---|---|---|---|
 | `catppuccin` | Mocha, Latte | `OneHalfDark`, `OneHalfLight` | `modus-vivendi`, `modus-operandi` | Catppuccin Mocha, Latte (extension `catppuccin`) | `catppuccin-mocha`, `catppuccin-latte` | Catppuccin Mocha, Latte (`Catppuccin.catppuccin-vsc`) |
+| `tokyo-night` | night, day | `base16` | `modus-vivendi-tinted`, `modus-operandi` | Tokyo Night, Tokyo Night Light (extension `tokyo-night`) | `tokyonight-night`, `tokyonight-day` | Tokyo Night, Tokyo Night Light (`enkia.tokyo-night`) |
 
+- **bat** gets `base16` when it ships no theme for the palette: `base16`
+  draws with the terminal's sixteen colours, which WezTerm takes from the
+  same palette.
 - **Emacs** gets a theme built into Emacs, because the starter configuration
   installs no packages. Doom follows the palette's `doom_theme` too, through
   one marked line teeup adds near the top of `config.el`; Spacemacs keeps the
-  theme its own configuration picks.
+  theme its own configuration picks. The tinted Modus themes need Emacs 30.1
+  or later; an older Emacs falls back to its default colours and says why in
+  `*Messages*`.
 - **Zed** installs a theme's extension the next time it starts; **VS Code**
   gets its extension through the `code` command. A theme Zed ships needs no
   extension.
