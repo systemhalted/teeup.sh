@@ -11,6 +11,7 @@ EOF2
   mock_command_script mise <<'EOF2'
 exit 0
 EOF2
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
   source "$TEEUP_PATH/lib/all.sh"
 }
 
