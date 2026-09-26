@@ -31,7 +31,7 @@ Not the ones you have edited. A file of yours that teeup wants to replace is mov
 
 ## I used chezmoi, or the old teeup. What now?
 
-`teeup migrate legacy` retires that wiring on this Mac. Run it with `DRY_RUN=true` first to read what it would do. *Migrating*, in Part 5, covers it.
+`teeup migrate legacy` retires that wiring on this Mac. Run it with `DRY_RUN=true` first to read what it would do. The README's [migration section](https://github.com/systemhalted/teeup.sh#migrating-a-mac-that-already-had-teeup-or-chezmoi) says what it moves aside and what it never touches.
 
 ## Can I skip part of it?
 
