@@ -1124,6 +1124,54 @@ test_update_skips_core_capabilities_it_never_installed() {
   cleanup_test_env
 }
 
+# 2026-09-26 decision (spec section 9): a changed answer such as the Emacs
+# flavor only takes effect on `teeup update` once it also re-runs configure
+# for the daily tier, since emacs lives in daily.list, not core.list.
+test_update_configures_an_installed_daily_capability_after_core() {
+  setup
+  mock_update_world
+  make_cap gamma daily
+  printf 'gamma\n' > "$TEEUP_CAPS_DIR/daily.list"
+  "$TEEUP" install alpha >/dev/null
+  "$TEEUP" install gamma >/dev/null
+  local out core_line daily_line
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "configure:gamma" || return 1
+  core_line="$(printf '%s\n' "$out" | grep -n 'configure:alpha' | head -1 | cut -d: -f1)"
+  daily_line="$(printf '%s\n' "$out" | grep -n 'configure:gamma' | head -1 | cut -d: -f1)"
+  [[ -n "$core_line" && -n "$daily_line" ]] || { echo "fixture: both steps must appear"; return 1; }
+  [[ "$core_line" -lt "$daily_line" ]] || { echo "daily configure must run after core"; return 1; }
+  cleanup_test_env
+}
+
+test_update_skips_a_daily_capability_never_installed_or_skipped() {
+  setup
+  mock_update_world
+  make_cap gamma daily
+  make_cap delta daily
+  printf 'gamma\ndelta\n' > "$TEEUP_CAPS_DIR/daily.list"
+  "$TEEUP" install gamma >/dev/null
+  local out
+  out="$(TEEUP_SKIP=gamma "$TEEUP" update 2>&1)"
+  assert_contains "$out" "Skipping gamma (TEEUP_SKIP)" || return 1
+  assert_contains "$out" "delta has never been installed here; run: teeup install delta" || return 1
+  assert_not_contains "$out" "configure:gamma" || return 1
+  assert_not_contains "$out" "configure:delta" || return 1
+  cleanup_test_env
+}
+
+# lazyone is tier lazy (declared in setup()); its configure can start a VM,
+# so whole-machine update must never run it, installed or not.
+test_update_does_not_configure_a_lazy_capability() {
+  setup
+  mock_update_world
+  "$TEEUP" install lazyone >/dev/null
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_not_contains "$out" "configure:lazyone" "a lazy capability's configure can start a VM; update must never run it" || return 1
+  cleanup_test_env
+}
+
 test_update_refuses_a_dirty_checkout() {
   setup
   mock_command_script git <<'EOF2'
@@ -2135,7 +2183,6 @@ test_config_edit_dry_run_creates_and_touches_nothing() {
   cleanup_test_env
 }
 
-
 # A menu of the fixture capabilities, so these tests never depend on what
 # share/teeup/menu.json happens to contain.
 write_test_menu() {
@@ -2308,6 +2355,9 @@ run_test "update upgrades packages before running migrations" test_update_upgrad
 run_test "update runs migrations before configuring" test_update_runs_migrations_before_configuring
 run_test "update walks every step in order" test_update_walks_every_step_in_order
 run_test "update skips core capabilities it never installed" test_update_skips_core_capabilities_it_never_installed
+run_test "update configures an installed daily capability after core" test_update_configures_an_installed_daily_capability_after_core
+run_test "update skips a daily capability never installed or skipped" test_update_skips_a_daily_capability_never_installed_or_skipped
+run_test "update does not configure a lazy capability" test_update_does_not_configure_a_lazy_capability
 run_test "update refuses a dirty checkout" test_update_refuses_a_dirty_checkout
 run_test "update carries on when the pull fails" test_update_carries_on_when_the_pull_fails
 run_test "update one capability upgrades its packages and configures" test_update_one_capability_upgrades_its_packages_and_configures

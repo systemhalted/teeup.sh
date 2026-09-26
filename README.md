@@ -234,9 +234,10 @@ and do not change the exit status.
 `teeup update` does spec section 9's list in order: `git pull --ff-only` in
 the checkout, any pending migrations, `brew update && brew upgrade && brew
 upgrade --cask` (or `port selfupdate && port upgrade outdated`), `mise
-upgrade`, `configure` again for every installed core capability (skipping
-one this Mac cannot have), the theme re-rendered, and your `post-update`
-hooks. A checkout with uncommitted changes stops it before anything else
+upgrade`, `configure` again for every installed core and daily capability
+(skipping one this Mac cannot have), the theme re-rendered, and your
+`post-update` hooks. Lazy capabilities are left alone -- their configure can
+start a VM. A checkout with uncommitted changes stops it before anything else
 runs, and so does a migration that fails; every other problem, including one
 capability's `configure` failing, is a warning that lets the rest of the run
 continue, and the command exits non-zero when there was one. Offline, the

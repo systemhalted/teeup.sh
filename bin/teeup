@@ -282,6 +282,51 @@ _update_checkout() {
   return 0
 }
 
+# _update_configure_tier <core|daily>
+# The per-capability configure loop whole-machine `teeup update` runs for one
+# tier: skip what is not implemented, skipped, not-applicable or never
+# installed, else re-run configure and apply the same install-to-NA
+# transition cap_run's single-capability caller applies. Factored out so
+# core and daily share one copy of the guard logic (spec section 9's
+# 2026-09-26 decision extended it from core-only to core then daily) rather
+# than two loops slowly drifting apart. Mutates the caller's $failed and, for
+# the theme capability, $theme_done -- ordinary bash dynamic scoping: both
+# are declared local in cmd_update, this helper's only caller, and never
+# shadowed here.
+_update_configure_tier() {
+  local tier="$1" name
+  for name in $(cap_tier_list "$tier"); do
+    if ! cap_exists "$name"; then
+      warn "$name is listed in $tier.list but not implemented yet; skipping."
+      continue
+    fi
+    if cap_skipped "$name"; then
+      log "Skipping $name (TEEUP_SKIP)"
+      continue
+    fi
+    if state_na check "cap-$name"; then
+      log "$name is not applicable on this machine; skipping."
+      continue
+    fi
+    if ! state_done check "cap-$name"; then
+      log "$name has never been installed here; run: teeup install $name"
+      continue
+    fi
+    if cap_run "$name" configure; then
+      if [[ "$TEEUP_CAP_NA" == "true" ]]; then
+        # Same transition as cmd_update's single-capability path.
+        state_done clear "cap-$name" || true
+        state_na mark "cap-$name"
+        log "$name is not applicable on this machine any more; it is no longer marked installed."
+      fi
+      if [[ "$name" == "theme" && "$TEEUP_CAP_NA" != "true" ]]; then theme_done=true; fi
+    else
+      warn "$name configure failed; continuing."
+      failed=1
+    fi
+  done
+}
+
 # teeup update [<capability>]
 # Spec section 9. Every step is idempotent, so this is also the repair path
 # for a bootstrap that stopped half way. Failures are collected rather than
@@ -366,39 +411,14 @@ cmd_update() {
   # run on top of a migration that has not been applied.
   migrations_run_pending || exit 1
 
-  # core.list only (spec section 9). A capability this machine never installed
-  # has no configuration to re-run, and a lazy capability's configure can
-  # start a VM.
-  for name in $(cap_tier_list core); do
-    if ! cap_exists "$name"; then
-      warn "$name is listed in core.list but not implemented yet; skipping."
-      continue
-    fi
-    if cap_skipped "$name"; then
-      log "Skipping $name (TEEUP_SKIP)"
-      continue
-    fi
-    if state_na check "cap-$name"; then
-      log "$name is not applicable on this machine; skipping."
-      continue
-    fi
-    if ! state_done check "cap-$name"; then
-      log "$name has never been installed here; run: teeup install $name"
-      continue
-    fi
-    if cap_run "$name" configure; then
-      if [[ "$TEEUP_CAP_NA" == "true" ]]; then
-        # Same transition as the single-capability path above.
-        state_done clear "cap-$name" || true
-        state_na mark "cap-$name"
-        log "$name is not applicable on this machine any more; it is no longer marked installed."
-      fi
-      if [[ "$name" == "theme" && "$TEEUP_CAP_NA" != "true" ]]; then theme_done=true; fi
-    else
-      warn "$name configure failed; continuing."
-      failed=1
-    fi
-  done
+  # core.list then daily.list (spec section 9; 2026-09-26 decision: a changed
+  # answer such as the Emacs flavor must take effect on `teeup update`, and
+  # emacs is a daily capability, not core). lazy stays out of both: a
+  # capability this machine never installed has no configuration to re-run,
+  # and a lazy capability's configure can start a VM. theme is core-only, so
+  # theme_done is only ever set while the core call runs.
+  _update_configure_tier core
+  _update_configure_tier daily
 
   # The theme capability's configure already renders every template, so this
   # only covers a run where it did not happen (skipped, not installed, or the

@@ -303,7 +303,13 @@ teeup update            # everything
   run pending migrations/<epoch>.sh        (marker per applied file under state/migrations)
   package manager: brew update && brew upgrade && brew upgrade --cask, or port selfupdate && port upgrade outdated
   mise upgrade                             (AI CLIs, runtimes, CLI tools from mise)
-  re-run configure for core.list           (idempotent; picks up new shims and templates)
+  re-run configure for core.list, then daily.list
+                                            (idempotent; picks up new shims and templates)
+                                            -- 2026-09-26 decision: a changed answer such
+                                            as the Emacs flavor must take effect on
+                                            `teeup update`, and emacs lives in daily.list,
+                                            not core.list; lazy stays out, since its
+                                            configure can start a VM
   theme set $(theme current)               (regenerate templates)
   hook post-update
 teeup update <cap>      # only that capability's packages and configure
