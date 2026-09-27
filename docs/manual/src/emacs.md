@@ -57,7 +57,8 @@ With the `doom` flavor, the Doom CLI is on your `PATH`, because teeup's shell ad
 doom sync
 ```
 
-`doom doctor` and `doom upgrade` work the same way. teeup runs `doom install` only once, while `~/.config/doom/init.el` does not exist yet.
+`doom doctor` and `doom upgrade` work the same way. teeup runs `doom install` only once, while `~/.config/doom/init.el` does not exist yet. teeup disables Doom's default template theme so its own theme applies; your own `doom-theme` setting overrides it.
+
 
 ## Removing Emacs
 

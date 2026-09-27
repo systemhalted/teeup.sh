@@ -146,6 +146,37 @@ if [[ "$flavor" == "doom" && -f "$doom_theme_config_el" ]]; then
   fi
 fi
 if [[ "$flavor" == "doom" && -f "$doom_theme_config_el" && "$doom_theme_files_ready" == "true" ]]; then
+  doom_template_disabled_line=";; (setq doom-theme 'doom-one)  ; teeup: disabled Doom's template default so the teeup theme applies"
+  if grep -q "^[[:space:]]*(setq doom-theme 'doom-one)[[:space:]]*$" "$doom_theme_config_el"; then
+    if [[ "$DRY_RUN" == "true" ]]; then
+      printf "%b %s\n" "🔍" "[DRY-RUN] Would comment out the template default doom-theme in $(basename "$doom_theme_config_el")"
+    elif [[ -L "$doom_theme_config_el" ]]; then
+      warn "$doom_theme_config_el is a symlink; teeup does not write through it. Comment out (setq doom-theme 'doom-one) by hand."
+    else
+      if backup_copy "$doom_theme_config_el" >/dev/null; then
+        doom_theme_config_tmp="$(mktemp)"
+        awk -v replacement="$doom_template_disabled_line" '{
+          line = $0
+          sub(/^[ \t]+/, "", line)
+          sub(/[ \t]+$/, "", line)
+          if (line == "(setq doom-theme \047doom-one)") {
+            print replacement
+          } else {
+            print $0
+          }
+        }' "$doom_theme_config_el" > "$doom_theme_config_tmp"
+        if mv "$doom_theme_config_tmp" "$doom_theme_config_el"; then
+          ok "Disabled Doom's template default doom-theme in $(basename "$doom_theme_config_el") so the teeup theme applies"
+        else
+          rm -f "$doom_theme_config_tmp"
+          warn "Could not modify $doom_theme_config_el; comment out (setq doom-theme 'doom-one) by hand."
+        fi
+      fi
+    fi
+  elif grep -E -q '^[[:space:]]*\(setq doom-theme[[:space:]]' "$doom_theme_config_el"; then
+    log "$(basename "$doom_theme_config_el") sets its own doom-theme, which overrides the teeup theme. Remove that line to use teeup's."
+  fi
+
   doom_theme_marker=";; teeup: theme (managed by teeup; remove this line to opt out)"
   # A user theme's directory, and TEEUP_STATE_DIR itself, can hold a space or
   # shell metacharacter; \ then " (in that order, or the second escape would

@@ -423,10 +423,12 @@ OLD
 # both edit a file that lives outside the state and stock trees, ahead of
 # anything underneath it going away.
 uninstall_doom_theme_line() {
-  local doom_dir config_el marker
+  local doom_dir config_el marker disabled_line template_line
   doom_dir="${DOOMDIR:-$(user_config_dir)/doom}"
   config_el="$doom_dir/config.el"
   marker=";; teeup: theme (managed by teeup; remove this line to opt out)"
+  disabled_line=";; (setq doom-theme 'doom-one)  ; teeup: disabled Doom's template default so the teeup theme applies"
+  template_line="(setq doom-theme 'doom-one)"
   if [[ -L "$config_el" ]]; then
     log "Not editing the symlink $config_el; whatever manages it owns its contents."
     return 0
@@ -434,18 +436,23 @@ uninstall_doom_theme_line() {
   if [[ ! -f "$config_el" ]]; then
     return 0
   fi
-  if ! grep -qF "$marker" "$config_el"; then
+  if ! grep -qF "$marker" "$config_el" && ! grep -qF "$disabled_line" "$config_el"; then
     return 0
   fi
   if [[ "$DRY_RUN" == "true" ]]; then
-    printf "%b %s\n" "🔍" "[DRY-RUN] Would remove the teeup theme line from $config_el"
+    if grep -qF "$marker" "$config_el"; then
+      printf "%b %s\n" "🔍" "[DRY-RUN] Would remove the teeup theme line from $config_el"
+    fi
+    if grep -qF "$disabled_line" "$config_el"; then
+      printf "%b %s\n" "🔍" "[DRY-RUN] Would restore Doom's template default doom-theme in $config_el"
+    fi
     return 0
   fi
   if [[ ! -w "$config_el" || ! -w "$doom_dir" ]]; then
-    uninstall_note failed "$config_el's teeup theme line could not be removed (not writable). Remove by hand: the line starting \"$marker\" and the line right after it."
+    uninstall_note failed "$config_el's teeup theme changes could not be reverted (not writable)."
     return 0
   fi
-  local tmp after_marker=false ok=true
+  local tmp after_marker=false ok=true removed_marker=false restored_template=false
   tmp="$(mktemp)" || { uninstall_note failed "Could not create a temp file, so $config_el was left alone."; return 0; }
   while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$after_marker" == true ]]; then
@@ -454,15 +461,26 @@ uninstall_doom_theme_line() {
     fi
     if [[ "$line" == "$marker" ]]; then
       after_marker=true
+      removed_marker=true
+      continue
+    fi
+    if [[ "$line" == "$disabled_line" ]]; then
+      printf '%s\n' "$template_line" >> "$tmp"
+      restored_template=true
       continue
     fi
     printf '%s\n' "$line" >> "$tmp"
   done < "$config_el" || ok=false
   if [[ "$ok" == true ]] && mv "$tmp" "$config_el"; then
-    uninstall_note removed "The teeup theme line in $config_el"
+    if [[ "$removed_marker" == true ]]; then
+      uninstall_note removed "The teeup theme line in $config_el"
+    fi
+    if [[ "$restored_template" == true ]]; then
+      uninstall_note removed "Restored Doom's template default doom-theme in $config_el"
+    fi
   else
     rm -f "$tmp"
-    uninstall_note failed "Could not rewrite $config_el. Remove by hand: the line starting \"$marker\" and the line right after it."
+    uninstall_note failed "Could not rewrite $config_el."
   fi
 }
 

@@ -15,7 +15,7 @@ You can also use the menu's Theme row (`teeup menu style.theme`) to pick one fro
 
 ## What is themed
 
-A theme applies to WezTerm, Terminal.app, Starship, bat, Zed, VS Code, Neovim, and Emacs (both the starter and Doom flavors).
+A theme applies to WezTerm, Terminal.app, Starship, bat, Zed, VS Code, Neovim, and Emacs (both the starter and Doom flavors). teeup disables Doom's default template theme so its own theme applies; your own `doom-theme` setting overrides it.
 
 Setting a theme generates a profile in Terminal.app named `teeup <Theme> <Mode>` (for example, `teeup Tokyo Night Dark`). The new profile becomes the default and startup profile, so a new Terminal window or a restart picks it up. teeup does not touch your own profiles. If you decide to remove the Terminal.app integration (`teeup remove terminal-app`), your old default profile is restored.
 
