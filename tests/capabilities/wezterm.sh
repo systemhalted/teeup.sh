@@ -237,6 +237,12 @@ M.font_with_fallback = function(specs) return specs end
 M.add_to_config_reload_watch_list = function() end
 M.default_hyperlink_rules = function() return {} end
 M.action = setmetatable({}, { __index = function() return function(...) return {} end end })
+M.run_child_process = function()
+  if os.getenv("WEZTERM_TEST_SYSCTL_ERRORS") then
+    error("command not found")
+  end
+  return true, os.getenv("WEZTERM_TEST_SYSCTL_RETURNS") or "0\n", ""
+end
 return M
 FAKE
 }
@@ -295,6 +301,59 @@ test_teeup_defaults_stand_without_a_passthrough_table() {
   out="$(_wezterm_config_keys '{}' scrollback_lines window_decorations)"
   assert_contains "$out" "scrollback_lines=10000" "with no passthrough at all, teeup's default should stand" || return 1
   assert_contains "$out" "window_decorations=INTEGRATED_BUTTONS | RESIZE" "with no passthrough at all, teeup's default should stand" || return 1
+  cleanup_test_env
+}
+
+test_vm_detection_sets_webgpu() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return "$(missing_tool_status)"
+  fi
+  local out
+  out="$(export WEZTERM_TEST_SYSCTL_RETURNS="1\n"; _wezterm_config_keys '{}' front_end)"
+  assert_contains "$out" "front_end=WebGpu" "front_end should be WebGpu inside a VM" || return 1
+  cleanup_test_env
+}
+
+test_vm_detection_leaves_frontend_alone_outside_vm() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return "$(missing_tool_status)"
+  fi
+  local out
+  out="$(export WEZTERM_TEST_SYSCTL_RETURNS="0\n"; _wezterm_config_keys '{}' front_end)"
+  assert_contains "$out" "front_end=nil" "front_end should not be set outside a VM" || return 1
+  cleanup_test_env
+}
+
+test_vm_detection_handles_sysctl_errors() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return "$(missing_tool_status)"
+  fi
+  local out
+  out="$(export WEZTERM_TEST_SYSCTL_ERRORS="1"; _wezterm_config_keys '{}' front_end scrollback_lines)"
+  assert_contains "$out" "front_end=nil" "an error should be treated as not a VM" || return 1
+  assert_contains "$out" "scrollback_lines=10000" "config should not crash" || return 1
+  cleanup_test_env
+}
+
+test_local_config_passthrough_wins_over_vm_detection() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return "$(missing_tool_status)"
+  fi
+  local out
+  out="$(export WEZTERM_TEST_SYSCTL_RETURNS="1\n"; _wezterm_config_keys '{ config = { front_end = "OpenGL" } }' front_end)"
+  assert_contains "$out" "front_end=OpenGL" "passthrough should win over VM detection" || return 1
   cleanup_test_env
 }
 
@@ -667,6 +726,10 @@ run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothin
 run_test "font entry does not force a weight" test_font_entry_does_not_force_a_weight
 run_test "local config passthrough overrides a teeup default" test_local_config_passthrough_overrides_a_teeup_default
 run_test "teeup defaults stand without a passthrough table" test_teeup_defaults_stand_without_a_passthrough_table
+run_test "VM detection sets WebGpu" test_vm_detection_sets_webgpu
+run_test "VM detection leaves frontend alone outside VM" test_vm_detection_leaves_frontend_alone_outside_vm
+run_test "VM detection handles sysctl errors" test_vm_detection_handles_sysctl_errors
+run_test "local config passthrough wins over VM detection" test_local_config_passthrough_wins_over_vm_detection
 run_test "local config passthrough ignores a non-table" test_local_config_passthrough_ignores_a_non_table
 run_test "local.lua absent still builds a working config" test_local_lua_absent_still_builds_a_working_config
 run_test "local.lua returning a non-table still builds a working config" test_local_lua_returning_a_non_table_still_builds_a_working_config

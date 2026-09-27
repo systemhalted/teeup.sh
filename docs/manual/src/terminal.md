@@ -49,12 +49,12 @@ The split and pane keys follow Emacs: 2 and 3 split, 0 closes, 1 zooms, and o mo
 
 ## WezTerm in a virtual machine
 
-In a macOS virtual machine, WezTerm can fail to open a window with "failed to create NSOpenGLPixelFormat". Switch it to the WebGPU front end in `~/.config/wezterm/local.lua`:
+In a macOS virtual machine, WezTerm can fail to open a window with "failed to create NSOpenGLPixelFormat". teeup switches WezTerm to its WebGpu renderer inside a macOS VM. You can override this in `~/.config/wezterm/local.lua`:
 
 ```lua
 return {
   config = {
-    front_end = "WebGpu",
+    front_end = "OpenGL",
   },
 }
 ```
