@@ -18,8 +18,8 @@ description: >
 teeup turns a Mac into a working machine and keeps it that way. It is a git
 checkout plus one command. Every piece of state it keeps is a file whose
 presence or content you can read; very little runs in the background (only
-LaunchAgents like `sh.teeup.emacs` and `sh.teeup.keyboard`, which are loaded by
-`configure`, unloaded by `remove` and `uninstall`, and checked by `doctor`), and nothing
+LaunchAgents like `sh.teeup.emacs` and `sh.teeup.keyboard`, whose plists are written and bootstrapped by
+`configure`, and booted out and deleted by `remove` and `uninstall`), and nothing
 is cached anywhere you cannot open in an editor.
 
 macOS only. If you keep a separate dotfiles repository for Linux, teeup never
