@@ -36,7 +36,7 @@ jobs_wanted="$(detect_jobs)"
 # loops below expand it. bash 3.2 has indexed arrays; only associative ones
 # arrived in bash 4.
 suites=()
-for suite in "$TESTS_DIR"/lib/*.sh "$TESTS_DIR"/capabilities/*.sh "$TESTS_DIR"/cli.sh "$TESTS_DIR"/bootstrap.sh "$TESTS_DIR"/docs.sh; do
+for suite in "$TESTS_DIR"/lib/*.sh "$TESTS_DIR"/capabilities/*.sh "$TESTS_DIR"/cli.sh "$TESTS_DIR"/bootstrap.sh "$TESTS_DIR"/docs.sh "$TESTS_DIR"/runner.sh; do
   [[ -f "$suite" ]] || continue
   suites[${#suites[@]}]="$suite"
 done
@@ -102,7 +102,21 @@ if [[ "$jobs_wanted" -le 1 ]]; then
     ran=$((ran + 1))
     echo ""
     echo "== ${suite#"$TESTS_DIR"/} =="
-    if ! bash "$suite"; then
+    timeout="${TEEUP_TEST_SUITE_TIMEOUT:-600}"
+    perl -e 'setpgrp 0,0; exec @ARGV' bash "$suite" &
+    pid=$!
+    (
+      sleep "$timeout"
+      if kill -9 "-$pid" 2>/dev/null; then
+        echo "TIMEOUT: tests/${suite#"$TESTS_DIR"/} after ${timeout}s"
+      fi
+    ) &
+    watchdog=$!
+    rc=0
+    wait "$pid" 2>/dev/null || rc=$?
+    kill -9 "$watchdog" 2>/dev/null || true
+    wait "$watchdog" 2>/dev/null || true
+    if [[ "$rc" -ne 0 ]]; then
       failed=$((failed + 1))
     fi
   done
@@ -129,7 +143,23 @@ else
     done
     key="$(suite_key "$suite")"
     # Each job writes its own log and exit code; nothing is shared but $out_dir.
-    ( bash "$suite" > "$out_dir/$key.log" 2>&1; printf '%s\n' "$?" > "$out_dir/$key.rc" ) &
+    (
+      timeout="${TEEUP_TEST_SUITE_TIMEOUT:-600}"
+      perl -e 'setpgrp 0,0; exec @ARGV' bash "$suite" > "$out_dir/$key.log" 2>&1 &
+      pid=$!
+      (
+        sleep "$timeout"
+        if kill -9 "-$pid" 2>/dev/null; then
+          echo "TIMEOUT: tests/${suite#"$TESTS_DIR"/} after ${timeout}s" >> "$out_dir/$key.log"
+        fi
+      ) &
+      watchdog=$!
+      rc=0
+      wait "$pid" 2>/dev/null || rc=$?
+      kill -9 "$watchdog" 2>/dev/null || true
+      wait "$watchdog" 2>/dev/null || true
+      printf '%s\n' "$rc" > "$out_dir/$key.rc"
+    ) &
   done
   wait
   for suite in ${suites+"${suites[@]}"}; do
