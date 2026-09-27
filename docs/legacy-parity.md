@@ -35,7 +35,7 @@ in prose rather than backticked as if they already shipped.
 | `rust` | `mise` | `teeup install dev-env rust` goes through mise's rust backend, which uses rustup underneath, so the toolchain management is the same and the bootstrap no longer pipes `https://sh.rustup.rs` into a shell. |
 | `emacs` | `emacs` | Now a daily-tier capability with a `sh.teeup.emacs` LaunchAgent running the daemon, four configurations behind `TEEUP_EMACS_FLAVOR` (`starter`, `doom`, `spacemacs`, `none`), a themed template and a `theme-apply` hook that reloads a running daemon. The old module installed the `emacs-app` cask and copied a fixed `init.el`. |
 | `docker` | `colima` | Colima and the Docker CLI are a lazy capability reached by a `docker` shim: the first `docker ps` on a new Mac offers to install it. The Linux half of the old module (distro packages, docker group membership) is gone with the rest of the Linux support. `docker-dbs` (local database containers) and `lazydocker` (the TUI) were part of the same redesign phase as this checklist but did not land in 0.1.0; they are phase 4c work, moved to 0.2.0, and are not capabilities on this tree yet. |
-| `apps` | `obsidian` | Obsidian is a daily-tier capability of its own, alongside every other GUI capability phases 3 and 4 added (browsers, communication, productivity, Karabiner, Xcode). `teeup list --tier lazy` is the current lazy list. `Bruno`, the other cask this module installed, is phase 4c work moved to 0.2.0 and has no capability yet. `INSTALL_BRUNO` and `INSTALL_OBSIDIAN` have no successor either way: install what you want, when you want it. |
+| `apps` | `obsidian` | Obsidian is a daily-tier capability of its own, alongside the other GUI capabilities teeup ships today (Zed, Firefox Developer Edition, Chrome, VS Code, Cursor, AeroSpace). The wider set of browsers, communication and productivity apps, Karabiner and Xcode is phase 4c work moved to 0.2.0. `teeup list --tier lazy` is the current lazy list. `Bruno`, the other cask this module installed, is phase 4c work moved to 0.2.0 and has no capability yet. `INSTALL_BRUNO` and `INSTALL_OBSIDIAN` have no successor either way: install what you want, when you want it. |
 
 <!-- /parity-map -->
 
@@ -43,7 +43,7 @@ in prose rather than backticked as if they already shipped.
 
 | Legacy option | Where it went |
 |---|---|
-| `--help` | `teeup help`, generated from the verb list rather than a here-doc. |
+| `--help` | `teeup help` (also `-h` and `--help`), which lists every verb. |
 | `--dry-run` | `DRY_RUN=true` in front of any command, and `./bootstrap --dry-run`. Every mutation goes through one seam (`run_cmd` or a guarded file primitive), so the preview is the real code path rather than a second set of strings. |
 | `--profile base\|full`, `--all` | The three tiers. Core is the base, `--skip-daily` is the way to get core alone, and everything past that is lazy rather than a profile. |
 | `--prompt none\|powerlevel10k\|starship` | Dropped. Starship is the prompt; Powerlevel10k is not installed, and `teeup doctor` reports remnants of one. |
