@@ -189,6 +189,8 @@ teeup uninstall [--packages] [--identity] [--yes]
 - `README.md` -- what teeup installs, and every verb with its behaviour.
 - `CONTRIBUTING.md` -- the long form of the capability rules, the code style
   and the test conventions.
+- `docs/legacy-parity.md` -- what the previous installer did and where each
+  part of it went. Read it before "teeup used to ..." turns into a guess.
 - The manual at https://teeup.systemhalted.in (built from `docs/manual`) --
   the long-form walkthrough of every tool teeup configures, tier by tier.
 - `docs/superpowers/specs/2026-09-11-omarchy-inspired-redesign-design.md` --

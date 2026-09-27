@@ -424,6 +424,65 @@ test_the_skill_marks_the_generated_and_borrowed_trees_read_only() {
   assert_contains "$body" 'Never edit these' "the read-only rules have a heading of their own" || return 1
 }
 
+PARITY="$REPO/docs/legacy-parity.md"
+
+# parity_rows: the table rows between the markers, each one
+# "| `<module>` | <capability cell> | <prose> |".
+parity_rows() {
+  sed -n '/<!-- parity-map -->/,/<!-- \/parity-map -->/p' "$PARITY" | grep '^| `'
+}
+
+test_the_parity_checklist_has_a_row_for_every_legacy_module() {
+  assert_file_exists "$PARITY" "the parity checklist is in docs/" || return 1
+  # The verbatim module list from `legacy/teeup.sh --list-modules`, frozen here
+  # because the command that produced it is deleted in a later task.
+  local missing="" m rows
+  # The rows are captured once. `something | grep -q` would be a race under
+  # `set -o pipefail`: grep exits on the first match, the upstream command gets
+  # SIGPIPE, and the pipeline reports a failure that depends on the pipe buffer.
+  rows="$(parity_rows)"
+  for m in homebrew shell zsh ohmyzsh bash cli python java ruby rust emacs docker apps; do
+    if ! grep -qF "| \`$m\` |" <<<"$rows"; then
+      missing="$missing $m"
+    fi
+  done
+  assert_equals "" "$missing" "every legacy module has a row" || return 1
+  assert_equals "13" "$(printf '%s\n' "$rows" | wc -l | tr -d ' ')" "thirteen rows, one per module" || return 1
+}
+
+test_the_parity_checklist_names_only_capabilities_that_exist() {
+  local bad="" row cell trimmed leftover name
+  while IFS= read -r row; do
+    # The second cell: everything between the first and second "|" after the
+    # module name. It has to be exactly the word dropped, or one or more
+    # backticked capability names and nothing else -- an unquoted word left
+    # over once every `name` span is stripped out is a typo that lost its
+    # backticks, and grep -oE alone would silently skip right over it.
+    cell="$(printf '%s' "$row" | awk -F'|' '{print $3}')"
+    trimmed="$(printf '%s' "$cell" | tr -d ' ')"
+    if [[ -z "$trimmed" ]]; then
+      bad="$bad empty-cell"
+      continue
+    fi
+    if [[ "$trimmed" == "dropped" ]]; then
+      continue
+    fi
+    leftover="$trimmed"
+    for name in $(printf '%s' "$trimmed" | grep -oE '`[a-z0-9][a-z0-9.-]*`' | tr -d '`'); do
+      if [[ ! -d "$REPO/capabilities/$name" ]]; then
+        bad="$bad $name"
+      fi
+      leftover="${leftover//\`$name\`/}"
+    done
+    if [[ -n "$leftover" ]]; then
+      bad="$bad unquoted:$leftover"
+    fi
+  done <<PARITY_ROWS
+$(parity_rows)
+PARITY_ROWS
+  assert_equals "" "$bad" "every replacement cell is dropped, or backticked capability names that all exist" || return 1
+}
+
 echo "docs"
 run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
@@ -442,4 +501,6 @@ run_test "the skill has frontmatter, a name and a description" test_the_skill_ha
 run_test "the skill names only paths that exist" test_the_skill_names_only_paths_that_exist
 run_test "the skill names only verbs teeup has" test_the_skill_names_only_verbs_teeup_has
 run_test "the skill marks the generated and borrowed trees read-only" test_the_skill_marks_the_generated_and_borrowed_trees_read_only
+run_test "the parity checklist has a row for every legacy module" test_the_parity_checklist_has_a_row_for_every_legacy_module
+run_test "the parity checklist names only capabilities that exist" test_the_parity_checklist_names_only_capabilities_that_exist
 print_summary
