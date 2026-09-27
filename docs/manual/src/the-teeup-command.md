@@ -33,8 +33,10 @@ Everything teeup does after the first run goes through one command, `teeup`. It 
   to run if another installed capability requires it. It refuses to run if the
   capability lacks a `remove` script, packages, or casks. Seven capabilities
   have nothing to undo: `dev-dirs`, `package-manager`, `secrets`, `ssh`,
-  `teeup-runtime`, `theme`, and `xcode-clt`. A `remove` script that reports
-  "not applicable on this machine" is displayed.
+  `teeup-runtime`, `theme`, and `xcode-clt`. For these, `teeup remove secrets`
+  and the like say so and leave the capability marked installed. A `remove`
+  script that reports "not applicable on this machine" is reported as such,
+  not as a clean removal.
 
 ## Looking at the machine
 
