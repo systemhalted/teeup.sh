@@ -21,7 +21,7 @@ answers_load
 
 usage() {
   cat <<'USAGE'
-teeup - your Mac, as a distribution
+teeup - your Mac, ready to code
 
   teeup install <capability>     install and configure it (and what it requires)
   teeup install dev-env <lang>   python|node|java|ruby|rust|go through mise

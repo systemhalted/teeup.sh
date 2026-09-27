@@ -8,10 +8,11 @@
 </h1>
 
 <p align="center">
-  Get your new machine ready for the first drive.
+  <strong>Your Mac, ready to code.</strong><br>
+  An opinionated, reproducible macOS environment for developers.
 </p>
 
-teeup is a modular, macOS-only environment distribution that sets up a Mac and manages it afterwards. It installs command-line tools, language runtimes, editors and GUI applications, while keeping its configuration isolated from your own dotfiles.
+teeup sets up a Mac and manages it afterwards. It installs command-line tools, language runtimes, editors and GUI applications, while keeping its configuration isolated from your own dotfiles.
 
 ## Requirements
 

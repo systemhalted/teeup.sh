@@ -1,6 +1,6 @@
 # Welcome to teeup
 
-teeup treats your Mac the way a Linux distribution treats a computer. One command, `./bootstrap`, installs a considered set of developer tools, writes their configuration, gives them one colour [theme](themes.md) and one [font](fonts.md), and leaves you with a single command, `teeup`, for everything you want to change afterwards.
+**Your Mac, ready to code.** teeup is an opinionated, reproducible macOS environment for developers. One command, `./bootstrap`, installs a considered set of developer tools, writes their configuration, gives them one colour [theme](themes.md) and one [font](fonts.md), and leaves you with a single command, `teeup`, for everything you want to change afterwards.
 
 The idea comes from [Omarchy](https://omarchy.org), DHH's opinionated setup for Arch Linux and Hyprland. Omarchy showed that a personal setup can be packaged like a product: sensible defaults, a menu for discovering what is there, lazy installs for the things you use once a month, and a manual. teeup brings that shape to macOS. It runs on macOS only; `./bootstrap` stops on any other system.
 
