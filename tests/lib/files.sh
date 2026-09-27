@@ -1000,6 +1000,78 @@ test_agent_skill_link_dry_run_and_missing_source() {
   cleanup_test_env
 }
 
+# final review, phase 5b, I1: a link inside a git checkout is never written,
+# because `teeup uninstall` refuses to delete anything there (lib/uninstall.sh,
+# migrate_path_is_safe), which would otherwise leave the uninstall unfinished
+# and an untracked skills/probe in the user's own ~/.claude repository.
+test_agent_skill_link_refuses_a_target_inside_a_git_checkout() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.claude/.git"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "a git checkout in the way is a warning, not a failure" || return 1
+  assert_contains "$out" "$TEST_HOME/.claude/skills/probe" "the warning names the target" || return 1
+  assert_contains "$out" "inside a git checkout" "the warning says why" || return 1
+  local expected_cmd
+  expected_cmd="ln -sfn $(printf '%q' "$SKILLSRC") $(printf '%q' "$TEST_HOME/.claude/skills/probe")"
+  assert_contains "$out" "$expected_cmd" "the warning gives the exact command to run by hand" || return 1
+  assert_equals "" "$(readlink "$TEST_HOME/.claude/skills/probe" 2>/dev/null || true)" "nothing was linked inside the checkout" || return 1
+  [[ ! -d "$TEST_HOME/.claude/skills" ]] || { echo "teeup must not create a directory inside the checkout either"; return 1; }
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the tool-neutral path, outside the checkout, is still linked" || return 1
+  cleanup_test_env
+}
+
+# final review, phase 5b, I2: teeup-runtime is core tier, so a failed mkdir
+# for one agent CLI's directory must warn and move on to the next one, never
+# abort the whole call (bootstrap, or `teeup update`, would otherwise stop
+# before zsh, git and ssh over a link to one optional agent CLI).
+test_agent_skill_link_survives_a_directory_it_cannot_create() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.claude"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  chmod 0555 "$TEST_HOME/.claude"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  chmod 0755 "$TEST_HOME/.claude"
+  assert_success "$rc" "an unwritable tool directory is a warning, not a failure" || return 1
+  assert_contains "$out" "Could not create $TEST_HOME/.claude/skills" "the warning names the directory" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the tool-neutral directory is unaffected" || return 1
+  cleanup_test_env
+}
+
+# final review, phase 5b, I3: a dangling link -- a clone that moved, a
+# worktree that was deleted -- whose recorded target still ends in
+# share/agents/skills/<name> reads as a stale teeup link, not somebody else's,
+# so it is replaced rather than kept and reported as a doctor failure whose
+# printed fix does nothing.
+test_agent_skill_link_replaces_a_dangling_link_to_a_vanished_checkout() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  ln -s "$TEST_HOME/old checkout/share/agents/skills/probe" "$TEST_HOME/.agents/skills/probe"
+  local out
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)"
+  assert_contains "$out" "Linked" "a stale, dangling link to a vanished checkout is replaced" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" || return 1
+  cleanup_test_env
+}
+
+# The dangling-but-differently-shaped counterpart: a broken link that never
+# looked like a teeup skill directory is somebody else's problem, not fixed
+# up here.
+test_agent_skill_link_keeps_a_dangling_link_not_shaped_like_a_skill_directory() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  ln -s "$TEST_HOME/wherever/the-user-put-it" "$TEST_HOME/.agents/skills/probe"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Keeping" || return 1
+  assert_equals "$TEST_HOME/wherever/the-user-put-it" "$(readlink "$TEST_HOME/.agents/skills/probe")" || return 1
+  cleanup_test_env
+}
 
 
 
@@ -1075,4 +1147,8 @@ run_test "agent_skill_link keeps a link into a different checkout with the same 
 run_test "agent_skill_link refreshes a link into the real checkout" test_agent_skill_link_refreshes_a_link_into_the_real_checkout
 run_test "agent_skill_link resolves symlinks physically, not logically" test_agent_skill_link_resolves_symlinks_physically_not_logically
 run_test "agent_skill_link dry run, and a missing source" test_agent_skill_link_dry_run_and_missing_source
+run_test "agent_skill_link refuses a target inside a git checkout" test_agent_skill_link_refuses_a_target_inside_a_git_checkout
+run_test "agent_skill_link survives a directory it cannot create" test_agent_skill_link_survives_a_directory_it_cannot_create
+run_test "agent_skill_link replaces a dangling link to a vanished checkout" test_agent_skill_link_replaces_a_dangling_link_to_a_vanished_checkout
+run_test "agent_skill_link keeps a dangling link not shaped like a skill directory" test_agent_skill_link_keeps_a_dangling_link_not_shaped_like_a_skill_directory
 print_summary

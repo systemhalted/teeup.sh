@@ -949,10 +949,29 @@ ere_quote() {
 # without being this checkout. A symlink already at $target is kept, with a
 # warning naming both paths, unless it resolves -- physically, both sides --
 # to this checkout's own skill directory, in which case it is teeup's to
-# refresh.
+# refresh. A dangling symlink whose recorded target still ends in
+# share/agents/skills/<name> is treated the same way: it is another (or this
+# very) checkout that moved or was deleted, so it reads as a stale teeup link
+# and is replaced, rather than as a foreign broken link that is not teeup's
+# business (final review, phase 5b, I3 -- otherwise the doctor's fix for this,
+# rerunning this same command, was a no-op).
+#
+# Nothing is ever written inside a git checkout: `git status` in the user's
+# own ~/.claude or ~/.agents repository must never grow an untracked
+# skills/<name> entry that `teeup uninstall` then refuses to clean up (final
+# review, I1). $dir is resolved physically as far up as it exists -- it, or
+# an ancestor, may itself be a symlink into a dotfiles checkout, which a plain
+# string comparison would miss -- before migrate_in_git_checkout is asked
+# whether that resolves inside one; a positive answer is a warning with the
+# plain `ln` command to run by hand, not a write.
+#
+# A failed mkdir or ln is a warning too, never a fatal error (final review,
+# I2): teeup-runtime is a core capability, so an unwritable or already-taken
+# skills directory for one agent CLI must not stop bootstrap, `teeup update`
+# or any other directory in this same loop.
 agent_skill_link() {
   local src="$1" name="$2"
-  local dir parent target current resolved_src resolved_current
+  local dir parent target current resolved_src resolved_current resolved_dir
   if [[ ! -d "$src" ]]; then
     warn "No skill directory at $src"
     return 1
@@ -985,15 +1004,35 @@ agent_skill_link() {
       # such as "alias/../probe" can read back as this checkout without -P
       # while actually resolving somewhere else.
       resolved_current="$(cd -P "$(dirname "$target")" 2>/dev/null && cd -P "$current" 2>/dev/null && pwd -P)" || resolved_current=""
-      if [[ -z "$resolved_current" || "$resolved_current" != "$resolved_src" ]]; then
+      if [[ -z "$resolved_current" ]]; then
+        case "$current" in
+          */share/agents/skills/"$name") ;;
+          *)
+            warn "Keeping $target, a symlink to $current rather than $src"
+            continue
+            ;;
+        esac
+      elif [[ "$resolved_current" != "$resolved_src" ]]; then
         warn "Keeping $target, a symlink to $current rather than $src"
         continue
       fi
     fi
-    if [[ ! -d "$dir" ]]; then
-      run_cmd mkdir -p "$dir"
+    # The physical form of $dir, resolved as far up as something actually
+    # exists: $dir itself is usually the part that is missing, not just its
+    # last component, so migrate_resolve's single cd is not enough here.
+    resolved_dir="$dir"
+    while [[ ! -d "$resolved_dir" && "$resolved_dir" != "/" ]]; do
+      resolved_dir="$(dirname "$resolved_dir")"
+    done
+    resolved_dir="$(cd -P "$resolved_dir" 2>/dev/null && pwd -P)" || resolved_dir="$dir"
+    if migrate_in_git_checkout "$resolved_dir/$name"; then
+      warn "Not linking $target: $dir is inside a git checkout, which teeup will not write into. Link it yourself if you want it: ln -sfn $(printf '%q' "$src") $(printf '%q' "$target")"
+      continue
     fi
-    run_cmd ln -sfn "$src" "$target"
+    if [[ ! -d "$dir" ]]; then
+      run_cmd mkdir -p "$dir" || { warn "Could not create $dir, so the $name skill was not linked there."; continue; }
+    fi
+    run_cmd ln -sfn "$src" "$target" || { warn "Could not link $target, so the $name skill was not linked there."; continue; }
     ok "Linked $target"
   done
   return 0
