@@ -483,17 +483,30 @@ migrate_chezmoi() {
       echo "teeup does not ship these -- they are yours, and only the .teeup_backup_<ts> copy will hold them:"
       printf '%s' "$mine"
     fi
-    if ! lazy_is_tty; then
-      # A bulk rename of somebody's home directory is not something to do on
-      # an unattended run. Say what a real one would do and stop.
-      log "Not moving anything: there is nobody to ask. A run from a terminal would move the files above aside as <name>.teeup_backup_<ts>."
+    if [[ "$DRY_RUN" == "true" ]]; then
+      # A preview asks nothing, even at a real terminal: it cannot know which
+      # answer the user would give, so it says what each answer would do
+      # instead of guessing one. Answering yes would move the files above
+      # aside as <name>.teeup_backup_<ts> and reinstall teeup's own version of
+      # each one it ships; answering no would leave every one of them where it
+      # is, still owned by chezmoi.
+      log "Not asking to move anything: a dry run asks no questions. A real run would ask before moving the files above aside as <name>.teeup_backup_<ts> and reinstalling teeup's own version of each one it ships; answering no would leave them where they are."
       rm -f "$managed"
       return 0
+    fi
+    if ! lazy_is_tty; then
+      # A bulk rename of somebody's home directory is not something to do on
+      # an unattended run. Say what a real one would do and stop: this is
+      # work the migration could not finish, not merely a note, so it counts
+      # against the exit status like any other step left undone.
+      log "Not moving anything: there is nobody to ask. A run from a terminal would move the files above aside as <name>.teeup_backup_<ts>."
+      rm -f "$managed"
+      return 1
     fi
     if ! ui_confirm "Move the files above aside so teeup can take over this home directory?" no; then
       log "Nothing was moved. chezmoi still owns those files; re-run when you are ready."
       rm -f "$managed"
-      return 0
+      return 1
     fi
     while IFS= read -r line || [[ -n "$line" ]]; do
       if [[ -z "$line" ]]; then
@@ -575,6 +588,13 @@ migrate_chezmoi() {
   chezmoi_config="$(migrate_target chezmoi-config)"
   if [[ ! -e "$chezmoi_config" ]]; then
     log "No $chezmoi_config, so chezmoi already has nothing pointing it at this home."
+    return $rc
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    # Same rule as the move above: a preview asks nothing and names both
+    # answers instead of guessing one. The checkout itself is never deleted
+    # either way.
+    log "Not asking to delete $chezmoi_config: a dry run asks no questions. A real run would ask before deleting it so chezmoi stops pointing at $src; answering no would leave it in place. The checkout itself always stays."
     return $rc
   fi
   if ui_confirm "Delete $chezmoi_config, so chezmoi stops pointing at $src? The checkout itself stays." no; then
