@@ -2,14 +2,15 @@
 
 The previous installer was one 2,292-line `teeup.sh` plus a 1,704-line
 `teeup-wizard.sh`, a `lib/` and a `templates/` tree and four test scripts —
-6,968 lines in all — driven by thirteen module toggles. This document records
+7,186 lines in all — driven by thirteen module toggles. This document records
 what each of those modules did and where it went, and it is the gate the
 redesign's phase 5 had to pass before `legacy/` could be deleted. It is
 written in the past tense on purpose: the programs it describes are no longer
 in the repository, and this is the only record of them that remains.
 
 The module list is the verbatim output of `./legacy/teeup.sh --list-modules`,
-taken from the tree at commit `808d049`, the commit before the deletion.
+taken from the last tree that still had `legacy/`, immediately before this
+branch deleted it.
 
 Two of the thirteen modules' replacements are still partly in progress: the
 `docker` and `apps` rows below name only the capabilities that exist on this
@@ -77,7 +78,7 @@ in prose rather than backticked as if they already shipped.
 
 ## The wizard
 
-`teeup-wizard.sh` was 1,400 lines of screens that set the environment variables
+`teeup-wizard.sh` was 1,704 lines of screens that set the environment variables
 above and then ran `teeup.sh`. It is replaced by two things: the questions
 `bootstrap` asks once, whose answers live in `~/.config/teeup/answers` and are
 editable with `teeup config`, and `teeup menu`, which is generated from
@@ -115,6 +116,5 @@ question anywhere in the tree.
   only `obsidian`, the GUI app phase 4c's peers do not affect.
 - **Themes beyond `catppuccin`.** teeup's theme system (the `theme`
   capability) ships one palette today. `everforest`, `gruvbox` and
-  `tokyo-night` are part of PR #54, not yet merged; when it lands, this
-  document does not need an update, because the legacy installer never had a
-  theme module to map from.
+  `tokyo-night` are part of PR #54, not yet merged; the legacy installer never
+  had a theme module to map from.

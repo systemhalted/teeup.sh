@@ -262,7 +262,8 @@ user files source thick default files.
     append to the list in the same commit. Finish with
     `teeup dev check <name>`, which runs the metadata lint, the menu lint,
     shellcheck and that capability's suite -- the same four things CI runs.
-    `teeup dev check` with no name runs the whole suite, which takes minutes.
+    `teeup dev check` with no name runs the whole suite, taking about as long
+    as `./tests/run.sh` above.
     Its exit status is 0 when everything passed, 1 when a check ran and found
     a problem, and 2 when a check could not run at all -- shellcheck not
     installed, say, which prints "could not check: shellcheck" and never
@@ -323,9 +324,9 @@ user files source thick default files.
     `_UNINSTALL_STATE_ENTRIES` in `lib/uninstall.sh`, or the state directory
     is never recognised as fully teeup's and never goes.
 
-The twenty capabilities `teeup menu` reserves rows for under `install.*`
-(browsers, communication apps, container tooling and the rest) are not built
-yet; that work is deferred to 0.2.0. Do not add a menu row that points at a
+Phase 4c's twenty capabilities under `install.*` (browsers, communication
+apps, container tooling and the rest) are deferred to 0.2.0, and `teeup menu`
+has no rows for them yet. Do not add a menu row that points at a
 capability which does not exist — `teeup dev check` refuses it, and it would
 be the wrong order regardless: the capability comes first, the row after.
 
@@ -352,8 +353,12 @@ be the wrong order regardless: the capability comes first, the row after.
 - **Names.** Environment variables `UPPER_WITH_UNDERSCORES`, locals and
   functions `lower_with_underscores`. Every teeup-owned variable starts
   `TEEUP_`.
-- **Logging** is `log`, `ok`, `warn`, `err` and `die` from `lib/core.sh`.
-  Nothing prints a bare `echo` to describe what it is doing.
+- **Logging** is `log`, `ok`, `warn`, `err` and `die` from `lib/core.sh` for
+  anything reporting progress or an outcome. A bare `echo` still shows up for
+  a value a caller reads back (`echo keep`), a line written into a file, and
+  the few places that print plain text rather than a single log line —
+  `teeup uninstall`'s summary header and `migrate`'s chezmoi lists among
+  them.
 - **Packages** go through `pkg_install <package> [command]`, never a direct
   `brew` or `port` call, so `TEEUP_PACKAGE_MANAGER=macports` keeps working on
   an old Intel laptop. Casks are Homebrew-only by nature: `cask_install` skips
@@ -444,8 +449,10 @@ that the agent skill's frontmatter, paths and verbs are all real; and that
 capabilities that exist.
 
 - A new verb needs `bin/teeup help` to print it, and any README or manual
-  page that demonstrates it kept in sync — `tests/docs.sh` catches a stale
-  demonstration in either document, in either direction.
+  page that demonstrates it kept in sync — `tests/docs.sh` catches a `teeup
+  <verb>` shown as code in either document that `bin/teeup` no longer
+  accepts. It does not check the other direction: a real verb that neither
+  document demonstrates passes silently.
 - A new core or daily capability needs its name in the README's tier list.
 - User-facing walkthroughs (themes, fonts, migration, identity, uninstall)
   belong in the manual (`docs/manual/src/`, published to

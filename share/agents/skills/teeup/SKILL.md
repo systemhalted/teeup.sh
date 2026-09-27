@@ -9,8 +9,8 @@ description: >
   daily.list, lazy shim, teeup install/configure/update/reset/remove/doctor/
   menu/theme/launch/lazy-run/config/secret/migrate/uninstall, answers file,
   machines/<hostname>.conf, ~/.config/teeup, ~/.local/state/teeup, themed
-  templates, theme-apply, font-apply. macOS only; for Linux desktop
-  configuration use the omarchy skill instead.
+  templates, theme-apply, font-apply. macOS only; not for Linux desktop
+  configuration.
 ---
 
 # teeup
@@ -20,8 +20,8 @@ checkout plus one command. Every piece of state it keeps is a file whose
 presence or content you can read; nothing runs in the background and nothing
 is cached anywhere you cannot open in an editor.
 
-macOS only. The Linux half of this user's setup lives in a separate chezmoi
-repository and teeup never touches it.
+macOS only. If you keep a separate dotfiles repository for Linux, teeup never
+touches it.
 
 ## The one thing to understand first
 
@@ -65,11 +65,12 @@ Inside a capability the same split appears as three directories:
    say so, do not silently rewrite it.
 5. **`.superpowers/`.** Another agent's working directory: ledgers, briefs and
    review packages. It is gitignored and it is not yours.
-6. **The sibling repository `~/Work/environment/dotfiles`.** It is read-only
-   reference that keeps serving Linux. `teeup migrate legacy` never runs
-   `chezmoi purge` and is written so that no argument can make it name that
-   directory. Keep it that way. Never touch `~/.ssh` keys either: no teeup
-   command generates, rotates or deletes one, and no change here should start.
+6. **A sibling dotfiles repository for Linux, if you keep one.** It is
+   read-only reference that keeps serving Linux. `teeup migrate legacy` never
+   runs `chezmoi purge` and is written so that no argument can make it name
+   that directory. Keep it that way. Never touch `~/.ssh` keys either: no
+   teeup command generates, rotates or deletes one, and no change here should
+   start.
 
 ## What a capability is
 
