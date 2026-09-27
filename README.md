@@ -140,8 +140,12 @@ editor to pick it up.
 
 Every theme is a dark and a light palette; apps follow the macOS appearance
 between the two. `teeup theme list` shows what is available and
-`teeup theme set <name>` switches every app at once. Each palette also names
-the theme each tool should load:
+`teeup theme set <name>` switches every app at once. Setting the theme that
+is already current changes nothing, on purpose (nothing to switch to); to
+re-render a rendered file that went missing or stale (a template a
+`git pull` changed, a file deleted by hand), run `teeup theme set --reload`
+(add a name to reload a different theme than the current one). Each palette
+also names the theme each tool should load:
 
 | Theme | Palettes | bat | Emacs | Zed | Neovim | VS Code |
 |---|---|---|---|---|---|---|

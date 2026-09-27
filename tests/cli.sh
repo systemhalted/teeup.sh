@@ -2384,8 +2384,49 @@ test_theme_set_the_current_theme_says_nothing_changed() {
   out="$("$TEEUP" theme set catppuccin 2>&1)" || rc=$?
   assert_success "$rc" "$out" || return 1
   assert_contains "$out" "catppuccin is already the theme; nothing changed." || return 1
+  assert_contains "$out" "Re-render it with: teeup theme set --reload" "the message must point at a command that actually works (I2)" || return 1
   assert_not_contains "$out" "Theme set to catppuccin" "a repeat set must not re-render" || return 1
   assert_equals "$before" "$(cat "$name_file")" "the recorded theme name is untouched" || return 1
+  cleanup_test_env
+}
+
+# I2: unlike a plain `teeup theme set <current>`, --reload always re-renders,
+# which is the whole point of it existing: a rendered file that went missing
+# or stale needs a command that really writes it again.
+test_theme_set_reload_re_renders_the_current_theme() {
+  setup
+  "$TEEUP" theme set catppuccin >/dev/null
+  local state rendered out
+  state="$TEST_HOME/.local/state/teeup"
+  rendered="$state/current/theme/dark/colors.toml"
+  assert_file_exists "$rendered" || return 1
+  rm -f "$rendered"
+  out="$("$TEEUP" theme set --reload 2>&1)"
+  assert_contains "$out" "Theme set to catppuccin" "--reload with no name must re-render the current theme" || return 1
+  assert_file_exists "$rendered" "the missing render must come back" || return 1
+  cleanup_test_env
+}
+
+# --reload with an explicit name that happens to already be current must
+# still render, not take the no-op branch.
+test_theme_set_reload_with_the_current_name_still_renders() {
+  setup
+  "$TEEUP" theme set catppuccin >/dev/null
+  local out
+  out="$("$TEEUP" theme set --reload catppuccin 2>&1)"
+  assert_contains "$out" "Theme set to catppuccin" || return 1
+  assert_not_contains "$out" "nothing changed" || return 1
+  cleanup_test_env
+}
+
+# With no theme ever set, --reload has nothing to default to, and must say so
+# rather than silently doing nothing or rendering the fallback theme.
+test_theme_set_reload_with_no_current_theme_dies() {
+  setup
+  local out rc=0
+  out="$("$TEEUP" theme set --reload 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No theme has been applied yet" || return 1
   cleanup_test_env
 }
 
@@ -2500,6 +2541,9 @@ run_test "menu dry run prints the action" test_menu_dry_run_prints_the_action_in
 run_test "menu cancel inside a submenu goes back a level" test_menu_cancel_inside_a_submenu_goes_back_a_level
 run_test "theme set without a name opens the picker" test_theme_set_without_a_name_opens_the_picker
 run_test "theme set on the current theme says nothing changed" test_theme_set_the_current_theme_says_nothing_changed
+run_test "theme set --reload re-renders the current theme" test_theme_set_reload_re_renders_the_current_theme
+run_test "theme set --reload with the current name still renders" test_theme_set_reload_with_the_current_name_still_renders
+run_test "theme set --reload with no current theme dies" test_theme_set_reload_with_no_current_theme_dies
 run_test "theme set the current theme still warns about a pin" test_theme_set_the_current_theme_still_warns_about_a_pin
 run_test "theme picker choosing the current theme says nothing changed" test_theme_picker_choosing_the_current_theme_says_nothing_changed
 run_test "migrate requires a known target" test_migrate_requires_a_known_target

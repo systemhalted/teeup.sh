@@ -19,7 +19,7 @@ if [[ "$name" == "none" ]]; then
   exit
 fi
 # A name in theme.name is only a claim; nothing before this confirmed teeup
-# still has a theme by that name. `teeup theme set $name`, the fix every
+# still has a theme by that name. `teeup theme set --reload $name`, the fix every
 # other finding below offers, cannot succeed against a name that is not real.
 if ! theme_list | grep -qxF "$name"; then
   doctor_fail "$name is recorded as the current theme, but teeup has no theme by that name (try: teeup theme list)." "teeup theme set catppuccin"
@@ -39,7 +39,7 @@ for mode in dark light; do
       # a permissions problem, the other a missing render.
       doctor_fail "$current/$mode cannot be read, so teeup cannot tell what follows the theme in $mode mode." "chmod u+rx $current/$mode"
     else
-      doctor_fail "No $current/$mode, so nothing follows the theme in $mode mode." "teeup theme set $name"
+      doctor_fail "No $current/$mode, so nothing follows the theme in $mode mode." "teeup theme set --reload $name"
     fi
     continue
   fi
@@ -54,18 +54,18 @@ for mode in dark light; do
   colors="$current/$mode/colors.toml"
   palette_matches_named_theme=false
   if [[ ! -f "$colors" ]]; then
-    doctor_unknown "$current/$mode/colors.toml is missing, so the $mode render could not be checked against $name." "teeup theme set $name"
+    doctor_unknown "$current/$mode/colors.toml is missing, so the $mode render could not be checked against $name." "teeup theme set --reload $name"
   elif [[ ! -r "$colors" ]]; then
     doctor_fail "$colors cannot be read, so teeup cannot tell which theme the $mode render came from." "chmod u+r $colors"
   else
     theme_path="$(theme_dir "$name" 2>/dev/null)" || theme_path=""
     if [[ -n "$theme_path" ]] && ! diff -q "$colors" "$theme_path/$mode.toml" >/dev/null 2>&1; then
-      doctor_fail "$current/$mode was rendered from a different theme than $name, the theme now named as current. Run: teeup theme set $name" "teeup theme set $name"
+      doctor_fail "$current/$mode was rendered from a different theme than $name, the theme now named as current. Run: teeup theme set --reload $name" "teeup theme set --reload $name"
     fi
     if theme_palette_load "$colors" "$mode" >/dev/null 2>&1; then
       palette_matches_named_theme=true
     else
-      doctor_unknown "$colors does not hold a valid $mode palette, so its renders could not be re-checked for truncation." "teeup theme set $name"
+      doctor_unknown "$colors does not hold a valid $mode palette, so its renders could not be re-checked for truncation." "teeup theme set --reload $name"
     fi
   fi
 
@@ -82,7 +82,7 @@ for mode in dark light; do
       [[ -f "$rendered" && -r "$rendered" && -s "$rendered" ]] || continue
       if sed -f "$TEEUP_COLOR_SED" "$tpl" > "$tmp_render" 2>/dev/null; then
         if ! diff -q "$tmp_render" "$rendered" >/dev/null 2>&1; then
-          doctor_fail "$rendered does not match a fresh render of $base for $mode mode; it looks truncated or hand-edited." "teeup theme set $name"
+          doctor_fail "$rendered does not match a fresh render of $base for $mode mode; it looks truncated or hand-edited." "teeup theme set --reload $name"
         fi
       else
         # The template itself could not be read or re-rendered. Skipping in
@@ -123,21 +123,21 @@ while IFS= read -r tpl; do
   for mode in dark light; do
     rendered="$current/$mode/$base"
     if [[ ! -f "$rendered" ]]; then
-      doctor_fail "$base has never been rendered for $mode mode." "teeup theme set $name"
+      doctor_fail "$base has never been rendered for $mode mode." "teeup theme set --reload $name"
     elif [[ ! -r "$rendered" ]]; then
       doctor_fail "$rendered cannot be read, so teeup cannot tell whether it rendered." "chmod u+r $rendered"
     elif [[ ! -s "$rendered" ]]; then
       # Existing is not rendered: an empty file has no unresolved token to
       # find either, so it passes both of the other checks while the tool it
       # belongs to reads nothing at all.
-      doctor_fail "$rendered is empty, so $base has no colours in $mode mode." "teeup theme set $name"
+      doctor_fail "$rendered is empty, so $base has no colours in $mode mode." "teeup theme set --reload $name"
     elif grep -q '{{' "$rendered"; then
-      doctor_fail "$rendered still holds an unresolved {{ token }}." "teeup theme set $name"
+      doctor_fail "$rendered still holds an unresolved {{ token }}." "teeup theme set --reload $name"
     elif [[ "$tpl" -nt "$rendered" ]]; then
       # The template has changed since it was last rendered, so the tool is
       # running on colours teeup no longer ships. `teeup update` does not
       # re-render on its own, so this window stays open until someone looks.
-      doctor_warn "$tpl is newer than $rendered, so $base is rendered from an older template. Run: teeup theme set $name"
+      doctor_warn "$tpl is newer than $rendered, so $base is rendered from an older template. Run: teeup theme set --reload $name"
     fi
   done
 done <<EOF_TPL

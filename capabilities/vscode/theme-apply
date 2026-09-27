@@ -16,7 +16,7 @@ THEME_DIR="${TEEUP_THEME_DIR:-$TEEUP_STATE_DIR/current/theme}"
 dark="$THEME_DIR/dark/vscode.json"
 light="$THEME_DIR/light/vscode.json"
 if [[ ! -f "$dark" || ! -f "$light" ]]; then
-  log "No rendered VS Code theme in $THEME_DIR yet; the next teeup theme set writes it."
+  log "No rendered VS Code theme in $THEME_DIR yet; the next teeup theme set --reload (or a real theme switch) writes it."
   exit 0
 fi
 if ! have jq; then

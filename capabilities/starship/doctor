@@ -21,7 +21,7 @@ if [[ -e "$name_file" && ! -r "$name_file" ]]; then
 fi
 name="$(theme_current)"
 # A name in theme.name is only a claim; nothing before this confirmed teeup
-# still has a theme by that name. `teeup theme set $name`, the fix every
+# still has a theme by that name. `teeup theme set --reload $name`, the fix every
 # other finding below offers, cannot succeed against a name that is not real
 # (NI5).
 if [[ "$name" != "none" ]] && ! theme_list | grep -qxF "$name"; then
@@ -91,7 +91,7 @@ if [[ "$start_count" -eq 1 && "$end_count" -eq 1 ]]; then
               inside { print }' | diff -q - "$expected_palette" >/dev/null 2>&1; then
       doctor_ok "The starship palette block is intact and matches the current theme."
     else
-      doctor_fail "$config's palette block does not match what the $name theme renders, so the prompt is on other colours." "teeup theme set $name"
+      doctor_fail "$config's palette block does not match what the $name theme renders, so the prompt is on other colours." "teeup theme set --reload $name"
     fi
     rm -f "$expected_palette"
   fi

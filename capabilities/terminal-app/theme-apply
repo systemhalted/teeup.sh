@@ -28,7 +28,7 @@ TERMINAL_MODE="$(appearance)"
 TERMINAL_COLORS="$TERMINAL_THEME_DIR/$TERMINAL_MODE/terminal-app.colors"
 
 if [[ "$TERMINAL_THEME" == "none" || ! -f "$TERMINAL_COLORS" ]]; then
-  log "No rendered theme for Terminal.app yet; its profile is built the next time you run teeup theme set."
+  log "No rendered theme for Terminal.app yet; its profile is built by the next teeup theme set --reload (or a real theme switch)."
   exit 0
 fi
 
