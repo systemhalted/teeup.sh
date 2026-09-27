@@ -45,7 +45,7 @@ teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distributi
 - **One `teeup` command.** Flags are gone; you now interact with your system through a single CLI with subcommands.
 - **Shipped configs are copied once.** Configuration files are placed in your `~/.config` or home directory once and are then yours to edit.
 - **mise replaces other managers.** Runtimes come through mise instead of pyenv, rbenv, or SDKMAN.
-- **zsh and Starship replace Oh My Zsh and Powerlevel10k.** The shell environment is leaner and uses a layered configuration.
+- **zsh and Starship replace Oh My Zsh and Powerlevel10k.** teeup ships its own layered zsh configuration instead of a framework.
 See [docs/legacy-parity.md](docs/legacy-parity.md) for the full mapping of legacy features to the new architecture.
 
 ### Removed
