@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # pkg.sh - Homebrew and MacPorts backends behind one candidate-list install
-# primitive. Ported from legacy/lib/package_manager.sh, macOS only.
+# primitive. Ported from the previous installer's package_manager.sh, macOS
+# only; docs/legacy-parity.md says where the rest of it went.
 # Requires core.sh and answers.sh.
 
 run_privileged() {

@@ -436,7 +436,7 @@ the same set from the capabilities, the menu and `bin/teeup` itself, rather
 than trusting prose. It checks, among other things: that every `teeup <verb>`
 shown as code in the README or the manual is a verb `bin/teeup` accepts; that
 the README's count of capabilities `teeup remove` refuses (no `remove` script,
-no packages, no casks) matches the tree; that the README's menu field table
+with neither packages nor casks) matches the tree; that the README's menu field table
 matches `lib/menu.awk`; that the README names every AI leaf and the lazy log
 path; that the manual's `SUMMARY.md` links every page and no page is orphaned;
 that the agent skill's frontmatter, paths and verbs are all real; and that

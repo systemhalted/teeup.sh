@@ -1,8 +1,0 @@
-if [ -r "$HOME/.profile" ]; then
-  . "$HOME/.profile"
-fi
-
-# Shared cross-shell config: aliases + tool integration (SDKMAN, rbenv, pyenv, GOPATH).
-if [ -r "$HOME/.teeup.common" ]; then
-  . "$HOME/.teeup.common"
-fi

@@ -9,7 +9,7 @@ written in the past tense on purpose: the programs it describes are no longer
 in the repository, and this is the only record of them that remains.
 
 The module list is the verbatim output of `./legacy/teeup.sh --list-modules`,
-taken from the tree at the commit before the deletion.
+taken from the tree at commit `808d049`, the commit before the deletion.
 
 Two of the thirteen modules' replacements are still partly in progress: the
 `docker` and `apps` rows below name only the capabilities that exist on this

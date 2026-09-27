@@ -100,7 +100,7 @@ dev_new_capability() {
 
 # dev_shell_files -> every shell file CI lints, one absolute path per line.
 # This mirrors the argument list in .github/workflows/ci.yml's "Shellcheck
-# new runtime" step by hand, so the two can drift; tests/lib/dev.sh derives
+# the runtime" step by hand, so the two can drift; tests/lib/dev.sh derives
 # ci.yml's own list independently and asserts it matches this one (R9.2),
 # and `teeup dev check` says so rather than pretending this file is the
 # single source of truth CI itself reads from.

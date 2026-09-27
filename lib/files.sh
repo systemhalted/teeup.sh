@@ -822,10 +822,11 @@ block_opener_ere() {
 # it is and reported: neutralising an opener would orphan its terminator. Its
 # body is neutralised instead, and a bare test with a dead body does nothing.
 #
-# Ported from legacy/teeup.sh with the pattern and the reason reaching awk
-# through ENVIRON rather than -v: awk expands escape sequences inside a -v
-# assignment, so the legacy call's '\.pyenv' arrived as '.pyenv' -- any
-# character followed by "pyenv" -- and disabled unrelated lines.
+# Ported from the old installer with two more fixes. The pattern and the
+# reason reach awk through ENVIRON rather than -v: awk expands escape
+# sequences inside a -v assignment, so the legacy call's '\.pyenv' arrived as
+# '.pyenv' -- any character followed by "pyenv" -- and disabled unrelated
+# lines.
 #
 # A missing file is nothing to do. A symlink belongs to whatever put it there
 # (a dotfile manager writing through it would see teeup's edit as a local

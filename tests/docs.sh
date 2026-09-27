@@ -483,6 +483,38 @@ PARITY_ROWS
   assert_equals "" "$bad" "every replacement cell is dropped, or backticked capability names that all exist" || return 1
 }
 
+# Four files may still say "legacy/". In three of them it is a historical
+# fact rather than a path somebody could follow -- the changelog, the parity
+# checklist, and the design record under docs/superpowers -- and the fourth
+# is this file, which cannot search for the string without containing it.
+# Anywhere else it is a broken reference to a tree that no longer exists.
+test_nothing_tracked_points_at_the_deleted_legacy_tree() {
+  if [[ -d "$REPO/legacy" ]]; then
+    echo "legacy/ is still in the checkout"
+    return 1
+  fi
+  local hits=""
+  # -e, not -d: in a linked git worktree ".git" is a file pointing at the main
+  # repository, so -d would skip the check there and the suite would pass
+  # without ever looking.
+  if command -v git >/dev/null 2>&1 && [[ -e "$REPO/.git" ]]; then
+    # Tracked files only: an untracked scratch note in somebody's working
+    # tree is theirs, and failing their suite over it would be wrong.
+    hits="$(cd "$REPO" && git ls-files -z | xargs -0 grep -lF 'legacy/' 2>/dev/null |
+      grep -v '^CHANGELOG\.md$' |
+      grep -v '^docs/superpowers/' |
+      grep -v '^docs/legacy-parity\.md$' |
+      grep -v '^tests/docs\.sh$' || true)"
+  else
+    # A tarball rather than a checkout: fall back to the filesystem.
+    hits="$(cd "$REPO" && grep -rlF 'legacy/' \
+      --exclude-dir=.git --exclude-dir=superpowers \
+      --exclude=CHANGELOG.md --exclude=legacy-parity.md --exclude=docs.sh \
+      . 2>/dev/null || true)"
+  fi
+  assert_equals "" "$hits" "no tracked file points at legacy/" || return 1
+}
+
 echo "docs"
 run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
@@ -503,4 +535,5 @@ run_test "the skill names only verbs teeup has" test_the_skill_names_only_verbs_
 run_test "the skill marks the generated and borrowed trees read-only" test_the_skill_marks_the_generated_and_borrowed_trees_read_only
 run_test "the parity checklist has a row for every legacy module" test_the_parity_checklist_has_a_row_for_every_legacy_module
 run_test "the parity checklist names only capabilities that exist" test_the_parity_checklist_names_only_capabilities_that_exist
+run_test "nothing tracked points at the deleted legacy tree" test_nothing_tracked_points_at_the_deleted_legacy_tree
 print_summary

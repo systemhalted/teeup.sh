@@ -481,7 +481,7 @@ test_dev_check_reports_a_launch_row_that_cannot_be_resolved() {
 }
 
 # R9.2: dev_shell_files is the one source of truth for what CI lints, so it
-# has to actually equal ci.yml's own "Shellcheck new runtime" step -- derived
+# has to actually equal ci.yml's own "Shellcheck the runtime" step -- derived
 # independently here, by expanding that step's globs and finds the way CI
 # does, rather than by re-reading dev_shell_files' own source.
 _ci_shellcheck_files() {
@@ -489,7 +489,7 @@ _ci_shellcheck_files() {
   raw="$(awk '
     found && /^[[:space:]]*$/ { exit }
     found { sub(/^ */, ""); print }
-    /- name: Shellcheck new runtime/ { getline; found = 1; next }
+    /- name: Shellcheck the runtime/ { getline; found = 1; next }
   ' "$TEEUP_PATH/.github/workflows/ci.yml")"
   (
     cd "$TEEUP_PATH" || exit 1
@@ -516,7 +516,7 @@ test_dev_shell_files_matches_ci_yml() {
   ci_files="$(_ci_shellcheck_files | LC_ALL=C sort -u)"
   diff_out="$(diff <(printf '%s\n' "$dev_files") <(printf '%s\n' "$ci_files") 2>&1)" || true
   if [[ -n "$diff_out" ]]; then
-    echo "dev_shell_files and ci.yml's Shellcheck new runtime step disagree:"
+    echo "dev_shell_files and ci.yml's Shellcheck the runtime step disagree:"
     echo "$diff_out"
     cleanup_test_env
     return 1

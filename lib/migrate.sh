@@ -245,7 +245,7 @@ migrate_rc_paths() {
 # neither pattern touches them and their stock checksums stay valid.
 TEEUP_MIGRATE_LEGACY_RC_PATTERN='teeup\.common|teeupshrc|shellrc\.common|mac-setup'
 # Oh My Zsh, Powerlevel10k and Antigen: the prompt and plugin frameworks that
-# teeup's zsh layer and starship replace. legacy/teeup.sh disabled the antigen
+# teeup's zsh layer and starship replace. The old installer disabled the antigen
 # lines for the same reason. capabilities/zsh/doctor looks for exactly this
 # union afterwards, so anything added here belongs there too.
 TEEUP_MIGRATE_PROMPT_RC_PATTERN='powerlevel10k|p10k|POWERLEVEL9K_|oh-my-zsh|ohmyzsh|ZSH_THEME|antigen'
@@ -339,7 +339,7 @@ EOF_RC
 # Deliberately narrow. The bare name would match a comment, an unrelated PATH
 # entry or a variable that merely contains it, and a pattern that is too wide
 # comments out lines the user still needs. These are the patterns
-# legacy/teeup.sh used, plus the dot-directory each manager puts on PATH.
+# the old installer used, plus the dot-directory each manager puts on PATH.
 migrate_runtime_pattern() {
   case "$1" in
     sdkman) printf '%s\n' 'sdkman-init\.sh|SDKMAN_DIR|\.sdkman' ;;
