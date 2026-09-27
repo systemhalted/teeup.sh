@@ -2,11 +2,11 @@
 
 ## zsh, without a framework
 
-teeup makes `/bin/zsh` your login shell and configures it with plain scripts, not Oh My Zsh or another framework. The layers load in this order:
+teeup makes `/bin/zsh` your login shell and configures it with plain scripts. The layers load in this order:
 
 | File | Owner | What it does |
 |---|---|---|
-| `~/.zshenv`, `~/.zprofile`, `~/.zshrc` | You | Thin files, copied once, that load teeup's layer from the checkout. |
+| `~/.zshenv`, `~/.zprofile`, `~/.zshrc` | You | Copied once. Load teeup's layer from the checkout. |
 | `capabilities/zsh/default/` | teeup | `PATH`, the editor, history, completion, aliases, functions and tool setup. |
 | `~/.config/zsh/local.zsh` | You | Loaded last, so anything here wins. Your aliases, exports and `PATH` entries go here. |
 
@@ -16,7 +16,7 @@ The layer adds [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosugges
 
 | Tool | Command | What it is for |
 |---|---|---|
-| ripgrep | `rg` | Search file contents, fast. |
+| ripgrep | `rg` | Search file contents. |
 | fd | `fd` | Find files by name. |
 | fzf | `fzf` | Fuzzy finder. Ctrl+R searches history, Ctrl+T picks a file. |
 | bat | `bat` | `cat` with syntax highlighting. It is also the man page viewer. |
@@ -56,4 +56,4 @@ The file and folder icons in `ls` need a Nerd Font in the terminal. WezTerm has 
 
 ## tmux
 
-tmux is lazy: type `tmux` and teeup offers to install it. Its configuration, `~/.config/tmux/tmux.conf`, is copied once and is yours. It sets the prefix to Ctrl+A, turns the mouse on, and binds `|` and `-` to split. If you already have a `~/.tmux.conf`, teeup leaves it alone and does not add its own.
+tmux installs when you type `tmux`. Its configuration, `~/.config/tmux/tmux.conf`, is copied once. It sets the prefix to Ctrl+A, turns the mouse on, and binds `|` and `-` to split. If you already have a `~/.tmux.conf`, teeup leaves it alone.

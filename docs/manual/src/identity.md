@@ -1,6 +1,6 @@
 # Identity
 
-teeup sets up who you are to git, SSH and GitHub from two answers: your name and your personal email. Each machine has one git identity. A second SSH key for work is optional and lives in the machine file.
+teeup configures git, SSH, and GitHub using your name and personal email. Each machine has one git identity. A second SSH key for work is optional and lives in the machine file.
 
 ## git
 
@@ -30,9 +30,9 @@ Commits are signed with your SSH key, not GPG. Signing turns on once the key exi
 | Passphrase | `ssh-keygen` asks for one. It goes into your login Keychain, so you type it once. |
 | Config | `~/.ssh/config`, written only when you have none. It uses the key for `github.com`. |
 
-If your own `~/.ssh/config` already names a key for GitHub, teeup uses that key instead of making a new one, and never edits your config. When your config lacks a `Host` block teeup needs, it prints the block for you to add.
+If your own `~/.ssh/config` already names a key for GitHub, teeup uses that key instead of making a new one, and does not edit your config. When your config lacks a `Host` block teeup needs, it prints the block for you to add.
 
-**teeup never deletes an SSH key.** No verb or flag removes one. `teeup uninstall`, even with `--identity`, only prints the commands that would remove a key (see [Uninstall](uninstall.md)). The one time teeup moves a key file is when the file cannot be used, and it is about to generate a new pair in its place: an empty private key, a key path that is a symlink, or a public key whose private half is missing. That file is moved aside as `<name>.teeup_backup_<timestamp>` next to where it was, never deleted.
+**teeup does not delete SSH keys.** `teeup uninstall`, even with `--identity`, only prints the commands that would remove a key (see [Uninstall](uninstall.md)). When teeup needs to replace an unusable key file, it moves the file aside as `<name>.teeup_backup_<timestamp>` instead of deleting it.
 
 ## GitHub
 

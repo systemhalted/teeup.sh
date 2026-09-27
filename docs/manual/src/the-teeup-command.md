@@ -1,6 +1,6 @@
 # The teeup command
 
-Everything teeup does after the first run goes through one command, `teeup`. It lives in the checkout as `bin/teeup`, and `./bootstrap` links it to `~/.local/bin/teeup`. Most verbs take the name of a capability; `teeup list` prints them all.
+Everything teeup does after the first run goes through one command, `teeup`. It is located at `bin/teeup`. `./bootstrap` links it to `~/.local/bin/teeup`. Most verbs take the name of a capability. `teeup list` prints them all.
 
 ## Installing and changing things
 
@@ -14,7 +14,7 @@ Everything teeup does after the first run goes through one command, `teeup`. It 
 | `teeup update` | Update the whole machine: pull the checkout, upgrade packages and mise tools, run migrations, configure the core and daily tiers again, render the theme, and run your hooks. |
 | `teeup update <capability>` | Upgrade one capability's packages, or run its own update script if it has one, then configure it again. |
 | `teeup remove <capability>` | Undo what a capability installed. Your config files stay. See [Removing a capability](#removing-a-capability). |
-| `teeup uninstall` | Take teeup off this Mac. It asks first. Add `--packages` to uninstall the packages too, `--identity` to take off your git identity, and `--yes` to run without questions, which it needs when there is no terminal. See [Uninstall](uninstall.md). |
+| `teeup uninstall` | Remove teeup from this Mac. It prompts for confirmation. Add `--packages` to uninstall packages. Add `--identity` to remove your git identity. Add `--yes` to run without prompts. See [Uninstall](uninstall.md). |
 | `teeup theme set <name>` | Apply a theme to every themed tool. With no name, it shows a picker. |
 | `teeup theme list` | List the themes. |
 | `teeup theme current` | Print the current theme. This is also what plain `teeup theme` does. |
@@ -22,25 +22,21 @@ Everything teeup does after the first run goes through one command, `teeup`. It 
 
 ## Removing a capability
 
-- **`teeup remove <capability>`** runs the capability's own `remove` script when it
-  has one (twelve capabilities ship one today: `macos-defaults` puts every
-  preference back the way it found it, `terminal-app` deletes teeup's
-  Terminal.app profiles and puts back the default profile it replaced,
-  `emacs` and `keyboard` unload their
-  LaunchAgents, `colima` stops the VM before Homebrew can orphan it, each of the
-  five `ai-*` leaves deletes its one teeup-written wrapper, the `ai` bundle
-  removes all five leaves, and `emacs` and `wezterm` also uninstall the
-  MacPorts port their install put there when casks were unavailable), then
-  uninstalls the casks and packages
-  its metadata names, then forgets it. Your configuration files stay where
-  they are. It refuses while another installed capability requires it, and it
-  refuses outright rather than claim success when a capability ships no
-  `remove` script and names no packages or casks: there is nothing for it to
-  undo. Seven capabilities are in that position today — `dev-dirs`,
-  `package-manager`, `secrets`, `ssh`, `teeup-runtime`, `theme` and
-  `xcode-clt` — so `teeup remove secrets` tells you so instead of quietly
-  marking it gone. A `remove` script that answers "not applicable on this
-  machine" is reported too, rather than passed off as a clean removal.
+- **`teeup remove <capability>`** runs the capability's `remove` script if it
+  has one. (twelve capabilities ship one today: `macos-defaults` restores
+  preferences; `terminal-app` deletes teeup's profiles and restores the default;
+  `emacs` and `keyboard` unload their LaunchAgents; `colima` stops its VM;
+  each of the five `ai-*` capabilities deletes its wrapper; the `ai` bundle
+  removes all five leaves; `emacs` and `wezterm` uninstall their MacPorts ports.)
+  Next, it uninstalls the casks and packages listed in its metadata. Finally, it
+  forgets the capability. Your configuration files remain. The command refuses
+  to run if another installed capability requires it. It refuses to run if the
+  capability lacks a `remove` script, packages, or casks. Seven capabilities
+  have nothing to undo: `dev-dirs`, `package-manager`, `secrets`, `ssh`,
+  `teeup-runtime`, `theme`, and `xcode-clt`. For these, `teeup remove secrets`
+  and the like say so and leave the capability marked installed. A `remove`
+  script that reports "not applicable on this machine" is reported as such,
+  not as a clean removal.
 
 ## Looking at the machine
 
@@ -80,13 +76,13 @@ Everything teeup does after the first run goes through one command, `teeup`. It 
 | `teeup lazy-run <capability> <command>` | What a lazy shim runs. You will rarely type it; [Tiers](tiers.md) explains it. |
 | `teeup help` | The short usage text. |
 
-The `dev` verbs are for working on teeup itself.
+The `dev` commands build teeup.
 
 <!-- SCREENSHOT: Terminal output of `teeup help` in WezTerm, full height so every verb is visible. -->
 
 ## Previewing with DRY_RUN
 
-Set `DRY_RUN=true` in front of a command and teeup prints what it would run instead of running it. Nothing is installed, written or deleted.
+Prefix a command with `DRY_RUN=true`. teeup prints what it would run instead of running it. Nothing is installed, written, or deleted.
 
 ```sh
 DRY_RUN=true teeup update
@@ -94,12 +90,12 @@ DRY_RUN=true teeup remove cursor
 DRY_RUN=true teeup migrate legacy
 ```
 
-Each skipped command shows up like this:
+Skipped commands appear as follows:
 
 ```text
 🔍 [DRY-RUN] Would execute: brew update
 ```
 
-`./bootstrap` spells the same thing as a flag, `./bootstrap --dry-run`.
+`./bootstrap` uses a flag: `./bootstrap --dry-run`.
 
-Preview first whenever a command removes something, such as `teeup remove`, `teeup uninstall` or `teeup migrate legacy`.
+Run a dry run before using a command that removes items, such as `teeup remove`, `teeup uninstall`, or `teeup migrate legacy`.

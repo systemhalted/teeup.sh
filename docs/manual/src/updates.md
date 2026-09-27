@@ -1,13 +1,13 @@
 # Updates
 
-One command keeps the whole Mac current:
+The `teeup update` command keeps the Mac current:
 
 ```sh
 teeup update
 DRY_RUN=true teeup update    # the same, as a preview that changes nothing
 ```
 
-`teeup update` refreshes a Mac that is already set up. It configures only capabilities that are marked installed, so it does not finish a bootstrap that stopped half way: run `./bootstrap` again for that (see [Getting started](getting-started.md)).
+`teeup update` refreshes a Mac. It configures installed capabilities. It does not finish an incomplete bootstrap; run `./bootstrap` again for that (see [Getting started](getting-started.md)).
 
 ## What runs, in order
 
@@ -21,13 +21,13 @@ DRY_RUN=true teeup update    # the same, as a preview that changes nothing
 | 6. Theme | The current theme is rendered again, if step 5 did not already do it. |
 | 7. Hooks | Your `post-update` hooks (see [Hooks and extending](hooks-and-extending.md)). |
 
-Migrations run after the upgrades on purpose. A migration adjusts a config file for a new version of a tool, so it has to see the version the upgrade just installed.
+Migrations run after upgrades. A migration adjusts a config file for a new tool version. It must see the newly installed version.
 
-Step 5 is what applies a changed answer. If you set a new Emacs flavor with `teeup config set`, `teeup update` picks it up, because Emacs is in the daily tier.
+Step 5 applies changed answers. If you set a new Emacs flavor with `teeup config set`, `teeup update` applies it because Emacs is in the daily tier.
 
 ## What it leaves alone
 
-- **Lazy capabilities.** Their `configure` is not re-run, because configuring one can start a virtual machine, as Colima's does. Their packages are still upgraded in step 2, like everything else the package manager holds.
+- **Lazy capabilities.** Their `configure` step does not re-run, as configuring one can start a virtual machine (like Colima). Their packages are upgraded in step 2.
 - **Capabilities this Mac never installed**, and ones your machine file lists in `TEEUP_SKIP`. teeup prints a line for each and moves on.
 - **Your files.** Configure never overwrites a config file you edited (see [Dotfiles](dotfiles.md)).
 
@@ -40,7 +40,7 @@ Two problems stop the update, at different points:
 | The checkout has uncommitted changes | Before step 1, so nothing has run yet | "... has uncommitted changes, so teeup update will not pull." Commit, stash or discard them, then run it again. |
 | A migration fails | At step 4, after the pull, the package upgrades and `mise upgrade` have already run | "Migration ... failed, so the migrations after it did not run." The configure, theme and hook steps do not run. Fix the cause and run it again. |
 
-Everything else is a warning, and the run goes on: being offline, a pull that cannot fast-forward, a formula that will not build, one capability's `configure` failing. At the end teeup says either "teeup is up to date." or "teeup update finished, with the problems above.", and the exit status is non-zero in the second case.
+Everything else is a warning, and the run continues. Examples include being offline, a pull that cannot fast-forward, a formula that fails to build, or a failed `configure` step. At the end, teeup prints "teeup is up to date." or "teeup update finished, with the problems above.". The exit status is non-zero if there were problems.
 
 ## One capability
 
@@ -52,6 +52,6 @@ With a capability name, `teeup update` upgrades that capability's own packages a
 
 ## Migrations
 
-A migration is a script in the checkout's `migrations/` directory, named after the time it was written (`migrations/<epoch>.sh`). Each one runs once per Mac. A fresh `./bootstrap` marks all existing migrations as done without running them, since a new machine already has the state they lead to.
+A migration is a script in the `migrations/` directory, named `migrations/<epoch>.sh`. Each runs once per Mac. A fresh `./bootstrap` marks all existing migrations as done without running them. The new machine already has the state they produce.
 
 A migration that ships a changed config file replaces only the copies you never edited. An edited copy is left as it is.

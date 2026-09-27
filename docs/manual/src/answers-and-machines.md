@@ -1,6 +1,6 @@
 # Answers and machines
 
-teeup reads its settings from two files: the answers the wizard wrote, and an optional machine file for settings that belong to one Mac. The machine file is read second, so it wins.
+teeup reads its settings from two files: the answers the wizard wrote, and an optional machine file for settings that belong to one Mac. The machine file is read second and overrides the answers.
 
 | File | Written by | Holds |
 |---|---|---|
@@ -30,7 +30,7 @@ The answers file is a list of `KEY="value"` lines, readable only by you.
 | `teeup config set TEEUP_NAME Ada Lovelace` | Changes one answer. The rest of the line is the value, so it needs no quotes. |
 | `teeup config edit` | Opens the answers file in your editor |
 
-Writing an answer does not apply it. After `teeup config set`, and after every answer an edit changed, teeup names the command that does:
+Writing an answer does not apply it. After `teeup config set` or `teeup config edit`, teeup prints the command to apply the change:
 
 ```text
 teeup config set TEEUP_EMACS_FLAVOR doom
@@ -38,11 +38,11 @@ teeup config set TEEUP_EMACS_FLAVOR doom
 🔹 Run: teeup configure emacs -- that is what reads TEEUP_EMACS_FLAVOR (teeup update now covers it too).
 ```
 
-`teeup config edit` opens `$VISUAL`, then `$EDITOR`, then `vi`. teeup's shell sets `EDITOR` to `emacsclient -t` when Emacs is installed, and `VISUAL` to the same unless you set it yourself, so the file usually opens in an Emacs frame in your terminal. When you close the editor, teeup checks every line still reads `KEY="value"`. If one does not, it puts your previous file back and says which line was wrong: teeup reads this file at the start of every command, so a broken line would break the command that could fix it.
+`teeup config edit` opens `$VISUAL`, then `$EDITOR`, then `vi`. The teeup shell sets `EDITOR` and `VISUAL` to `emacsclient -t` when Emacs is installed. When you close the editor, teeup checks that every line reads `KEY="value"`. If a line does not, teeup restores the previous file and prints the broken line. Because teeup reads this file at the start of every command, a broken line breaks `teeup config edit`.
 
 `teeup config set` refuses two keys:
 
-- `TEEUP_PACKAGE_MANAGER` once a package manager is installed. Switching it underneath an installed Mac is not safe.
+- `TEEUP_PACKAGE_MANAGER` once a package manager is installed. Switching it after a Mac is installed is not supported.
 - `TEEUP_WORK_EMAIL` and the other `TEEUP_WORK_*` keys. They are read only from the machine file (see [Identity](identity.md)).
 
 ## The machine file
@@ -64,9 +64,9 @@ Everything in it is optional:
 | `TEEUP_EMACS_FLAVOR` | `TEEUP_EMACS_FLAVOR="doom"` | Pins the Emacs flavor. |
 | `TEEUP_WORK_EMAIL` and friends | see [Identity](identity.md) | A second, work SSH key. |
 
-A pinned key wins over the answers file. The wizard does not ask about a pinned theme, flavor or package manager, and `teeup config set` warns that the pin wins when you set a different value. Change the machine file instead.
+A pinned key overrides the answers file. The wizard does not ask about a pinned theme, flavor or package manager, and `teeup config set` warns that the pin overrides it when you set a different value. Change the machine file instead.
 
-teeup checks the machine file before trusting it. A file that is not valid shell stops every teeup command with a message naming it, and a `TEEUP_WORK_EMAIL` that is not an email address does the same.
+teeup checks the machine file. An invalid shell file or a malformed `TEEUP_WORK_EMAIL` stops every teeup command and prints an error.
 
 ## Your file or the checkout's
 

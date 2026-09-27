@@ -1,6 +1,6 @@
 # Uninstall
 
-`teeup uninstall` takes teeup off this Mac. It asks before it starts, keeps anything you edited, and keeps your packages unless you ask. Preview it first:
+`teeup uninstall` removes teeup from this Mac. It prompts before starting, keeps edited files, and keeps packages unless specified. Preview it first:
 
 ```sh
 DRY_RUN=true teeup uninstall      # asks nothing and changes nothing
@@ -14,7 +14,7 @@ teeup uninstall
 | `teeup uninstall --identity` | Also takes off your git identity, after one more question (see below). |
 | `teeup uninstall --yes` | Asks nothing and takes every default, so the packages and your identity stay unless you name their flags. |
 
-Run it as yourself, not as root. Without a terminal to ask on, it refuses unless you pass `--yes`, and it prints the preview and the `--yes` command to use.
+Run the command as your user, not root. Without a terminal, it refuses to run unless you pass `--yes`. It prints a preview and the `--yes` command.
 
 <!-- SCREENSHOT: The end of `DRY_RUN=true teeup uninstall`, showing the "teeup uninstall summary" with its "Would remove" and "Kept" sections and the "Run it for real with:" line. -->
 

@@ -1,6 +1,6 @@
 # Secrets
 
-API tokens and passwords belong in the macOS Keychain, not in a dotfile. `teeup secret` stores them there, and `teeup-env` loads one into a shell when you need it.
+API tokens and passwords belong in the macOS Keychain. `teeup secret` stores them there, and `teeup-env` loads one into a shell when you need it.
 
 | Command | What it does |
 |---|---|

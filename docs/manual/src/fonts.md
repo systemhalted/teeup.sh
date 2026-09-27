@@ -1,6 +1,6 @@
 # Fonts
 
-teeup sets up Nerd Fonts. A Nerd Font patches popular programming fonts with thousands of icons from Material Design, FontAwesome, and other sets. The icons show up in file listings, prompts, and editors.
+teeup sets up Nerd Fonts. A Nerd Font patches programming fonts with icons from Material Design, FontAwesome, and other sets. The icons show up in file listings, prompts, and editors.
 
 | Command | What it does |
 |---|---|

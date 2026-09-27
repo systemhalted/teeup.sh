@@ -8,18 +8,18 @@ teeup's terminal is [WezTerm](https://wezfurlong.org/wezterm/). It is in the cor
 
 | File | Owner | What it holds |
 |---|---|---|
-| `~/.config/wezterm/wezterm.lua` | You | A thin file that loads teeup's layer. Add settings below its `local config = ...` line. |
+| `~/.config/wezterm/wezterm.lua` | You | Loads teeup's layer. Add settings below its `local config = ...` line. |
 | `~/.config/wezterm/local.lua` | You | Machine-specific settings, returned as a table. Everything in it is commented out at first. |
-| `capabilities/wezterm/default/teeup/wezterm.lua` | teeup | The real configuration, in the checkout. `teeup update` improves it. |
+| `capabilities/wezterm/default/teeup/wezterm.lua` | teeup | The configuration in the checkout. `teeup update` changes it. |
 
-teeup copies the two files in `~/.config/wezterm` once and never touches them again. `local.lua` understands four entries:
+teeup copies the two files in `~/.config/wezterm` once. `local.lua` understands four entries:
 
 | Entry | Example | Effect |
 |---|---|---|
 | `font_size` | `font_size = 13.0` | The font size. The family comes from `teeup install font`. |
 | `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | A workspace one leader key away. |
 | `hyperlink_rules` | a `regex` and `format` pair | Extra Cmd+Click link patterns. |
-| `config` | `config = { check_for_updates = false }` | Any raw WezTerm setting. It wins over every teeup default. |
+| `config` | `config = { check_for_updates = false }` | Any raw WezTerm setting. It overrides teeup defaults. |
 
 After editing either file, press Cmd+Shift+R to reload.
 

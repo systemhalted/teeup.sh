@@ -289,6 +289,68 @@ test_manual_org_marker_check_catches_leftovers() {
   assert_not_contains "$found" "page.md:8:" || return 1
 }
 
+
+PLAIN_LANGUAGE_BLOCKLIST="seamless|effortless|powerful|beautiful|elegant|delightful|blazing|magic|simply|just|easily|basically|essentially|out of the box|batteries included|under the hood|in order to"
+
+_manual_plain_language_violations() {
+  local dir="$1" f
+  for f in "$dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    awk -v file="${f##*/}" -v blocklist="$PLAIN_LANGUAGE_BLOCKLIST" '
+      BEGIN {
+        split(tolower(blocklist), words, "|")
+      }
+      /^```/ { fence = !fence; next }
+      fence { next }
+      {
+        prose = $0
+        gsub(/`[^`]+`/, "", prose)
+        lower_prose = tolower(prose)
+        bad = 0
+        for (i in words) {
+          regex = "(^|[^a-z])" words[i] "($|[^a-z])"
+          if (lower_prose ~ regex) {
+            bad = 1
+            break
+          }
+        }
+        if (bad) print file ":" NR ": " $0
+      }
+    ' "$f"
+  done
+}
+
+test_manual_is_written_in_plain_language() {
+  local found
+  found="$(_manual_plain_language_violations "$REPO/docs/manual/src")"
+  if [[ -n "$found" ]]; then
+    echo "Plain language violations found in the manual:"
+    printf '%s
+' "$found"
+    return 1
+  fi
+  return 0
+}
+
+test_manual_plain_language_check_catches_violations() {
+  local dir found
+  dir="$(mktemp -d)"
+  printf '%s
+' \
+    'This is basically a test.' \
+    'It is `powerful` but not really.' \
+    '```' \
+    'just an effortless script' \
+    '```' \
+    'Batteries included!' > "$dir/page.md"
+  found="$(_manual_plain_language_violations "$dir")"
+  rm -rf "$dir"
+  assert_contains "$found" "page.md:1:" || return 1
+  assert_not_contains "$found" "page.md:2:" || return 1
+  assert_not_contains "$found" "page.md:4:" || return 1
+  assert_contains "$found" "page.md:6:" || return 1
+}
+
 test_manual_only_shows_verbs_that_exist() {
   local bad
   bad="$(_manual_bad_verbs "$REPO/docs/manual/src")"
@@ -514,6 +576,8 @@ run_test "manual SUMMARY.md matches the pages" test_manual_summary_matches_the_p
 run_test "manual SUMMARY.md check catches both mistakes" test_manual_summary_check_catches_both_mistakes
 run_test "manual has no Org code markers" test_manual_has_no_org_code_markers
 run_test "manual Org marker check catches leftovers" test_manual_org_marker_check_catches_leftovers
+run_test "manual is written in plain language" test_manual_is_written_in_plain_language
+run_test "manual plain language check catches violations" test_manual_plain_language_check_catches_violations
 run_test "the skill has frontmatter, a name and a description" test_the_skill_has_frontmatter_a_name_and_a_description
 run_test "the skill names only paths that exist" test_the_skill_names_only_paths_that_exist
 run_test "the skill names only verbs teeup has" test_the_skill_names_only_verbs_teeup_has
