@@ -83,6 +83,20 @@ and tick the entry here. This file sits outside `src/`, so it is not published.
 
 ## Part 4: Configuration
 
+## Part 5: Moving In and Out
+
+### Migrating (`src/migrating.md`)
+
+- [ ] `DRY_RUN=true teeup migrate legacy` on a Mac with the old teeup and
+  chezmoi, showing the "[DRY-RUN] Would ..." lines and the two lists of
+  chezmoi files.
+
+### Uninstall (`src/uninstall.md`)
+
+- [ ] The end of `DRY_RUN=true teeup uninstall`, showing the "teeup uninstall
+  summary" with its "Would remove" and "Kept" sections and the "Run it for
+  real with:" line.
+
 ## Part 6: Help
 
 ### Doctor and troubleshooting (`src/doctor-and-troubleshooting.md`)
