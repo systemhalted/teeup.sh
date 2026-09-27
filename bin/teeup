@@ -292,6 +292,7 @@ cmd_uninstall() {
   _UNINSTALL_GONE=" "
   uninstall_mark_state_dir
   uninstall_shell
+  uninstall_doom_theme_line
   uninstall_capabilities
   uninstall_launchagents
   uninstall_configs

@@ -325,6 +325,34 @@ test_a_failed_profile_delete_keeps_it_installed() {
   cleanup_test_env
 }
 
+# Final review I5 ("check that terminal-app's remove runs during uninstall's
+# capability loop, before the state teardown"): `teeup uninstall` on a
+# machine with terminal-app installed must reach this capability's own
+# remove script -- which restores Terminal's previous defaults and deletes
+# teeup's profiles through osascript -- rather than leaving that to
+# _UNINSTALL_STATE_ENTRIES, which only ever deletes a directory.
+test_uninstall_runs_terminal_apps_remove_before_the_state_teardown() {
+  setup
+  hide_host_commands chezmoi
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  set_appearance dark
+  printf 'Pro\n' > "$TERMINAL_PROFILES"
+  seed_default com.apple.Terminal "Default Window Settings" string Pro
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" configure terminal-app >/dev/null 2>&1
+  mark_installed
+  [[ -d "$STATE/terminal-app" ]] || { echo "the exported .terminal directory must exist before uninstall"; return 1; }
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "osascript -l JavaScript $PROFILE_JS remove" \
+    "the capability's own remove script must run, not just a directory wipe" || return 1
+  assert_equals "Pro" "$(default_value "Default Window Settings")" "remove's own restore must have run" || return 1
+  [[ ! -e "$STATE" ]] || { echo "the whole state dir must be gone once every entry, including terminal-app, is teeup's own"; return 1; }
+  cleanup_test_env
+}
+
 test_dry_run_configure_changes_nothing() {
   setup
   set_appearance dark
@@ -528,6 +556,7 @@ run_test "remove restores the previous defaults" test_remove_restores_the_previo
 run_test "remove falls back to Basic when the old profile is gone" test_remove_falls_back_to_basic_when_the_old_profile_is_gone
 run_test "remove keeps a recorded profile it cannot check" test_remove_keeps_a_recorded_profile_it_cannot_check
 run_test "a failed profile delete keeps it installed" test_a_failed_profile_delete_keeps_it_installed
+run_test "uninstall runs terminal-app's remove before the state teardown" test_uninstall_runs_terminal_apps_remove_before_the_state_teardown
 run_test "dry-run configure changes nothing" test_dry_run_configure_changes_nothing
 run_test "dry-run remove changes nothing" test_dry_run_remove_changes_nothing
 run_test "the recorded font is handed over" test_the_recorded_font_is_handed_over

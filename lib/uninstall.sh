@@ -404,6 +404,68 @@ OLD
   fi
 }
 
+# uninstall_doom_theme_line
+# Final review I5: capabilities/emacs/configure adds one marked line to a
+# Doom user's config.el -- the `;; teeup: theme ...` marker and the `load!`
+# line right after it (whichever form it takes: the current mode-independent
+# loader path, or a per-mode path a teeup from before I3 wrote and never
+# rewrote). `load!`'s own noerror argument keeps a leftover line harmless to
+# Doom, but it points at a path under $TEEUP_STATE_DIR that uninstall_teardown
+# is about to delete, so it is dead once teeup is gone. This takes out exactly
+# those two lines and leaves the rest of the file untouched byte for byte,
+# including a `-*- lexical-binding: t -*-` cookie the marked block may sit
+# right after (configure never moves it, and neither does this).
+#
+# Emacs's own `remove` script leaves config.el alone on purpose (a plain
+# `teeup remove emacs` keeps your configuration); this only runs as part of
+# `teeup uninstall`, which is why it lives here rather than in that script,
+# and runs before the capability loop, in the same phase as uninstall_shell:
+# both edit a file that lives outside the state and stock trees, ahead of
+# anything underneath it going away.
+uninstall_doom_theme_line() {
+  local doom_dir config_el marker
+  doom_dir="${DOOMDIR:-$(user_config_dir)/doom}"
+  config_el="$doom_dir/config.el"
+  marker=";; teeup: theme (managed by teeup; remove this line to opt out)"
+  if [[ -L "$config_el" ]]; then
+    log "Not editing the symlink $config_el; whatever manages it owns its contents."
+    return 0
+  fi
+  if [[ ! -f "$config_el" ]]; then
+    return 0
+  fi
+  if ! grep -qF "$marker" "$config_el"; then
+    return 0
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    printf "%b %s\n" "🔍" "[DRY-RUN] Would remove the teeup theme line from $config_el"
+    return 0
+  fi
+  if [[ ! -w "$config_el" || ! -w "$doom_dir" ]]; then
+    uninstall_note failed "$config_el's teeup theme line could not be removed (not writable). Remove by hand: the line starting \"$marker\" and the line right after it."
+    return 0
+  fi
+  local tmp after_marker=false ok=true
+  tmp="$(mktemp)" || { uninstall_note failed "Could not create a temp file, so $config_el was left alone."; return 0; }
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$after_marker" == true ]]; then
+      after_marker=false
+      continue
+    fi
+    if [[ "$line" == "$marker" ]]; then
+      after_marker=true
+      continue
+    fi
+    printf '%s\n' "$line" >> "$tmp"
+  done < "$config_el" || ok=false
+  if [[ "$ok" == true ]] && mv "$tmp" "$config_el"; then
+    uninstall_note removed "The teeup theme line in $config_el"
+  else
+    rm -f "$tmp"
+    uninstall_note failed "Could not rewrite $config_el. Remove by hand: the line starting \"$marker\" and the line right after it."
+  fi
+}
+
 # _uninstall_active_match <file> <ere> -> 0 when some active line in <file>
 # matches the ERE <ere>: one that has not been commented out, however it is
 # indented. A comment is text a shell never runs, so it can never be the
@@ -1049,9 +1111,10 @@ uninstall_mark_state_dir() {
 # leftover. Named after their writers: done/na/toggles/migrations
 # (lib/state.sh), current (lib/theme.sh, lib/font.sh), shims (lib/lazy.sh),
 # stock (lib/files.sh), logs (lib/core.sh's TEEUP_LOG_FILE default and
-# bin/teeup), defaults (lib/macos.sh's _defaults_record_path). CONTRIBUTING.md
-# item 33 says a new one belongs here too.
-_UNINSTALL_STATE_ENTRIES="done na toggles migrations stock shims current logs defaults"
+# bin/teeup), defaults (lib/macos.sh's _defaults_record_path), terminal-app
+# (capabilities/terminal-app/theme-apply's exported .terminal files, final
+# review I5). CONTRIBUTING.md item 33 says a new one belongs here too.
+_UNINSTALL_STATE_ENTRIES="done na toggles migrations stock shims current logs defaults terminal-app"
 
 # _uninstall_is_state_entry <name> -> 0 when <name> is one of
 # _UNINSTALL_STATE_ENTRIES.
