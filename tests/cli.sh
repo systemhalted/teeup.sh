@@ -1915,7 +1915,7 @@ test_config_set_redirects_theme_to_theme_set() {
   seed_config_answers
   local out
   out="$("$TEEUP" config set TEEUP_THEME nord 2>&1)"
-  assert_contains "$out" "teeup theme set nord" || return 1
+  assert_contains "$out" "teeup theme set --reload nord" || return 1
   assert_equals "nord" "$("$TEEUP" config get TEEUP_THEME)" || return 1
   cleanup_test_env
 }
@@ -2360,6 +2360,20 @@ test_theme_set_without_a_name_opens_the_picker() {
 }
 
 # A pin added after the theme was set still gets its warning on a repeat set.
+# The config hint must name a command that re-renders even when the answer
+# names the theme already current (final re-review on #54).
+test_config_set_theme_hint_names_a_reload() {
+  setup
+  seed_config_answers
+  "$TEEUP" theme set catppuccin >/dev/null
+  local out
+  out="$("$TEEUP" config set TEEUP_THEME catppuccin 2>&1)"
+  assert_contains "$out" "Run: teeup theme set --reload catppuccin" || return 1
+  out="$("$TEEUP" theme set --reload catppuccin 2>&1)"
+  assert_not_contains "$out" "nothing changed" "the hinted command must re-render" || return 1
+  cleanup_test_env
+}
+
 test_theme_set_the_current_theme_still_warns_about_a_pin() {
   setup
   "$TEEUP" theme set catppuccin >/dev/null
@@ -2545,6 +2559,7 @@ run_test "theme set --reload re-renders the current theme" test_theme_set_reload
 run_test "theme set --reload with the current name still renders" test_theme_set_reload_with_the_current_name_still_renders
 run_test "theme set --reload with no current theme dies" test_theme_set_reload_with_no_current_theme_dies
 run_test "theme set the current theme still warns about a pin" test_theme_set_the_current_theme_still_warns_about_a_pin
+run_test "config set theme hint names a reload" test_config_set_theme_hint_names_a_reload
 run_test "theme picker choosing the current theme says nothing changed" test_theme_picker_choosing_the_current_theme_says_nothing_changed
 run_test "migrate requires a known target" test_migrate_requires_a_known_target
 run_test "migrate legacy runs every step and closes with a real command" test_migrate_legacy_runs_every_step_and_closes_with_a_real_command

@@ -27,7 +27,8 @@ cd ~/.local/share/teeup
 teeup status              # what is installed
 teeup list                # every capability and its tier
 teeup install <name>      # install and configure one capability
-teeup theme set catppuccin        # re-render every app's colours, light and dark
+teeup theme set catppuccin        # switch every app's colours, light and dark
+teeup theme set --reload          # re-render the current theme
 teeup install font "Fira Code"    # switch every tool to another Nerd Font
 teeup secret set <name>   # store a secret in the macOS Keychain
 teeup launch cursor       # open an app, installing its cask on first use
