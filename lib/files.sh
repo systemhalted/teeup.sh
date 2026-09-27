@@ -925,3 +925,75 @@ ere_quote() {
   done
   printf '%s\n' "$out"
 }
+
+# agent_skill_link <source-dir> <name>
+# Make one skill directory in the checkout visible to the agent CLIs on this
+# machine, by symlink rather than by copy: a copy would go stale the next time
+# `git pull` changed the skill and nothing would say so.
+#
+# $HOME/.agents/skills is the tool-neutral path, and it is always written:
+# Codex CLI documents it as where user skills live, and Gemini CLI reads it as
+# an alias for ~/.gemini/skills that wins inside the user tier. Claude Code
+# does not read it at all, which is why the three tool-specific directories
+# exist here too -- but each of those is only written when that tool already
+# has a home directory, because creating ~/.gemini on a Mac with no Gemini CLI
+# is a write teeup has no business making. Installing an agent later is
+# covered: teeup-runtime is a core capability, so `teeup update` re-runs this.
+#
+# A path that is not a symlink is left alone with a warning: it is somebody
+# else's skill, or their own file, and neither is teeup's to replace. Neither
+# is a symlink that is not teeup's -- and ownership is decided by where a
+# symlink resolves, not by how its path looks: a fork, or a user's own skills
+# repository laid out the same way, can end in share/agents/skills/<name>
+# without being this checkout. A symlink already at $target is kept, with a
+# warning naming both paths, unless it resolves -- physically, both sides --
+# to this checkout's own skill directory, in which case it is teeup's to
+# refresh.
+agent_skill_link() {
+  local src="$1" name="$2"
+  local dir parent target current resolved_src resolved_current
+  if [[ ! -d "$src" ]]; then
+    warn "No skill directory at $src"
+    return 1
+  fi
+  resolved_src="$(cd -P "$src" 2>/dev/null && pwd -P)"
+  for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.gemini/skills"; do
+    parent="$(dirname "$dir")"
+    if [[ "$dir" != "$HOME/.agents/skills" && ! -d "$parent" ]]; then
+      continue
+    fi
+    target="$dir/$name"
+    current="$(readlink "$target" 2>/dev/null || true)"
+    if [[ "$current" == "$src" ]]; then
+      log "Already linked: $target"
+      continue
+    fi
+    if [[ -e "$target" && ! -L "$target" ]]; then
+      warn "Keeping $target, which is not a symlink teeup wrote"
+      continue
+    fi
+    if [[ -L "$target" ]]; then
+      # No readlink -f on macOS: cd into the link's own directory first, so a
+      # relative target resolves the way the shell would resolve it, then
+      # into what it points at, then ask for the physical (symlink-free)
+      # path on both sides. A target that does not exist, or a chain that
+      # does not lead back here, fails this and is foreign. -P on every cd
+      # here, not just on the final pwd: bash's default (logical) cd cancels
+      # a "component/.." pair textually, without checking whether
+      # "component" is a symlink to somewhere else entirely, so a target
+      # such as "alias/../probe" can read back as this checkout without -P
+      # while actually resolving somewhere else.
+      resolved_current="$(cd -P "$(dirname "$target")" 2>/dev/null && cd -P "$current" 2>/dev/null && pwd -P)" || resolved_current=""
+      if [[ -z "$resolved_current" || "$resolved_current" != "$resolved_src" ]]; then
+        warn "Keeping $target, a symlink to $current rather than $src"
+        continue
+      fi
+    fi
+    if [[ ! -d "$dir" ]]; then
+      run_cmd mkdir -p "$dir"
+    fi
+    run_cmd ln -sfn "$src" "$target"
+    ok "Linked $target"
+  done
+  return 0
+}
