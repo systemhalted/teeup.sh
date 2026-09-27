@@ -12,32 +12,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distribution that replaces the old installer. See the [manual](https://teeup.systemhalted.in) and [CONTRIBUTING.md](CONTRIBUTING.md) to learn how to use it or how it works.
 
 ### Added
-- **`bootstrap` and the wizard.** A setup script that asks what package manager to use, whether you want GUI apps, and handles the first installation. Run it with `./bootstrap`.
-- **Tiers.** Capabilities are organized into `core`, `daily`, and `lazy` tiers, letting you skip heavy applications if you only want terminal tools.
+- **`bootstrap` and the wizard.** A setup script that asks for your name, email, package manager, theme, whether to install the daily set, and the Emacs flavor, and handles the first installation. Run it with `./bootstrap`.
+- **Tiers.** Capabilities are organized into core, daily, and lazy tiers.
 - **Homebrew or MacPorts.** You can choose your package manager during bootstrap, and teeup will use it to install native packages.
-- **Machine files.** Write environment variables and overrides in `~/.config/teeup/machines/$(hostname -s).conf` to configure per-host behavior.
-- **`teeup install`, `configure`, and `remove`.** Add or take away individual capabilities like `docker` or `obsidian` at any time, or re-run a configuration to apply changes.
-- **`teeup update` and `reset`.** Upgrade your package manager and plugins with `update`, or delete downloaded files to force a clean slate with `reset`.
+- **Machine files.** Write environment variables and overrides in `~/.config/teeup/machines/<hostname>.conf` or the checkout's `machines/<hostname>.conf`.
+- **`teeup install`, `configure`, and `remove`.** Add or take away individual capabilities like `colima` or `obsidian` at any time, or re-run a configuration to apply changes.
+- **`teeup update` and `reset`.** Pull the checkout, upgrade packages and mise, run migrations, and configure the core and daily tiers with `update`. Put a capability's shipped configuration back with `reset`.
 - **`teeup doctor`, `status`, and `list`.** Check your system health, see your active configuration, and list the capabilities available on your machine.
-- **`teeup menu` and `config`.** Open a graphical menu for running teeup commands interactively, and use `config` as a shortcut to edit your configuration.
-- **`teeup theme` and `launch`.** Change your system's colorscheme instantly, and launch GUI applications from the terminal.
-- **`teeup secret` and `dev`.** Decrypt secret files into your system, and run the local development toolkit for teeup itself.
-- **zsh and Starship.** The default shell environment is now zsh configured with the Starship prompt, providing a lean and fast terminal experience.
-- **git and ssh identity.** Configures your version control and securely sets up your SSH keys and environment.
-- **WezTerm.** A GPU-accelerated terminal emulator, fully configured with tmux-like multiplexing built-in.
+- **`teeup menu` and `config`.** Open a keyboard-driven list in the terminal to run teeup commands with `menu`, and get, set or edit the answers file with `config`.
+- **`teeup theme` and `launch`.** Change your system's colorscheme, and launch GUI applications from the terminal.
+- **`teeup secret` and `dev`.** Store and read secrets in the macOS Keychain with `secret`, and run the local development toolkit with `dev`.
+- **zsh and Starship.** The default shell environment is now zsh configured with the Starship prompt.
+- **git and ssh identity.** Version control with your identity, and an ed25519 SSH key.
+- **WezTerm.** A terminal emulator with multiplexing built in.
 - **Emacs.** A daemonized setup with a starter config, plus Doom and Spacemacs flavors.
-- **Zed, Neovim, VS Code, Cursor.** A complete set of text editors and IDEs, available in the daily and lazy tiers.
-- **Firefox Developer Edition, Chrome, Obsidian.** Core GUI applications for browsing and note-taking.
+- **Zed, Neovim, VS Code and Cursor.** Text editors and IDEs.
+- **Firefox Developer Edition and Obsidian.** Applications for browsing and note-taking.
 - **AeroSpace and tmux.** Tiling window management for macOS and terminal multiplexing.
-- **Colima, Ollama, Herdr.** Virtualization for Docker, local LLMs, and development services.
-- **mise runtimes.** Python, Node, Java, and Ruby are managed by mise, providing seamless per-project environments.
-- **AI command-line tools.** Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, and OpenCode are available as lazy leaves to assist with development.
+- **Colima, Ollama and Herdr.** Virtualization for Docker, local LLMs, and the agent multiplexer that lives in your terminal.
+- **mise runtimes.** Python, Node, Java, Ruby, Rust and Go are managed by mise through `teeup install dev-env <lang>`.
+- **AI command-line tools.** Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, and OpenCode are available as lazy capabilities.
 - **Themes.** Choose between `catppuccin`, `tokyo-night`, `gruvbox`, and `everforest` in both light and dark variants.
-- **Terminal.app and Doom theming.** Your theme choice applies instantly to Terminal.app and Doom Emacs.
-- **`theme set --reload`.** Reload your current theme across all running applications on the fly.
-- **Fonts.** A curated selection of patched developer fonts for your terminal and editor.
-- **`teeup migrate legacy`.** A tool to safely transition your system from the old installer or a chezmoi repository.
-- **`teeup uninstall`.** Takes teeup off a Mac in a safe order, deliberately leaving your SSH keys untouched.
+- **Terminal.app and Doom theming.** Your theme choice applies to new Terminal.app windows and Doom Emacs.
+- **`theme set --reload`.** Re-render the current theme.
+- **Fonts.** A selection of developer fonts for your terminal and editor.
+- **`teeup migrate legacy`.** Retire the old teeup and chezmoi wiring on this Mac.
+- **`teeup uninstall`.** Take teeup off a Mac.
 - **Agent skill.** An agent skill for Claude Code, Codex, and Gemini CLI to understand and interact with the teeup ecosystem.
 
 ### Changed
