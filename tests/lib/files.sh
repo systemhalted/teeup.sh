@@ -993,6 +993,7 @@ test_agent_skill_link_dry_run_and_missing_source() {
   local out rc=0
   out="$(DRY_RUN=true agent_skill_link "$SKILLSRC" probe 2>&1)"
   assert_contains "$out" "Would execute: ln -sfn" "a dry run says what it would link" || return 1
+  assert_not_contains "$out" "Linked $TEST_HOME/.agents/skills/probe" "a dry run must not claim it linked the skill" || return 1
   assert_equals "" "$(readlink "$TEST_HOME/.agents/skills/probe" 2>/dev/null || true)" "a dry run links nothing" || return 1
   out="$(agent_skill_link "$TEST_HOME/no such skill dir" probe 2>&1)" || rc=$?
   assert_failure "$rc" "a missing source directory is an error" || return 1

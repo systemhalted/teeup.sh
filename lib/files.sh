@@ -1033,7 +1033,7 @@ agent_skill_link() {
       run_cmd mkdir -p "$dir" || { warn "Could not create $dir, so the $name skill was not linked there."; continue; }
     fi
     run_cmd ln -sfn "$src" "$target" || { warn "Could not link $target, so the $name skill was not linked there."; continue; }
-    ok "Linked $target"
+    ok_unless_dry "Linked $target"
   done
   return 0
 }
