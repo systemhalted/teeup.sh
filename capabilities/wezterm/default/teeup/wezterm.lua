@@ -17,6 +17,12 @@ local state_home = os.getenv("XDG_STATE_HOME") or (wezterm.home_dir .. "/.local/
 local STATE = state_home .. "/teeup"
 local DEFAULT_FONT = "JetBrainsMono Nerd Font"
 
+local is_vm = false
+local ok, success, stdout = pcall(wezterm.run_child_process, {"sysctl", "-n", "kern.hv_vmm_present"})
+if ok and success and type(stdout) == "string" and stdout:match("^1") then
+  is_vm = true
+end
+
 local function read_first_line(path)
   local f = io.open(path, "r")
   if not f then
@@ -264,6 +270,12 @@ function M.config(overrides, state_dir)
   config.scrollback_lines = 10000
   config.enable_scroll_bar = false
   config.hyperlink_rules = M.hyperlink_rules(overrides)
+
+  -- macOS VMs have no OpenGL, which WezTerm's default renderer uses. Switch
+  -- to WebGpu, which renders through Metal (supported by Apple virtualization).
+  if is_vm then
+    config.front_end = "WebGpu"
+  end
 
   -- Passthrough, applied last so it wins over every teeup default set above:
   -- any raw WezTerm config key, for the machine-specific setting that has no
