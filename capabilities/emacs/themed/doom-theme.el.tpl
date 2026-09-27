@@ -55,3 +55,11 @@
       (load-theme doom-theme t)
     (error (message "teeup: could not load theme %s: %s"
                     doom-theme (error-message-string err)))))
+
+(defun teeup--doom-system-appearance-changed (_appearance)
+  "Apply the current teeup theme after macOS changes appearance."
+  (teeup-apply))
+
+(when (boundp 'ns-system-appearance-change-functions)
+  (add-hook 'ns-system-appearance-change-functions
+            #'teeup--doom-system-appearance-changed))

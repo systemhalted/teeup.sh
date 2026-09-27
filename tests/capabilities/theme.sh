@@ -395,6 +395,24 @@ test_theme_set_warns_about_a_machine_pin() {
   cleanup_test_env
 }
 
+test_theme_set_supplies_doom_defaults_for_an_older_user_palette() {
+  setup
+  local theme_dir="$TEST_HOME/.config/teeup/themes/older-theme" mode palette rc=0 out
+  mkdir -p "$theme_dir"
+  for mode in dark light; do
+    palette="$theme_dir/$mode.toml"
+    sed '/^doom_theme[[:space:]]*=/d' "$TEEUP_PATH/themes/catppuccin/$mode.toml" > "$palette"
+  done
+  out="$(DRY_RUN=false "$TEEUP" theme set older-theme 2>&1)" || rc=$?
+  assert_success "$rc" "a palette from before doom_theme existed must still apply: $out" || return 1
+  assert_contains "$(cat "$TEST_HOME/.local/state/teeup/current/theme/dark/doom-theme.el")" \
+    '(setq doom-theme (intern "doom-one"))' || return 1
+  assert_contains "$(cat "$TEST_HOME/.local/state/teeup/current/theme/light/doom-theme.el")" \
+    '(setq doom-theme (intern "doom-one-light"))' || return 1
+  assert_not_contains "$out" "Unresolved theme token" || return 1
+  cleanup_test_env
+}
+
 test_a_theme_that_cannot_render_fails_set_and_configure() {
   setup
   DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
@@ -791,6 +809,7 @@ run_test "theme verbs" test_theme_verbs
 run_test "theme set refuses an unknown or invalid name" test_theme_set_refuses_an_unknown_or_invalid_name
 run_test "theme set is remembered by configure" test_theme_set_is_remembered_by_configure
 run_test "theme set warns about a machine pin" test_theme_set_warns_about_a_machine_pin
+run_test "theme set supplies Doom defaults for an older user palette" test_theme_set_supplies_doom_defaults_for_an_older_user_palette
 run_test "a theme that cannot render fails set and configure" test_a_theme_that_cannot_render_fails_set_and_configure
 run_test "doctor passes after a theme switch" test_doctor_passes_after_a_theme_switch
 run_test "doctor reports unknown when colors.toml is missing" test_doctor_reports_unknown_when_colors_toml_is_missing
