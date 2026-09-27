@@ -415,12 +415,44 @@ test_doom_flavor_adds_the_theme_line_once() {
     "the file-local-variables cookie must stay on line 1" || return 1
   assert_equals ";; teeup: theme (managed by teeup; remove this line to opt out)" "$(sed -n '2p' "$DOOM_DIR/config.el")" \
     "the marked line follows the cookie, still ahead of the user's own setq" || return 1
-  assert_contains "$body" "(load! \"$TEST_HOME/.local/state/teeup/current/theme/light/doom-theme.el\" \"\" t)" || return 1
+  assert_contains "$body" "(load! \"$TEST_HOME/.local/state/teeup/current/theme/doom-theme-loader.el\" \"\" t)" \
+    "the line loads the mode-independent loader, not a path fixed to today's appearance (I3)" || return 1
   assert_contains "$body" "(setq doom-theme (quote doom-one))" "the user's own line is kept" || return 1
   DRY_RUN=false "$TEEUP" configure emacs >/dev/null
   assert_equals "1" "$(grep -c "teeup: theme" "$DOOM_DIR/config.el")" "the line is never duplicated" || return 1
   assert_equals ";;; config.el -*- lexical-binding: t; -*-" "$(head -n1 "$DOOM_DIR/config.el")" \
     "the second run must not move the cookie either" || return 1
+  cleanup_test_env
+}
+
+# I3: a marked line written by a teeup before this fix names one mode's own
+# doom-theme.el directly (the mode fixed at the moment configure last ran,
+# never re-evaluated afterward). configure must rewrite just that one line to
+# the mode-independent loader, in place, without moving the marker, the
+# user's own lines, or duplicating the marker.
+test_doom_flavor_rewrites_an_old_style_theme_line() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  printf ';;; config.el -*- lexical-binding: t; -*-\n%s\n%s\n\n(setq doom-theme (quote doom-one))\n' \
+    ";; teeup: theme (managed by teeup; remove this line to opt out)" \
+    "(load! \"$TEST_HOME/.local/state/teeup/current/theme/dark/doom-theme.el\" \"\" t)" \
+    > "$DOOM_DIR/config.el"
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  local body
+  body="$(cat "$DOOM_DIR/config.el")"
+  assert_equals ";;; config.el -*- lexical-binding: t; -*-" "$(head -n1 "$DOOM_DIR/config.el")" \
+    "the file-local-variables cookie must stay on line 1" || return 1
+  assert_equals "1" "$(grep -c "teeup: theme" "$DOOM_DIR/config.el")" "the marker is never duplicated" || return 1
+  assert_not_contains "$body" "current/theme/dark/doom-theme.el" "the old per-mode path must be gone" || return 1
+  assert_contains "$body" "(load! \"$TEST_HOME/.local/state/teeup/current/theme/doom-theme-loader.el\" \"\" t)" || return 1
+  assert_contains "$body" "(setq doom-theme (quote doom-one))" "the user's own line is kept" || return 1
+  # A second run converges and changes nothing further.
+  local before after
+  before="$(cat "$DOOM_DIR/config.el")"
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  after="$(cat "$DOOM_DIR/config.el")"
+  assert_equals "$before" "$after" "a run against the new-style line is a no-op" || return 1
   cleanup_test_env
 }
 
@@ -793,6 +825,33 @@ test_doom_theme_apply_survives_a_load_theme_error() {
   cleanup_test_env
 }
 
+# I3: the loader capabilities/emacs/theme-apply renders must pick a mode at
+# Emacs load time, not carry one baked in by whoever last ran `teeup theme
+# set`. This runs a real `teeup theme set` (the same path a real machine
+# takes, so the rendered loader is the genuine one, not a hand-built fixture),
+# then loads that one file in a real Emacs twice, once per TEEUP_APPEARANCE,
+# and checks `doom-theme` picked up catppuccin's own value for each mode.
+test_doom_theme_loader_picks_the_current_appearance_at_load_time() {
+  setup
+  local NO_EMACS_RC=0
+  if no_real_emacs; then
+    cleanup_test_env
+    return "$NO_EMACS_RC"
+  fi
+  set_flavor doom
+  mkdir -p "$TEST_HOME/.local/state/teeup/done"
+  : > "$TEST_HOME/.local/state/teeup/done/cap-emacs"
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
+  local loader="$TEST_HOME/.local/state/teeup/current/theme/doom-theme-loader.el"
+  assert_file_exists "$loader" "the theme-apply hook must render the loader for a Doom flavor" || return 1
+  local out
+  out="$(TEEUP_APPEARANCE=light "$EMACS_REAL" -Q --batch -l "$loader" --eval "(princ (symbol-name doom-theme))" 2>&1)"
+  assert_equals "doom-acario-light" "$out" "the loader must pick catppuccin's light doom theme when TEEUP_APPEARANCE=light" || return 1
+  out="$(TEEUP_APPEARANCE=dark "$EMACS_REAL" -Q --batch -l "$loader" --eval "(princ (symbol-name doom-theme))" 2>&1)"
+  assert_equals "doom-dracula" "$out" "the loader must pick catppuccin's dark doom theme otherwise" || return 1
+  cleanup_test_env
+}
+
 # M8: `teeup--find-quote` (the `string-search` call `teeup--unquote` makes
 # for '...' quoting) must degrade to `string-match` on an Emacs without
 # `string-search` (28 and earlier) rather than erroring out of init. Run
@@ -868,6 +927,7 @@ run_test "the machine file wins over the answer" test_the_machine_file_wins_over
 run_test "unknown flavor warns and uses the starter" test_unknown_flavor_warns_and_uses_the_starter
 run_test "a legacy ~/.emacs.d is reported, not moved" test_a_legacy_emacs_d_is_reported_not_moved
 run_test "doom flavor adds the theme line once" test_doom_flavor_adds_the_theme_line_once
+run_test "doom flavor rewrites an old-style theme line to the loader" test_doom_flavor_rewrites_an_old_style_theme_line
 run_test "doom flavor without a cookie adds the line at the top" test_doom_flavor_without_a_cookie_adds_the_line_at_the_top
 run_test "doom flavor dry run leaves config.el untouched" test_doom_flavor_dry_run_leaves_config_el_untouched
 run_test "doom flavor without config.el writes nothing" test_doom_flavor_without_config_el_writes_nothing
@@ -887,5 +947,6 @@ run_test "env file paths survive special bytes" test_env_file_paths_survive_spec
 run_test "doom theme-apply picks up a new theme without restarting" test_doom_theme_apply_picks_up_a_new_theme_without_restarting
 run_test "doom theme-apply honors a non-default TEEUP_STATE_DIR" test_doom_theme_apply_honors_a_non_default_teeup_state_dir
 run_test "doom theme-apply survives a load-theme error" test_doom_theme_apply_survives_a_load_theme_error
+run_test "doom theme loader picks the current appearance at load time" test_doom_theme_loader_picks_the_current_appearance_at_load_time
 run_test "unquote degrades without string-search" test_unquote_degrades_without_string_search
 print_summary
