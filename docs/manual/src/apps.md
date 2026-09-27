@@ -1,6 +1,6 @@
 # Apps
 
-Besides the terminal and the editors, teeup installs a handful of apps.
+Besides the terminal and the editors, teeup installs additional apps.
 
 | App | Capability | Tier | Notes |
 |---|---|---|---|
@@ -29,7 +29,7 @@ An app name is matched without regard to case; a capability name must be typed a
 
 [AeroSpace](https://github.com/nikitabobko/AeroSpace) tiles your windows, i3 style. Its configuration is `~/.config/aerospace/aerospace.toml`, copied once and yours after that. If you already have `~/.aerospace.toml`, teeup keeps it and does not install its own, because AeroSpace refuses to run with two.
 
-AeroSpace needs one step from you, once per Mac: System Settings, Privacy & Security, Accessibility, then turn AeroSpace on. Until then it cannot move a window. teeup prints this reminder the first time, then start it with `open -a AeroSpace`.
+Enable AeroSpace in System Settings > Privacy & Security > Accessibility. It cannot move windows without this access. teeup prints this reminder the first time. Start it with `open -a AeroSpace`.
 
 The main keys all use Option (`alt`):
 
@@ -46,7 +46,7 @@ The main keys all use Option (`alt`):
 | `alt-minus` / `alt-equal` | Shrink / grow |
 | `alt-shift-semicolon` | Service mode |
 
-`alt-ctrl` with `b`, `n`, `p` and `f` does the same as `h`, `j`, `k` and `l`, for Emacs hands.
+`alt-ctrl` with `b`, `n`, `p` and `f` does the same as `h`, `j`, `k` and `l`, for Emacs users.
 
 <!-- SCREENSHOT: Three windows tiled by AeroSpace (WezTerm, Emacs, Firefox Developer Edition) on workspace 1. -->
 

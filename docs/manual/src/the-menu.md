@@ -1,6 +1,6 @@
 # The menu
 
-You do not have to remember the verbs. `teeup menu` opens a list of everything teeup can do, grouped into sections. Pick a section, pick an action, and the menu runs the matching `teeup` command for you.
+`teeup menu` opens a list of teeup actions, grouped into sections. Pick a section, pick an action, and the menu runs the matching `teeup` command.
 
 ```sh
 teeup menu
@@ -17,7 +17,7 @@ teeup menu
 | Style | Pick a theme, show the current theme, and list the fonts teeup knows. |
 | Check | Doctor, status, every capability, and a lint of the capability metadata. |
 | Setup | Show or edit the answers, and preview or run the retirement of the old teeup and chezmoi wiring. |
-| Update | Runs `teeup update` straight away. |
+| Update | Runs `teeup update`. |
 
 The lists change with the machine. An Install row disappears once that capability is installed, and a Launch row appears only once its capability is installed. Each row asks `teeup has` to decide.
 
@@ -45,7 +45,7 @@ To force one picker, set `TEEUP_MENU_PICKER` to `gum`, `fzf` or `plain`. The def
 TEEUP_MENU_PICKER=plain teeup menu
 ```
 
-## Jumping straight in
+## Opening directly
 
 Every row has a dotted id, such as `install`, `install.editors` or `style.theme`. Give one to `teeup menu` to open a submenu directly, or to run an action without the menu:
 

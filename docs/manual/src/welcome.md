@@ -1,8 +1,8 @@
 # Welcome to teeup
 
-**Your Mac, ready to code.** teeup is an opinionated, reproducible macOS environment for developers. One command, `./bootstrap`, installs a considered set of developer tools, writes their configuration, gives them one colour [theme](themes.md) and one [font](fonts.md), and leaves you with a single command, `teeup`, for everything you want to change afterwards.
+**Your Mac, ready to code.** teeup is a reproducible macOS environment for developers. The `./bootstrap` command installs a set of developer tools, configures them, and sets one colour [theme](themes.md) and one [font](fonts.md). The `teeup` command manages changes after installation.
 
-The idea comes from [Omarchy](https://omarchy.org), DHH's opinionated setup for Arch Linux and Hyprland. Omarchy showed that a personal setup can be packaged like a product: sensible defaults, a menu for discovering what is there, lazy installs for the things you use once a month, and a manual. teeup brings that shape to macOS. It runs on macOS only; `./bootstrap` stops on any other system.
+The idea comes from [Omarchy](https://omarchy.org), DHH's setup for Arch Linux and Hyprland. Omarchy demonstrated that a personal setup can be distributed with defaults, a discovery menu, lazy installs, and a manual. teeup brings this model to macOS. It runs on macOS only; `./bootstrap` exits on other systems.
 
 ## What you get
 
@@ -19,13 +19,13 @@ Everything else, such as Neovim, VS Code, Cursor, Docker through Colima, and the
 
 ## How it is built
 
-Each piece of teeup is a *capability*: a directory with a short metadata file and an `install` and `configure` script. `git`, `wezterm` and `emacs` are capabilities; so are `keyboard` and `macos-defaults`. The `teeup` command installs, configures, updates, resets and removes them one at a time, and `teeup list` shows every one of them.
+Each piece of teeup is a *capability*: a directory with a metadata file, an `install` script, and a `configure` script. `git`, `wezterm`, and `emacs` are capabilities; so are `keyboard` and `macos-defaults`. The `teeup` command installs, configures, updates, resets, and removes them one at a time. `teeup list` shows every capability.
 
-Most configuration files are copied into place once and are yours from then on. teeup keeps its own defaults in its checkout, so an update can improve them without overwriting what you changed. Running `./bootstrap` again is safe: every step checks before it acts, which also makes a second run the way to repair a first run that stopped half way.
+Most configuration files are copied once and remain yours. teeup keeps its defaults in its checkout. Updates improve defaults without overwriting your changes. Running `./bootstrap` again is safe. Every step checks before acting. A second run repairs a partial first run.
 
 ## Who it is for
 
-teeup suits you if you work in a terminal, want a Mac you can rebuild from scratch in one sitting, and would rather read what a tool will do before it does it. Every command that changes the machine has a dry run that prints the commands instead of running them.
+teeup is for users who work in a terminal, want to rebuild a Mac from scratch in one sitting, and prefer reading what a tool does before running it. Every modifying command has a dry run that prints the actions instead of running them.
 
 It is an opinionated setup. It picks zsh, WezTerm and mise for you, and it sets macOS preferences. If you already keep your dotfiles in chezmoi or an older teeup, `teeup migrate legacy` retires that wiring; [Migrating](migrating.md) covers it.
 

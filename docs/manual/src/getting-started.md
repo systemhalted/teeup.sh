@@ -35,7 +35,7 @@ If macOS offers to install the Command Line Tools when you run `git`, accept and
 
 ## The questions
 
-The first question comes early, right after the Command Line Tools and before anything else is installed: which package manager to use. teeup offers the one it detected first. After that it installs its own runtime, then asks the rest:
+The first prompt asks which package manager to use. This happens after installing the Command Line Tools. teeup offers the one it detected first. After that it installs its own runtime, then asks the rest:
 
 | Question | Default | Saved as |
 |---|---|---|
@@ -76,4 +76,4 @@ Open a new terminal (the zsh capability puts ~/.local/bin on PATH) and try: teeu
 
 The shell you ran `./bootstrap` in started before teeup existed, so it cannot find `teeup` yet. Open a new terminal, or call it by its full path, `~/.local/bin/teeup status`, in the old one.
 
-Running `./bootstrap` again later is safe. Each step checks before it acts, so a second run repairs whatever the first one left unfinished.
+Running `./bootstrap` again later is safe. Each step checks before it acts; a second run repairs unfinished steps.

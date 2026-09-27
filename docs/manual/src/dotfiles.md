@@ -1,6 +1,6 @@
 # Dotfiles
 
-teeup splits every tool's configuration between files you own and files it owns, so an update can improve its part without touching yours.
+teeup splits tool configuration into user files and system files. Updates modify the system files.
 
 | Kind | Where | Owner |
 |---|---|---|
@@ -9,7 +9,7 @@ teeup splits every tool's configuration between files you own and files it owns,
 | Generated | A few files teeup rewrites, marked "Your edits here are overwritten" | teeup |
 | Layer | `capabilities/<name>/default/` in the checkout | teeup, upgraded by `teeup update` |
 
-Most copied files are thin: they load teeup's layer from the checkout, then your local file, so your settings win.
+Most copied files load the teeup layer from the checkout, then your local file. Your settings override teeup's.
 
 ## The files teeup copies
 
@@ -40,11 +40,11 @@ When teeup installs one of these files it records a checksum of what it wrote, u
 
 A file teeup moves aside keeps its name with `.teeup_backup_<timestamp>` added, in the same directory. teeup never deletes it. A symlink counts as someone else's file: teeup does not write through it.
 
-When a new teeup version ships a better default, a migration replaces only the files that are still unchanged. Your edited files stay as they are.
+When a teeup update includes a new default, a migration replaces unchanged files. Your edited files remain.
 
 ## Local files
 
-The `local.*` files are where your own settings belong. teeup ships each one with everything commented out, and never writes it again, even on `teeup reset`.
+Write your settings in the `local.*` files. teeup ships them commented out and does not overwrite them during `teeup reset`.
 
 | File | Loaded by |
 |---|---|

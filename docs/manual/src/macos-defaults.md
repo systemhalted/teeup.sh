@@ -1,6 +1,6 @@
 # macOS defaults
 
-Two core capabilities change macOS itself: `macos-defaults` sets a list of preferences for development, and `keyboard` turns Caps Lock into Control. Both can be undone with `teeup remove`.
+Two core capabilities change macOS: `macos-defaults` sets a list of preferences for development, and `keyboard` turns Caps Lock into Control. Both can be undone with `teeup remove`.
 
 ## The preferences
 
@@ -34,7 +34,7 @@ Because `macos-defaults` is in the core tier, the next `./bootstrap` sets the pr
 
 ## Caps Lock as Control
 
-The `keyboard` capability maps Caps Lock to Control with macOS's own `hidutil`. It needs no extra app and no kernel extension.
+The `keyboard` capability maps Caps Lock to Control with macOS's own `hidutil`. It maps it directly without an extra app or kernel extension.
 
 | Piece | What it does |
 |---|---|
@@ -51,4 +51,4 @@ That unloads the LaunchAgent and clears the mapping at once, and Caps Lock is Ca
 
 ## Changing a preference yourself
 
-Change it in System Settings as usual. teeup only writes a preference when `macos-defaults` is configured, which happens at bootstrap and on each `teeup update`, and it only records the value it replaced the first time. So a value you change by hand is set back on the next update. If you want to keep your own values, skip the capability as above, or remove it.
+Change it in System Settings as usual. teeup writes a preference when `macos-defaults` is configured, which happens at bootstrap and on each `teeup update`, and it only records the value it replaced the first time. A value you change by hand resets on the next update. If you want to keep your own values, skip the capability as above, or remove it.

@@ -1,6 +1,6 @@
 # Migrating
 
-If this Mac was set up by the old, single-script teeup, or its dotfiles are managed by chezmoi, run `./bootstrap` first, then retire the old wiring with one command. Preview it before you run it:
+If this Mac was set up by the old, single-script teeup, or its dotfiles are managed by chezmoi, run `./bootstrap` first, then remove the old setup with one command. Preview it before you run it:
 
 ```sh
 DRY_RUN=true teeup migrate legacy   # read what it would do

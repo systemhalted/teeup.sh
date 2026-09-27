@@ -1,22 +1,22 @@
 # FAQ
 
-## Does teeup run on Linux?
+## Linux support
 
-No. teeup is for macOS, and `./bootstrap` stops on any other system. On Arch Linux, [Omarchy](https://omarchy.org), which inspired teeup, does the same job.
+teeup is for macOS. `./bootstrap` stops on any other system. On Arch Linux, [Omarchy](https://omarchy.org), which inspired teeup, does the same job.
 
-## Apple Silicon or Intel?
+## Supported architectures
 
-Both. On Apple Silicon teeup also installs Rosetta 2, so Intel-only apps run.
+teeup supports Apple Silicon and Intel. On Apple Silicon, teeup installs Rosetta 2. Intel-only apps run.
 
-## Homebrew or MacPorts?
+## Package managers
 
-Homebrew on macOS 13 and newer, MacPorts on macOS 12 and older, and the first question of the first run lets you choose. MacPorts has no casks, so on a MacPorts Mac the GUI apps that only exist as casks, such as Zed, VS Code, Cursor and the browsers, are marked "not applicable" and teeup names their download pages. See [Getting started](getting-started.md).
+Homebrew is the default on macOS 13 and newer, MacPorts on macOS 12 and older. The first question of the first run lets you choose. MacPorts has no casks. On a MacPorts Mac, the GUI apps that only exist as casks, such as Zed, VS Code, Cursor and the browsers, are marked "not applicable" and teeup lists their download pages. See [Getting started](getting-started.md).
 
-## Why does it ask for my password?
+## Password prompts
 
-At the start of `./bootstrap`, for `sudo`: the package manager and some system settings need it. Changing your login shell to zsh asks once more.
+`./bootstrap` asks for your password for `sudo`. The package manager and system settings require it. Changing your login shell to zsh asks once more.
 
-## Where does teeup keep things?
+## Storage locations
 
 | Path | What |
 |---|---|
@@ -25,42 +25,42 @@ At the start of `./bootstrap`, for `sudo`: the package manager and some system s
 | `~/.config/teeup/` | Your answers, machine file, hooks and menu additions |
 | `~/.local/state/teeup/` | What teeup has done: markers, shims, the rendered theme, checksums of copied files, and logs |
 
-## Will teeup overwrite my dotfiles?
+## Dotfiles
 
-Not the ones you have edited. A file of yours that teeup wants to replace is moved aside as `<name>.teeup_backup_<timestamp>` first, and teeup prints the lines that differ. After that, every copied file is yours. See [Dotfiles](dotfiles.md).
+teeup does not overwrite dotfiles you have edited. A file of yours that teeup needs to replace is moved aside as `<name>.teeup_backup_<timestamp>` first, and teeup prints the lines that differ. After that, every copied file is yours. See [Dotfiles](dotfiles.md).
 
-## I used chezmoi, or the old teeup. What now?
+## Migrating from older tools
 
-`teeup migrate legacy` retires that wiring on this Mac. Run it with `DRY_RUN=true` first to read what it would do. [Migrating](migrating.md) says what it moves aside and what it never touches.
+`teeup migrate legacy` retires the wiring from chezmoi or the old teeup on this Mac. Run it with `DRY_RUN=true` first to preview the changes. [Migrating](migrating.md) lists what it moves aside and what it leaves alone.
 
-## Can I skip part of it?
+## Skipping capabilities
 
 Say no to the daily set in the wizard, or run `./bootstrap --skip-daily`. To keep any capability off one Mac for good, list it in `TEEUP_SKIP` in your machine file (see [Answers and machines](answers-and-machines.md)).
 
-## How do I add a tool teeup doesn't know?
+## Adding new tools
 
 Install it the usual way, with `brew install`. `teeup update` upgrades everything Homebrew manages, not only what teeup installed. To make it part of teeup, write a capability: see [Hooks and extending](hooks-and-extending.md).
 
-## How do I undo one capability?
+## Removing capabilities
 
-`teeup remove <capability>`. It runs the capability's own removal steps, uninstalls its packages and casks, and keeps your config files. It refuses while another installed capability needs it, and it refuses a capability it has no way to undo, rather than claim it did. A removed core or daily capability comes back on the next `./bootstrap` unless you skip it.
+`teeup remove <capability>`. It runs the capability's own removal steps, uninstalls its packages and casks, and keeps your config files. It refuses to run while another installed capability needs it, and it refuses a capability it has no way to undo. A removed core or daily capability comes back on the next `./bootstrap` unless you skip it.
 
-## How do I take teeup off a Mac?
+## Uninstalling teeup
 
 `teeup uninstall`, after a preview with `DRY_RUN=true`. It keeps your packages, edited files, SSH keys and the checkout unless you say otherwise. See [Uninstall](uninstall.md).
 
-## Does teeup ever delete an SSH key?
+## SSH keys
 
-Never. teeup has no command or flag that deletes one. See [Identity](identity.md).
+teeup does not delete SSH keys. See [Identity](identity.md).
 
-## Can I use bash instead of zsh?
+## Using bash
 
 teeup's shell layer is written for zsh, and the zsh capability makes `/bin/zsh` your login shell. You can run bash scripts as always, but teeup's aliases, `PATH` and tool setup live in zsh.
 
-## Does teeup send anything anywhere?
+## Telemetry and network usage
 
-teeup itself collects nothing and has no account. It talks to the network to fetch packages, to pull its own checkout on `teeup update`, and to sign you in to GitHub and upload your public SSH key, which you approve in the browser.
+teeup collects no data and requires no account. It talks to the network to fetch packages, to pull its own checkout on `teeup update`, and to sign you in to GitHub and upload your public SSH key, which you approve in the browser.
 
-## Which version does this manual describe?
+## Manual version
 
 teeup 0.1.0-beta. `teeup version` prints the version you have.

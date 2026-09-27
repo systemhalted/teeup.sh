@@ -1,6 +1,6 @@
 # Other editors
 
-Emacs is the editor teeup wires into the shell and git (see [Emacs](emacs.md)). Four more are available. Zed comes with the daily tier; the rest are lazy and install when you first reach for them.
+Emacs is the editor teeup configures for the shell and git (see [Emacs](emacs.md)). Four more are available. Zed comes with the daily tier; the rest are lazy and install when you first run them.
 
 | Editor | Tier | How to get it | Capability |
 |---|---|---|---|
@@ -13,7 +13,7 @@ Zed, VS Code and Cursor are Homebrew casks. On a MacPorts machine teeup cannot i
 
 ## Zed
 
-teeup does not ship a `settings.json` for Zed. It edits the one Zed already uses, `~/.config/zed/settings.json`, and sets only the keys for the theme and the font. Everything else in the file is yours. Comments inside the settings object do not survive that edit, so teeup backs up a file that has them first, and it never writes a settings file that is a symlink.
+teeup does not ship a `settings.json` for Zed. It edits the one Zed already uses, `~/.config/zed/settings.json`, and sets only the keys for the theme and the font. teeup does not modify the rest of the file. Comments inside the settings object do not survive that edit, so teeup backs up a file that has them first, and it never writes a settings file that is a symlink.
 
 ## VS Code
 
@@ -21,7 +21,7 @@ VS Code works the same way. teeup sets the theme, font and theme-extension keys 
 
 ## Neovim
 
-The first install copies the [LazyVim](https://www.lazyvim.org) starter layout into `~/.config/nvim`: `init.lua`, `stylua.toml`, and the files under `lua/config` and `lua/plugins`. Every one of them is yours after that first copy. teeup's own layer, which follows the teeup theme, stays in the checkout.
+The first install copies the [LazyVim](https://www.lazyvim.org) starter layout into `~/.config/nvim`: `init.lua`, `stylua.toml`, and the files under `lua/config` and `lua/plugins`. teeup does not modify these files after the first copy. teeup's own layer, which follows the teeup theme, stays in the checkout.
 
 Neovim downloads its plugins on the first start. Run `nvim`, then `:LazyHealth`. LazyVim needs Neovim 0.11.2 or later, and teeup warns you when the `nvim` on your `PATH` is older.
 

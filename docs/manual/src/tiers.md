@@ -22,7 +22,7 @@ The core tier is what every terminal session needs. `capabilities/core.list` fix
 
 ## Daily
 
-The daily tier holds the larger apps you are likely to open every day. The wizard asks once, "Install the daily set too (Emacs, Zed, Firefox Developer Edition, Obsidian)?", and records the answer as `TEEUP_DAILY`. `./bootstrap --skip-daily` leaves the tier out for one run. A daily capability that fails prints a warning and the run goes on.
+The daily tier holds larger applications. The wizard asks, "Install the daily set too (Emacs, Zed, Firefox Developer Edition, Obsidian)?". It records the answer as `TEEUP_DAILY`. `./bootstrap --skip-daily` skips the tier for one run. If a daily capability fails, it prints a warning and the run continues.
 
 `teeup update` configures the core and daily tiers again. If you remove a core or daily capability with `teeup remove`, the next `./bootstrap` installs it again, unless your machine file lists it in `TEEUP_SKIP`:
 
@@ -33,7 +33,7 @@ TEEUP_SKIP="aerospace"
 
 ## Lazy
 
-A lazy capability costs nothing until you want it. There are three ways to reach one.
+A lazy capability installs when you use it. There are three ways to install one.
 
 | You do this | teeup does this |
 |---|---|
@@ -51,7 +51,7 @@ The first time you type the command at a terminal, the shim asks:
 docker is provided by capability colima. Install now?
 ```
 
-The answer defaults to yes. teeup installs the capability and anything it needs, then runs `docker` with the arguments you typed. From then on the real command is found first and the shim never runs again. The install's output is also written to `~/.local/state/teeup/logs/lazy.log`.
+The default answer is yes. teeup installs the capability and its requirements. It then runs `docker` with your arguments. The real command is found first on future runs. The shim does not run again. The install output is written to `~/.local/state/teeup/logs/lazy.log`.
 
 <!-- SCREENSHOT: Typing `docker ps` on a fresh Mac, showing the "docker is provided by capability colima. Install now?" prompt in gum. -->
 
@@ -61,7 +61,7 @@ If you say no, nothing is installed and teeup tells you the command for later:
 Not installed. When you want it: teeup install colima
 ```
 
-A shim never waits for an answer nobody can give. Called from a script or an editor, with no terminal attached, it prints the `teeup install` command and exits with status 127, the same status as a command that does not exist.
+A shim does not wait for an answer without a terminal. Called from a script or an editor, it prints the `teeup install` command and exits with status 127.
 
 The AI tools add a second step. The shim for `claude` installs the `ai-claude` capability; the tool itself is then downloaded through mise the first time it runs. [AI tools](ai-tools.md) covers them.
 

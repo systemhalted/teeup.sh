@@ -1,6 +1,6 @@
 # Hooks and extending
 
-teeup has three places for your own additions: hooks that run after teeup does something, menu rows, and whole new capabilities.
+teeup supports custom additions through hooks, menu rows, and capabilities.
 
 ## Hooks
 
@@ -57,7 +57,7 @@ A capability is a directory under `capabilities/` in the checkout. Start one fro
 teeup dev new-capability mytool
 ```
 
-That writes `capabilities/mytool/` with its `capability` metadata file, `install` and `configure` scripts, and a test. The new capability is lazy, so it does not change what `./bootstrap` installs until you move it to another tier.
+That writes `capabilities/mytool/` with its `capability` metadata file, `install` and `configure` scripts, and a test. The new capability is lazy. It does not change what `./bootstrap` installs until you move it to another tier.
 
 | File | Holds |
 |---|---|
@@ -73,6 +73,6 @@ Then check it:
 teeup dev check mytool
 ```
 
-`CONTRIBUTING.md` in the checkout has the full contract, under "Adding a capability": how to report that a capability does not apply to a Mac, how to add a themed template, how to write macOS preferences so `teeup remove` can restore them, and how lazy commands and apps are registered.
+`CONTRIBUTING.md` in the checkout has the details, under "Adding a capability": how to report that a capability does not apply to a Mac, how to add a themed template, how to write macOS preferences so `teeup remove` can restore them, and how lazy commands and apps are registered.
 
 A capability you add lives in your checkout of teeup. `teeup update` stops while the checkout has uncommitted changes, and once you commit, `git pull --ff-only` can no longer fast-forward, so the update warns and carries on with your checkout as it is. Keep it on a branch you merge yourself, or send it upstream.

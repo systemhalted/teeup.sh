@@ -1,12 +1,12 @@
 # Prompt
 
-teeup uses [Starship](https://starship.rs/) for the shell prompt. It provides a fast, customisable prompt that shows the current directory, git status, command duration, and other context.
+teeup uses [Starship](https://starship.rs/) for the shell prompt. It shows the current directory, git status, command duration, and other context.
 
 Starship's configuration lives at `~/.config/starship.toml`.
 
 ## How teeup manages it
 
-When teeup installs Starship, it copies its own `starship.toml` there exactly once. After that, the file is yours. Because of teeup's copy-once rules, `teeup update` will never overwrite your changes. If you want teeup's latest version back, you can run `teeup reset starship` to restore it (your copy will be backed up first).
+When teeup installs Starship, it copies its own `starship.toml` there exactly once. After that, teeup does not modify it. Because of teeup's copy-once rules, `teeup update` will never overwrite your changes. If you want teeup's latest version back, you can run `teeup reset starship` to restore it (your copy will be backed up first).
 
 ## The theme palette
 

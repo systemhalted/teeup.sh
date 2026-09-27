@@ -1,6 +1,6 @@
 # Doctor and troubleshooting
 
-When something looks wrong, start with `teeup doctor`. It checks that the Mac is in the state teeup thinks it is, and for every problem it names the command that fixes it.
+Run `teeup doctor` to check the system state. For every problem, it names the command to fix it.
 
 ```sh
 teeup doctor           # every installed capability
@@ -11,10 +11,10 @@ teeup doctor git       # one capability
 
 For each installed capability, doctor prints a heading, `== git: ... ==`, and checks:
 
-- that the packages, casks and apps its metadata names are really installed;
+- that the packages, casks and apps its metadata names are installed;
 - whatever the capability's own doctor script checks. Eleven capabilities have one, including `ssh` (key pairs, file modes, the `Host` blocks), `git`, `github`, `zsh`, `mise`, `starship` and `aerospace`.
 
-A capability skipped with `TEEUP_SKIP` is left out of a full run; name it to check it anyway. At the end, doctor lists every problem with its fix:
+A capability skipped with `TEEUP_SKIP` is excluded from a full run. Name it to check it. At the end, doctor lists every problem with its fix:
 
 ```text
 ❌ teeup doctor found 1 problem(s):
@@ -24,7 +24,7 @@ A capability skipped with `TEEUP_SKIP` is left out of a full run; name it to che
 
 <!-- SCREENSHOT: `teeup doctor` on a healthy Mac, ending with "teeup doctor: everything checked is healthy." -->
 
-The exit status has three values, so a script can tell them apart:
+The exit status has three values:
 
 | Exit | Meaning |
 |---|---|
@@ -49,7 +49,7 @@ Steps that need your terminal, such as the SSH passphrase and the GitHub sign-in
 
 ### `teeup: command not found` right after bootstrap
 
-The shell you ran `./bootstrap` in started before teeup put `~/.local/bin` on your `PATH`. Open a new terminal, or run `~/.local/bin/teeup` by its full path.
+The shell running `./bootstrap` started before teeup added `~/.local/bin` to your `PATH`. Open a new terminal or run `~/.local/bin/teeup`.
 
 ### File icons in `ls` show as boxes
 
@@ -69,7 +69,7 @@ return {
 
 ### Emacs still runs the old configuration
 
-The Emacs daemon keeps what it loaded when it started. After changing the flavor or your init files, restart it:
+The Emacs daemon retains its initial configuration. After changing the flavor or your init files, restart it:
 
 ```sh
 launchctl kickstart -k gui/$(id -u)/sh.teeup.emacs
@@ -77,7 +77,7 @@ launchctl kickstart -k gui/$(id -u)/sh.teeup.emacs
 
 ### `brew uninstall emacs` removed Emacs.app
 
-teeup warns when Homebrew's terminal-only `emacs` formula is installed, because it stops the `emacs-app` cask from linking `emacs` and `emacsclient`, and it suggests `brew uninstall emacs`. That command is for the formula. When no `emacs` formula is installed, Homebrew applies it to the `emacs-app` cask instead and removes Emacs.app. Check first:
+teeup warns when Homebrew's terminal-only `emacs` formula is installed. It stops the `emacs-app` cask from linking `emacs` and `emacsclient`. teeup suggests `brew uninstall emacs` for the formula. When no `emacs` formula is installed, Homebrew applies it to the `emacs-app` cask instead and removes Emacs.app. Check first:
 
 ```sh
 brew list --formula emacs    # only uninstall if this lists it

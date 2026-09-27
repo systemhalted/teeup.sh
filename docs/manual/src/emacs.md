@@ -1,12 +1,12 @@
 # Emacs
 
-Emacs is in the daily tier. teeup installs the GUI build, the `emacs-app` cask, which also puts `emacs` and `emacsclient` on your `PATH`. Emacs then runs as a daemon from login onward, so opening a file is instant, and git and the shell use `emacsclient` as their editor.
+Emacs is in the daily tier. teeup installs the GUI build and the `emacs-app` cask. This puts `emacs` and `emacsclient` on your `PATH`. Emacs runs as a daemon from login onward. git and the shell use `emacsclient` as their editor.
 
 <!-- SCREENSHOT: An Emacs window opened with `e README.md` from WezTerm, showing the teeup starter layer with the current theme. -->
 
 ## The four flavors
 
-The wizard asks which configuration you want. The answer is `TEEUP_EMACS_FLAVOR`.
+The wizard asks which configuration to install. The answer is `TEEUP_EMACS_FLAVOR`.
 
 | Flavor | What teeup does |
 |---|---|
@@ -15,7 +15,7 @@ The wizard asks which configuration you want. The answer is `TEEUP_EMACS_FLAVOR`
 | `spacemacs` | Clones Spacemacs into `~/.emacs.d`. Spacemacs finishes its own setup, and writes `~/.spacemacs`, on the first start. |
 | `none` | Leaves your Emacs configuration alone. The daemon still runs. |
 
-If a directory is in the way, for example a starter setup where Doom should go, teeup moves it aside as `<name>.teeup_backup_<timestamp>` rather than deleting it. Emacs reads `~/.emacs.el`, `~/.emacs` and `~/.emacs.d` before `~/.config/emacs`; if one of those exists, teeup warns you that it wins and leaves it where it is.
+If a directory is in the way, for example a starter setup where Doom should go, teeup moves it aside as `<name>.teeup_backup_<timestamp>` rather than deleting it. Emacs reads `~/.emacs.el`, `~/.emacs` and `~/.emacs.d` before `~/.config/emacs`; if one of those exists, teeup warns you that Emacs reads it instead and leaves it where it is.
 
 ## The daemon and emacsclient
 
@@ -27,7 +27,7 @@ A LaunchAgent, `sh.teeup.emacs`, starts `Emacs --fg-daemon` at login. launchd re
 | `et <file>` | A frame in the current terminal (`emacsclient -t`) |
 | `$EDITOR` and `$VISUAL` | `emacsclient -t`, so git, `teeup config edit` and other tools open in the terminal |
 
-If the daemon is not running, `emacsclient` from the shell starts one, because teeup's shell sets an empty `ALTERNATE_EDITOR`.
+If the daemon is not running, `emacsclient` from the shell starts one. teeup's shell sets an empty `ALTERNATE_EDITOR` to enable this.
 
 The daemon keeps the configuration it loaded at start. After you change the flavor or edit your init files, restart it:
 

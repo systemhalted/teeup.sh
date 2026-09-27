@@ -1,6 +1,6 @@
 # Containers
 
-teeup runs containers with [Colima](https://github.com/abiosoft/colima), a small Linux virtual machine, and the ordinary Docker command-line client. There is no Docker Desktop. All of it is one lazy capability, `colima`.
+teeup runs containers with [Colima](https://github.com/abiosoft/colima) and the Docker command-line client. `colima` is a lazy capability.
 
 | Command | What it does |
 |---|---|
@@ -22,7 +22,7 @@ On Homebrew, teeup links the Compose plugin into `~/.docker/cli-plugins`, so `do
 
 ## The first run
 
-Configuring Colima starts its virtual machine, so the first `docker ps` takes a while: teeup installs the three packages, runs `colima start`, and then runs `docker ps`. Colima makes itself Docker's default context when it starts, so nothing else needs setting.
+Configuring Colima starts its virtual machine. The first `docker ps` takes time to install the packages, start the virtual machine, and list containers. Colima sets itself as the default Docker context.
 
 ```sh
 docker ps          # installs, starts Colima, then lists containers
@@ -39,8 +39,8 @@ The virtual machine does not start at login. After a reboot, start it before usi
 colima start
 ```
 
-`teeup configure colima` also starts it when it is stopped. `teeup update` does not configure lazy capabilities, so it never starts the virtual machine behind your back.
+`teeup configure colima` starts the virtual machine if it is stopped. `teeup update` does not configure lazy capabilities and does not start the virtual machine.
 
 ## Removing it
 
-`teeup remove colima` stops a running virtual machine first. If `colima stop` fails, teeup refuses to go on, because uninstalling Colima under a running machine would orphan it. Stop it by hand, then run the removal again. On Homebrew it also removes the Compose plugin link it made.
+`teeup remove colima` stops a running virtual machine first. If `colima stop` fails, teeup stops. Uninstalling Colima with a running machine leaves it orphaned. Stop it by hand, then run the removal again. On Homebrew it also removes the Compose plugin link it made.
