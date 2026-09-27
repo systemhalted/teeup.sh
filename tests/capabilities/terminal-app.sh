@@ -325,6 +325,74 @@ test_a_failed_profile_delete_keeps_it_installed() {
   cleanup_test_env
 }
 
+# find_terminal_app_migration -> the basename of the shipped migration that
+# installs terminal-app on an existing machine (final review I4), found by
+# content rather than position: migrations/ already ships others, and a
+# later one could sort before or after this one.
+find_terminal_app_migration() {
+  local mig
+  mig="$(grep -l 'cap_install_verbs terminal-app' "$TEEUP_PATH"/migrations/*.sh 2>/dev/null | head -1)"
+  [[ -n "$mig" ]] && basename "$mig"
+}
+
+# I4 (the owner's decision): terminal-app became core on this branch, but
+# `teeup update` only re-configures a capability already marked installed
+# (bin/teeup's _update_configure_tier); it never installs one core gained
+# since a machine's last bootstrap. The shipped migration is the only thing
+# that reaches an existing Mac that pulled this branch before its next
+# fresh bootstrap.
+test_the_shipped_migration_installs_terminal_app_on_an_existing_machine() {
+  setup
+  set_appearance dark
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null 2>&1
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-theme
+  local mig
+  mig="$(find_terminal_app_migration)"
+  [[ -n "$mig" ]] || { echo "fixture: no shipped migration installs terminal-app"; return 1; }
+  [[ ! -e "$STATE/done/cap-terminal-app" ]] || { echo "fixture: terminal-app must start uninstalled"; return 1; }
+  DRY_RUN=false migration_run "$mig" >/dev/null 2>&1 || { echo "the migration failed"; return 1; }
+  assert_file_exists "$STATE/done/cap-terminal-app" "the migration must install terminal-app" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "osascript -l JavaScript $PROFILE_JS apply" \
+    "the migration must actually theme Terminal.app (cap_install_verbs), not just mark it installed" || return 1
+  assert_file_exists "$STATE/migrations/$mig" "the migration itself must be marked applied" || return 1
+  cleanup_test_env
+}
+
+# TEEUP_SKIP must be honoured the same way `teeup install terminal-app` would
+# honour it: nothing installed, and the migration still finishes.
+test_the_shipped_migration_leaves_a_skipped_terminal_app_alone() {
+  setup
+  set_appearance dark
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null 2>&1
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-theme
+  local mig rc=0
+  mig="$(find_terminal_app_migration)"
+  [[ -n "$mig" ]] || { echo "fixture: no shipped migration installs terminal-app"; return 1; }
+  TEEUP_SKIP=terminal-app DRY_RUN=false migration_run "$mig" >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "a skipped capability must not fail the migration" || return 1
+  [[ ! -e "$STATE/done/cap-terminal-app" ]] || { echo "a skipped capability must not be installed"; return 1; }
+  cleanup_test_env
+}
+
+# A fresh ./bootstrap installs terminal-app as part of core in the same run;
+# migrations_mark_all (lib/migrations.sh) is what marks every shipped
+# migration applied without running it, so this one must not run a second
+# time and reach cap_install_verbs there.
+test_a_fresh_bootstrap_marks_the_shipped_migration_without_running_it() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local mig
+  mig="$(find_terminal_app_migration)"
+  [[ -n "$mig" ]] || { echo "fixture: no shipped migration installs terminal-app"; return 1; }
+  migrations_mark_all
+  assert_file_exists "$STATE/migrations/$mig" "a fresh bootstrap must mark every shipped migration applied" || return 1
+  [[ ! -e "$STATE/done/cap-terminal-app" ]] || { echo "marking a migration applied must not itself install anything"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG")" "osascript" "marking a migration applied must not run its script" || return 1
+  cleanup_test_env
+}
+
 # Final review I5 ("check that terminal-app's remove runs during uninstall's
 # capability loop, before the state teardown"): `teeup uninstall` on a
 # machine with terminal-app installed must reach this capability's own
@@ -557,6 +625,9 @@ run_test "remove falls back to Basic when the old profile is gone" test_remove_f
 run_test "remove keeps a recorded profile it cannot check" test_remove_keeps_a_recorded_profile_it_cannot_check
 run_test "a failed profile delete keeps it installed" test_a_failed_profile_delete_keeps_it_installed
 run_test "uninstall runs terminal-app's remove before the state teardown" test_uninstall_runs_terminal_apps_remove_before_the_state_teardown
+run_test "the shipped migration installs terminal-app on an existing machine" test_the_shipped_migration_installs_terminal_app_on_an_existing_machine
+run_test "the shipped migration leaves a skipped terminal-app alone" test_the_shipped_migration_leaves_a_skipped_terminal_app_alone
+run_test "a fresh bootstrap marks the shipped migration without running it" test_a_fresh_bootstrap_marks_the_shipped_migration_without_running_it
 run_test "dry-run configure changes nothing" test_dry_run_configure_changes_nothing
 run_test "dry-run remove changes nothing" test_dry_run_remove_changes_nothing
 run_test "the recorded font is handed over" test_the_recorded_font_is_handed_over
