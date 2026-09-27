@@ -962,6 +962,7 @@ test_migrate_legacy_runs_every_step_and_closes_with_a_real_command() {
   # after this test was written, and is how to see what is left over.
   assert_contains "$out" "teeup update" || return 1
   assert_contains "$out" "teeup doctor" || return 1
+  assert_contains "$out" "Migration finished." "a complete run says so" || return 1
   assert_contains "$("$TEEUP" help)" "teeup doctor" "the verb the migration names must be one bin/teeup has" || return 1
   cleanup_test_env
 }
@@ -1076,7 +1077,67 @@ EOF2
   assert_failure "$rc" "a refusal must reach the exit status" || return 1
   assert_contains "$out" "refused to touch something" || return 1
   assert_contains "$out" "Nothing was lost" || return 1
+  assert_not_contains "$out" "Migration finished" "that line is only for a complete run" || return 1
   assert_dir_exists "$sibling/dot_config/mac-setup" "the refused path must be untouched" || return 1
+  cleanup_test_env
+}
+
+# A declined chezmoi prompt and a chezmoi step with nobody to ask are both
+# work the migration did not finish, the same as a refusal, so both must
+# reach the exit status and neither may read as a complete run.
+test_migrate_legacy_exits_non_zero_on_a_declined_chezmoi_prompt() {
+  setup
+  migrate_setup
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-zsh
+  unset TEEUP_TEST_MISSING
+  export TEEUP_TEST_TTY=yes
+  local sibling="$TEST_HOME/dotfiles"
+  mkdir -p "$sibling"
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_SRC="$sibling"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  mock_command_script chezmoi <<'EOF2'
+case "$1" in
+  source-path) printf '%s\n' "$TEEUP_TEST_CHEZMOI_SRC" ;;
+  managed) cat "${TEEUP_TEST_CHEZMOI_MANAGED:-/dev/null}" ;;
+  --version) echo "chezmoi version v2.66.0" ;;
+  *) exit 1 ;;
+esac
+EOF2
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  local rc=0 out
+  out="$(printf 'n\n' | DRY_RUN=false "$TEEUP" migrate legacy 2>&1)" || rc=$?
+  assert_failure "$rc" "a declined prompt must reach the exit status" || return 1
+  assert_not_contains "$out" "Migration finished" "that line is only for a complete run" || return 1
+  cleanup_test_env
+}
+
+test_migrate_legacy_exits_non_zero_when_chezmoi_has_nobody_to_ask() {
+  setup
+  migrate_setup
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-zsh
+  unset TEEUP_TEST_MISSING
+  export TEEUP_TEST_TTY=no
+  local sibling="$TEST_HOME/dotfiles"
+  mkdir -p "$sibling"
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_SRC="$sibling"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  mock_command_script chezmoi <<'EOF2'
+case "$1" in
+  source-path) printf '%s\n' "$TEEUP_TEST_CHEZMOI_SRC" ;;
+  managed) cat "${TEEUP_TEST_CHEZMOI_MANAGED:-/dev/null}" ;;
+  --version) echo "chezmoi version v2.66.0" ;;
+  *) exit 1 ;;
+esac
+EOF2
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" migrate legacy 2>&1)" || rc=$?
+  assert_failure "$rc" "a chezmoi step with nobody to ask must reach the exit status" || return 1
+  assert_not_contains "$out" "Migration finished" "that line is only for a complete run" || return 1
   cleanup_test_env
 }
 
@@ -2456,6 +2517,8 @@ run_test "migrate legacy refuses the chezmoi half without teeup's zsh layer" tes
 run_test "migrate legacy proceeds with teeup's zsh layer installed" test_migrate_legacy_proceeds_with_teeups_zsh_layer_installed
 run_test "migrate legacy dry run changes nothing" test_migrate_legacy_dry_run_changes_nothing
 run_test "migrate legacy exits non-zero when it refused something" test_migrate_legacy_exits_non_zero_when_it_refused_something
+run_test "migrate legacy exits non-zero on a declined chezmoi prompt" test_migrate_legacy_exits_non_zero_on_a_declined_chezmoi_prompt
+run_test "migrate legacy exits non-zero when chezmoi has nobody to ask" test_migrate_legacy_exits_non_zero_when_chezmoi_has_nobody_to_ask
 run_test "migrate appears in help" test_migrate_appears_in_help
 run_test "config get lists every key and marks pins" test_config_get_lists_every_key_and_marks_the_pinned_ones
 run_test "config get prints the effective value" test_config_get_prints_the_effective_value
