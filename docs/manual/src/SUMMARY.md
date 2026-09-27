@@ -29,6 +29,11 @@
 - [macOS defaults](macos-defaults.md)
 - [Hooks and extending](hooks-and-extending.md)
 
+# Part 5: Moving In and Out
+
+- [Migrating](migrating.md)
+- [Uninstall](uninstall.md)
+
 # Part 6: Help
 
 - [Doctor and troubleshooting](doctor-and-troubleshooting.md)

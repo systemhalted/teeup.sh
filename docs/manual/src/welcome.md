@@ -27,7 +27,7 @@ Most configuration files are copied into place once and are yours from then on. 
 
 teeup suits you if you work in a terminal, want a Mac you can rebuild from scratch in one sitting, and would rather read what a tool will do before it does it. Every command that changes the machine has a dry run that prints the commands instead of running them.
 
-It is an opinionated setup. It picks zsh, WezTerm and mise for you, and it sets macOS preferences. If you already keep your dotfiles in chezmoi or an older teeup, `teeup migrate legacy` retires that wiring; the README's [migration section](https://github.com/systemhalted/teeup.sh#migrating-a-mac-that-already-had-teeup-or-chezmoi) covers it.
+It is an opinionated setup. It picks zsh, WezTerm and mise for you, and it sets macOS preferences. If you already keep your dotfiles in chezmoi or an older teeup, `teeup migrate legacy` retires that wiring; [Migrating](migrating.md) covers it.
 
 This manual describes teeup 0.1.0-beta.
 
@@ -40,4 +40,4 @@ The pages are short and each covers one topic. Part 1, The Basics, gets you from
 - [The menu](the-menu.md): the same actions behind one keyboard-driven list.
 - [Tiers](tiers.md): what installs now, and what waits for you.
 
-The later parts cover the applications, configuration, and troubleshooting.
+The later parts cover the applications, configuration, moving in and out, and troubleshooting.

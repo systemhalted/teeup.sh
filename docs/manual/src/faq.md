@@ -31,7 +31,7 @@ Not the ones you have edited. A file of yours that teeup wants to replace is mov
 
 ## I used chezmoi, or the old teeup. What now?
 
-`teeup migrate legacy` retires that wiring on this Mac. Run it with `DRY_RUN=true` first to read what it would do. The README's [migration section](https://github.com/systemhalted/teeup.sh#migrating-a-mac-that-already-had-teeup-or-chezmoi) says what it moves aside and what it never touches.
+`teeup migrate legacy` retires that wiring on this Mac. Run it with `DRY_RUN=true` first to read what it would do. [Migrating](migrating.md) says what it moves aside and what it never touches.
 
 ## Can I skip part of it?
 
@@ -44,6 +44,10 @@ Install it the usual way, with `brew install`. `teeup update` upgrades everythin
 ## How do I undo one capability?
 
 `teeup remove <capability>`. It runs the capability's own removal steps, uninstalls its packages and casks, and keeps your config files. It refuses while another installed capability needs it, and it refuses a capability it has no way to undo, rather than claim it did. A removed core or daily capability comes back on the next `./bootstrap` unless you skip it.
+
+## How do I take teeup off a Mac?
+
+`teeup uninstall`, after a preview with `DRY_RUN=true`. It keeps your packages, edited files, SSH keys and the checkout unless you say otherwise. See [Uninstall](uninstall.md).
 
 ## Does teeup ever delete an SSH key?
 

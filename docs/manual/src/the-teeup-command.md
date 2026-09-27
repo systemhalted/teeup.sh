@@ -14,6 +14,7 @@ Everything teeup does after the first run goes through one command, `teeup`. It 
 | `teeup update` | Update the whole machine: pull the checkout, upgrade packages and mise tools, run migrations, configure the core and daily tiers again, render the theme, and run your hooks. |
 | `teeup update <capability>` | Upgrade one capability's packages, or run its own update script if it has one, then configure it again. |
 | `teeup remove <capability>` | Undo what a capability installed. Your config files stay. |
+| `teeup uninstall` | Take teeup off this Mac. It asks first. Add `--packages` to uninstall the packages too, `--identity` to take off your git identity, and `--yes` to run without questions, which it needs when there is no terminal. See [Uninstall](uninstall.md). |
 | `teeup theme set <name>` | Apply a theme to every themed tool. With no name, it shows a picker. |
 | `teeup theme list` | List the themes. |
 | `teeup theme current` | Print the current theme. This is also what plain `teeup theme` does. |
@@ -48,7 +49,7 @@ Everything teeup does after the first run goes through one command, `teeup`. It 
 | Command | What it does |
 |---|---|
 | `teeup menu` | Every action as a keyboard-driven list. See [The menu](the-menu.md). |
-| `teeup migrate legacy` | Retire the old teeup and chezmoi wiring on this Mac. |
+| `teeup migrate legacy` | Retire the old teeup and chezmoi wiring on this Mac. See [Migrating](migrating.md). |
 | `teeup commands` | List the capability names, one per line. |
 | `teeup commands --check` | Lint the capability metadata. |
 | `teeup dev new-capability <name>` | Start a new capability and its test from a skeleton. |
@@ -79,4 +80,4 @@ Each skipped command shows up like this:
 
 `./bootstrap` spells the same thing as a flag, `./bootstrap --dry-run`.
 
-Preview first whenever a command removes something, such as `teeup remove` or `teeup migrate legacy`.
+Preview first whenever a command removes something, such as `teeup remove`, `teeup uninstall` or `teeup migrate legacy`.
