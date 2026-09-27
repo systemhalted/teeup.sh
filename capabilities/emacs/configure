@@ -147,7 +147,18 @@ if [[ "$flavor" == "doom" && -f "$doom_theme_config_el" ]]; then
 fi
 if [[ "$flavor" == "doom" && -f "$doom_theme_config_el" && "$doom_theme_files_ready" == "true" ]]; then
   doom_template_disabled_line=";; (setq doom-theme 'doom-one)  ; teeup: disabled Doom's template default so the teeup theme applies"
-  if grep -q "^[[:space:]]*(setq doom-theme 'doom-one)[[:space:]]*$" "$doom_theme_config_el"; then
+  doom_template_target="(setq doom-theme 'doom-one)"
+  doom_template_marker=";; \`load-theme' function. This is the default:"
+
+  if awk -v target="$doom_template_target" -v marker="$doom_template_marker" '
+       BEGIN { found=0 }
+       {
+         line = $0; sub(/[ \t]+$/, "", line)
+         if (line == target && prev == marker) { found=1; exit }
+         prev = line
+       }
+       END { exit !found }
+     ' "$doom_theme_config_el"; then
     if [[ "$DRY_RUN" == "true" ]]; then
       printf "%b %s\n" "🔍" "[DRY-RUN] Would comment out the template default doom-theme in $(basename "$doom_theme_config_el")"
     elif [[ -L "$doom_theme_config_el" ]]; then
@@ -155,15 +166,16 @@ if [[ "$flavor" == "doom" && -f "$doom_theme_config_el" && "$doom_theme_files_re
     else
       if backup_copy "$doom_theme_config_el" >/dev/null; then
         doom_theme_config_tmp="$(mktemp)"
-        awk -v replacement="$doom_template_disabled_line" '{
-          line = $0
-          sub(/^[ \t]+/, "", line)
-          sub(/[ \t]+$/, "", line)
-          if (line == "(setq doom-theme \047doom-one)") {
+        awk -v replacement="$doom_template_disabled_line" \
+            -v target="$doom_template_target" \
+            -v marker="$doom_template_marker" '{
+          line = $0; sub(/[ \t]+$/, "", line)
+          if (line == target && prev == marker) {
             print replacement
           } else {
             print $0
           }
+          prev = line
         }' "$doom_theme_config_el" > "$doom_theme_config_tmp"
         if mv "$doom_theme_config_tmp" "$doom_theme_config_el"; then
           ok "Disabled Doom's template default doom-theme in $(basename "$doom_theme_config_el") so the teeup theme applies"
@@ -173,7 +185,22 @@ if [[ "$flavor" == "doom" && -f "$doom_theme_config_el" && "$doom_theme_files_re
         fi
       fi
     fi
-  elif grep -E -q '^[[:space:]]*\(setq doom-theme[[:space:]]' "$doom_theme_config_el"; then
+  fi
+
+  if awk -v target="$doom_template_target" -v marker="$doom_template_marker" '
+       BEGIN { found=0 }
+       {
+         line = $0; sub(/[ \t]+$/, "", line)
+         if (line == target && prev == marker) {
+           # Ignore the template default (it was either just commented out or we are in a dry run)
+         } else if ($0 ~ /^[ \t]*\(setq doom-theme[ \t]/) {
+           found=1
+           exit
+         }
+         prev = line
+       }
+       END { exit !found }
+     ' "$doom_theme_config_el"; then
     log "$(basename "$doom_theme_config_el") sets its own doom-theme, which overrides the teeup theme. Remove that line to use teeup's."
   fi
 

@@ -520,6 +520,7 @@ test_doom_flavor_comments_out_the_template_default_theme() {
   stub_doom_checkout
   cat > "$DOOM_DIR/config.el" <<'EOF'
 ;;; config.el
+;; `load-theme' function. This is the default:
 (setq doom-theme 'doom-one)
 EOF
   local out
@@ -548,12 +549,44 @@ EOF
   cleanup_test_env
 }
 
+
+test_doom_flavor_leaves_an_unmarked_doom_one_untouched_and_logs() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  cat > "$DOOM_DIR/config.el" <<'CONFIG'
+;;; config.el
+(setq doom-theme 'doom-one)
+CONFIG
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$(cat "$DOOM_DIR/config.el")" "(setq doom-theme 'doom-one)" || return 1
+  assert_contains "$out" "config.el sets its own doom-theme, which overrides the teeup theme" || return 1
+  cleanup_test_env
+}
+
+test_doom_flavor_leaves_an_indented_doom_one_untouched_and_logs() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  cat > "$DOOM_DIR/config.el" <<'CONFIG'
+;;; config.el
+;; `load-theme' function. This is the default:
+  (setq doom-theme 'doom-one)
+CONFIG
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$(cat "$DOOM_DIR/config.el")" "  (setq doom-theme 'doom-one)" || return 1
+  assert_contains "$out" "config.el sets its own doom-theme, which overrides the teeup theme" || return 1
+  cleanup_test_env
+}
 test_doom_flavor_dry_run_shows_template_comment_out() {
   setup
   set_flavor doom
   stub_doom_checkout
   cat > "$DOOM_DIR/config.el" <<'EOF'
 ;;; config.el
+;; `load-theme' function. This is the default:
 (setq doom-theme 'doom-one)
 EOF
   local before out
@@ -570,6 +603,7 @@ test_doom_flavor_refuses_to_comment_template_in_symlink() {
   stub_doom_checkout
   cat > "$TEST_HOME/real-config.el" <<'EOF'
 ;;; config.el
+;; `load-theme' function. This is the default:
 (setq doom-theme 'doom-one)
 EOF
   ln -s "$TEST_HOME/real-config.el" "$DOOM_DIR/config.el"
@@ -1066,6 +1100,8 @@ run_test "doom flavor dry run leaves config.el untouched" test_doom_flavor_dry_r
 run_test "doom flavor without config.el writes nothing" test_doom_flavor_without_config_el_writes_nothing
 run_test "doom flavor comments out the template default theme" test_doom_flavor_comments_out_the_template_default_theme
 run_test "doom flavor leaves a user theme untouched and logs" test_doom_flavor_leaves_a_user_theme_untouched_and_logs
+run_test "doom flavor leaves an unmarked doom-one untouched and logs" test_doom_flavor_leaves_an_unmarked_doom_one_untouched_and_logs
+run_test "doom flavor leaves an indented doom-one untouched and logs" test_doom_flavor_leaves_an_indented_doom_one_untouched_and_logs
 run_test "doom flavor dry run shows template comment out" test_doom_flavor_dry_run_shows_template_comment_out
 run_test "doom flavor refuses to comment template in symlink" test_doom_flavor_refuses_to_comment_template_in_symlink
 run_test "uninstall restores the commented template default" test_uninstall_restores_the_commented_template_default
