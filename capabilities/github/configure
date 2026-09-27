@@ -53,12 +53,29 @@ _gh_active_account() {
     awk '{ for (i = 1; i < NF; i++) if ($i == "account") { print $(i + 1); exit } }'
 }
 
+# _github_upload_answer_key <identity> -> the answers-file key that records
+# whether this identity's public key may be uploaded to GitHub.
+_github_upload_answer_key() {
+  case "$1" in
+    personal) printf 'TEEUP_GITHUB_UPLOAD_PERSONAL\n' ;;
+    work) printf 'TEEUP_GITHUB_UPLOAD_WORK\n' ;;
+    *) die "_github_upload_answer_key: unknown identity '$1' (expected personal or work)" ;;
+  esac
+}
+
+_github_upload_declined() {
+  local answer_key="$1"
+  log "Not uploading the SSH key because $answer_key is no."
+  log "To change this choice: teeup config set $answer_key yes && teeup configure github"
+}
+
 # github_configure_identity <identity>: everything done on the host and
 # account already selected for this identity. A function rather than the body
 # of the loop so that its several early exits cannot skip the switch back to
 # the account that was active before teeup ran.
 github_configure_identity() {
-  local identity="$1" gh_host="$2" status_out pub body listed type title
+  local identity="$1" gh_host="$2" gh_account="$3"
+  local status_out pub body listed type title answer_key upload_answer upload_account needs_upload
 
   # --active narrows the report to the one account gh will actually use for
   # this host (gh 2.100.0: "-a, --active  Display the active account only").
@@ -80,7 +97,7 @@ github_configure_identity() {
     fi
   else
     log "Signing in to GitHub ($gh_host). A browser window opens; approve the SSH key scopes."
-    if ! run_cmd gh auth login --hostname "$gh_host" --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key; then
+    if ! run_cmd gh auth login --hostname "$gh_host" --web --git-protocol ssh --skip-ssh-key --scopes admin:public_key,admin:ssh_signing_key; then
       warn "gh auth login did not complete for $gh_host. Re-run: teeup configure github"
       return 0
     fi
@@ -95,11 +112,50 @@ github_configure_identity() {
     warn "No $pub yet. Run: teeup configure ssh"
     return 0
   fi
+
+  answer_key="$(_github_upload_answer_key "$identity")"
+  upload_answer="$(answers_get "$answer_key")"
+  if [[ "$upload_answer" == "no" ]]; then
+    _github_upload_declined "$answer_key"
+    return 0
+  fi
   # NR == 1: a .pub is one line, but a file with a stray second line would
   # otherwise yield a multi-line body that can never match a listed row, and
   # the key would be re-uploaded on every run.
   body="$(awk 'NR == 1 { print $2 }' < "$pub")"
   listed="$(gh ssh-key list 2>/dev/null || true)"
+  needs_upload=false
+  for type in authentication signing; do
+    if [[ -z "$body" ]] || ! _github_key_uploaded "$listed" "$body" "$type"; then
+      needs_upload=true
+    fi
+  done
+  if [[ "$needs_upload" != "true" ]]; then
+    log "Already uploaded (authentication): $pub"
+    log "Already uploaded (signing): $pub"
+    return 0
+  fi
+
+  if [[ "$upload_answer" != "yes" ]]; then
+    if lazy_is_tty; then
+      upload_account="$gh_account"
+      [[ -n "$upload_account" ]] || upload_account="$(_gh_active_account "$gh_host")"
+      [[ -n "$upload_account" ]] || upload_account="active account"
+      if ui_confirm "Upload $pub to GitHub ($gh_host, $upload_account) for pushing and commit signing?" yes; then
+        upload_answer=yes
+      else
+        upload_answer=no
+      fi
+      answers_set "$answer_key" "$upload_answer"
+    else
+      upload_answer=yes
+    fi
+  fi
+  if [[ "$upload_answer" == "no" ]]; then
+    _github_upload_declined "$answer_key"
+    return 0
+  fi
+
   for type in authentication signing; do
     if [[ -n "$body" ]] && _github_key_uploaded "$listed" "$body" "$type"; then
       log "Already uploaded ($type): $pub"
@@ -133,7 +189,7 @@ for identity in $(identity_list); do
         restore_account="$active_account"
       else
         warn "Could not switch gh to $gh_account on $gh_host; skipping the $identity identity."
-        warn "Check the account name in $(machine_file), or run: gh auth login --hostname $gh_host"
+        warn "Check the account name in $(machine_file), or run: gh auth login --hostname $gh_host --skip-ssh-key"
         continue
       fi
     fi
@@ -146,7 +202,7 @@ for identity in $(identity_list); do
     continue
   fi
 
-  github_configure_identity "$identity" "$gh_host"
+  github_configure_identity "$identity" "$gh_host" "$gh_account"
 
   # Skipped under DRY_RUN: no login ran, so the account on the host is still
   # whatever it was and would only produce a warning about a mismatch this run
@@ -155,7 +211,7 @@ for identity in $(identity_list); do
     active_account="$(_gh_active_account "$gh_host")"
     if [[ -n "$active_account" && "$active_account" != "$gh_account" ]]; then
       warn "gh is signed in to $gh_host as $active_account, not the $gh_account named in $(machine_file)."
-      warn "The $identity key went to $active_account. Sign in as $gh_account (gh auth login --hostname $gh_host) and re-run: teeup configure github"
+      warn "The $identity key went to $active_account. Sign in as $gh_account (gh auth login --hostname $gh_host --skip-ssh-key) and re-run: teeup configure github"
     fi
   fi
 

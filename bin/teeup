@@ -765,11 +765,14 @@ _config_keys() {
   done | sort -u
 }
 
-# _config_key_known <KEY> -> true when KEY is named by the answers file or
-# the machine file (R7.2): teeup config get must never present a runtime
-# variable (TEEUP_PATH, TEEUP_CAPS_DIR, ...) as though it were an answer.
+# _config_key_known <KEY> -> true for an answer teeup records itself, or a key
+# named by the answers file or machine file. teeup config get must never
+# present a runtime variable (TEEUP_PATH, TEEUP_CAPS_DIR, ...) as an answer.
 _config_key_known() {
   local key="$1" k
+  case "$key" in
+    TEEUP_GITHUB_UPLOAD_PERSONAL|TEEUP_GITHUB_UPLOAD_WORK) return 0 ;;
+  esac
   for k in $(_config_keys); do
     if [[ "$k" == "$key" ]]; then
       return 0
@@ -852,6 +855,7 @@ _config_apply_hint() {
     # narrower command and does not touch anything else.
     TEEUP_EMACS_FLAVOR) log "Run: teeup configure emacs -- that is what reads $key (teeup update now covers it too)." ;;
     TEEUP_DAILY) log "Run: ./bootstrap -- that is what reads $key." ;;
+    TEEUP_GITHUB_UPLOAD_PERSONAL|TEEUP_GITHUB_UPLOAD_WORK) log "Run: teeup configure github -- that is what reads $key." ;;
     # --reload, because a plain `theme set` of the theme already current is
     # a no-op, and this write may name exactly that theme.
     TEEUP_THEME) log "Run: teeup theme set --reload${value:+ $value} -- it validates the name and re-renders every themed tool, which this write alone does not." ;;

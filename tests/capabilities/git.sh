@@ -135,6 +135,21 @@ test_signing_and_delta_are_enabled_once_they_exist() {
   cleanup_test_env
 }
 
+test_signing_stays_off_when_github_upload_is_declined() {
+  setup
+  seed_answers
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="no"\n' >> "$TEST_HOME/.config/teeup/answers"
+  mkdir -p "$TEST_HOME/.ssh"
+  printf 'fake-private-key\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf 'ssh-ed25519 AAAAFAKE ada@example.com\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  local out generated
+  out="$(DRY_RUN=false "$TEEUP" configure git 2>&1)"
+  generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
+  assert_contains "$generated" "gpgsign = false" || return 1
+  assert_contains "$out" "GitHub upload was declined" || return 1
+  cleanup_test_env
+}
+
 test_signing_stays_off_when_a_private_key_is_missing() {
   setup
   seed_answers
@@ -1621,6 +1636,7 @@ run_test "a configured work identity does not change the git identity" test_a_co
 run_test "configure without answers warns and writes no identity" test_configure_without_answers_warns_and_writes_no_identity
 run_test "configure ships the config and the editor" test_configure_ships_the_config_and_the_editor
 run_test "signing and delta are enabled once they exist" test_signing_and_delta_are_enabled_once_they_exist
+run_test "signing stays off when GitHub upload is declined" test_signing_stays_off_when_github_upload_is_declined
 run_test "signing stays off when a private key is missing" test_signing_stays_off_when_a_private_key_is_missing
 run_test "doctor honours signing turned off in local" test_doctor_honours_signing_turned_off_in_local
 run_test "doctor honours signing turned on in local" test_doctor_honours_signing_turned_on_in_local
