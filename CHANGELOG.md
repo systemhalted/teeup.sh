@@ -7,9 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.1.0-beta] - UNRELEASED
+
+teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distribution that replaces the old installer. See the [manual](https://teeup.systemhalted.in) and [CONTRIBUTING.md](CONTRIBUTING.md) to learn how to use it or how it works.
 
 ### Added
+- **`bootstrap` and the wizard.** A setup script that asks for your name, email, package manager, theme, whether to install the daily set, and the Emacs flavor, and handles the first installation. Run it with `./bootstrap`.
+- **Tiers.** Capabilities are organized into core, daily, and lazy tiers.
+- **Homebrew or MacPorts.** You can choose your package manager during bootstrap, and teeup will use it to install native packages.
+- **Machine files.** Write environment variables and overrides in `~/.config/teeup/machines/<hostname>.conf` or the checkout's `machines/<hostname>.conf`.
+- **`teeup install`, `configure`, and `remove`.** Add or take away individual capabilities like `colima` or `obsidian` at any time, or re-run a configuration to apply changes.
+- **`teeup update` and `reset`.** Pull the checkout, upgrade packages and mise, run migrations, and configure the core and daily tiers with `update`. Put a capability's shipped configuration back with `reset`.
+- **`teeup doctor`, `status`, and `list`.** Check your system health, see your active configuration, and list the capabilities available on your machine.
+- **`teeup menu` and `config`.** Open a keyboard-driven list in the terminal to run teeup commands with `menu`, and get, set or edit the answers file with `config`.
+- **`teeup theme` and `launch`.** Change your system's colorscheme, and launch GUI applications from the terminal.
+- **`teeup secret` and `dev`.** Store and read secrets in the macOS Keychain with `secret`, and run the local development toolkit with `dev`.
+- **zsh and Starship.** The default shell environment is now zsh configured with the Starship prompt.
+- **git and ssh identity.** Version control with your identity, and an ed25519 SSH key.
+- **WezTerm.** A terminal emulator with multiplexing built in.
+- **Emacs.** A daemonized setup with a starter config, plus Doom and Spacemacs flavors.
+- **Zed, Neovim, VS Code and Cursor.** Text editors and IDEs.
+- **Firefox Developer Edition and Obsidian.** Applications for browsing and note-taking.
+- **AeroSpace and tmux.** Tiling window management for macOS and terminal multiplexing.
+- **Colima, Ollama and Herdr.** Virtualization for Docker, local LLMs, and the agent multiplexer that lives in your terminal.
+- **mise runtimes.** Python, Node, Java, Ruby, Rust and Go are managed by mise through `teeup install dev-env <lang>`.
+- **AI command-line tools.** Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, and OpenCode are available as lazy capabilities.
+- **Themes.** Choose between `catppuccin`, `tokyo-night`, `gruvbox`, and `everforest` in both light and dark variants.
+- **Terminal.app and Doom theming.** Your theme choice applies to new Terminal.app windows and Doom Emacs.
+- **`theme set --reload`.** Re-render the current theme.
+- **Fonts.** A selection of developer fonts for your terminal and editor.
+- **`teeup migrate legacy`.** Retire the old teeup and chezmoi wiring on this Mac.
+- **`teeup uninstall`.** Take teeup off a Mac.
+- **Agent skill.** An agent skill for Claude Code, Codex, and Gemini CLI to understand and interact with the teeup ecosystem.
+
+### Changed
+- **macOS only.** The installer no longer supports Linux; the old Linux paths have been removed.
+- **One `teeup` command.** Flags are gone; you now interact with your system through a single CLI with subcommands.
+- **Shipped configs are copied once.** Configuration files are placed in your `~/.config` or home directory once and are then yours to edit.
+- **mise replaces other managers.** Runtimes come through mise instead of pyenv, rbenv, or SDKMAN.
+- **zsh and Starship replace Oh My Zsh and Powerlevel10k.** teeup ships its own layered zsh configuration instead of a framework.
+See [docs/legacy-parity.md](docs/legacy-parity.md) for the full mapping of legacy features to the new architecture.
+
+### Removed
+- **The old installer.** The entire legacy installation script has been deleted.
+- **Linux support.** The legacy installer's Linux paths are gone; on Linux, keep using a chezmoi-managed dotfiles repository.
+
+---
+
+## Before the redesign (the legacy installer, removed in 0.1.0-beta)
+
+### [Unreleased]
+
+#### Added
 - **chezmoi and GNU Stow overlays.** `--dotfiles` now recognises a chezmoi source
   directory (`dot_*`, `.chezmoi.toml.tmpl`) or a Stow package tree and hands
   `$HOME` to that tool (`chezmoi init --source DIR --apply`, `stow -d DIR -t ~`)
@@ -33,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   official repositories fall back to an AUR helper (`yay` or `paru`) when one is
   installed, warning and skipping rather than failing when none is.
 
-### Changed
+#### Changed
 - **Unified shared shell file → `~/.teeup.common`.** The overlapping
   `shellrc.common` (aliases) and `teeupshrc` (tool init) are merged into a single
   cross-shell file, `teeup.common`, in **both** delivery modes — the dotfiles
@@ -46,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   legacy `shellrc.common`/`teeupshrc`) only if a personal overlay actually provides
   them; shell-specific files are still segregated to the target login shell.
 
-### Added
+#### Added
 - `--prompt none|powerlevel10k|starship` (and the `PROMPT` env var, default `none`)
   to choose a prompt tool explicitly. Surfaced in the wizard as a dedicated
   "Which prompt theme?" step, decoupled from the zsh plain/Oh My Zsh choice.
@@ -57,7 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicitly to stay correct if the default profile changes. The step is
   idempotent, so existing rustup installs pick the components up on rerun.
 
-### Migration
+#### Migration
 - An older `~/.teeupshrc` is migrated automatically: a regular file (managed
   fallback) is moved to `~/.teeup.common` and the source line in your `~/.bashrc`/
   `~/.zshrc` is re-pointed (idempotent on re-runs). Stale teeup-owned **symlinks**
@@ -73,15 +122,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.0] - 2026-05-30
+### [2.0.0] - 2026-05-30
 
-### Changed
+#### Changed
 - **Neutral by default.** A bare `./teeup.sh` now installs a lean `base` profile
   (package manager + login shell + core CLI) instead of the entire stack. Use
   `--all` (or `TEEUP_PROFILE=full`) for the full curated stack. This is a
   behavior change for no-argument runs.
 
-### Added
+#### Added
 - `--profile base|full` and `--all` to choose the default module set.
 - `--except a,b` to subtract modules (e.g. `--all --except apps,docker`).
 - `--init-dotfiles [DIR]` to generate a neutral starter dotfiles repo you own
@@ -91,7 +140,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wizard: a **Minimal (base)** setup preset (now the default) and a Dotfiles step
   that auto-detects a sibling `dotfiles`, generates a starter, or uses none.
 
-### Notes
+#### Notes
 - Dotfiles are now modeled as a neutral base (owned by teeup) plus a personal
   overlay you bring — teeup no longer ships one person's config as the default
   payload. The generated starter omits editor/mergetool lock-in and personal
@@ -99,9 +148,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.0] - 2026-02-18
+### [1.0.0] - 2026-02-18
 
-### Added
+#### Added
 
 #### Core Features
 - **Interactive Wizard Mode** - User-friendly step-by-step setup experience
@@ -167,7 +216,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dotfile management
 - macOS defaults tuning (optional)
 
-### Features
+#### Features
 
 #### Wizard Mode
 - Welcome screen with overview
@@ -191,7 +240,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Error Handling** - Graceful error handling and warnings
 - **Summary Report** - Installation summary at completion
 
-### Technical Details
+#### Technical Details
 
 #### Compatibility
 - macOS 12+ (Monterey, Ventura, Sonoma)
@@ -206,7 +255,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive logging
 - Security best practices
 
-### Installation
+#### Installation
 
 ```bash
 # Clone repository
@@ -226,7 +275,7 @@ chmod +x teeup.sh teeup-wizard.sh
 ./teeup.sh --only python,java
 ```
 
-### Migration
+#### Migration
 
 For users migrating from pyenv to UV:
 
@@ -234,7 +283,7 @@ For users migrating from pyenv to UV:
 ./teeup.sh --migrate-to-uv
 ```
 
-### Testing
+#### Testing
 
 ```bash
 # Run all tests
@@ -243,9 +292,9 @@ For users migrating from pyenv to UV:
 
 ---
 
-## [Unreleased]
+### [Unreleased]
 
-### Added
+#### Added
 - **Linux support** — first-class Ubuntu (APT) and Fedora (DNF); `PACKAGE_MANAGER=auto` resolves by platform
 - **MacPorts support** on older macOS (≤ 12); Homebrew on macOS 13+
 - **bash support** — Starship prompt + bash-completion, with tool init in a shared POSIX `~/.teeupshrc`
@@ -256,20 +305,20 @@ For users migrating from pyenv to UV:
 - **Rust via rustup** (`rustc`, `cargo`)
 - Linux: adds the invoking user to the `docker` group (sudo-free `docker` after re-login)
 
-### Changed
+#### Changed
 - Platform, package-manager, and shell logic extracted into `lib/platform.sh`, `lib/package_manager.sh`, `lib/shell.sh`
 - Tool initialization (uv, cargo, SDKMAN, rbenv, pyenv) consolidated into `~/.teeupshrc`
 
-### Planned Features
+#### Planned Features
 - Progress bars for long operations
 - Checksum verification for downloads
 - Parallel module installation
 
 ---
 
-## Version History
+### Version History
 
-### [1.0.0] - 2026-02-18
+#### [1.0.0] - 2026-02-18
 - Initial release with full feature set
 - Comprehensive automated test suite
 - Interactive wizard mode
@@ -279,7 +328,7 @@ For users migrating from pyenv to UV:
 
 ---
 
-## Notes
+### Notes
 
 - This is the first stable release
 - All features are production-ready
@@ -287,7 +336,7 @@ For users migrating from pyenv to UV:
 - No known critical issues
 ---
 
-## Acknowledgments
+### Acknowledgments
 
 - Oh My Zsh community
 - Homebrew maintainers

@@ -2394,7 +2394,7 @@ esac
 
 ```bash
 chmod +x bin/teeup
-echo "0.1.0-dev" > version
+echo "0.1.0-beta" > version
 bash tests/cli.sh
 ```
 
