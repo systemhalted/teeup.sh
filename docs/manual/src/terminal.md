@@ -1,6 +1,6 @@
 # Terminal
 
-teeup's terminal is [WezTerm](https://wezfurlong.org/wezterm/). It is in the core tier, so every bootstrapped Mac has it, and it follows the teeup theme and font. Open it from the Dock or Spotlight, with `teeup launch WezTerm`, or from AeroSpace with `alt-enter`.
+teeup's terminal is [WezTerm](https://wezfurlong.org/wezterm/). It is in the core tier, so every bootstrapped Mac has it, and it follows the teeup [theme](themes.md) and [font](fonts.md). Open it from the Dock or Spotlight, with `teeup launch WezTerm`, or from AeroSpace with `alt-enter`.
 
 <!-- SCREENSHOT: A WezTerm window with two panes side by side (leader then 3) and the tab bar showing the workspace name and clock on the right. -->
 
@@ -63,6 +63,6 @@ Raw WezTerm settings go inside `config`; a `front_end` key at the top level of t
 
 ## Terminal.app
 
-You will use Terminal.app at least once, to run `./bootstrap`. teeup's shell layer works there too, but teeup does not set Terminal.app's font. `ls` draws file icons with a Nerd Font, so in Terminal.app most folder and file icons show as boxes until you set the profile's font yourself: Settings, Profiles, Text, Font, then "JetBrainsMono Nerd Font". The README's [Terminals and file icons](https://github.com/systemhalted/teeup.sh#terminals-and-file-icons) section explains why.
+You will use Terminal.app at least once, to run `./bootstrap`. teeup's shell layer works there too, but teeup does not set Terminal.app's font. `ls` draws file icons with a Nerd Font, so in Terminal.app most folder and file icons show as boxes until you set the profile's font yourself: Settings, Profiles, Text, Font, then "JetBrainsMono Nerd Font". See [Fonts](fonts.md).
 
 On MacPorts there is no cask, so teeup installs WezTerm from the `wezterm` port. The app then lives in MacPorts' applications folder rather than `/Applications`, and teeup prints the `open -a` line that starts it.

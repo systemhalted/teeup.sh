@@ -1,6 +1,6 @@
 # Welcome to teeup
 
-teeup treats your Mac the way a Linux distribution treats a computer. One command, `./bootstrap`, installs a considered set of developer tools, writes their configuration, gives them one colour theme and one font, and leaves you with a single command, `teeup`, for everything you want to change afterwards.
+teeup treats your Mac the way a Linux distribution treats a computer. One command, `./bootstrap`, installs a considered set of developer tools, writes their configuration, gives them one colour [theme](themes.md) and one [font](fonts.md), and leaves you with a single command, `teeup`, for everything you want to change afterwards.
 
 The idea comes from [Omarchy](https://omarchy.org), DHH's opinionated setup for Arch Linux and Hyprland. Omarchy showed that a personal setup can be packaged like a product: sensible defaults, a menu for discovering what is there, lazy installs for the things you use once a month, and a manual. teeup brings that shape to macOS. It runs on macOS only; `./bootstrap` stops on any other system.
 
@@ -8,7 +8,7 @@ The idea comes from [Omarchy](https://omarchy.org), DHH's opinionated setup for 
 
 After the first run you have:
 
-- a zsh login shell with teeup's own configuration, the Starship prompt, and a modern command-line set (ripgrep, fd, fzf, bat, eza, zoxide and more);
+- a zsh login shell with teeup's own configuration, the [Starship prompt](prompt.md), and a modern command-line set (ripgrep, fd, fzf, bat, eza, zoxide and more);
 - git with your identity, an ed25519 SSH key, and the GitHub CLI signed in;
 - mise for language runtimes, WezTerm as the terminal, the JetBrainsMono Nerd Font, AeroSpace for tiling windows, Caps Lock as Control, and a set of macOS preferences for development;
 - if you say yes to it, Emacs, Zed, Firefox Developer Edition and Obsidian.
