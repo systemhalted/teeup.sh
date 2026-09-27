@@ -53,18 +53,7 @@ jobs:
             emacs --version | head -1
           fi
 
-      - name: Shellcheck legacy scripts
-        run: shellcheck --severity=warning legacy/teeup.sh legacy/teeup-wizard.sh
-
-      - name: Shellcheck legacy tests
-        run: shellcheck --severity=warning -x legacy/tests/*.sh
-
-      - name: Run legacy tests
-        env:
-          CI: "true"
-        run: ./legacy/tests/run_tests.sh
-
-      - name: Shellcheck new runtime
+      - name: Shellcheck the runtime
         run: |
           shellcheck --severity=warning bootstrap bin/teeup lib/*.sh \
             $(find capabilities -type f \( -name install -o -name configure \
@@ -80,7 +69,7 @@ jobs:
       - name: Lint capability metadata
         run: ./bin/teeup commands --check
 
-      - name: Run new runtime tests
+      - name: Run the tests
         env:
           CI: "true"
         run: ./tests/run.sh

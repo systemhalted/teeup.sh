@@ -400,6 +400,46 @@ test_migrate_legacy_paths_carries_on_past_a_refusal() {
   cleanup_test_env
 }
 
+# The rc-file edits go through the same safety gate migrate_rm and
+# migrate_backup already pass every path through: a ZDOTDIR that resolves
+# outside the physical $HOME is refused, not written through.
+test_migrate_legacy_paths_refuses_a_zdotdir_rc_file_outside_home() {
+  setup
+  no_chezmoi
+  local outside
+  outside="$(mktemp -d)"
+  export ZDOTDIR="$outside"
+  printf 'source "$HOME/.teeup.common"\nexport KEEP=1\n' > "$ZDOTDIR/.zshrc"
+  local rc=0 out
+  out="$(migrate_legacy_paths 2>&1)" || rc=$?
+  assert_failure "$rc" "a refused rc file must make the step return non-zero" || return 1
+  assert_equals 'source "$HOME/.teeup.common"
+export KEEP=1' "$(cat "$ZDOTDIR/.zshrc")" "a file outside HOME must not be edited" || return 1
+  assert_contains "$out" "$ZDOTDIR/.zshrc" "the refusal must name the file" || return 1
+  assert_contains "$out" "yourself" "the refusal must name the manual fix" || return 1
+  rm -rf "$outside"
+  cleanup_test_env
+}
+
+# Same gate, the other refusal it shares with migrate_rm and migrate_backup:
+# a ZDOTDIR inside a git checkout under $HOME is refused too.
+test_migrate_legacy_paths_refuses_a_zdotdir_rc_file_inside_a_git_checkout() {
+  setup
+  no_chezmoi
+  export ZDOTDIR="$TEST_HOME/code/project"
+  mkdir -p "$ZDOTDIR"
+  mkdir -p "$TEST_HOME/code/project/.git"
+  printf 'source "$HOME/.teeup.common"\nexport KEEP=1\n' > "$ZDOTDIR/.zshrc"
+  local rc=0 out
+  out="$(migrate_legacy_paths 2>&1)" || rc=$?
+  assert_failure "$rc" "a refused rc file must make the step return non-zero" || return 1
+  assert_equals 'source "$HOME/.teeup.common"
+export KEEP=1' "$(cat "$ZDOTDIR/.zshrc")" "a file inside a git checkout must not be edited" || return 1
+  assert_contains "$out" "$ZDOTDIR/.zshrc" "the refusal must name the file" || return 1
+  assert_contains "$out" "yourself" "the refusal must name the manual fix" || return 1
+  cleanup_test_env
+}
+
 test_migrate_runtime_pattern_is_narrow_enough_to_be_safe() {
   setup
   local rc=0
@@ -598,6 +638,43 @@ test_migrate_chezmoi_dry_run_claims_no_moves() {
   cleanup_test_env
 }
 
+# A dry run is a preview: it must ask nothing, even at a real terminal, even
+# when there is something to move and something to delete. Both prompts are
+# fed no input at all (stdin closed) so a version that still calls ui_confirm
+# would hang the test rather than pass it by luck on a piped default.
+test_migrate_chezmoi_dry_run_asks_nothing_before_moving() {
+  setup
+  state_done mark cap-zsh
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  printf '%s\n' "$TEST_HOME/.zshrc" > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  printf 'mine\n' > "$TEST_HOME/.zshrc"
+  local out rc=0
+  out="$(DRY_RUN=true migrate_chezmoi < /dev/null 2>&1)" || rc=$?
+  assert_success "$rc" "a dry run must finish cleanly with nothing to answer" || return 1
+  assert_not_contains "$out" "Move the files above aside" "a dry run must not ask to move anything" || return 1
+  assert_equals "mine" "$(cat "$TEST_HOME/.zshrc")" "a dry run must move nothing" || return 1
+  cleanup_test_env
+}
+
+test_migrate_chezmoi_dry_run_asks_nothing_before_deleting_the_chezmoi_config() {
+  setup
+  state_done mark cap-zsh
+  mock_chezmoi
+  export TEEUP_TEST_TTY=yes
+  : > "$TEST_HOME/managed.txt"
+  export TEEUP_TEST_CHEZMOI_MANAGED="$TEST_HOME/managed.txt"
+  mkdir -p "$XDG_CONFIG_HOME/chezmoi"
+  printf 'sourceDir = "x"\n' > "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml"
+  local out rc=0
+  out="$(DRY_RUN=true migrate_chezmoi < /dev/null 2>&1)" || rc=$?
+  assert_success "$rc" "a dry run must finish cleanly with nothing to answer" || return 1
+  assert_not_contains "$out" "[y/N]:" "a dry run must not print a confirm prompt" || return 1
+  assert_dir_exists "$XDG_CONFIG_HOME/chezmoi" "a dry run must delete nothing" || return 1
+  cleanup_test_env
+}
+
 # T5.3. A refusal and a failed backup are different things with different
 # next steps: one is teeup protecting something, the other is a file still
 # sitting there unmoved that nobody will look at if it reads as a refusal.
@@ -757,6 +834,8 @@ run_test "migrate_rc_paths honours ZDOTDIR without duplicating" test_migrate_rc_
 run_test "migrate_legacy_paths removes the files and neutralises the lines" test_migrate_legacy_paths_removes_the_files_and_neutralises_the_lines
 run_test "migrate_legacy_paths neutralises the ZDOTDIR rc file" test_migrate_legacy_paths_neutralises_the_zdotdir_rc_file
 run_test "migrate_legacy_paths carries on past a refusal" test_migrate_legacy_paths_carries_on_past_a_refusal
+run_test "migrate_legacy_paths refuses a ZDOTDIR rc file outside HOME" test_migrate_legacy_paths_refuses_a_zdotdir_rc_file_outside_home
+run_test "migrate_legacy_paths refuses a ZDOTDIR rc file inside a git checkout" test_migrate_legacy_paths_refuses_a_zdotdir_rc_file_inside_a_git_checkout
 run_test "migrate_runtime_pattern is narrow enough to be safe" test_migrate_runtime_pattern_is_narrow_enough_to_be_safe
 run_test "migrate_disable_runtime_inits neutralises each manager" test_migrate_disable_runtime_inits_neutralises_each_manager
 run_test "migrate_disable_runtime_inits names the toolchains without deleting them" test_migrate_disable_runtime_inits_names_the_toolchains_without_deleting_them
@@ -767,6 +846,8 @@ run_test "migrate_chezmoi moves the files when told to" test_migrate_chezmoi_mov
 run_test "migrate_chezmoi leaves a file of an uninstalled capability moved" test_migrate_chezmoi_leaves_a_file_of_an_uninstalled_capability_moved
 run_test "migrate_chezmoi moves nothing without a tty" test_migrate_chezmoi_moves_nothing_without_a_tty
 run_test "migrate_chezmoi dry run claims no moves" test_migrate_chezmoi_dry_run_claims_no_moves
+run_test "migrate_chezmoi dry run asks nothing before moving" test_migrate_chezmoi_dry_run_asks_nothing_before_moving
+run_test "migrate_chezmoi dry run asks nothing before deleting the chezmoi config" test_migrate_chezmoi_dry_run_asks_nothing_before_deleting_the_chezmoi_config
 run_test "migrate_backup separates a refusal from a failure" test_migrate_backup_separates_a_refusal_from_a_failure
 run_test "migrate_chezmoi says which happened" test_migrate_chezmoi_says_which_happened
 run_test "migrate_chezmoi leaves a skipped capability's file in place" test_migrate_chezmoi_leaves_a_skipped_capabilitys_file_in_place

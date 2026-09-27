@@ -68,3 +68,12 @@ fi
 # provides. Re-run `teeup configure teeup-runtime` after adding a lazy
 # capability; `teeup update` will do that for the whole core tier.
 shims_generate
+
+# The mental model as an agent skill (spec section 4, Omarchy idea 12). The
+# skill stays in the checkout and is reached by symlink, so a `git pull` ships
+# a new one without a copy drifting out of date. ~/.agents/skills is the
+# tool-neutral path Codex CLI and Gemini CLI read; ~/.claude/skills,
+# ~/.codex/skills and ~/.gemini/skills are written only where that tool
+# already has a home, and `teeup update` re-runs this capability, so an agent
+# CLI installed later still gets the link.
+agent_skill_link "$TEEUP_PATH/share/agents/skills/teeup" teeup

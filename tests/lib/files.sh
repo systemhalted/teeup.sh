@@ -13,6 +13,9 @@ setup() {
   DRY_RUN=false
   SRC="$TEST_HOME/src.conf"
   DEST="$TEST_HOME/.config/tool/tool.conf"
+  # A checkout path with a space and a dollar sign: agent_skill_link passes it
+  # to ln and to readlink, and both have to see it as one argument.
+  SKILLSRC="$TEST_HOME/che ckout \$HOME/share/agents/skills/probe"
   printf 'shipped=1\n' > "$SRC"
 }
 
@@ -859,10 +862,216 @@ test_copy_config_once_will_not_replace_a_foreign_file_it_cannot_back_up() {
   cleanup_test_env
 }
 
+test_agent_skill_link_always_writes_the_tool_neutral_directory() {
+  setup
+  mkdir -p "$SKILLSRC"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  agent_skill_link "$SKILLSRC" probe >/dev/null
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the neutral path is always linked" || return 1
+  assert_file_exists "$TEST_HOME/.agents/skills/probe/SKILL.md" "the link resolves to the skill" || return 1
+  # No ~/.claude, ~/.codex or ~/.gemini here, so teeup invents none of them.
+  local invented=""
+  local d
+  for d in .claude .codex .gemini; do
+    if [[ -e "$TEST_HOME/$d" ]]; then invented="$invented $d"; fi
+  done
+  assert_equals "" "$invented" "a tool's home directory is never created by teeup" || return 1
+  cleanup_test_env
+}
 
+test_agent_skill_link_writes_a_tool_directory_that_already_exists() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.claude" "$TEST_HOME/.gemini/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  agent_skill_link "$SKILLSRC" probe >/dev/null
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.claude/skills/probe")" "a bare ~/.claude is enough" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.gemini/skills/probe")" "an existing skills dir is used" || return 1
+  assert_equals "" "$(readlink "$TEST_HOME/.codex/skills/probe" 2>/dev/null || true)" "no ~/.codex, no link" || return 1
+  # Running it twice is quiet and changes nothing.
+  local out
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)"
+  assert_contains "$out" "Already linked" "a correct link is reported, not rewritten" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.claude/skills/probe")" || return 1
+  cleanup_test_env
+}
 
+test_agent_skill_link_keeps_a_file_it_did_not_write() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills/probe"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  printf 'mine\n' > "$TEST_HOME/.agents/skills/probe/SKILL.md"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "a refusal is a warning, not a failure" || return 1
+  assert_contains "$out" "not a symlink" "the refusal says why" || return 1
+  assert_equals "mine" "$(cat "$TEST_HOME/.agents/skills/probe/SKILL.md")" "somebody else's skill is left alone" || return 1
+  cleanup_test_env
+}
 
+test_agent_skill_link_keeps_a_foreign_symlink() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  # A symlink pointing somewhere the user chose, not into any checkout's
+  # share/agents/skills/ -- their own skill, or a dotfiles manager's link.
+  ln -s "$TEST_HOME/elsewhere" "$TEST_HOME/.agents/skills/probe"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "a foreign symlink is a warning, not a failure" || return 1
+  assert_contains "$out" "$TEST_HOME/.agents/skills/probe" "the warning names the link" || return 1
+  assert_contains "$out" "$TEST_HOME/elsewhere" "the warning names what it already points at" || return 1
+  assert_equals "$TEST_HOME/elsewhere" "$(readlink "$TEST_HOME/.agents/skills/probe")" "somebody else's symlink is left alone" || return 1
+  cleanup_test_env
+}
 
+test_agent_skill_link_keeps_a_link_into_a_different_checkout_with_the_same_layout() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  # A second, real checkout -- a fork, or the user's own skills repository --
+  # laid out the same way, so its path ends in share/agents/skills/probe too.
+  # Ownership is decided by where the link resolves, not by how the path
+  # looks, so this one has to be kept even though the shape matches.
+  local other="$TEST_HOME/a different checkout/share/agents/skills/probe"
+  mkdir -p "$other"
+  ln -s "$other" "$TEST_HOME/.agents/skills/probe"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "a same-shape foreign symlink is a warning, not a failure" || return 1
+  assert_contains "$out" "$TEST_HOME/.agents/skills/probe" "the warning names the link" || return 1
+  assert_contains "$out" "$other" "the warning names what it already points at" || return 1
+  assert_equals "$other" "$(readlink "$TEST_HOME/.agents/skills/probe")" "a different checkout's link is kept even though the path ends the same way" || return 1
+  cleanup_test_env
+}
+
+test_agent_skill_link_refreshes_a_link_into_the_real_checkout() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  # A link that does not spell $SKILLSRC exactly, so the exact-string fast
+  # path above is not what is under test, but resolves -- physically,
+  # through an alias symlink -- to this checkout's own skill directory. This
+  # is teeup's by resolution, not by shape, and gets refreshed.
+  local alias="$TEST_HOME/alias-to-the-checkout"
+  ln -s "$SKILLSRC" "$alias"
+  ln -s "$alias" "$TEST_HOME/.agents/skills/probe"
+  local out
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)"
+  assert_contains "$out" "Linked" "a link that resolves to this checkout is refreshed" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the refreshed link points at the checkout directly" || return 1
+  cleanup_test_env
+}
+
+test_agent_skill_link_resolves_symlinks_physically_not_logically() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills" "$TEST_HOME/user-owns-this"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  # A path that answers "this checkout" only if `..` is cancelled textually
+  # (bash's default, logical cd) rather than by physically walking the
+  # symlink and asking its real parent for .. : "alias" sits beside
+  # $SKILLSRC and points at a directory the user owns, and the crafted
+  # target routes through it and back out. `cd` without -P treats
+  # "alias/.." as a no-op regardless of what alias points to and lands back
+  # on $SKILLSRC; `cd -P` actually enters alias, so ".." leaves the user's
+  # own tree instead, and "probe" is not there.
+  ln -s "$TEST_HOME/user-owns-this" "$(dirname "$SKILLSRC")/alias"
+  local crafted
+  crafted="$(dirname "$SKILLSRC")/alias/../probe"
+  ln -s "$crafted" "$TEST_HOME/.agents/skills/probe"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "an unresolvable crafted link is a warning, not a failure" || return 1
+  assert_contains "$out" "$TEST_HOME/.agents/skills/probe" "the warning names the link" || return 1
+  assert_equals "$crafted" "$(readlink "$TEST_HOME/.agents/skills/probe")" "a link whose physical and logical resolutions differ is left alone" || return 1
+  cleanup_test_env
+}
+
+test_agent_skill_link_dry_run_and_missing_source() {
+  setup
+  mkdir -p "$SKILLSRC"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  local out rc=0
+  out="$(DRY_RUN=true agent_skill_link "$SKILLSRC" probe 2>&1)"
+  assert_contains "$out" "Would execute: ln -sfn" "a dry run says what it would link" || return 1
+  assert_equals "" "$(readlink "$TEST_HOME/.agents/skills/probe" 2>/dev/null || true)" "a dry run links nothing" || return 1
+  out="$(agent_skill_link "$TEST_HOME/no such skill dir" probe 2>&1)" || rc=$?
+  assert_failure "$rc" "a missing source directory is an error" || return 1
+  assert_contains "$out" "No skill directory" || return 1
+  cleanup_test_env
+}
+
+# final review, phase 5b, I1: a link inside a git checkout is never written,
+# because `teeup uninstall` refuses to delete anything there (lib/uninstall.sh,
+# migrate_path_is_safe), which would otherwise leave the uninstall unfinished
+# and an untracked skills/probe in the user's own ~/.claude repository.
+test_agent_skill_link_refuses_a_target_inside_a_git_checkout() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.claude/.git"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" "a git checkout in the way is a warning, not a failure" || return 1
+  assert_contains "$out" "$TEST_HOME/.claude/skills/probe" "the warning names the target" || return 1
+  assert_contains "$out" "inside a git checkout" "the warning says why" || return 1
+  local expected_cmd
+  expected_cmd="ln -sfn $(printf '%q' "$SKILLSRC") $(printf '%q' "$TEST_HOME/.claude/skills/probe")"
+  assert_contains "$out" "$expected_cmd" "the warning gives the exact command to run by hand" || return 1
+  assert_equals "" "$(readlink "$TEST_HOME/.claude/skills/probe" 2>/dev/null || true)" "nothing was linked inside the checkout" || return 1
+  [[ ! -d "$TEST_HOME/.claude/skills" ]] || { echo "teeup must not create a directory inside the checkout either"; return 1; }
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the tool-neutral path, outside the checkout, is still linked" || return 1
+  cleanup_test_env
+}
+
+# final review, phase 5b, I2: teeup-runtime is core tier, so a failed mkdir
+# for one agent CLI's directory must warn and move on to the next one, never
+# abort the whole call (bootstrap, or `teeup update`, would otherwise stop
+# before zsh, git and ssh over a link to one optional agent CLI).
+test_agent_skill_link_survives_a_directory_it_cannot_create() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.claude"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  chmod 0555 "$TEST_HOME/.claude"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  chmod 0755 "$TEST_HOME/.claude"
+  assert_success "$rc" "an unwritable tool directory is a warning, not a failure" || return 1
+  assert_contains "$out" "Could not create $TEST_HOME/.claude/skills" "the warning names the directory" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" "the tool-neutral directory is unaffected" || return 1
+  cleanup_test_env
+}
+
+# final review, phase 5b, I3: a dangling link -- a clone that moved, a
+# worktree that was deleted -- whose recorded target still ends in
+# share/agents/skills/<name> reads as a stale teeup link, not somebody else's,
+# so it is replaced rather than kept and reported as a doctor failure whose
+# printed fix does nothing.
+test_agent_skill_link_replaces_a_dangling_link_to_a_vanished_checkout() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  ln -s "$TEST_HOME/old checkout/share/agents/skills/probe" "$TEST_HOME/.agents/skills/probe"
+  local out
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)"
+  assert_contains "$out" "Linked" "a stale, dangling link to a vanished checkout is replaced" || return 1
+  assert_equals "$SKILLSRC" "$(readlink "$TEST_HOME/.agents/skills/probe")" || return 1
+  cleanup_test_env
+}
+
+# The dangling-but-differently-shaped counterpart: a broken link that never
+# looked like a teeup skill directory is somebody else's problem, not fixed
+# up here.
+test_agent_skill_link_keeps_a_dangling_link_not_shaped_like_a_skill_directory() {
+  setup
+  mkdir -p "$SKILLSRC" "$TEST_HOME/.agents/skills"
+  printf -- '---\nname: probe\n---\n' > "$SKILLSRC/SKILL.md"
+  ln -s "$TEST_HOME/wherever/the-user-put-it" "$TEST_HOME/.agents/skills/probe"
+  local out rc=0
+  out="$(agent_skill_link "$SKILLSRC" probe 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Keeping" || return 1
+  assert_equals "$TEST_HOME/wherever/the-user-put-it" "$(readlink "$TEST_HOME/.agents/skills/probe")" || return 1
+  cleanup_test_env
+}
 
 
 
@@ -930,4 +1139,16 @@ run_test "disable_matching_lines does not rewrite when the backup failed" test_d
 run_test "disable_matching_lines refuses a file it cannot write" test_disable_matching_lines_refuses_a_file_it_cannot_write
 run_test "disable_matching_lines handles an awkward path" test_disable_matching_lines_handles_a_path_with_spaces_and_metacharacters
 run_test "ere_quote matches only the literal text" test_ere_quote_matches_only_the_literal_text
+run_test "agent_skill_link always writes the neutral directory" test_agent_skill_link_always_writes_the_tool_neutral_directory
+run_test "agent_skill_link writes a tool directory that exists" test_agent_skill_link_writes_a_tool_directory_that_already_exists
+run_test "agent_skill_link keeps a file it did not write" test_agent_skill_link_keeps_a_file_it_did_not_write
+run_test "agent_skill_link keeps a foreign symlink" test_agent_skill_link_keeps_a_foreign_symlink
+run_test "agent_skill_link keeps a link into a different checkout with the same layout" test_agent_skill_link_keeps_a_link_into_a_different_checkout_with_the_same_layout
+run_test "agent_skill_link refreshes a link into the real checkout" test_agent_skill_link_refreshes_a_link_into_the_real_checkout
+run_test "agent_skill_link resolves symlinks physically, not logically" test_agent_skill_link_resolves_symlinks_physically_not_logically
+run_test "agent_skill_link dry run, and a missing source" test_agent_skill_link_dry_run_and_missing_source
+run_test "agent_skill_link refuses a target inside a git checkout" test_agent_skill_link_refuses_a_target_inside_a_git_checkout
+run_test "agent_skill_link survives a directory it cannot create" test_agent_skill_link_survives_a_directory_it_cannot_create
+run_test "agent_skill_link replaces a dangling link to a vanished checkout" test_agent_skill_link_replaces_a_dangling_link_to_a_vanished_checkout
+run_test "agent_skill_link keeps a dangling link not shaped like a skill directory" test_agent_skill_link_keeps_a_dangling_link_not_shaped_like_a_skill_directory
 print_summary

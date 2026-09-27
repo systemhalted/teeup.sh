@@ -381,6 +381,84 @@ test_doctor_warns_when_the_shims_directory_appears_twice() {
   cleanup_test_env
 }
 
+test_configure_links_the_agent_skill() {
+  setup
+  mkdir -p "$TEST_HOME/.claude"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  local src="$TEEUP_PATH/share/agents/skills/teeup"
+  assert_equals "$src" "$(readlink "$TEST_HOME/.agents/skills/teeup")" "the neutral path is linked" || return 1
+  assert_equals "$src" "$(readlink "$TEST_HOME/.claude/skills/teeup")" "an existing ~/.claude gets the link" || return 1
+  assert_file_exists "$TEST_HOME/.agents/skills/teeup/SKILL.md" "the link resolves to the shipped skill" || return 1
+  assert_equals "" "$(readlink "$TEST_HOME/.codex/skills/teeup" 2>/dev/null || true)" "no ~/.codex, no link" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_the_agent_skill_link() {
+  setup
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  local out
+  out="$("$TEEUP" doctor teeup-runtime 2>&1)"
+  assert_contains "$out" "points at the shipped agent skill" "a linked skill is reported as healthy" || return 1
+  rm -f "$TEST_HOME/.agents/skills/teeup"
+  local rc=0
+  out="$("$TEEUP" doctor teeup-runtime 2>&1)" || rc=$?
+  assert_failure "$rc" "a missing skill link fails the doctor" || return 1
+  assert_contains "$out" "agent skill is not linked" || return 1
+  assert_contains "$out" "teeup configure teeup-runtime" "the fix is one command" || return 1
+  cleanup_test_env
+}
+
+# final review, phase 5b, I2: a Migration Assistant or backup restore can
+# leave ~/.gemini/skills as a dangling symlink into a dotfiles repository that
+# is not cloned yet. teeup-runtime is core tier, so this must warn and finish,
+# not take a fresh-Mac bootstrap down before zsh, git and ssh.
+test_configure_survives_a_dangling_agent_skills_symlink() {
+  setup
+  mkdir -p "$TEST_HOME/.gemini"
+  ln -s "$TEST_HOME/.gemini/nowhere" "$TEST_HOME/.gemini/skills"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure teeup-runtime 2>&1)" || rc=$?
+  assert_success "$rc" "a dangling ~/.gemini/skills must not fail configure" || return 1
+  assert_contains "$out" "Could not create $TEST_HOME/.gemini/skills" || return 1
+  assert_equals "$TEEUP_PATH/share/agents/skills/teeup" "$(readlink "$TEST_HOME/.agents/skills/teeup")" "the tool-neutral link still happens" || return 1
+  cleanup_test_env
+}
+
+# The same finding's other repro: a tool directory teeup cannot write into (a
+# root-owned ~/.claude/skills after `sudo claude`, stood in for here with a
+# read-only ~/.claude, since the suite does not run as root).
+test_configure_survives_an_unwritable_agent_home() {
+  setup
+  mkdir -p "$TEST_HOME/.claude"
+  chmod 0555 "$TEST_HOME/.claude"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" configure teeup-runtime 2>&1)" || rc=$?
+  chmod 0755 "$TEST_HOME/.claude"
+  assert_success "$rc" "an unwritable ~/.claude must not fail configure" || return 1
+  assert_contains "$out" "Could not create $TEST_HOME/.claude/skills" || return 1
+  assert_equals "$TEEUP_PATH/share/agents/skills/teeup" "$(readlink "$TEST_HOME/.agents/skills/teeup")" "the tool-neutral link still happens" || return 1
+  cleanup_test_env
+}
+
+# final review, phase 5b, I3: the doctor named `teeup configure teeup-runtime`
+# as the fix for a stale skill link, but re-linking a link that does not
+# physically resolve to this checkout used to be a no-op, so the fix never
+# actually fixed anything and doctor failed on every run.
+test_doctor_fix_repairs_a_dangling_skill_link() {
+  setup
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  ln -sfn "$TEST_HOME/old-checkout/share/agents/skills/teeup" "$TEST_HOME/.agents/skills/teeup"
+  local rc=0 out
+  out="$("$TEEUP" doctor teeup-runtime 2>&1)" || rc=$?
+  assert_failure "$rc" "a stale link to a vanished checkout fails the doctor" || return 1
+  assert_contains "$out" "agent skill is not linked" || return 1
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  out="$("$TEEUP" doctor teeup-runtime 2>&1)"
+  assert_contains "$out" "points at the shipped agent skill" "the documented fix actually fixes it" || return 1
+  assert_equals "$TEEUP_PATH/share/agents/skills/teeup" "$(readlink "$TEST_HOME/.agents/skills/teeup")" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/teeup-runtime"
 run_test "install gets gum and jq" test_install_gets_gum_and_jq
 run_test "configure creates state, env and link" test_configure_creates_state_env_and_link
@@ -404,4 +482,9 @@ run_test "doctor fails when the env file is empty" test_doctor_fails_when_the_en
 run_test "doctor fails when the env file has a syntax error" test_doctor_fails_when_the_env_file_has_a_syntax_error
 run_test "doctor fails without leaking raw errors when the env file is unreadable" test_doctor_fails_without_leaking_raw_errors_when_the_env_file_is_unreadable
 run_test "doctor fails when a state directory cannot be searched" test_doctor_fails_when_a_state_directory_cannot_be_searched
+run_test "configure links the agent skill" test_configure_links_the_agent_skill
+run_test "doctor reports the agent skill link" test_doctor_reports_the_agent_skill_link
+run_test "configure survives a dangling agent skills symlink" test_configure_survives_a_dangling_agent_skills_symlink
+run_test "configure survives an unwritable agent home" test_configure_survives_an_unwritable_agent_home
+run_test "doctor fix repairs a dangling skill link" test_doctor_fix_repairs_a_dangling_skill_link
 print_summary

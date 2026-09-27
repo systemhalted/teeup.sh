@@ -11,6 +11,7 @@ source "$(dirname "$0")/helper.sh"
 source "$TEEUP_PATH/lib/dev.sh"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd -P)"
+SKILL="$REPO/share/agents/skills/teeup/SKILL.md"
 
 # Every capability with no remove script and no packages or casks: the set
 # `teeup remove` refuses outright, because there is nothing for it to undo.
@@ -352,6 +353,169 @@ test_manual_summary_check_catches_both_mistakes() {
   assert_not_contains "$problems" "here.md" || return 1
 }
 
+# The agent skill (share/agents/skills/teeup/SKILL.md) is the mental model an
+# agent CLI loads before it touches the checkout. These four checks read it
+# the same way the manual and README checks above read their documents:
+# derive a claim from the runtime and compare, rather than trusting prose.
+
+test_the_skill_has_frontmatter_a_name_and_a_description() {
+  assert_file_exists "$SKILL" "the agent skill ships in the checkout" || return 1
+  local first
+  first="$(head -1 "$SKILL")"
+  assert_equals "---" "$first" "frontmatter opens on line 1 or the whole file is content" || return 1
+  local front
+  front="$(awk 'NR>1 && /^---$/{exit} NR>1{print}' "$SKILL")"
+  assert_contains "$front" "name: teeup" "the skill names itself" || return 1
+  assert_contains "$front" "description:" "the skill says when to load it" || return 1
+}
+
+test_the_skill_names_only_paths_that_exist() {
+  # Backticked paths that start with one of the checkout's top-level
+  # directories. A path containing < is a placeholder (capabilities/<name>/)
+  # and never matches the character class below, so it is skipped along with
+  # anything else the class does not spell out.
+  local missing="" p
+  for p in $(grep -oE '`(bin|lib|capabilities|share|themes|migrations|tests|docs|machines)/[A-Za-z0-9._/-]+`' "$SKILL" |
+             tr -d '`' | sort -u); do
+    if [[ ! -e "$REPO/$p" ]]; then
+      missing="$missing $p"
+    fi
+  done
+  assert_equals "" "$missing" "every path the skill names exists in the checkout" || return 1
+}
+
+# skill_verbs: every verb the skill names, from the two places it names one --
+# a backticked `teeup <verb>` span, and the summary block under "## The verbs".
+# Bare prose is not scanned, because "a teeup checkout" would otherwise read as
+# a verb called "checkout". Compared against teeup_verbs (lib/dev.sh), the
+# dispatcher's own list, rather than shelling out to `./bin/teeup help`: that
+# would source the real answers file and machine config (see the file header),
+# and teeup_verbs already reads the same source `teeup dev check`'s menu lint
+# does, so the two checks cannot silently disagree about what a real verb is.
+skill_verbs() {
+  {
+    grep -oE '`teeup [a-z][a-z-]*' "$SKILL" | sed 's/^`teeup //'
+    awk '/^## The verbs$/{f=1;next} /^## /{f=0} f' "$SKILL" |
+      grep -oE 'teeup [a-z][a-z-]*' | sed 's/^teeup //'
+  } | sort -u
+}
+
+test_the_skill_names_only_verbs_teeup_has() {
+  local verbs named unknown="" v
+  verbs=" $(teeup_verbs | tr '\n' ' ') "
+  named="$(skill_verbs)"
+  assert_contains "$named" "install" "the verb summary was found at all" || return 1
+  for v in $named; do
+    case "$verbs" in
+      *" $v "*) ;;
+      *) unknown="$unknown $v" ;;
+    esac
+  done
+  assert_equals "" "$unknown" "every verb the skill names is a verb teeup has" || return 1
+}
+
+test_the_skill_marks_the_generated_and_borrowed_trees_read_only() {
+  local body
+  body="$(cat "$SKILL")"
+  # No leading ~ in the needle: shellcheck's SC2088 fires on a quoted word that
+  # starts with one, and the path is what matters, not the tilde.
+  assert_contains "$body" '.local/state/teeup/' "the generated tree is named as read-only" || return 1
+  assert_contains "$body" 'docs/superpowers/' "the decision record is named as read-only" || return 1
+  assert_contains "$body" '.superpowers/' "another agent's workspace is named as read-only" || return 1
+  assert_contains "$body" 'Never edit these' "the read-only rules have a heading of their own" || return 1
+}
+
+PARITY="$REPO/docs/legacy-parity.md"
+
+# parity_rows: the table rows between the markers, each one
+# "| `<module>` | <capability cell> | <prose> |".
+parity_rows() {
+  sed -n '/<!-- parity-map -->/,/<!-- \/parity-map -->/p' "$PARITY" | grep '^| `'
+}
+
+test_the_parity_checklist_has_a_row_for_every_legacy_module() {
+  assert_file_exists "$PARITY" "the parity checklist is in docs/" || return 1
+  # The verbatim module list from `legacy/teeup.sh --list-modules`, frozen here
+  # because the command that produced it is deleted in a later task.
+  local missing="" m rows
+  # The rows are captured once. `something | grep -q` would be a race under
+  # `set -o pipefail`: grep exits on the first match, the upstream command gets
+  # SIGPIPE, and the pipeline reports a failure that depends on the pipe buffer.
+  rows="$(parity_rows)"
+  for m in homebrew shell zsh ohmyzsh bash cli python java ruby rust emacs docker apps; do
+    if ! grep -qF "| \`$m\` |" <<<"$rows"; then
+      missing="$missing $m"
+    fi
+  done
+  assert_equals "" "$missing" "every legacy module has a row" || return 1
+  assert_equals "13" "$(printf '%s\n' "$rows" | wc -l | tr -d ' ')" "thirteen rows, one per module" || return 1
+}
+
+test_the_parity_checklist_names_only_capabilities_that_exist() {
+  local bad="" row cell trimmed leftover name
+  while IFS= read -r row; do
+    # The second cell: everything between the first and second "|" after the
+    # module name. It has to be exactly the word dropped, or one or more
+    # backticked capability names and nothing else -- an unquoted word left
+    # over once every `name` span is stripped out is a typo that lost its
+    # backticks, and grep -oE alone would silently skip right over it.
+    cell="$(printf '%s' "$row" | awk -F'|' '{print $3}')"
+    trimmed="$(printf '%s' "$cell" | tr -d ' ')"
+    if [[ -z "$trimmed" ]]; then
+      bad="$bad empty-cell"
+      continue
+    fi
+    if [[ "$trimmed" == "dropped" ]]; then
+      continue
+    fi
+    leftover="$trimmed"
+    for name in $(printf '%s' "$trimmed" | grep -oE '`[a-z0-9][a-z0-9.-]*`' | tr -d '`'); do
+      if [[ ! -d "$REPO/capabilities/$name" ]]; then
+        bad="$bad $name"
+      fi
+      leftover="${leftover//\`$name\`/}"
+    done
+    if [[ -n "$leftover" ]]; then
+      bad="$bad unquoted:$leftover"
+    fi
+  done <<PARITY_ROWS
+$(parity_rows)
+PARITY_ROWS
+  assert_equals "" "$bad" "every replacement cell is dropped, or backticked capability names that all exist" || return 1
+}
+
+# Four files may still say "legacy/". In three of them it is a historical
+# fact rather than a path somebody could follow -- the changelog, the parity
+# checklist, and the design record under docs/superpowers -- and the fourth
+# is this file, which cannot search for the string without containing it.
+# Anywhere else it is a broken reference to a tree that no longer exists.
+test_nothing_tracked_points_at_the_deleted_legacy_tree() {
+  if [[ -d "$REPO/legacy" ]]; then
+    echo "legacy/ is still in the checkout"
+    return 1
+  fi
+  local hits=""
+  # -e, not -d: in a linked git worktree ".git" is a file pointing at the main
+  # repository, so -d would skip the check there and the suite would pass
+  # without ever looking.
+  if command -v git >/dev/null 2>&1 && [[ -e "$REPO/.git" ]]; then
+    # Tracked files only: an untracked scratch note in somebody's working
+    # tree is theirs, and failing their suite over it would be wrong.
+    hits="$(cd "$REPO" && git ls-files -z | xargs -0 grep -lF 'legacy/' 2>/dev/null |
+      grep -v '^CHANGELOG\.md$' |
+      grep -v '^docs/superpowers/' |
+      grep -v '^docs/legacy-parity\.md$' |
+      grep -v '^tests/docs\.sh$' || true)"
+  else
+    # A tarball rather than a checkout: fall back to the filesystem.
+    hits="$(cd "$REPO" && grep -rlF 'legacy/' \
+      --exclude-dir=.git --exclude-dir=superpowers \
+      --exclude=CHANGELOG.md --exclude=legacy-parity.md --exclude=docs.sh \
+      . 2>/dev/null || true)"
+  fi
+  assert_equals "" "$hits" "no tracked file points at legacy/" || return 1
+}
+
 echo "docs"
 run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
@@ -366,4 +530,11 @@ run_test "manual SUMMARY.md matches the pages" test_manual_summary_matches_the_p
 run_test "manual SUMMARY.md check catches both mistakes" test_manual_summary_check_catches_both_mistakes
 run_test "manual has no Org code markers" test_manual_has_no_org_code_markers
 run_test "manual Org marker check catches leftovers" test_manual_org_marker_check_catches_leftovers
+run_test "the skill has frontmatter, a name and a description" test_the_skill_has_frontmatter_a_name_and_a_description
+run_test "the skill names only paths that exist" test_the_skill_names_only_paths_that_exist
+run_test "the skill names only verbs teeup has" test_the_skill_names_only_verbs_teeup_has
+run_test "the skill marks the generated and borrowed trees read-only" test_the_skill_marks_the_generated_and_borrowed_trees_read_only
+run_test "the parity checklist has a row for every legacy module" test_the_parity_checklist_has_a_row_for_every_legacy_module
+run_test "the parity checklist names only capabilities that exist" test_the_parity_checklist_names_only_capabilities_that_exist
+run_test "nothing tracked points at the deleted legacy tree" test_nothing_tracked_points_at_the_deleted_legacy_tree
 print_summary

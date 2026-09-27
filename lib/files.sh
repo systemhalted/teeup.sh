@@ -822,10 +822,11 @@ block_opener_ere() {
 # it is and reported: neutralising an opener would orphan its terminator. Its
 # body is neutralised instead, and a bare test with a dead body does nothing.
 #
-# Ported from legacy/teeup.sh with the pattern and the reason reaching awk
-# through ENVIRON rather than -v: awk expands escape sequences inside a -v
-# assignment, so the legacy call's '\.pyenv' arrived as '.pyenv' -- any
-# character followed by "pyenv" -- and disabled unrelated lines.
+# Ported from the old installer with two more fixes. The pattern and the
+# reason reach awk through ENVIRON rather than -v: awk expands escape
+# sequences inside a -v assignment, so the legacy call's '\.pyenv' arrived as
+# '.pyenv' -- any character followed by "pyenv" -- and disabled unrelated
+# lines.
 #
 # A missing file is nothing to do. A symlink belongs to whatever put it there
 # (a dotfile manager writing through it would see teeup's edit as a local
@@ -924,4 +925,115 @@ ere_quote() {
     esac
   done
   printf '%s\n' "$out"
+}
+
+# agent_skill_link <source-dir> <name>
+# Make one skill directory in the checkout visible to the agent CLIs on this
+# machine, by symlink rather than by copy: a copy would go stale the next time
+# `git pull` changed the skill and nothing would say so.
+#
+# $HOME/.agents/skills is the tool-neutral path, and it is always written:
+# Codex CLI documents it as where user skills live, and Gemini CLI reads it as
+# an alias for ~/.gemini/skills that wins inside the user tier. Claude Code
+# does not read it at all, which is why the three tool-specific directories
+# exist here too -- but each of those is only written when that tool already
+# has a home directory, because creating ~/.gemini on a Mac with no Gemini CLI
+# is a write teeup has no business making. Installing an agent later is
+# covered: teeup-runtime is a core capability, so `teeup update` re-runs this.
+#
+# A path that is not a symlink is left alone with a warning: it is somebody
+# else's skill, or their own file, and neither is teeup's to replace. Neither
+# is a symlink that is not teeup's -- and ownership is decided by where a
+# symlink resolves, not by how its path looks: a fork, or a user's own skills
+# repository laid out the same way, can end in share/agents/skills/<name>
+# without being this checkout. A symlink already at $target is kept, with a
+# warning naming both paths, unless it resolves -- physically, both sides --
+# to this checkout's own skill directory, in which case it is teeup's to
+# refresh. A dangling symlink whose recorded target still ends in
+# share/agents/skills/<name> is treated the same way: it is another (or this
+# very) checkout that moved or was deleted, so it reads as a stale teeup link
+# and is replaced, rather than as a foreign broken link that is not teeup's
+# business (final review, phase 5b, I3 -- otherwise the doctor's fix for this,
+# rerunning this same command, was a no-op).
+#
+# Nothing is ever written inside a git checkout: `git status` in the user's
+# own ~/.claude or ~/.agents repository must never grow an untracked
+# skills/<name> entry that `teeup uninstall` then refuses to clean up (final
+# review, I1). $dir is resolved physically as far up as it exists -- it, or
+# an ancestor, may itself be a symlink into a dotfiles checkout, which a plain
+# string comparison would miss -- before migrate_in_git_checkout is asked
+# whether that resolves inside one; a positive answer is a warning with the
+# plain `ln` command to run by hand, not a write.
+#
+# A failed mkdir or ln is a warning too, never a fatal error (final review,
+# I2): teeup-runtime is a core capability, so an unwritable or already-taken
+# skills directory for one agent CLI must not stop bootstrap, `teeup update`
+# or any other directory in this same loop.
+agent_skill_link() {
+  local src="$1" name="$2"
+  local dir parent target current resolved_src resolved_current resolved_dir
+  if [[ ! -d "$src" ]]; then
+    warn "No skill directory at $src"
+    return 1
+  fi
+  resolved_src="$(cd -P "$src" 2>/dev/null && pwd -P)"
+  for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.gemini/skills"; do
+    parent="$(dirname "$dir")"
+    if [[ "$dir" != "$HOME/.agents/skills" && ! -d "$parent" ]]; then
+      continue
+    fi
+    target="$dir/$name"
+    current="$(readlink "$target" 2>/dev/null || true)"
+    if [[ "$current" == "$src" ]]; then
+      log "Already linked: $target"
+      continue
+    fi
+    if [[ -e "$target" && ! -L "$target" ]]; then
+      warn "Keeping $target, which is not a symlink teeup wrote"
+      continue
+    fi
+    if [[ -L "$target" ]]; then
+      # No readlink -f on macOS: cd into the link's own directory first, so a
+      # relative target resolves the way the shell would resolve it, then
+      # into what it points at, then ask for the physical (symlink-free)
+      # path on both sides. A target that does not exist, or a chain that
+      # does not lead back here, fails this and is foreign. -P on every cd
+      # here, not just on the final pwd: bash's default (logical) cd cancels
+      # a "component/.." pair textually, without checking whether
+      # "component" is a symlink to somewhere else entirely, so a target
+      # such as "alias/../probe" can read back as this checkout without -P
+      # while actually resolving somewhere else.
+      resolved_current="$(cd -P "$(dirname "$target")" 2>/dev/null && cd -P "$current" 2>/dev/null && pwd -P)" || resolved_current=""
+      if [[ -z "$resolved_current" ]]; then
+        case "$current" in
+          */share/agents/skills/"$name") ;;
+          *)
+            warn "Keeping $target, a symlink to $current rather than $src"
+            continue
+            ;;
+        esac
+      elif [[ "$resolved_current" != "$resolved_src" ]]; then
+        warn "Keeping $target, a symlink to $current rather than $src"
+        continue
+      fi
+    fi
+    # The physical form of $dir, resolved as far up as something actually
+    # exists: $dir itself is usually the part that is missing, not just its
+    # last component, so migrate_resolve's single cd is not enough here.
+    resolved_dir="$dir"
+    while [[ ! -d "$resolved_dir" && "$resolved_dir" != "/" ]]; do
+      resolved_dir="$(dirname "$resolved_dir")"
+    done
+    resolved_dir="$(cd -P "$resolved_dir" 2>/dev/null && pwd -P)" || resolved_dir="$dir"
+    if migrate_in_git_checkout "$resolved_dir/$name"; then
+      warn "Not linking $target: $dir is inside a git checkout, which teeup will not write into. Link it yourself if you want it: ln -sfn $(printf '%q' "$src") $(printf '%q' "$target")"
+      continue
+    fi
+    if [[ ! -d "$dir" ]]; then
+      run_cmd mkdir -p "$dir" || { warn "Could not create $dir, so the $name skill was not linked there."; continue; }
+    fi
+    run_cmd ln -sfn "$src" "$target" || { warn "Could not link $target, so the $name skill was not linked there."; continue; }
+    ok "Linked $target"
+  done
+  return 0
 }

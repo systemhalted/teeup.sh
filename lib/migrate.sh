@@ -245,10 +245,64 @@ migrate_rc_paths() {
 # neither pattern touches them and their stock checksums stay valid.
 TEEUP_MIGRATE_LEGACY_RC_PATTERN='teeup\.common|teeupshrc|shellrc\.common|mac-setup'
 # Oh My Zsh, Powerlevel10k and Antigen: the prompt and plugin frameworks that
-# teeup's zsh layer and starship replace. legacy/teeup.sh disabled the antigen
+# teeup's zsh layer and starship replace. The old installer disabled the antigen
 # lines for the same reason. capabilities/zsh/doctor looks for exactly this
 # union afterwards, so anything added here belongs there too.
 TEEUP_MIGRATE_PROMPT_RC_PATTERN='powerlevel10k|p10k|POWERLEVEL9K_|oh-my-zsh|ohmyzsh|ZSH_THEME|antigen'
+
+# migrate_rc_pattern_matches <file> <pattern> -> 0 when some line of <file>
+# matches the awk ERE <pattern> and is not already a comment or disabled line.
+# The same check disable_matching_lines makes internally, repeated here so
+# migrate_disable_rc_lines can tell "nothing here needed changing" apart from
+# "something did, and was left alone" before a symlink or an unwritable file
+# is counted against the migration's exit status. -f follows a symlink to a
+# regular file, so this reads through one without ever writing to it.
+migrate_rc_pattern_matches() {
+  local file="$1" pattern="$2"
+  [[ -f "$file" ]] || return 1
+  TEEUP_MRPM_PATTERN="$pattern" awk '
+    $0 ~ ENVIRON["TEEUP_MRPM_PATTERN"] && $0 !~ /^[ \t]*[:#]/ { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$file" 2>/dev/null
+}
+
+# migrate_disable_rc_lines <file> <pattern> <reason>
+# disable_matching_lines (lib/files.sh) edits a shell rc file directly and,
+# by its own contract, always returns 0 -- "a file this cannot edit is
+# reported and the migration carries on" -- which is right for the file
+# itself but wrong for migrate's exit status: a symlink or an unwritable file
+# it left alone is work undone, the same as a refused removal or a declined
+# chezmoi prompt. This wraps it with the same safety gate migrate_rm and
+# migrate_backup already pass every path through (migrate_resolve plus
+# migrate_path_is_safe -- inside the physical $HOME, not in a git checkout,
+# not the chezmoi source; ZDOTDIR can point anywhere), and turns "left alone"
+# into a status the caller can add up: 0 when there was nothing to change or
+# the lines were disabled, 1 when the file was left alone for any reason.
+# The safety check only runs when there is something to disable and the file
+# is not a symlink (disable_matching_lines never writes through one, and
+# migrate_resolve's "resolve every symlink above the last component" is not
+# what decides that); a symlink is always work left alone once something in
+# it would have changed.
+migrate_disable_rc_lines() {
+  local file="$1" pattern="$2" reason="$3" resolved
+  if ! migrate_rc_pattern_matches "$file" "$pattern"; then
+    disable_matching_lines "$file" "$pattern" "$reason"
+    return 0
+  fi
+  if [[ -L "$file" ]]; then
+    disable_matching_lines "$file" "$pattern" "$reason"
+    return 1
+  fi
+  if ! resolved="$(migrate_resolve "$file")" || ! migrate_path_is_safe "$resolved"; then
+    warn "Refusing to edit $file: it resolves to ${resolved:-$file}, which teeup's migration must not touch. Remove the $reason lines from it yourself."
+    return 1
+  fi
+  if [[ ! -w "$file" ]]; then
+    disable_matching_lines "$file" "$pattern" "$reason"
+    return 1
+  fi
+  disable_matching_lines "$file" "$pattern" "$reason"
+}
 
 # migrate_legacy_paths
 # What the old monolithic teeup.sh left behind: ~/.teeup.common (a file it
@@ -257,9 +311,10 @@ TEEUP_MIGRATE_PROMPT_RC_PATTERN='powerlevel10k|p10k|POWERLEVEL9K_|oh-my-zsh|ohmy
 # into whatever dotfiles directory it was pointed at. Removing the files
 # without neutralising the lines that source them would make every new shell
 # print an error, so both halves happen here.
-# 0 when everything it tried succeeded, 1 when a removal was refused. A
-# refusal never stops the rest: the point of the step is to get as much of the
-# machine into a good state as it safely can, and say what it would not touch.
+# 0 when everything it tried succeeded, 1 when a removal or an rc-file edit
+# was refused or left alone. A refusal never stops the rest: the point of the
+# step is to get as much of the machine into a good state as it safely can,
+# and say what it would not touch.
 migrate_legacy_paths() {
   local key path rc=0
   log "Removing what older teeup versions left in your home directory"
@@ -271,8 +326,8 @@ migrate_legacy_paths() {
   log "Neutralising the shell lines that loaded them"
   while IFS= read -r path; do
     if [[ -n "$path" ]]; then
-      disable_matching_lines "$path" "$TEEUP_MIGRATE_LEGACY_RC_PATTERN" "replaced by teeup's zsh layer"
-      disable_matching_lines "$path" "$TEEUP_MIGRATE_PROMPT_RC_PATTERN" "replaced by teeup's starship prompt"
+      migrate_disable_rc_lines "$path" "$TEEUP_MIGRATE_LEGACY_RC_PATTERN" "replaced by teeup's zsh layer" || rc=1
+      migrate_disable_rc_lines "$path" "$TEEUP_MIGRATE_PROMPT_RC_PATTERN" "replaced by teeup's starship prompt" || rc=1
     fi
   done <<EOF_RC
 $(migrate_rc_paths)
@@ -284,7 +339,7 @@ EOF_RC
 # Deliberately narrow. The bare name would match a comment, an unrelated PATH
 # entry or a variable that merely contains it, and a pattern that is too wide
 # comments out lines the user still needs. These are the patterns
-# legacy/teeup.sh used, plus the dot-directory each manager puts on PATH.
+# the old installer used, plus the dot-directory each manager puts on PATH.
 migrate_runtime_pattern() {
   case "$1" in
     sdkman) printf '%s\n' 'sdkman-init\.sh|SDKMAN_DIR|\.sdkman' ;;
@@ -299,15 +354,17 @@ migrate_runtime_pattern() {
 # java or a python on PATH is the failure this prevents. The toolchains stay:
 # ~/.sdkman, ~/.rbenv and ~/.pyenv hold installed versions a user may still
 # want, and it is the shell lines, not the directories, that make them win.
-# Always 0: nothing here can be refused.
+# 0 when every rc-file edit it tried succeeded (or had nothing to do), 1 when
+# one was left alone -- a symlink, unwritable, or refused by the same safety
+# gate migrate_rm and migrate_backup use.
 migrate_disable_runtime_inits() {
-  local manager path dir leftover="" pattern
+  local manager path dir leftover="" pattern rc=0
   log "Disabling the runtime managers mise replaces (SDKMAN, rbenv, pyenv)"
   for manager in sdkman rbenv pyenv; do
     pattern="$(migrate_runtime_pattern "$manager")"
     while IFS= read -r path; do
       if [[ -n "$path" ]]; then
-        disable_matching_lines "$path" "$pattern" "$manager replaced by mise"
+        migrate_disable_rc_lines "$path" "$pattern" "$manager replaced by mise" || rc=1
       fi
     done <<EOF_RC
 $(migrate_rc_paths)
@@ -321,7 +378,7 @@ EOF_RC
   if [[ -n "$leftover" ]]; then
     warn "Still on disk:$leftover. teeup does not delete an installed toolchain; remove them yourself once a new shell works."
   fi
-  return 0
+  return $rc
 }
 
 # migrate_teeup_ships <absolute-path>
@@ -483,17 +540,30 @@ migrate_chezmoi() {
       echo "teeup does not ship these -- they are yours, and only the .teeup_backup_<ts> copy will hold them:"
       printf '%s' "$mine"
     fi
-    if ! lazy_is_tty; then
-      # A bulk rename of somebody's home directory is not something to do on
-      # an unattended run. Say what a real one would do and stop.
-      log "Not moving anything: there is nobody to ask. A run from a terminal would move the files above aside as <name>.teeup_backup_<ts>."
+    if [[ "$DRY_RUN" == "true" ]]; then
+      # A preview asks nothing, even at a real terminal: it cannot know which
+      # answer the user would give, so it says what each answer would do
+      # instead of guessing one. Answering yes would move the files above
+      # aside as <name>.teeup_backup_<ts> and reinstall teeup's own version of
+      # each one it ships; answering no would leave every one of them where it
+      # is, still owned by chezmoi.
+      log "Not asking to move anything: a dry run asks no questions. A real run would ask before moving the files above aside as <name>.teeup_backup_<ts> and reinstalling teeup's own version of each one it ships; answering no would leave them where they are."
       rm -f "$managed"
       return 0
+    fi
+    if ! lazy_is_tty; then
+      # A bulk rename of somebody's home directory is not something to do on
+      # an unattended run. Say what a real one would do and stop: this is
+      # work the migration could not finish, not merely a note, so it counts
+      # against the exit status like any other step left undone.
+      log "Not moving anything: there is nobody to ask. A run from a terminal would move the files above aside as <name>.teeup_backup_<ts>."
+      rm -f "$managed"
+      return 1
     fi
     if ! ui_confirm "Move the files above aside so teeup can take over this home directory?" no; then
       log "Nothing was moved. chezmoi still owns those files; re-run when you are ready."
       rm -f "$managed"
-      return 0
+      return 1
     fi
     while IFS= read -r line || [[ -n "$line" ]]; do
       if [[ -z "$line" ]]; then
@@ -575,6 +645,13 @@ migrate_chezmoi() {
   chezmoi_config="$(migrate_target chezmoi-config)"
   if [[ ! -e "$chezmoi_config" ]]; then
     log "No $chezmoi_config, so chezmoi already has nothing pointing it at this home."
+    return $rc
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    # Same rule as the move above: a preview asks nothing and names both
+    # answers instead of guessing one. The checkout itself is never deleted
+    # either way.
+    log "Not asking to delete $chezmoi_config: a dry run asks no questions. A real run would ask before deleting it so chezmoi stops pointing at $src; answering no would leave it in place. The checkout itself always stays."
     return $rc
   fi
   if ui_confirm "Delete $chezmoi_config, so chezmoi stops pointing at $src? The checkout itself stays." no; then

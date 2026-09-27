@@ -138,4 +138,21 @@ for cmd in gum jq; do
   fi
 done
 
+# The agent skill. The neutral path is teeup's to keep correct; the three
+# tool-specific ones are only checked where that tool has a home, and a gap
+# there is a warning because the user may have removed the link on purpose.
+skill_src="$TEEUP_PATH/share/agents/skills/teeup"
+skill_link="$HOME/.agents/skills/teeup"
+if [[ "$(readlink "$skill_link" 2>/dev/null || true)" == "$skill_src" ]]; then
+  doctor_ok "$skill_link points at the shipped agent skill."
+else
+  doctor_fail "The teeup agent skill is not linked into $skill_link, so an agent CLI cannot load it." "teeup configure teeup-runtime"
+fi
+for agent_home in .claude .codex .gemini; do
+  if [[ -d "$HOME/$agent_home" ]] &&
+     [[ "$(readlink "$HOME/$agent_home/skills/teeup" 2>/dev/null || true)" != "$skill_src" ]]; then
+    doctor_warn "$HOME/$agent_home is here but $HOME/$agent_home/skills/teeup does not point at the skill. Run: teeup configure teeup-runtime"
+  fi
+done
+
 doctor_verdict

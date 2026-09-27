@@ -235,9 +235,11 @@ cmd_remove() {
 #   2. every installed capability, dependents first, through the same
 #      cap_remove `teeup remove` uses -- packages only when asked;
 #   3. any LaunchAgent of teeup's still loaded;
-#   4. the config files, by the stock-checksum rule;
-#   5. with --identity, git's identity and git/local (never an SSH key);
-#   6. teeup's own command, config and state, only after a clean run.
+#   4. the "teeup" symlink agent_skill_link put in each agent CLI's skill
+#      directory;
+#   5. the config files, by the stock-checksum rule;
+#   6. with --identity, git's identity and git/local (never an SSH key);
+#   7. teeup's own command, config and state, only after a clean run.
 # It asks several questions, only on a terminal, each defaulting to the
 # answer that removes less (plus one more per pristine file it can restore an
 # earlier copy of, uninstall_offer_restore). Without a terminal it needs
@@ -295,6 +297,7 @@ cmd_uninstall() {
   uninstall_doom_theme_line
   uninstall_capabilities
   uninstall_launchagents
+  uninstall_agent_skills
   uninstall_configs
   if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then
     uninstall_identity
@@ -1369,11 +1372,14 @@ cmd_commands() {
 # doing one fixed thing, so a later migration off something else needs no new
 # verb; `legacy` is the only one today.
 #
-# Each step returns 1 when it REFUSED something rather than when it failed:
-# the migration always runs to the end, and the exit status says whether
-# anything was left alone. Nothing is ever lost -- every removal is of a file
-# teeup itself generated, and every foreign file is moved to a
-# .teeup_backup_<ts> copy beside it.
+# Each step returns 1 when it left something undone rather than when it
+# failed outright -- a refused removal or rc-file edit, a declined chezmoi
+# prompt, a chezmoi step with nobody to ask -- and the migration always runs
+# to the end regardless; the exit status says whether anything was left
+# alone. "Migration finished." is only ever printed for a run that left
+# nothing undone. Nothing is ever lost -- every removal is of a file teeup
+# itself generated, and every foreign file is moved to a .teeup_backup_<ts>
+# copy beside it.
 cmd_migrate() {
   local target="${1:-}" rc=0
   case "$target" in
@@ -1397,7 +1403,7 @@ cmd_migrate() {
   elif [[ $rc -eq 0 ]]; then
     ok "Migration finished. Open a new terminal, then run: teeup update, then teeup doctor to see anything still left over"
   else
-    err "Migration finished, but teeup refused to touch something above. Nothing was lost; read the warnings, then run: teeup doctor"
+    err "teeup migrate legacy refused to touch something above, or had nobody to ask. Nothing was lost; read the warnings, then run: teeup doctor"
   fi
   return $rc
 }
