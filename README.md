@@ -15,8 +15,8 @@ teeup is a modular, macOS-only environment distribution that sets up a Mac and m
 
 ## Requirements
 
-- **macOS**
-- **Homebrew** or **MacPorts**
+- **macOS 13 or later**
+- No package manager is required beforehand; `bootstrap` installs **Homebrew** automatically. If you use **MacPorts** instead, it must be installed beforehand.
 - **bash 3.2** (which ships with macOS) is enough.
 
 ## Installation
