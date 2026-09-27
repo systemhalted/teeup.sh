@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-beta] - UNRELEASED
+
+teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distribution that replaces the old installer. It consists of a `bootstrap` script, a `teeup` command, and capabilities organized into core, daily, and lazy tiers.
+
+### Added
+- `bootstrap` and the wizard; tiers; Homebrew or MacPorts; machine files.
+- `teeup` verbs: `install`, `configure`, `update`, `reset`, `remove`, `uninstall`, `doctor`, `status`, `list`, `menu`, `config`, `theme`, `launch`, `secret`, `migrate`, `dev`.
+- Capabilities: shell (zsh, starship), git and ssh identity, WezTerm, Emacs (the starter, Doom and Spacemacs flavors, and a daemon), Zed, Neovim, VS Code, Cursor, Firefox Developer Edition, Obsidian, Chrome, AeroSpace, tmux, Colima, Ollama, Herdr, mise runtimes, and the AI command-line tools as lazy leaves.
+- Themes: catppuccin, tokyo-night, gruvbox and everforest, dark and light; Terminal.app and Doom theming; `theme set --reload`.
+- Fonts.
+- `teeup migrate legacy`, for moving off the old teeup or chezmoi.
+- `teeup uninstall`, including that it never touches ssh keys.
+- The manual at teeup.systemhalted.in.
+- The agent skill for Claude Code, Codex and Gemini CLI.
+
+### Removed
+- The old installer has been deleted.
+- Linux support is removed; Linux users should point to the separate chezmoi dotfiles repository.
+
+---
+
+## Before the redesign (the legacy installer, removed in 0.1.0-beta)
+
 ## [Unreleased]
 
 ### Added

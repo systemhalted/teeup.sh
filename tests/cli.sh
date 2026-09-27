@@ -257,7 +257,7 @@ test_help_lists_verbs() {
 
 test_teeup_path_derives_from_location() {
   setup
-  assert_equals "0.1.0-dev" "$(TEEUP_PATH=/nonexistent "$TEEUP" version)" || return 1
+  assert_equals "0.1.0-beta" "$(TEEUP_PATH=/nonexistent "$TEEUP" version)" || return 1
   cleanup_test_env
 }
 
@@ -306,7 +306,7 @@ test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file() {
   expected_themes="$(for d in "$TEEUP_PATH"/themes/*/; do basename "$d"; done | sort)"
 
   out="$("$TEEUP" version 2>"$errfile")"
-  assert_equals "0.1.0-dev" "$out" "version stdout" || return 1
+  assert_equals "0.1.0-beta" "$out" "version stdout" || return 1
   assert_contains "$(cat "$errfile")" "also exists and is ignored" "version stderr" || return 1
 
   out="$("$TEEUP" theme current 2>"$errfile")"
