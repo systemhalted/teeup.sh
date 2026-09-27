@@ -37,10 +37,10 @@ Last, it offers to delete `~/.config/chezmoi`, the config that points chezmoi at
 
 - Delete the chezmoi source directory, or anything in it. That checkout may still serve other machines.
 - Run `chezmoi purge`. teeup only ever asks chezmoi what it manages and where its source is.
-- Touch anything outside your home directory, or inside any git checkout in it.
+- Delete or move anything outside your home directory, or inside any git checkout in it. (It does edit your zsh files where `ZDOTDIR` puts them, backing each one up first, and it leaves a symlinked one alone.)
 - Move your shell files aside when teeup's zsh layer is not installed, which would leave you with no `~/.zshrc`. It says so and tells you to run `teeup install zsh` first.
 
-Every step runs to the end even when an earlier one refused something. The command exits non-zero when anything was left alone, and ends with "Migration finished. Open a new terminal, then run: teeup update, then teeup doctor to see anything still left over" when it was not.
+Every step runs to the end even when an earlier one refused something, and the output names each thing it left alone. Read that output rather than relying on the exit status: a refused deletion or move makes it exit non-zero, but a zsh file it could not edit, or a chezmoi question you answered no to (or that could not be asked without a terminal), still ends with exit status 0. Run `teeup doctor` afterwards to see anything still left over.
 
 ## After migrating
 
