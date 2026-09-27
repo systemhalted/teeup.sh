@@ -10,7 +10,7 @@ teeup knows five AI coding tools. None of them is installed by `./bootstrap`. Ea
 | `copilot` | GitHub Copilot CLI | `ai-copilot` | `copilot` |
 | `opencode` | OpenCode | `ai-opencode` | `opencode` |
 
-To install all five at once, use the `ai` bundle:
+`teeup install ai` installs all five as an explicit bundle:
 
 ```sh
 teeup install ai

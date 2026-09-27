@@ -25,9 +25,10 @@ Run it as yourself, not as root. Without a terminal to ask on, it refuses unless
 | 1. Shell files | teeup's lines in `~/.zshrc`, `~/.zshenv` and `~/.zprofile`, first, so no new shell calls a tool that is about to go. An unedited `~/.zshrc` becomes a short one of your own; unedited `~/.zshenv` and `~/.zprofile` go. In an edited file only teeup's lines are disabled, with a copy of the original beside it. |
 | 2. Capabilities | Every installed capability, dependents first, through the same removal `teeup remove` uses. Packages and apps only with `--packages`. |
 | 3. LaunchAgents | Any of teeup's LaunchAgents still loaded, such as the Emacs daemon and the Caps Lock mapping. |
-| 4. Config files | Every file teeup copied and you never edited. Where teeup replaced a file of yours at install time and the `.teeup_backup_*` copy is still there, it offers to put that copy back. |
-| 5. Identity | Only with `--identity`: the git identity file teeup generated, `~/.config/git/local` (moved aside, since teeup never wrote it), and `~/.ssh/config` and `~/.config/git/config` if teeup put them there and you never edited them. |
-| 6. teeup itself | Last, and only if nothing above was refused or failed: `~/.local/bin/teeup`, and the files teeup wrote in `~/.config/teeup` and `~/.local/state/teeup`. A machine file, hook or theme of your own keeps `~/.config/teeup` in place, and teeup names it. |
+| 4. Agent skills | The "teeup" symlinks placed in `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`, and `~/.gemini/skills`. |
+| 5. Config files | Every file teeup copied and you never edited. Where teeup replaced a file of yours at install time and the `.teeup_backup_*` copy is still there, it offers to put that copy back. |
+| 6. Identity | Only with `--identity`: the git identity file teeup generated, `~/.config/git/local` (moved aside, since teeup never wrote it), and `~/.ssh/config` and `~/.config/git/config` if teeup put them there and you never edited them. |
+| 7. teeup itself | Last, and only if nothing above was refused or failed: `~/.local/bin/teeup`, and the files teeup wrote in `~/.config/teeup` and `~/.local/state/teeup`. A machine file, hook or theme of your own keeps `~/.config/teeup` in place, and teeup names it. |
 
 ## What it keeps
 

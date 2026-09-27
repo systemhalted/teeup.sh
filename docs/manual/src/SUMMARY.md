@@ -8,6 +8,12 @@
 - [The menu](the-menu.md)
 - [Tiers](tiers.md)
 
+# Part 2: Look and Feel
+
+- [Themes](themes.md)
+- [Fonts](fonts.md)
+- [Prompt](prompt.md)
+
 # Part 3: The Applications
 
 - [Terminal](terminal.md)

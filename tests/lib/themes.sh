@@ -508,12 +508,12 @@ test_every_editor_theme_has_its_extension() {
   cleanup_test_env
 }
 
-test_every_theme_is_in_the_readme() {
+test_every_theme_is_in_the_manual() {
   setup
   local name
   for name in $(shipped_themes); do
-    grep -qF "| \`$name\` |" "$TEEUP_PATH/README.md" ||
-      { echo "README.md's theme table has no row for $name"; return 1; }
+    grep -q "\`$name\`" "$TEEUP_PATH/docs/manual/src/themes.md" ||
+      { echo "docs/manual/src/themes.md does not name $name"; return 1; }
   done
   cleanup_test_env
 }
@@ -539,6 +539,6 @@ run_test "every rendered JSON and Lua file parses" test_every_rendered_json_and_
 run_test "every rendered doom-theme.el names the palette and parses" test_every_rendered_doom_theme_file_names_the_palette_and_parses
 run_test "every palette names themes the tools ship" test_every_palette_names_themes_the_tools_ship
 run_test "every editor theme has its extension" test_every_editor_theme_has_its_extension
-run_test "every theme is in the README" test_every_theme_is_in_the_readme
+run_test "every theme is in the manual" test_every_theme_is_in_the_manual
 run_test "palettes match their upstream anchors" test_palettes_match_their_upstream_anchors
 print_summary

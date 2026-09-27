@@ -1,6 +1,6 @@
 [book]
 title = "The teeup Manual"
-description = "How to set up, use and change a Mac with teeup."
+description = "Your Mac, ready to code. An opinionated, reproducible macOS environment for developers."
 authors = ["Palak Mathur"]
 language = "en"
 src = "src"

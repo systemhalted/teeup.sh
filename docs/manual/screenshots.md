@@ -71,6 +71,12 @@ and tick the entry here. This file sits outside `src/`, so it is not published.
 - [ ] `ll` in a project directory in WezTerm, showing eza's icons and git
   status column.
 
+## Part 2: Look and Feel
+
+### Themes (`src/themes.md`)
+
+- [ ] The theme picker from `teeup theme set` showing the available themes.
+
 ### Containers (`src/containers.md`)
 
 - [ ] The first `docker ps` on a fresh Mac: the Install now? prompt, the
