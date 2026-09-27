@@ -182,9 +182,39 @@ test_new_without_git_history_uses_the_clock_and_dry_run_writes_nothing() {
 }
 
 AI_SPLIT_MIGRATION=1790403216.sh
+TERMINAL_APP_MIGRATION=1790470689.sh
 
 copy_ai_split_migration() {
   cp "$TEEUP_PATH/migrations/$AI_SPLIT_MIGRATION" "$TEEUP_MIGRATIONS_DIR/$AI_SPLIT_MIGRATION"
+}
+
+copy_terminal_app_migration() {
+  cp "$TEEUP_PATH/migrations/$TERMINAL_APP_MIGRATION" "$TEEUP_MIGRATIONS_DIR/$TERMINAL_APP_MIGRATION"
+}
+
+test_terminal_app_migration_stays_pending_until_theme_is_installed() {
+  setup
+  copy_terminal_app_migration
+  unset TEEUP_SKIP
+  local rc=0 out
+  out="$(migration_run "$TERMINAL_APP_MIGRATION" 2>&1)" || rc=$?
+  assert_failure "$rc" "a missing prerequisite must keep the migration pending" || return 1
+  assert_contains "$out" "theme is not installed here yet" || return 1
+  [[ ! -e "$MARKS/$TERMINAL_APP_MIGRATION" ]] || { echo "the deferred migration was marked done"; return 1; }
+  cleanup_test_env
+}
+
+test_terminal_app_migration_counts_a_skip_as_done() {
+  setup
+  copy_terminal_app_migration
+  export TEEUP_SKIP=terminal-app
+  local rc=0 out
+  out="$(migration_run "$TERMINAL_APP_MIGRATION" 2>&1)" || rc=$?
+  assert_success "$rc" "TEEUP_SKIP is a completed user choice: $out" || return 1
+  assert_contains "$out" "Skipping terminal-app (TEEUP_SKIP)." || return 1
+  assert_file_exists "$MARKS/$TERMINAL_APP_MIGRATION" "the skipped migration is marked done" || return 1
+  state_done check cap-terminal-app && { echo "a skipped capability must not be installed"; return 1; }
+  cleanup_test_env
 }
 
 write_legacy_ai_path() {
@@ -390,6 +420,8 @@ run_test "ai split migration dry run changes no state or shim" test_ai_split_mig
 run_test "ai split migration tolerates a fixture tree without ai" test_ai_split_migration_tolerates_a_fixture_tree_without_ai
 run_test "ai split migration marks a working symlink leaf" test_ai_split_migration_marks_a_working_symlink_leaf
 run_test "ai split migration marks a dangling symlink leaf" test_ai_split_migration_marks_a_dangling_symlink_leaf
+run_test "terminal-app migration stays pending until theme is installed" test_terminal_app_migration_stays_pending_until_theme_is_installed
+run_test "terminal-app migration counts a skip as done" test_terminal_app_migration_counts_a_skip_as_done
 run_test "a file that is not a migration name is skipped loudly" test_a_file_that_is_not_a_migration_name_is_skipped_loudly
 run_test "run_pending counts correctly with an odd name present" test_run_pending_counts_correctly_with_an_odd_name_present
 run_test "list is oldest first and ignores other files" test_list_is_oldest_first_and_ignores_other_files
