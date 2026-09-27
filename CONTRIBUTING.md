@@ -1,440 +1,61 @@
 # Contributing to teeup.sh
 
-Thank you for your interest in contributing! This document provides guidelines for contributing to the teeup.sh project.
+teeup is a macOS environment distribution: a git checkout, a `bootstrap`
+script, a `bin/teeup` CLI, a library under `lib/`, and one directory per tool
+under `capabilities/`. `README.md` describes it from a user's side; the
+manual at https://teeup.systemhalted.in (built from `docs/manual`) is the
+long-form walkthrough of every tool teeup configures; this file is the rest.
 
----
-
-## 📋 Table of Contents
-
-- [Getting Started](#getting-started)
-- [Adding a New Module](#adding-a-new-module)
-- [Code Style Guidelines](#code-style-guidelines)
-- [Testing](#testing)
-- [Pull Request Process](#pull-request-process)
-
----
-
-## 🚀 Getting Started
-
-1. **Fork the repository**
-2. **Clone your fork:**
-   ```bash
-   git clone https://github.com/yourusername/teeup.sh.git
-   cd teeup.sh
-   ```
-3. **Create a feature branch:**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
----
-
-## 🆕 Adding a New Module
-
-To add a new module to the setup scripts, follow these steps:
-
-### 1. Add Toggle Variable
-
-In `teeup.sh`, add a toggle variable in the "User Toggles" section. Toggles are
-left **empty** here and resolved from the selected profile after argument parsing
-(see `apply_profile_defaults`), so the profile and `--only`/`--except` can drive
-them while an explicit `RUN_*` env var still wins:
+## Getting started
 
 ```bash
-# Module toggles (resolved from TEEUP_PROFILE in apply_profile_defaults).
-RUN_HOMEBREW="${RUN_HOMEBREW:-}"
-RUN_ZSH="${RUN_ZSH:-}"
-RUN_CLI="${RUN_CLI:-}"
-# ... existing modules ...
-RUN_NEWMODULE="${RUN_NEWMODULE:-}"  # Add your new module
+git clone https://github.com/<you>/teeup.sh
+cd teeup.sh
+git checkout -b my-change
+./tests/run.sh            # everything, in a worker pool; about a minute
+./bin/teeup commands --check
 ```
 
-Then decide whether your module belongs in the lean `base` profile (package
-manager + shell + cli) or only in `full`, and wire its default in
-`apply_profile_defaults()`:
-
-```bash
-apply_profile_defaults() {
-  # ...
-  RUN_CLI="${RUN_CLI:-true}"                # in base
-  RUN_NEWMODULE="${RUN_NEWMODULE:-$extra}"  # full-only (extra=true only when profile=full)
-}
-```
-
-Also add a case to `parse_except_modules()` so `--except newmodule` works.
-
-### 2. Update `list_modules()` Function
-
-Add your module to the list:
-
-```bash
-list_modules() {
-  cat <<EOF
-Available modules:
-  homebrew  - Package manager setup (Homebrew or MacPorts; compatibility module name)
-  zsh       - Zsh integration + Powerlevel10k + plugins
-  ohmyzsh   - Legacy alias for zsh with ZSH_MODE=ohmyzsh
-  cli       - Core CLI utilities (git, jq, ripgrep, etc.)
-  python    - Python environment (UV or pyenv/poetry)
-  java      - SDKMAN! + Java + Maven/Gradle
-  emacs     - Emacs editor + minimal config
-  docker    - Colima + Docker CLI
-  apps      - GUI apps (Bruno, Obsidian)
-  newmodule - Your new module description
-EOF
-  exit 0
-}
-```
-
-### 3. Add Case in `parse_only_modules()`
-
-Handle the module name in the parser:
-
-```bash
-parse_only_modules() {
-  # ... existing code ...
-  for mod in "${MODS[@]}"; do
-    mod_lower=$(echo "$mod" | tr '[:upper:]' '[:lower:]')
-    case "$mod_lower" in
-      homebrew) RUN_HOMEBREW=true ;;
-      # ... existing cases ...
-      newmodule) RUN_NEWMODULE=true ;;
-      *) warn "Unknown module: $mod" ;;
-    esac
-  done
-}
-```
-
-### 4. Implement Installation Logic
-
-Add the installation section:
-
-```bash
-###################################
-# ===== New Module Setup ======== #
-###################################
-if [[ "$RUN_NEWMODULE" == "true" ]]; then
-  log "Setting up New Module..."
-  
-  # Your installation logic here
-  pkg_install newmodule newmodule
-  
-  # Configuration steps
-  # ...
-  
-else
-  log "Skipping New Module setup (RUN_NEWMODULE=false)"
-fi
-```
-
-### 5. Add to Wizard
-
-In `teeup-wizard.sh`, add configuration screen:
-
-```bash
-show_newmodule_config() {
-  if ! is_module_selected "newmodule"; then
-    return
-  fi
-
-  print_header
-  print_section "Step 3x: New Module Configuration"
-
-  echo "Configure your new module:"
-  echo ""
-  
-  # Your configuration prompts
-  
-  wait_for_key
-}
-```
-
-Add to module selection:
-
-```bash
-show_module_selection() {
-  # ... existing code ...
-  
-  selected="false"
-  is_module_selected "newmodule" && selected="true"
-  print_option "9" "newmodule" "Your new module description" "$selected"
-  echo ""
-}
-```
-
-### 6. Add Tests
-
-In `tests/test_teeup.sh`, add tests:
-
-```bash
-test_newmodule_support() {
-  local content
-  content=$(cat "$PROJECT_DIR/teeup.sh")
-  assert_contains "$content" "RUN_NEWMODULE" "Should define RUN_NEWMODULE"
-  assert_contains "$content" "newmodule" "Should support newmodule"
-}
-```
-
-Add to test execution:
-
-```bash
-run_test "New Module support" test_newmodule_support
-```
-
-### 7. Update Documentation
-
-Update `README.md`:
-
-- Add to Available Modules table
-- Add to Installed Tools table
-- Add configuration section if needed
-
----
-
-## 🎨 Code Style Guidelines
-
-### Bash Compatibility
-
-- **Target:** Bash 3.2 (macOS default)
-- **Strict mode:** Always use `set -euo pipefail`
-- **No Bash 4 syntax:** Avoid `${var,,}`, use `tr '[:upper:]' '[:lower:]'` instead
-
-### Array Handling
-
-Use safe array expansion for Bash 3.2 compatibility:
-
-```bash
-# Good (safe for empty arrays)
-for item in ${array[@]+"${array[@]}"}; do
-  echo "$item"
-done
-
-# Bad (fails with set -u on empty arrays)
-for item in "${array[@]}"; do
-  echo "$item"
-done
-```
-
-### Variable Naming
-
-- **Environment variables:** `UPPERCASE_WITH_UNDERSCORES`
-- **Local variables:** `lowercase_with_underscores`
-- **Functions:** `snake_case`
-
-### Error Handling
-
-```bash
-# Always check command success
-if ! command -v tool >/dev/null 2>&1; then
-  warn "Tool not found"
-  return 1
-fi
-
-# Use || for optional commands
-pkg_install package package || warn "Failed to install package"
-```
-
-### Logging
-
-Use the provided logging functions:
-
-```bash
-log "Installing something..."   # Info message
-ok "Installation complete"      # Success message
-warn "Non-critical warning"     # Warning message
-err "Critical error"            # Error message
-```
-
-### Idempotency
-
-Always check if something is already installed:
-
-```bash
-if pkg_installed package; then
-  log "Package already exists, skipping"
-elif [[ -f "$CONFIG_FILE" ]]; then
-  log "Config already exists, skipping"
-else
-  # Create config
-fi
-```
-
-### Package Manager Support
-
-Package-backed modules should use `pkg_install <package> [command]` instead of calling `brew` or `port` directly. This keeps `PACKAGE_MANAGER=auto` working across newer Homebrew machines and older MacPorts machines.
-
-Use explicit Homebrew calls only for Homebrew-only features, such as casks, and guard them with the existing fallback behavior.
-
----
-
-## 🧪 Testing
-
-### Running Tests
-
-```bash
-# Run all tests
-./legacy/tests/run_tests.sh
-
-# Run specific test file
-./legacy/tests/test_teeup.sh
-./legacy/tests/test_teeup-wizard.sh
-```
-
-### Testing with shellenv
-
-[shellenv](https://github.com/systemhalted/shellenv) gives teeup a per-project shell sandbox: runs execute under a *pinned* bash version, and every `$HOME`/`TMPDIR`/`XDG_*` write teeup makes lands in `./.shellenv/<env>/home/` instead of your real home — so you can exercise the dotfile-writing paths for real without touching your own dotfiles. (`./.shellenv/` is gitignored.)
-
-One-time setup (needs `cc`/`make`/`tar`; the bash build takes ~a minute):
-
-```bash
-shellenv init
-shellenv install bash@5.2                     # build the pinned runtime from source
-shellenv create --shell bash@5.2 --profile strict   # from the teeup.sh directory
-```
-
-Then, from the teeup.sh directory:
-
-```bash
-# Test suite under the pinned bash
-shellenv exec -- ./legacy/tests/run_tests.sh
-
-# Dry-run everything; sandboxed even without --dry-run
-shellenv exec -- ./legacy/teeup.sh --dry-run --all
-
-# Real dotfile writes, contained: lands in .shellenv/default/home/, not ~
-shellenv exec -- ./legacy/teeup.sh --init-dotfiles
-
-# Throwaway HOME per run (idempotency checks)
-shellenv exec --ephemeral -- ./legacy/teeup.sh --init-dotfiles
-
-# Real package installs with full namespace isolation (network required)
-shellenv exec --container ubuntu:24.04 -- ./legacy/teeup.sh --only cli
-```
-
-Notes:
-- `shellenv exec --strict-shell -- …` fails instead of falling back when the pinned bash isn't installed.
-- Host-mode sandboxing contains `$HOME`-class writes only; package installs and other system mutations need `--container`.
-- If you run a bare `shellenv` binary from outside its release directory, set `SHELLENV_PROFILES` to its bundled `profiles/` directory so `--profile` resolution works.
-
-### Writing Tests
-
-Tests use the helper framework in `tests/test_helper.sh`:
-
-```bash
-test_my_feature() {
-  local content
-  content=$(cat "$PROJECT_DIR/teeup.sh")
-  assert_contains "$content" "my_feature" "Should contain my_feature"
-}
-
-# Add to test execution
-run_test "My feature" test_my_feature
-```
-
-The `run_test` line is not optional bookkeeping: a `test_*` function nobody
-passes to `run_test` never runs, and the suite still reports green, which is
-worse than a failing test because nothing says so. `print_summary` compares the
-`test_*` functions the file defines against the ones it was asked to run and
-fails the suite over any that were left out.
-
-### Test Assertions
-
-Available assertions:
-
-- `assert_equals expected actual message`
-- `assert_contains haystack needle message`
-- `assert_file_exists file message`
-- `assert_dir_exists dir message`
-- `assert_success exit_code message`
-- `assert_failure exit_code message`
-
----
-
-## 📝 Pull Request Process
-
-1. **Update tests** to cover your changes
-2. **Run the test suite** and ensure all tests pass:
-   ```bash
-   ./legacy/tests/run_tests.sh
-   ```
-3. **Update documentation** (README.md, etc.)
-4. **Commit with clear message:**
-   ```bash
-   git commit -m "Add feature: Brief description
-   
-   - Detail 1
-   - Detail 2
-   - Detail 3"
-   ```
-5. **Push to your fork:**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-6. **Create Pull Request** with:
-   - Clear title
-   - Description of changes
-   - Test results
-   - Screenshots (if UI changes)
-
----
-
-## 🐛 Bug Reports
-
-When reporting bugs, include:
-
-1. **macOS version:** `sw_vers`
-2. **Architecture:** `uname -m`
-3. **Error output:** Full error message
-4. **Steps to reproduce**
-5. **Expected vs actual behavior**
-
----
-
-## 💡 Feature Requests
-
-For feature requests:
-
-1. **Describe the feature** clearly
-2. **Explain the use case** and benefits
-3. **Consider alternatives** you've explored
-4. **Offer to implement** if possible
-
----
-
-## 📜 Code of Conduct
-
-- Be respectful and inclusive
-- Provide constructive feedback
-- Focus on the code, not the person
-- Help others learn and grow
-
----
-
-## 🙏 Thank You!
-
-Your contributions make this project better for everyone. We appreciate your time and effort!
-
----
-
-## 📞 Questions?
-
-If you have questions about contributing:
-
-1. Check existing issues and PRs
-2. Review the documentation
-3. Open a discussion issue
-4. Ask in the community
-
-Happy contributing! 🚀
-
----
-
-## Adding a capability (new runtime)
-
-1. Create `capabilities/<name>/` with `capability`, `install`, `configure`.
-2. `capability` is a sourced `KEY=value` file: `summary`, `group`, `tier`
-   (`core|daily|lazy`), `requires`, `provides`, `packages`, `casks`, `apps`,
-   `interactive`.
+You do not need a Mac to work on most of teeup: the suite mocks every
+external command and runs on Linux, which is what CI's `ubuntu-latest` job
+proves. You do need a Mac to know whether a capability actually works, which
+is why every change that touches one should say what it has and has not been
+run against.
+
+## The layout
+
+| Path | What it is | Who owns it |
+|---|---|---|
+| `bootstrap` | the only entry point on a fresh Mac | teeup |
+| `bin/teeup` | verb dispatch; `teeup <verb> <cap>` runs `capabilities/<cap>/<verb>` | teeup |
+| `lib/*.sh` | sourced by `bin/teeup` and by every capability script through `lib/all.sh` | teeup |
+| `capabilities/<name>/` | one tool: metadata, scripts, shipped files, theme templates | teeup |
+| `capabilities/{core,daily}.list` | the ordered tier manifests | teeup |
+| `themes/<name>/{dark,light}.toml` | semantic palettes | teeup |
+| `share/teeup/menu.json` | the declarative menu | teeup |
+| `share/teeup/skeleton/` | what `teeup dev new-capability` copies | teeup |
+| `share/agents/skills/teeup/` | the agent skill | teeup |
+| `migrations/<epoch>.sh` | one-shot fixes for machines already set up | teeup |
+| `machines/<hostname>.conf` | committed per-machine overrides; a fork's fallback when `$TEEUP_CONFIG_DIR/machines` has none | whoever owns that machine |
+| `tests/` | `helper.sh`, `run.sh`, `lib/`, `capabilities/`, `cli.sh`, `bootstrap.sh`, `docs.sh` | teeup |
+| `docs/legacy-parity.md` | where each part of the previous installer went | teeup |
+| `docs/manual/` | the mdBook manual published to teeup.systemhalted.in | teeup |
+| `docs/superpowers/` | specs, implementation plans and reviews: the design record | read-only |
+
+Inside a capability, three directories carry three different owners. `config/`
+is copied into `~/.config` once and belongs to the user after that. `home/` is
+copied into `$HOME` under its literal dotfile name (`home/.zshrc` becomes
+`~/.zshrc`), same rule. `default/` stays teeup's and is read at runtime through
+`$TEEUP_PATH`, so a `git pull` improves it without touching a user edit. Thin
+user files source thick default files.
+
+## Adding a capability
+
+1. Create `capabilities/<name>/` with `capability`, `install` and `configure`,
+   or let `./bin/teeup dev new-capability <name>` do it (item 29).
+2. `capability` is a sourced `KEY=value` file with no logic: `summary`,
+   `group`, `tier` (`core|daily|lazy`), `requires`, `provides`, `packages`,
+   `casks`, `apps`, `interactive`.
 3. `install` only installs packages (`pkg_install`, `cask_install`).
    `configure` only writes configuration (`copy_config_once`,
    `write_managed_file`, `append_once`, `run_cmd`). Both are idempotent and
@@ -462,8 +83,7 @@ Happy contributing! 🚀
     which is the user's own file and survives a `git pull`; the checkout's
     `machines/<hostname>.conf` is the fallback, for anyone keeping a fork.
     Either is sourced last, so it wins over the answers file. It is also the
-    only
-    place a work identity is configured (`TEEUP_WORK_EMAIL`, plus
+    only place a work identity is configured (`TEEUP_WORK_EMAIL`, plus
     `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host or
     `TEEUP_WORK_GH_ACCOUNT` for a second account on github.com): git has one
     identity everywhere, and the wizard never asks about work. See
@@ -563,10 +183,11 @@ Happy contributing! 🚀
     wrapper teeup wrote. Every mise call except the wrapper's `mise x` runs
     with `-C /`, so a project's `mise.toml` in the current directory cannot
     shadow the global file. Check registry names with `mise registry`. Give
-    each AI command its own `tier=lazy` capability with one `provides=` token;
-    reserve `ai` for the explicit aggregate. A wrapper's first install must
-    print progress, append to `$TEEUP_STATE_DIR/logs/lazy.log`, and remain
-    retryable after interruption.
+    each AI leaf its own `tier=lazy` capability with one `provides=` token
+    (`ai-claude`, `ai-codex`, `ai-gemini`, `ai-copilot`, `ai-opencode`);
+    reserve `ai` for the explicit aggregate that installs all five. A
+    wrapper's first install must print progress, append to
+    `$TEEUP_STATE_DIR/logs/lazy.log`, and remain retryable after interruption.
     Language runtimes use `teeup install dev-env <lang>` (`dev_env_install`),
     never a capability or a shim.
 20. Two test hooks join `TEEUP_TEST_MISSING`: `TEEUP_TEST_TTY=yes|no`
@@ -580,9 +201,9 @@ Happy contributing! 🚀
 21. `configure` is re-run by `teeup update` on every machine, so it must be
     quiet and cheap when nothing has changed: report "Already ..." instead of
     rewriting, and never restart an application or print a multi-line manual
-    step unconditionally. `defaults_write` now leaves a key that already
-    holds the value alone and records the domains it did write, so a
-    `configure` restarts an app with
+    step unconditionally. `defaults_write` leaves a key that already holds
+    the value alone and records the domains it did write, so a `configure`
+    restarts an app with
     `if defaults_changed com.apple.dock; then run_cmd killall Dock || true; fi`.
     A one-time notice uses `state_done ensure <name>`, which succeeds only the
     first time.
@@ -701,3 +322,162 @@ Happy contributing! 🚀
     or `lib/macos.sh` gaining its own directory there) must be added to
     `_UNINSTALL_STATE_ENTRIES` in `lib/uninstall.sh`, or the state directory
     is never recognised as fully teeup's and never goes.
+
+The twenty capabilities `teeup menu` reserves rows for under `install.*`
+(browsers, communication apps, container tooling and the rest) are not built
+yet; that work is deferred to 0.2.0. Do not add a menu row that points at a
+capability which does not exist — `teeup dev check` refuses it, and it would
+be the wrong order regardless: the capability comes first, the row after.
+
+## Code style
+
+- **bash 3.2**, because that is what macOS ships as `/bin/bash`. No `mapfile`,
+  `readarray`, `declare -A`, `${var,,}`, `${var^^}`, `readlink -f`, `**`,
+  `&>>`, `wait -n` or `local -n`. Use `10#$n` for arithmetic on a string that
+  may have a leading zero. A same-line `local` back-reference (`local a=1
+  b=$a`) leaves `b` empty. bash 3.2 mis-parses a quoted pattern containing `/`
+  inside `${var//pat/repl}`: use `replace_literal` (`lib/files.sh`). Run
+  `shopt -u patsub_replacement 2>/dev/null || true` before any `${var//}`
+  whose replacement can contain `&`.
+- **BSD tools.** No GNU-only flags, no `grep -P`, no `\t` or `\n` in a `sed`
+  replacement. Pass an awk value through `ENVIRON` rather than `-v` when it can
+  contain a backslash: awk expands escapes in a `-v` assignment.
+- **Strict mode.** `set -euo pipefail` at the top of `bin/teeup`, `bootstrap`
+  and every test. Capability scripts are run as `bash -eu` by `cap_run` and
+  need no line of their own. In any file that runs under `set -e`, write
+  `if … then … fi` rather than a bare `[[ … ]] && cmd` statement: as the last
+  statement of a function it makes the function's exit status the test's.
+- **Arrays** expand as `${array[@]+"${array[@]}"}`, which is safe when the
+  array is empty and `set -u` is on. bash 3.2 has indexed arrays only.
+- **Names.** Environment variables `UPPER_WITH_UNDERSCORES`, locals and
+  functions `lower_with_underscores`. Every teeup-owned variable starts
+  `TEEUP_`.
+- **Logging** is `log`, `ok`, `warn`, `err` and `die` from `lib/core.sh`.
+  Nothing prints a bare `echo` to describe what it is doing.
+- **Packages** go through `pkg_install <package> [command]`, never a direct
+  `brew` or `port` call, so `TEEUP_PACKAGE_MANAGER=macports` keeps working on
+  an old Intel laptop. Casks are Homebrew-only by nature: `cask_install` skips
+  them with a note where `casks_supported` is false.
+- **Paths with spaces and metacharacters must work.** Quote everything, and
+  give at least one test in every new suite a `$TEST_HOME` path containing a
+  space, a `$` and a quote.
+- **shellcheck at warning severity** is clean on `bootstrap`, `bin/teeup`,
+  `lib/*.sh`, every capability script, `share/teeup/skeleton/`'s scripts and
+  every test. A disable comment needs a reason on the same line.
+
+## Tests
+
+```bash
+./tests/run.sh                     # everything, in a worker pool
+TEEUP_TEST_JOBS=1 ./tests/run.sh   # serially, when a failure is confusing
+bash tests/lib/theme.sh            # one suite
+./bin/teeup dev check <name>       # lint, menu lint, shellcheck, that suite
+```
+
+`tests/helper.sh` gives every suite a throwaway `$HOME`, a `MOCK_BIN`
+directory first on a narrowed `PATH` (`$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin`),
+`mock_command`, `mock_command_script`, `mock_macos_base`,
+`hide_host_commands`, and the `assert_*` family. A suite is a plain bash
+script: `setup`, one function per behaviour, a `run_test` line for each, and
+`print_summary` at the end. `print_summary` compares the `test_*` functions
+the file defines against the ones it was asked to run and fails the suite
+over any that were left out, so a test nobody passes to `run_test` cannot
+silently stop running. `tests/run.sh` finds `tests/lib/*.sh`,
+`tests/capabilities/*.sh`, `tests/cli.sh`, `tests/bootstrap.sh` and
+`tests/docs.sh`; anything else needs a line in its glob.
+
+Four rules catch most new tests out.
+
+- **A test that drives a prompt or a picker must `export TEEUP_NO_GUM=1`.**
+  `lib/ui.sh` uses gum whenever `TEEUP_NO_GUM` is empty and gum is on `PATH`,
+  and the narrowed `PATH` still exposes a host `/usr/bin/gum`, which paints on
+  `/dev/tty` instead of reading the piped answer. A test that wants the fzf
+  branch sets `TEEUP_MENU_PICKER=fzf` and mocks `fzf`; no test may need either
+  program installed.
+- **The narrowed `PATH` hides Homebrew.** A host tool a test needs (`lua`,
+  `jq`, `python3`, `nvim`) has to be resolved to an absolute path before
+  `setup_test_env` runs, or mocked. A test that only passes on a developer's
+  machine is a defect.
+- **Nothing outside `$TEST_HOME`.** No test writes to the real `$HOME`, and a
+  test that needs a real command hidden uses `TEEUP_TEST_MISSING` or
+  `hide_host_commands <name...>`, which adds every copy on the host's `PATH`
+  by absolute path.
+- **`TEEUP_TEST_TTY=yes|no`** overrides the terminal check in
+  `teeup lazy-run`, so a piped `y` can answer its question.
+  `tests/capabilities/colima.sh` is the reference round trip.
+
+A few suites (`tests/capabilities/emacs.sh`, `neovim.sh`, `wezterm.sh`) also
+check their output byte-for-byte against a real bash 3.2 binary when one is
+available, through `TEEUP_TEST_BASH32`; without it they still run, against
+bash's own `%q` output, and note that the bash 3.2 variant was skipped. CI's
+macOS runners ship `/bin/bash` 3.2 natively, so this only matters when
+developing on Linux.
+
+## The agent skill
+
+`share/agents/skills/teeup/SKILL.md` is the mental model an AI agent reads
+before it touches the tree: the three owners, the read-only trees, the
+capability contract, the seven steps of adding one, and how to run the tests.
+`teeup configure teeup-runtime` symlinks it into `~/.agents/skills/teeup`
+always, and into `~/.claude/skills/teeup`, `~/.codex/skills/teeup` and
+`~/.gemini/skills/teeup` where that tool already has a home directory.
+
+Keep it short and keep it true. `tests/docs.sh` checks that every path it
+names exists in the checkout and that every verb it names is one `bin/teeup`
+actually accepts, but nothing can check that a rule in it still matches the
+code, so a change to the capability contract means a look at the skill in the
+same commit. When a rule needs more than three sentences it belongs in this
+file, and the skill points here instead of repeating it.
+
+## Documentation
+
+`tests/docs.sh` keeps the claims that enumerate the tree honest by deriving
+the same set from the capabilities, the menu and `bin/teeup` itself, rather
+than trusting prose. It checks, among other things: that every `teeup <verb>`
+shown as code in the README or the manual is a verb `bin/teeup` accepts; that
+the README's count of capabilities `teeup remove` refuses (no `remove` script,
+no packages, no casks) matches the tree; that the README's menu field table
+matches `lib/menu.awk`; that the README names every AI leaf and the lazy log
+path; that the manual's `SUMMARY.md` links every page and no page is orphaned;
+that the agent skill's frontmatter, paths and verbs are all real; and that
+`docs/legacy-parity.md` has a row for every legacy module and names only
+capabilities that exist.
+
+- A new verb needs `bin/teeup help` to print it, and any README or manual
+  page that demonstrates it kept in sync — `tests/docs.sh` catches a stale
+  demonstration in either document, in either direction.
+- A new core or daily capability needs its name in the README's tier list.
+- User-facing walkthroughs (themes, fonts, migration, identity, uninstall)
+  belong in the manual (`docs/manual/src/`, published to
+  https://teeup.systemhalted.in), not copied into the README or here: add or
+  extend a page there and link it, rather than duplicating the prose.
+- `CHANGELOG.md` is history: add to `[Unreleased]`, never reword what is
+  already there.
+- `docs/superpowers/` is the design record. Read it; do not edit it.
+
+## Pull requests
+
+1. One commit per self-contained change, with a plain imperative subject and
+   no trailers.
+2. `./tests/run.sh`, `./bin/teeup commands --check`, `shellcheck
+   --severity=warning` on everything you touched, and `git diff --check`, all
+   green before you push.
+3. Say what you ran it against. "Suite green on Linux, not run on a Mac" is
+   useful; silence is not.
+4. Update the documentation in the same commit as the behaviour.
+
+## Bug reports
+
+Include `sw_vers`, `uname -m`, `teeup version`, the output of
+`teeup doctor`, and the command you ran with its full output. A `DRY_RUN=true`
+run of the same command is usually the fastest thing to paste.
+
+## Feature requests
+
+Say what you want to be able to do and what you do today instead. If it is a
+tool, say whether it should be core, daily or lazy, and why.
+
+## Code of conduct
+
+Be decent. Assume the person on the other side is doing their best with the
+information they had.
