@@ -1085,6 +1085,24 @@ EOF2
   cleanup_test_env
 }
 
+test_migrate_legacy_exits_non_zero_when_an_rc_rewrite_did_not_happen() {
+  setup
+  migrate_setup
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-zsh
+  export ZDOTDIR="$TEST_HOME/read-only-zdotdir"
+  mkdir -p "$ZDOTDIR"
+  printf 'source "$HOME/.teeup.common"\nexport KEEP=1\n' > "$ZDOTDIR/.zshrc"
+  chmod 0555 "$ZDOTDIR"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" migrate legacy 2>&1)" || rc=$?
+  chmod 0755 "$ZDOTDIR"
+  assert_failure "$rc" "a live legacy line left after a failed rewrite must fail the migration" || return 1
+  assert_contains "$(cat "$ZDOTDIR/.zshrc")" 'source "$HOME/.teeup.common"' "the failed rewrite left the live line in place" || return 1
+  assert_not_contains "$out" "Migration finished" "an incomplete rewrite must not print the completion message" || return 1
+  cleanup_test_env
+}
+
 # A declined chezmoi prompt and a chezmoi step with nobody to ask are both
 # work the migration did not finish, the same as a refusal, so both must
 # reach the exit status and neither may read as a complete run.
@@ -2628,6 +2646,7 @@ run_test "migrate legacy refuses the chezmoi half without teeup's zsh layer" tes
 run_test "migrate legacy proceeds with teeup's zsh layer installed" test_migrate_legacy_proceeds_with_teeups_zsh_layer_installed
 run_test "migrate legacy dry run changes nothing" test_migrate_legacy_dry_run_changes_nothing
 run_test "migrate legacy exits non-zero when it refused something" test_migrate_legacy_exits_non_zero_when_it_refused_something
+run_test "migrate legacy exits non-zero when an rc rewrite did not happen" test_migrate_legacy_exits_non_zero_when_an_rc_rewrite_did_not_happen
 run_test "migrate legacy exits non-zero on a declined chezmoi prompt" test_migrate_legacy_exits_non_zero_on_a_declined_chezmoi_prompt
 run_test "migrate legacy exits non-zero when chezmoi has nobody to ask" test_migrate_legacy_exits_non_zero_when_chezmoi_has_nobody_to_ask
 run_test "migrate appears in help" test_migrate_appears_in_help
