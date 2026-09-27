@@ -98,6 +98,124 @@ case "$flavor" in
     ;;
 esac
 
+# --- Doom's own theme file ----------------------------------------------------
+# Doom reads its theme from `doom-theme' in config.el; it never loads
+# capabilities/emacs/default/teeup/init.el, so `teeup theme set` did nothing
+# for a Doom user. capabilities/emacs/themed/doom-theme.el.tpl renders one
+# doom-theme.el per appearance under current/theme, the way the starter's own
+# emacs.el does; this adds one marked, idempotent line near the top of
+# config.el (so a user's own later `(setq doom-theme ...)` still wins).
+#
+# Final review I3: the line used to hard-code the mode current/theme/
+# doom-theme-loader.el is the mode-independent path both here and picks it
+# whichever mode matched this machine's appearance *at the moment `teeup
+# configure emacs` last ran*, which is wrong for a Doom daemon that keeps
+# running (say, started in the evening, still up the next afternoon): it
+# never re-evaluated the appearance. The line now always loads one fixed,
+# mode-independent file, current/theme/doom-theme-loader.el
+# (capabilities/emacs/theme-apply renders it after every `teeup theme set`,
+# since it is not part of the per-mode template loop and current/theme/ is
+# replaced wholesale on every switch); that file itself picks dark or light
+# with the same rule as `teeup--doom-appearance` each time Doom reads it, then
+# loads that mode's doom-theme.el, which is what actually defines
+# `teeup-apply` for the theme-apply hook to call afterwards.
+#
+# A config.el that does not exist yet (Doom not installed, or `doom install`
+# above did not finish) gets nothing: there is nothing to load the line into,
+# and creating one here would fight Doom's own first-run setup.
+doom_theme_config_el="$DOOM_DIR/config.el"
+if [[ "$flavor" == "doom" && -f "$doom_theme_config_el" ]]; then
+  doom_theme_marker=";; teeup: theme (managed by teeup; remove this line to opt out)"
+  # A user theme's directory, and TEEUP_STATE_DIR itself, can hold a space or
+  # shell metacharacter; \ then " (in that order, or the second escape would
+  # double the backslashes the first one just added) is all an absolute path
+  # can contain that would otherwise break out of the elisp string literal
+  # below.
+  doom_theme_loader="$TEEUP_STATE_DIR/current/theme/doom-theme-loader.el"
+  doom_theme_loader_escaped="$(replace_literal "$doom_theme_loader" '\' '\\')"
+  doom_theme_loader_escaped="$(replace_literal "$doom_theme_loader_escaped" '"' '\"')"
+  # `(load! FILE nil t)` is not the same as `(load! FILE "" t)`: load!
+  # expands to (doom-load (file-name-concat (or PATH (dir!)) FILE) noerror),
+  # and file-name-concat only skips an empty-string PATH -- with PATH nil (so
+  # file-name-concat falls back to (dir!), config.el's own directory) it
+  # plainly concatenates that directory in front of FILE even though FILE is
+  # already absolute, producing a path that does not exist (verified against
+  # emacs-mirror/emacs src/fileio.c's Ffile_name_concat, and against
+  # doomemacs/doomemacs lisp/doom-lib.el's `load!`/`doom-load`, commit
+  # 01d68aaf6bd7db073365385cd82e1ad7e815295c, with a local `emacs -Q --batch`
+  # check of both forms on 2026-09-26). "" is the form that actually loads an
+  # absolute FILE.
+  doom_theme_load_line="(load! \"$doom_theme_loader_escaped\" \"\" t)"
+  if grep -qF "$doom_theme_marker" "$doom_theme_config_el"; then
+    # I3: a marked line written before this fix still names one mode's own
+    # doom-theme.el directly; rewrite just that one line so every configure
+    # run converges on the mode-independent loader, without moving the
+    # marker or anything else in the file.
+    doom_theme_next_line="$(grep -A1 -F "$doom_theme_marker" "$doom_theme_config_el" | tail -n 1)"
+    if [[ "$doom_theme_next_line" == "$doom_theme_load_line" ]]; then
+      log "Already present in $(basename "$doom_theme_config_el"): the teeup theme line"
+    elif [[ "$DRY_RUN" == "true" ]]; then
+      printf "%b %s\n" "🔍" "[DRY-RUN] Would rewrite the line after $doom_theme_marker in $doom_theme_config_el to: $doom_theme_load_line"
+    elif [[ -L "$doom_theme_config_el" ]]; then
+      warn "$doom_theme_config_el is a symlink; teeup does not write through it. Point the line after $doom_theme_marker at: $doom_theme_load_line"
+    else
+      doom_theme_config_tmp="$(mktemp)"
+      doom_theme_after_marker=false
+      doom_theme_rewrite_ok=true
+      while IFS= read -r doom_theme_line || [[ -n "$doom_theme_line" ]]; do
+        if [[ "$doom_theme_after_marker" == true ]]; then
+          printf '%s\n' "$doom_theme_load_line" >> "$doom_theme_config_tmp"
+          doom_theme_after_marker=false
+          continue
+        fi
+        printf '%s\n' "$doom_theme_line" >> "$doom_theme_config_tmp"
+        if [[ "$doom_theme_line" == "$doom_theme_marker" ]]; then
+          doom_theme_after_marker=true
+        fi
+      done < "$doom_theme_config_el" || doom_theme_rewrite_ok=false
+      if [[ "$doom_theme_rewrite_ok" == true ]] && mv "$doom_theme_config_tmp" "$doom_theme_config_el"; then
+        ok "Rewrote the teeup theme line in $doom_theme_config_el to load the mode-independent loader"
+      else
+        rm -f "$doom_theme_config_tmp"
+        warn "Could not rewrite $doom_theme_config_el; point the line after $doom_theme_marker at: $doom_theme_load_line"
+      fi
+    fi
+  else
+    if [[ "$DRY_RUN" == "true" ]]; then
+      printf "%b %s\n" "🔍" "[DRY-RUN] Would add to $doom_theme_config_el: $doom_theme_marker"
+    elif [[ -L "$doom_theme_config_el" ]]; then
+      warn "$doom_theme_config_el is a symlink; teeup does not write through it. Add near the top by hand: $doom_theme_load_line"
+    else
+      # Emacs only honors a `-*- ... -*-` file-local-variables cookie (e.g.
+      # `lexical-binding: t`) on the file's first line; prepending the marked
+      # block ahead of it would silently push the cookie to line 2+ and
+      # change how the rest of config.el loads, with no error anywhere. When
+      # the first line carries one, keep it first and insert the block right
+      # after it instead; otherwise insert at the top as before.
+      doom_theme_first_line=""
+      IFS= read -r doom_theme_first_line < "$doom_theme_config_el" || true
+      doom_theme_rest_from=1
+      case "$doom_theme_first_line" in
+        *'-*-'*) doom_theme_rest_from=2 ;;
+      esac
+      doom_theme_config_tmp="$(mktemp)"
+      if {
+           if [[ "$doom_theme_rest_from" -eq 2 ]]; then
+             printf '%s\n' "$doom_theme_first_line"
+           fi
+           printf '%s\n%s\n\n' "$doom_theme_marker" "$doom_theme_load_line"
+           tail -n "+$doom_theme_rest_from" "$doom_theme_config_el"
+         } > "$doom_theme_config_tmp" &&
+         mv "$doom_theme_config_tmp" "$doom_theme_config_el"; then
+        ok "Added the teeup theme line near the top of $doom_theme_config_el"
+      else
+        rm -f "$doom_theme_config_tmp"
+        warn "Could not update $doom_theme_config_el; add near the top by hand: $doom_theme_load_line"
+      fi
+    fi
+  fi
+fi
+
 # --- the daemon --------------------------------------------------------------
 # launchd starts the agent with no PATH and none of the shell's environment,
 # so the plist carries the binary's full path and the variables the starter

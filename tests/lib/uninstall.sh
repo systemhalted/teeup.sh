@@ -422,6 +422,115 @@ test_shell_notes_a_failure_instead_of_silence_when_it_cannot_read_the_zshrc() {
   cleanup_test_env
 }
 
+# --- Doom's theme line (final review I5) --------------------------------------
+# capabilities/emacs/configure adds one marked line to a Doom user's
+# config.el (the `;; teeup: theme ...` marker and the `load!` line right
+# after it); once teeup is gone that line points into a state directory
+# uninstall_teardown is about to delete. `load!`'s own noerror keeps it
+# harmless to Doom, but it is dead, so teeup uninstall takes exactly those
+# two lines out and leaves the rest of the file untouched.
+doom_config_el() {
+  mkdir -p "$TEST_HOME/.config/doom"
+  printf '%s\n' "$1" > "$TEST_HOME/.config/doom/config.el"
+}
+
+test_doom_theme_line_removes_the_marker_and_the_load_line() {
+  setup
+  doom_config_el ';;; config.el -*- lexical-binding: t; -*-
+;; teeup: theme (managed by teeup; remove this line to opt out)
+(load! "'"$TEST_HOME"'/.local/state/teeup/current/theme/doom-theme-loader.el" "" t)
+
+(setq doom-theme (quote doom-one))'
+  uninstall_doom_theme_line
+  local body
+  body="$(cat "$TEST_HOME/.config/doom/config.el")"
+  assert_equals ";;; config.el -*- lexical-binding: t; -*-" "$(head -n1 "$TEST_HOME/.config/doom/config.el")" \
+    "the lexical-binding cookie stays byte for byte" || return 1
+  assert_not_contains "$body" "teeup: theme" "the marker is gone" || return 1
+  assert_not_contains "$body" "doom-theme-loader.el" "the load! line after the marker is gone too" || return 1
+  assert_contains "$body" "(setq doom-theme (quote doom-one))" "the user's own line is left alone" || return 1
+  assert_contains "$_UNINSTALL_REMOVED" "config.el" || return 1
+  cleanup_test_env
+}
+
+# An old-style marked line (I3: a per-mode path fixed at configure time,
+# never rewritten) must go the same way; uninstall does not care which form
+# the line takes, only that the marker is there.
+test_doom_theme_line_removes_an_old_style_load_line_too() {
+  setup
+  doom_config_el ';;; config.el
+;; teeup: theme (managed by teeup; remove this line to opt out)
+(load! "'"$TEST_HOME"'/.local/state/teeup/current/theme/dark/doom-theme.el" "" t)
+
+(setq doom-theme (quote doom-one))'
+  uninstall_doom_theme_line
+  local body
+  body="$(cat "$TEST_HOME/.config/doom/config.el")"
+  assert_not_contains "$body" "teeup: theme" || return 1
+  assert_not_contains "$body" "doom-theme.el" || return 1
+  assert_contains "$body" "(setq doom-theme (quote doom-one))" || return 1
+  cleanup_test_env
+}
+
+test_doom_theme_line_dry_run_changes_nothing() {
+  setup
+  doom_config_el ';; teeup: theme (managed by teeup; remove this line to opt out)
+(load! "x" "" t)
+(setq doom-theme (quote doom-one))'
+  local before out
+  before="$(cat "$TEST_HOME/.config/doom/config.el")"
+  out="$(DRY_RUN=true uninstall_doom_theme_line 2>&1)"
+  assert_equals "$before" "$(cat "$TEST_HOME/.config/doom/config.el")" "a dry run writes nothing" || return 1
+  assert_contains "$out" "[DRY-RUN]" || return 1
+  cleanup_test_env
+}
+
+# Nothing to do: the starter and Spacemacs (and a Doom user who deleted the
+# line themselves) have either no config.el at all, or one with no marker.
+test_doom_theme_line_is_a_no_op_when_there_is_no_marker() {
+  setup
+  doom_config_el ';; mine
+(setq doom-theme (quote doom-one))'
+  local before
+  before="$(cat "$TEST_HOME/.config/doom/config.el")"
+  uninstall_doom_theme_line
+  assert_equals "$before" "$(cat "$TEST_HOME/.config/doom/config.el")" || return 1
+  assert_equals "" "$_UNINSTALL_REMOVED" || return 1
+  cleanup_test_env
+}
+
+test_doom_theme_line_is_a_no_op_with_no_config_el() {
+  setup
+  uninstall_doom_theme_line || { echo "must not fail when there is no Doom config.el at all"; return 1; }
+  [[ ! -e "$TEST_HOME/.config/doom" ]] || { echo "must not create a doom directory"; return 1; }
+  cleanup_test_env
+}
+
+test_doom_theme_line_refuses_a_symlinked_config_el() {
+  setup
+  mkdir -p "$TEST_HOME/.config/doom" "$TEST_HOME/elsewhere"
+  doom_config_el ';; teeup: theme (managed by teeup; remove this line to opt out)
+(load! "x" "" t)'
+  mv "$TEST_HOME/.config/doom/config.el" "$TEST_HOME/elsewhere/config.el"
+  ln -s "$TEST_HOME/elsewhere/config.el" "$TEST_HOME/.config/doom/config.el"
+  local before
+  before="$(cat "$TEST_HOME/elsewhere/config.el")"
+  uninstall_doom_theme_line
+  assert_equals "$before" "$(cat "$TEST_HOME/elsewhere/config.el")" "a symlinked config.el is not written through" || return 1
+  cleanup_test_env
+}
+
+test_doom_theme_line_honors_doomdir() {
+  setup
+  export DOOMDIR="$TEST_HOME/somewhere/doom"
+  mkdir -p "$DOOMDIR"
+  printf ';; teeup: theme (managed by teeup; remove this line to opt out)\n(load! "x" "" t)\n' > "$DOOMDIR/config.el"
+  uninstall_doom_theme_line
+  assert_not_contains "$(cat "$DOOMDIR/config.el")" "teeup: theme" || return 1
+  unset DOOMDIR
+  cleanup_test_env
+}
+
 # make_remove_script <name> [exit status]
 make_remove_script() {
   printf '#!/usr/bin/env bash\necho "remove:%s" >> "$MOCK_LOG"\nexit %s\n' "$1" "${2:-0}" > "$TEEUP_CAPS_DIR/$1/remove"
@@ -1103,6 +1212,36 @@ test_teardown_removes_a_defaults_directory_macos_defaults_leaves_behind() {
   cleanup_test_env
 }
 
+# Final review I5: capabilities/terminal-app/theme-apply writes the exported
+# .terminal files under $TEEUP_STATE_DIR/terminal-app, a top-level entry
+# CONTRIBUTING item 33 requires in _UNINSTALL_STATE_ENTRIES. Missing from
+# teeup's own list, a dry run left it behind and reported the state dir as
+# holding files teeup did not write, and a real run left the directory (and
+# the whole state dir) un-removable whenever it existed without an install
+# marker (theme-apply ran under TEEUP_CONFIGURING and the configure then
+# failed).
+test_teardown_removes_the_terminal_app_directory_theme_apply_leaves_behind() {
+  setup
+  teeup_runtime_home
+  mkdir -p "$TEEUP_STATE_DIR/terminal-app"
+  printf 'Window Settings\n' > "$TEEUP_STATE_DIR/terminal-app/teeup Catppuccin Dark.terminal"
+  uninstall_teardown >/dev/null 2>&1
+  [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "the state dir must go once terminal-app/ is one of teeup's own entries"; return 1; }
+  cleanup_test_env
+}
+
+# The same scenario, previewed: a dry run must not report terminal-app/ as a
+# leftover teeup did not write (the final review's exact repro).
+test_dry_run_teardown_does_not_call_the_terminal_app_directory_a_leftover() {
+  setup
+  teeup_runtime_home
+  mkdir -p "$TEEUP_STATE_DIR/terminal-app"
+  printf 'Window Settings\n' > "$TEEUP_STATE_DIR/terminal-app/teeup Catppuccin Dark.terminal"
+  DRY_RUN=true uninstall_teardown >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_KEPT" "holds files teeup did not write" "a dry run must preview terminal-app as one of teeup's own entries, not a leftover" || return 1
+  cleanup_test_env
+}
+
 # Task 6 carry (Task 5's re-review observation): a ZDOTDIR changed since
 # install leaves the old zsh home files still recorded in stock, at a
 # directory uninstall_shell no longer looks at by default. They must still
@@ -1157,6 +1296,13 @@ run_test "path hint needs an active working line to stop" test_path_hint_needs_a
 run_test "path hint restores mise's tools when they are kept" test_path_hint_restores_mise_tools_when_they_are_kept
 run_test "path hint skips mise when packages are removed" test_path_hint_skips_mise_when_packages_are_removed
 run_test "shell notes a failure instead of silence when it cannot read the zshrc" test_shell_notes_a_failure_instead_of_silence_when_it_cannot_read_the_zshrc
+run_test "doom theme line removes the marker and the load! line" test_doom_theme_line_removes_the_marker_and_the_load_line
+run_test "doom theme line removes an old-style load! line too" test_doom_theme_line_removes_an_old_style_load_line_too
+run_test "doom theme line dry run changes nothing" test_doom_theme_line_dry_run_changes_nothing
+run_test "doom theme line is a no-op when there is no marker" test_doom_theme_line_is_a_no_op_when_there_is_no_marker
+run_test "doom theme line is a no-op with no config.el" test_doom_theme_line_is_a_no_op_with_no_config_el
+run_test "doom theme line refuses a symlinked config.el" test_doom_theme_line_refuses_a_symlinked_config_el
+run_test "doom theme line honors DOOMDIR" test_doom_theme_line_honors_doomdir
 run_test "capabilities keep packages by default and name how to remove them" test_capabilities_keep_packages_by_default_and_name_how_to_remove_them
 run_test "capabilities name what the tools made for themselves" test_capabilities_name_what_the_tools_made_for_themselves
 run_test "capabilities uninstall packages when asked" test_capabilities_uninstall_packages_when_asked
@@ -1191,6 +1337,8 @@ run_test "teardown keeps everything when the config dir is a symlink" test_teard
 run_test "teardown refuses a state dir with no teeup markers" test_teardown_refuses_a_state_dir_with_no_teeup_markers
 run_test "teardown still removes a real state dir" test_teardown_still_removes_a_real_state_dir
 run_test "teardown removes a defaults directory macos-defaults leaves behind" test_teardown_removes_a_defaults_directory_macos_defaults_leaves_behind
+run_test "teardown removes the terminal-app directory theme-apply leaves behind" test_teardown_removes_the_terminal_app_directory_theme_apply_leaves_behind
+run_test "a dry run does not call the terminal-app directory a leftover" test_dry_run_teardown_does_not_call_the_terminal_app_directory_a_leftover
 run_test "teardown refuses a state dir that only shares generic names" test_teardown_refuses_a_state_dir_that_only_shares_generic_names
 run_test "launchagents refuses a linked LaunchAgents directory" test_launchagents_refuses_a_linked_launchagents_directory
 run_test "teardown keeps a file it did not write in the state dir" test_teardown_keeps_a_file_it_did_not_write_in_the_state_dir

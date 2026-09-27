@@ -27,7 +27,8 @@ cd ~/.local/share/teeup
 teeup status              # what is installed
 teeup list                # every capability and its tier
 teeup install <name>      # install and configure one capability
-teeup theme set catppuccin        # re-render every app's colours, light and dark
+teeup theme set catppuccin        # switch every app's colours, light and dark
+teeup theme set --reload          # re-render the current theme
 teeup install font "Fira Code"    # switch every tool to another Nerd Font
 teeup secret set <name>   # store a secret in the macOS Keychain
 teeup launch cursor       # open an app, installing its cask on first use
@@ -42,7 +43,7 @@ teeup migrate legacy      # retire the old teeup and chezmoi wiring on this Mac
 The core tier is complete: `xcode-clt`, `package-manager`, `teeup-runtime`,
 `dev-dirs`, `zsh`, `starship`, `cli-tools`, `secrets`, `git`, `ssh`, `github`,
 `mise`, `wezterm`, `fonts`, `aerospace`, `keyboard`, `macos-defaults`,
-`theme`. The daily tier (`emacs`, `zed`, `firefox-developer-edition`,
+`theme`, `terminal-app`. The daily tier (`emacs`, `zed`, `firefox-developer-edition`,
 `obsidian`) installs at bootstrap when you say yes to it. `neovim`, `vscode`
 and `chrome` are lazy: `teeup install <name>` brings one in when you want it.
 `teeup list` is always the source of truth.
@@ -136,21 +137,73 @@ installed: each has a themed template that names the theme for the palette
 Catppuccin extension for Zed and VS Code) and a hook that tells a running
 editor to pick it up.
 
+### Themes
+
+Every theme is a dark and a light palette; apps follow the macOS appearance
+between the two. `teeup theme list` shows what is available and
+`teeup theme set <name>` switches every app at once. Setting the theme that
+is already current changes nothing, on purpose (nothing to switch to); to
+re-render a rendered file that went missing or stale (a template a
+`git pull` changed, a file deleted by hand), run `teeup theme set --reload`
+(add a name to reload a different theme than the current one). Each palette
+also names the theme each tool should load:
+
+| Theme | Palettes | bat | Emacs | Zed | Neovim | VS Code |
+|---|---|---|---|---|---|---|
+| `catppuccin` | Mocha, Latte | `OneHalfDark`, `OneHalfLight` | `modus-vivendi`, `modus-operandi` | Catppuccin Mocha, Latte (extension `catppuccin`) | `catppuccin-mocha`, `catppuccin-latte` | Catppuccin Mocha, Latte (`Catppuccin.catppuccin-vsc`) |
+| `everforest` | dark, light (medium contrast) | `base16` | `modus-vivendi`, `modus-operandi-tinted` | Everforest Dark Medium (regular), Everforest Light Medium (regular) (extension `everforest`) | `everforest` | Everforest Dark, Everforest Light (`sainnhe.everforest`) |
+| `gruvbox` | dark, light (medium contrast) | `gruvbox-dark`, `gruvbox-light` | `modus-vivendi`, `modus-operandi-tinted` | Gruvbox Dark, Gruvbox Light (built in) | `gruvbox` | Gruvbox Dark Medium, Gruvbox Light Medium (`jdinhlife.gruvbox`) |
+| `tokyo-night` | night, day | `base16` | `modus-vivendi-tinted`, `modus-operandi` | Tokyo Night, Tokyo Night Light (extension `tokyo-night`) | `tokyonight-night`, `tokyonight-day` | Tokyo Night, Tokyo Night Light (`enkia.tokyo-night`) |
+
+- **bat** gets `base16` when it ships no theme for the palette: `base16`
+  draws with the terminal's sixteen colours, which WezTerm takes from the
+  same palette.
+- **Emacs** gets a theme built into Emacs, because the starter configuration
+  installs no packages. Doom follows the palette's `doom_theme` too, through
+  one marked line teeup adds near the top of `config.el`; Spacemacs keeps the
+  theme its own configuration picks. The tinted Modus themes need Emacs 30.1
+  or later; an older Emacs falls back to its default colours and says why in
+  `*Messages*`.
+- **Zed** installs a theme's extension the next time it starts; **VS Code**
+  gets its extension through the `code` command. A theme Zed ships needs no
+  extension.
+- **Neovim** fetches the colorscheme's plugin through lazy.nvim on its next
+  start.
+
+A theme of your own goes in `~/.config/teeup/themes/<name>/` as `dark.toml`
+and `light.toml`, and wins over a shipped theme of the same name. Copy a
+shipped theme and change the values: every key must stay, each value is a
+colour (`#rrggbb`) or a plain name, and the name is lower-case letters, digits
+and dashes. `tests/lib/themes.sh` renders every shipped theme through every
+template; a theme added to `themes/` needs a row in the table above.
+
 ### Terminals and file icons
 
 teeup's terminal is WezTerm, and the font teeup installs (JetBrainsMono Nerd
 Font, or whichever `teeup install font` chose) reaches WezTerm, Emacs, Zed,
-VS Code and Neovim. It does not reach Terminal.app or any other terminal you
-use: their fonts stay as you set them.
+VS Code and Neovim.
+
+Terminal.app gets the theme too, through the core `terminal-app` capability.
+Every `teeup theme set` (and a font change) writes a Terminal profile named
+after the theme and the current appearance, such as "teeup Tokyo Night Dark",
+with the palette's background, text, bold, cursor, selection and sixteen ANSI
+colours, and the recorded teeup font at 13 points (`TEEUP_TERMINAL_FONT_SIZE`
+in a machine file changes the size). That profile becomes Terminal's default
+and startup profile. New windows get it; windows already open keep their
+colours until you close them or pick the profile under Shell > Use Profile.
+teeup only ever writes or deletes profiles whose names start with "teeup ", so
+your own profiles are left alone, and `teeup remove terminal-app` deletes
+teeup's profiles and puts back the default profile you had before (or Basic,
+when that one no longer exists). Other terminals keep their fonts and colours
+as you set them.
 
 That shows in `ls`, which the shell layer points at `eza --icons=auto`. In a
 terminal whose font is not a Nerd Font, some icons still appear -- macOS finds
 the older ones in the installed Nerd Font through font fallback -- but folders
 and most file types show as `?` boxes, because recent eza draws them with
 Material Design icons (code points U+F0000 and up) that Terminal.app does not
-take from a fallback font. Either work in WezTerm, or set the other
-terminal's font to the Nerd Font yourself. In Terminal.app that is
-Settings > Profiles > Text > Font > "JetBrainsMono Nerd Font".
+take from a fallback font. Work in WezTerm or Terminal.app with the teeup
+profile, or set the other terminal's font to the Nerd Font yourself.
 
 Per-machine overrides live in `~/.config/teeup/machines/<hostname>.conf` -- your own file, never in this checkout, so `git pull` never touches it -- sourced after your answers and winning over them: it is where `TEEUP_PACKAGE_MANAGER=macports` or `TEEUP_SKIP="aerospace"` belongs. (`machines/<hostname>.conf` in the checkout itself still works, checked second, for anyone who keeps a fork instead.) It is also the only place a work identity is configured -- teeup's own git/ssh/GitHub identity is a single one, `TEEUP_NAME`/`TEEUP_EMAIL` from the wizard, full stop; a machine that also needs a work identity sets `TEEUP_WORK_EMAIL` here (plus `TEEUP_WORK_GH_HOST` for a GitHub Enterprise host, or `TEEUP_WORK_GH_ACCOUNT` when work is a second account on github.com), which gives that machine a second SSH key uploaded to that identity's own GitHub host and account. See `machines/example.conf.sample`.
 
@@ -261,8 +314,10 @@ pull and the package manager warn and the rest still runs, which makes
   and the theme and font hooks run afterwards, so a reset `starship.toml`
   carries the current palette.
 - **`teeup remove <cap>`** runs the capability's own `remove` script when it
-  has one (eleven capabilities ship one today: `macos-defaults` puts every
-  preference back the way it found it, `emacs` and `keyboard` unload their
+  has one (twelve capabilities ship one today: `macos-defaults` puts every
+  preference back the way it found it, `terminal-app` deletes teeup's
+  Terminal.app profiles and puts back the default profile it replaced,
+  `emacs` and `keyboard` unload their
   LaunchAgents, `colima` stops the VM before Homebrew can orphan it, each of the
   five `ai-*` leaves deletes its one teeup-written wrapper, the `ai` bundle
   removes all five leaves, and `emacs` and `wezterm` also uninstall the

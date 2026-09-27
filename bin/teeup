@@ -35,7 +35,7 @@ teeup - your Mac, as a distribution
                                  take teeup off this Mac (asks first; keeps your
                                   edits, identity and packages unless told)
   teeup list [--tier core|daily|lazy]
-  teeup theme set|list|current   apply, list or print the cross-tool theme
+  teeup theme set [--reload] <name>|list|current   apply (or re-render), list or print the cross-tool theme
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
   teeup lazy-run <cap> <cmd> [args]  what a lazy shim runs: install <cap> on first use, then exec <cmd>
   teeup menu [<id>]              every teeup action as a keyboard-driven list
@@ -292,6 +292,7 @@ cmd_uninstall() {
   _UNINSTALL_GONE=" "
   uninstall_mark_state_dir
   uninstall_shell
+  uninstall_doom_theme_line
   uninstall_capabilities
   uninstall_launchagents
   uninstall_configs
@@ -520,11 +521,29 @@ cmd_theme() {
   [[ $# -gt 0 ]] && shift
   case "$op" in
     set)
-      # With no name, ask. This is what the menu's Theme row runs, so the
+      # I2 (final review): `teeup theme set <name>` on the theme that is
+      # already current is a deliberate no-op (below), so a rendered file
+      # that went missing or stale (a template a later `git pull` changed,
+      # a file deleted by hand) never comes back on its own. --reload is the
+      # honest way to ask for the render anyway: it always runs theme_set,
+      # against the current theme when no name follows it. Every repair
+      # message that used to say a plain `teeup theme set <name>` now says
+      # this instead, because that plain form cannot fix what they are
+      # about.
+      local reload=false
+      if [[ "${1:-}" == "--reload" ]]; then
+        reload=true
+        shift
+      fi
+      # With no name, ask -- unless --reload said which theme it means
+      # (the current one). This is what the menu's Theme row runs, so the
       # list always covers whatever themes/ holds today, including any a
       # later phase adds. Backing out of the picker leaves the current theme
       # alone and is not an error.
-      if [[ -z "${1:-}" ]]; then
+      if [[ -z "${1:-}" && "$reload" == "true" ]]; then
+        set -- "$(theme_current)"
+        [[ "$1" != "none" ]] || die "No theme has been applied yet; pick one with: teeup theme set <name>"
+      elif [[ -z "${1:-}" ]]; then
         menu_validate_picker_env
         local names name
         names=()
@@ -542,7 +561,7 @@ cmd_theme() {
           return 0
         fi
       fi
-      [[ -n "${1:-}" ]] || die "Usage: teeup theme set <name>"
+      [[ -n "${1:-}" ]] || die "Usage: teeup theme set [--reload] <name>"
       # A name typed here is strict. theme_set's catppuccin fallback exists for
       # configure reading a stale answer during bootstrap; on the command line a
       # typo would silently replace the theme that was working.
@@ -551,9 +570,19 @@ cmd_theme() {
         theme_list | sed 's/^/  /' >&2
         exit 1
       fi
-      theme_set "$1"
-      # Remembered, so the next ./bootstrap or teeup configure theme keeps it.
-      answers_set TEEUP_THEME "$1"
+      # Covers both the explicit name and a picker choice: the picker set $1
+      # above and falls through to here. --reload always renders, even
+      # against the theme that is already current -- that is the one thing
+      # it is for. The pin warning comes either way: a machine file can pin
+      # another theme after this one was set, and that is the case a user
+      # fighting a pin hits when "nothing changed" is all they see.
+      if [[ "$reload" != "true" && "$1" == "$(theme_current)" ]]; then
+        log "$1 is already the theme; nothing changed. Re-render it with: teeup theme set --reload"
+      else
+        theme_set "$1"
+        # Remembered, so the next ./bootstrap or teeup configure theme keeps it.
+        answers_set TEEUP_THEME "$1"
+      fi
       if pinned="$(machine_get TEEUP_THEME)" && [[ "${pinned:-$TEEUP_THEME_FALLBACK}" != "$1" ]]; then
         warn "$(machine_file) pins TEEUP_THEME=${pinned:-$TEEUP_THEME_FALLBACK}; the next ./bootstrap or teeup configure theme will switch back to it."
       fi
@@ -820,7 +849,9 @@ _config_apply_hint() {
     # narrower command and does not touch anything else.
     TEEUP_EMACS_FLAVOR) log "Run: teeup configure emacs -- that is what reads $key (teeup update now covers it too)." ;;
     TEEUP_DAILY) log "Run: ./bootstrap -- that is what reads $key." ;;
-    TEEUP_THEME) log "Run: teeup theme set${value:+ $value} -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
+    # --reload, because a plain `theme set` of the theme already current is
+    # a no-op, and this write may name exactly that theme.
+    TEEUP_THEME) log "Run: teeup theme set --reload${value:+ $value} -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
     TEEUP_PACKAGE_MANAGER) warn "$key only takes effect the next time ./bootstrap or teeup install package-manager runs; nothing on this machine changed yet." ;;
     *) warn "$key is not one of the answers ./bootstrap writes (TEEUP_NAME, TEEUP_EMAIL, TEEUP_EMACS_FLAVOR, TEEUP_DAILY, TEEUP_PACKAGE_MANAGER, TEEUP_THEME); teeup config cannot say what, if anything, reads it." ;;
   esac

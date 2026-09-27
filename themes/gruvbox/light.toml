@@ -1,0 +1,47 @@
+# Gruvbox light, medium contrast. Every colour is a named colour from
+# morhetz/gruvbox's colors/gruvbox.vim at commit 5d15b276; the ANSI roles
+# follow that file's terminal_color_0..15 for a light background, where the
+# bright colours are the faded_* set.
+mode = "light"
+
+bat_theme = "gruvbox-light"
+emacs_theme = "modus-operandi-tinted"
+zed_theme = "Gruvbox Light"
+zed_extension = "none"
+neovim_colorscheme = "gruvbox"
+vscode_theme = "Gruvbox Light Medium"
+vscode_extension = "jdinhlife.gruvbox"
+
+# doom-themes ships Gruvbox Light itself (same commit as dark.toml:
+# themes/doom-gruvbox-light-theme.el defines `doom-gruvbox-light`).
+doom_theme = "doom-gruvbox-light"
+
+accent = "#076678"                # faded_blue
+selection = "#bdae93"             # light3 (Visual)
+muted = "#928374"                 # gray_244 (terminal_color_8)
+
+background = "#fbf1c7"            # light0
+dark_background = "#ebdbb2"       # light1
+darker_background = "#d5c4a1"     # light2
+lighter_background = "#f2e5bc"    # light0_soft
+
+foreground = "#3c3836"            # dark1 (fg1)
+dark_foreground = "#a89984"       # light4
+light_foreground = "#7c6f64"      # dark4 (terminal_color_7)
+bright_foreground = "#3c3836"     # dark1 (terminal_color_15)
+
+red = "#cc241d"                   # neutral_red
+yellow = "#d79921"                # neutral_yellow
+orange = "#af3a03"                # faded_orange
+green = "#98971a"                 # neutral_green
+cyan = "#689d6a"                  # neutral_aqua
+blue = "#458588"                  # neutral_blue
+magenta = "#b16286"               # neutral_purple
+brown = "#af3a03"                 # no brown upstream: faded_orange
+
+bright_red = "#9d0006"            # faded_red
+bright_yellow = "#b57614"         # faded_yellow
+bright_green = "#79740e"          # faded_green
+bright_cyan = "#427b58"           # faded_aqua
+bright_blue = "#076678"           # faded_blue
+bright_magenta = "#8f3f71"        # faded_purple

@@ -175,9 +175,6 @@ test_the_package_manager_is_asked_before_it_is_installed() {
   # The choice is recorded before the capability that installs it runs, so the
   # capability agrees with it instead of recording a backend of its own.
   assert_contains "$out" "Package manager already recorded: homebrew" || return 1
-  # The wizard's theme question offers only what themes/ ships (catppuccin);
-  # ui_choose prints its options on stderr, which this test already captures.
-  assert_not_contains "$out" "tokyo-night" "the wizard must not offer an unshipped theme" || return 1
   cleanup_test_env
 }
 
@@ -456,6 +453,30 @@ test_wizard_does_not_ask_for_a_pinned_theme() {
   assert_not_contains "$out" "Skipping the daily tier (TEEUP_DAILY=no)" "the daily answer lined up with its question" || return 1
   assert_contains "$out" "Bootstrap finished" || return 1
   unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+test_the_wizard_offers_every_shipped_theme() {
+  setup
+  # A user theme with only one mode is not a theme, so it is never offered.
+  mkdir -p "$TEST_HOME/.config/teeup/themes/half"
+  printf 'mode = "dark"\n' > "$TEST_HOME/.config/teeup/themes/half/dark.toml"
+  local expected count last d name i=0 out
+  # The wizard offers theme_list's sorted names; ui_choose's plain fallback
+  # prints them as "  <n>) <name>" on stderr, which is captured here.
+  expected="$(for d in "$TEEUP_PATH"/themes/*/; do basename "$d"; done | sort)"
+  # Answer the theme question with the last number, so bootstrap renders the
+  # theme listed last rather than the default.
+  count="$(printf '%s\n' "$expected" | wc -l | tr -d ' ')"
+  last="$(printf '%s\n' "$expected" | tail -n 1)"
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n'"$count"$'\ny\n')"
+  while IFS= read -r name; do
+    i=$((i + 1))
+    assert_contains "$out" "  $i) $name" "the wizard offers $name as option $i" || return 1
+  done <<<"$expected"
+  assert_not_contains "$out" ") half" "a theme with one mode is not offered" || return 1
+  assert_contains "$out" "Would set TEEUP_THEME" || return 1
+  assert_contains "$out" "and record theme $last" "bootstrap renders the theme chosen by number" || return 1
   cleanup_test_env
 }
 
@@ -738,6 +759,7 @@ run_test "--reconfigure reruns wizard" test_reconfigure_reruns_wizard
 run_test "--reconfigure does not ask for a pinned package manager" test_reconfigure_does_not_ask_for_a_pinned_package_manager
 run_test "an empty machine pin is still a pin" test_an_empty_machine_pin_is_still_a_pin
 run_test "the wizard does not ask for a pinned theme" test_wizard_does_not_ask_for_a_pinned_theme
+run_test "the wizard offers every shipped theme" test_the_wizard_offers_every_shipped_theme
 run_test "--skip-daily skips the tier" test_skip_daily_and_daily_no_skip_the_tier
 run_test "TEEUP_SKIP skips a core capability" test_teeup_skip_skips_a_core_capability
 run_test "core failure aborts" test_core_failure_aborts

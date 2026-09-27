@@ -9,7 +9,7 @@ END="# teeup:theme-palette:end"
 THEME_DIR="${TEEUP_THEME_DIR:-$TEEUP_STATE_DIR/current/theme}"
 
 if [[ ! -f "$STARSHIP" ]]; then
-  log "No $STARSHIP yet; its palette will be written the next time you run teeup theme set."
+  log "No $STARSHIP yet; its palette will be written by the next teeup theme set --reload (or a real theme switch)."
   exit 0
 fi
 start_count="$(grep -cxF "$START" "$STARSHIP" || true)"
@@ -48,7 +48,7 @@ fi
 # and say so instead of writing something that silently does nothing.
 first_table_line="$(grep -n '^\[' "$STARSHIP" | head -1 | cut -d: -f1)"
 if [[ -n "$first_table_line" && "$start_line" -gt "$first_table_line" ]]; then
-  warn "$STARSHIP has the teeup palette block below its first [table]; a root 'palette =' key there would belong to that table. Move the block and the 'palette =' line above line $first_table_line, then run: teeup theme set $(theme_current)"
+  warn "$STARSHIP has the teeup palette block below its first [table]; a root 'palette =' key there would belong to that table. Move the block and the 'palette =' line above line $first_table_line, then run: teeup theme set --reload"
   exit 0
 fi
 # The block may hold only [palettes.<name>] tables; everything in it is
@@ -58,7 +58,7 @@ fi
 other_table="$(grep -n '^\[' "$STARSHIP" | grep -v '^[0-9]*:\[palettes\.[^]]*\]' | head -1)"
 other_table_line="${other_table%%:*}"
 if [[ -n "$other_table" && "$other_table_line" -lt "$end_line" ]]; then
-  warn "$STARSHIP: ${other_table#*:} at line $other_table_line sits between the teeup palette markers, and the palette rewrite would delete it; leaving it alone. Move '$END' above it, then run: teeup theme set $(theme_current)"
+  warn "$STARSHIP: ${other_table#*:} at line $other_table_line sits between the teeup palette markers, and the palette rewrite would delete it; leaving it alone. Move '$END' above it, then run: teeup theme set --reload"
   exit 0
 fi
 

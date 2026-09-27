@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Build a Terminal.app profile named "teeup <Theme> <Mode>" from the rendered
+# terminal-app.colors for the current appearance, then make it the profile
+# new windows and a fresh Terminal start with.
+#
+# Terminal keeps each colour as an NSKeyedArchiver-archived NSColor inside
+# com.apple.Terminal's "Window Settings" dictionary, which neither `defaults`
+# nor AppleScript can write, so profile.js (run by osascript's JavaScript
+# bridge) does that part. The two defaults that name the profile go through
+# defaults_write, which records what they held before, so `teeup remove
+# terminal-app` can put them back.
+#
+# profile.js only ever writes or deletes a profile whose name starts with
+# "teeup ", and the name built here always does; a profile of the user's own
+# is never touched.
+if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then exit 0; fi
+
+if ! have osascript; then
+  log "No osascript on this machine, so there is no Terminal.app to theme."
+  exit 0
+fi
+
+TERMINAL_JS="$TEEUP_CAP_DIR/profile.js"
+TERMINAL_DOMAIN="com.apple.Terminal"
+TERMINAL_THEME_DIR="${TEEUP_THEME_DIR:-$TEEUP_STATE_DIR/current/theme}"
+TERMINAL_THEME="${TEEUP_THEME_NAME:-$(theme_current)}"
+TERMINAL_MODE="$(appearance)"
+TERMINAL_COLORS="$TERMINAL_THEME_DIR/$TERMINAL_MODE/terminal-app.colors"
+
+if [[ "$TERMINAL_THEME" == "none" || ! -f "$TERMINAL_COLORS" ]]; then
+  log "No rendered theme for Terminal.app yet; its profile is built by the next teeup theme set --reload (or a real theme switch)."
+  exit 0
+fi
+
+# "tokyo-night" and "dark" become "teeup Tokyo Night Dark". A theme name is
+# already limited to lower-case letters, digits and dashes (lib/theme.sh).
+TERMINAL_DISPLAY=""
+for word in $(printf '%s' "$TERMINAL_THEME" | tr '-' ' '); do
+  TERMINAL_DISPLAY="${TERMINAL_DISPLAY:+$TERMINAL_DISPLAY }$(printf '%s' "${word:0:1}" | tr '[:lower:]' '[:upper:]')${word:1}"
+done
+if [[ "$TERMINAL_MODE" == "dark" ]]; then
+  TERMINAL_PROFILE="teeup $TERMINAL_DISPLAY Dark"
+else
+  TERMINAL_PROFILE="teeup $TERMINAL_DISPLAY Light"
+fi
+
+# The rendered file is "<Terminal key> <#rrggbb>" per line. A user template of
+# the same basename can replace the shipped one, so every line is checked
+# before anything reaches osascript: a key must end in Color and a value must
+# be a six-digit hex colour.
+TERMINAL_KEY_RE='^[A-Za-z]+Color$'
+TERMINAL_HEX_RE='^#[0-9A-Fa-f]{6}$'
+TERMINAL_PAIRS=()
+while read -r key value rest; do
+  case "$key" in ''|\#*) continue ;; esac
+  if ! [[ "$key" =~ $TERMINAL_KEY_RE && "$value" =~ $TERMINAL_HEX_RE && -z "$rest" ]]; then
+    warn "$TERMINAL_COLORS: '$key $value${rest:+ $rest}' is not '<Terminal key> <#rrggbb>'; the Terminal.app profile was left as it was."
+    exit 1
+  fi
+  TERMINAL_PAIRS[${#TERMINAL_PAIRS[@]}]="$key=$value"
+done < "$TERMINAL_COLORS"
+if [[ ${#TERMINAL_PAIRS[@]} -eq 0 ]]; then
+  warn "$TERMINAL_COLORS holds no colours; the Terminal.app profile was left as it was."
+  exit 1
+fi
+
+# The font follows `teeup install font` once one is recorded; before that the
+# profile keeps Terminal's own font. The size is a per-machine answer
+# (machines/<hostname>.conf), a whole number of points.
+TERMINAL_FONT=""
+if [[ -s "$(font_file)" ]]; then TERMINAL_FONT="$(font_current)"; fi
+TERMINAL_FONT_SIZE="${TEEUP_TERMINAL_FONT_SIZE:-13}"
+if ! [[ "$TERMINAL_FONT_SIZE" =~ ^[0-9]+$ ]] || [[ "$((10#$TERMINAL_FONT_SIZE))" -lt 6 || "$((10#$TERMINAL_FONT_SIZE))" -gt 72 ]]; then
+  warn "TEEUP_TERMINAL_FONT_SIZE=$TERMINAL_FONT_SIZE is not a whole number of points from 6 to 72; using 13."
+  TERMINAL_FONT_SIZE=13
+fi
+
+# profile.js also saves the profile as an importable .terminal file, which is
+# the manual way back in if Terminal ever drops the profile: open that file.
+TERMINAL_EXPORT_DIR="$TEEUP_STATE_DIR/terminal-app"
+if [[ ! -d "$TERMINAL_EXPORT_DIR" ]]; then run_cmd mkdir -p "$TERMINAL_EXPORT_DIR"; fi
+
+# The profile is written first, so the defaults below never name a profile
+# that is not there.
+if ! run_cmd osascript -l JavaScript "$TERMINAL_JS" apply "$TERMINAL_PROFILE" "$TERMINAL_FONT" "$TERMINAL_FONT_SIZE" \
+  "$TERMINAL_EXPORT_DIR/$TERMINAL_PROFILE.terminal" "${TERMINAL_PAIRS[@]}"; then
+  warn "Could not write the $TERMINAL_PROFILE profile into Terminal.app's settings; its default profile was left as it was."
+  exit 1
+fi
+for key in "Default Window Settings" "Startup Window Settings"; do
+  if ! defaults_write "$TERMINAL_DOMAIN" "$key" -string "$TERMINAL_PROFILE"; then
+    warn "Could not set Terminal.app's $key to $TERMINAL_PROFILE; the profile is there, under Settings > Profiles."
+    exit 1
+  fi
+done
+ok_unless_dry "Terminal.app: new windows use the $TERMINAL_PROFILE profile; windows already open keep their colours."

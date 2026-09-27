@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# The font is part of the profile, so a new font means rebuilding the profile
+# for the current theme. theme-apply reads the family from current/font,
+# which font_set has already written by the time this hook runs.
+cap_run "$TEEUP_CAP" theme-apply

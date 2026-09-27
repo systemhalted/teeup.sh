@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Nothing to install: Terminal.app and osascript ship with every macOS. The
+# file exists so `teeup install terminal-app` is a recorded no-op.
+:

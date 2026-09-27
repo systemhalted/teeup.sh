@@ -1,0 +1,52 @@
+# Gruvbox dark, medium contrast, as a teeup semantic palette. Every colour is
+# a named colour from morhetz/gruvbox's colors/gruvbox.vim at commit 5d15b276
+# (the name is in the comment); the ANSI roles follow that file's
+# terminal_color_0..15 for a dark background.
+mode = "dark"
+
+# Names, not colours. bat ships gruvbox-dark; Zed ships Gruvbox built in, so
+# there is no Zed extension to install.
+bat_theme = "gruvbox-dark"
+emacs_theme = "modus-vivendi"
+zed_theme = "Gruvbox Dark"
+zed_extension = "none"
+# Neovim: ellisonleao/gruvbox.nvim, which follows 'background'.
+neovim_colorscheme = "gruvbox"
+# VS Code: jdinhlife.gruvbox.
+vscode_theme = "Gruvbox Dark Medium"
+vscode_extension = "jdinhlife.gruvbox"
+
+# doom-themes ships Gruvbox itself (github.com/doomemacs/themes, commit
+# a59202912ad55014e53a685eee6cd94130bdd4fd, checked 2026-09-26:
+# themes/doom-gruvbox-theme.el defines `doom-gruvbox`).
+doom_theme = "doom-gruvbox"
+
+accent = "#83a598"                # bright_blue
+selection = "#665c54"             # dark3 (Visual)
+muted = "#928374"                 # gray_245 (terminal_color_8)
+
+background = "#282828"            # dark0
+dark_background = "#1d2021"       # dark0_hard
+darker_background = "#1d2021"     # dark0_hard, the darkest gruvbox has
+lighter_background = "#3c3836"    # dark1
+
+foreground = "#ebdbb2"            # light1 (fg1)
+dark_foreground = "#7c6f64"       # dark4
+light_foreground = "#a89984"      # light4 (terminal_color_7)
+bright_foreground = "#ebdbb2"     # light1 (terminal_color_15)
+
+red = "#cc241d"                   # neutral_red
+yellow = "#d79921"                # neutral_yellow
+orange = "#fe8019"                # bright_orange
+green = "#98971a"                 # neutral_green
+cyan = "#689d6a"                  # neutral_aqua
+blue = "#458588"                  # neutral_blue
+magenta = "#b16286"               # neutral_purple
+brown = "#d65d0e"                 # no brown upstream: neutral_orange
+
+bright_red = "#fb4934"            # bright_red
+bright_yellow = "#fabd2f"         # bright_yellow
+bright_green = "#b8bb26"          # bright_green
+bright_cyan = "#8ec07c"           # bright_aqua
+bright_blue = "#83a598"           # bright_blue
+bright_magenta = "#d3869b"        # bright_purple

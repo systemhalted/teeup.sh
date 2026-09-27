@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# The profile is the whole configuration, and theme-apply builds it. On a
+# first bootstrap this capability is marked installed only after this script
+# returns, so it names itself as the capability being configured, the way
+# the zed and vscode capabilities do, and its hook runs now rather than at
+# the next theme switch.
+export TEEUP_CONFIGURING="$TEEUP_CAP"
+# A theme rendered before terminal-app existed (an upgrade, or the migration
+# that installs this on an existing Mac) has no terminal-app.colors, and the
+# hook would only say so. Re-render the current theme instead: theme_set
+# renders every template and runs this capability's hook along the way.
+terminal_theme="$(theme_current)"
+terminal_colors="${TEEUP_THEME_DIR:-$TEEUP_STATE_DIR/current/theme}/$(appearance)/terminal-app.colors"
+if [[ "$terminal_theme" != "none" && ! -f "$terminal_colors" ]]; then
+  theme_set "$terminal_theme"
+else
+  cap_run_optional "$TEEUP_CAP" theme-apply
+fi

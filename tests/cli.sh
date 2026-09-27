@@ -299,8 +299,11 @@ test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file() {
   setup
   seed_shadowed_machine_files
   mock_command security 0 "s3cr3t"
-  local out errfile
+  local out errfile expected_themes d
   errfile="$TEST_HOME/stderr.out"
+  # Every shipped theme, sorted the way theme_list prints them, so this test
+  # keeps passing as themes/ grows instead of pinning today's single theme.
+  expected_themes="$(for d in "$TEEUP_PATH"/themes/*/; do basename "$d"; done | sort)"
 
   out="$("$TEEUP" version 2>"$errfile")"
   assert_equals "0.1.0-dev" "$out" "version stdout" || return 1
@@ -311,7 +314,7 @@ test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file() {
   assert_contains "$(cat "$errfile")" "also exists and is ignored" "theme current stderr" || return 1
 
   out="$("$TEEUP" theme list 2>"$errfile")"
-  assert_equals "catppuccin" "$out" "theme list stdout" || return 1
+  assert_equals "$expected_themes" "$out" "theme list stdout" || return 1
   assert_contains "$(cat "$errfile")" "also exists and is ignored" "theme list stderr" || return 1
 
   out="$("$TEEUP" secret get mysecret 2>"$errfile")"
@@ -1912,7 +1915,7 @@ test_config_set_redirects_theme_to_theme_set() {
   seed_config_answers
   local out
   out="$("$TEEUP" config set TEEUP_THEME nord 2>&1)"
-  assert_contains "$out" "teeup theme set nord" || return 1
+  assert_contains "$out" "teeup theme set --reload nord" || return 1
   assert_equals "nord" "$("$TEEUP" config get TEEUP_THEME)" || return 1
   cleanup_test_env
 }
@@ -2356,6 +2359,107 @@ test_theme_set_without_a_name_opens_the_picker() {
   cleanup_test_env
 }
 
+# A pin added after the theme was set still gets its warning on a repeat set.
+# The config hint must name a command that re-renders even when the answer
+# names the theme already current (final re-review on #54).
+test_config_set_theme_hint_names_a_reload() {
+  setup
+  seed_config_answers
+  "$TEEUP" theme set catppuccin >/dev/null
+  local out
+  out="$("$TEEUP" config set TEEUP_THEME catppuccin 2>&1)"
+  assert_contains "$out" "Run: teeup theme set --reload catppuccin" || return 1
+  out="$("$TEEUP" theme set --reload catppuccin 2>&1)"
+  assert_not_contains "$out" "nothing changed" "the hinted command must re-render" || return 1
+  cleanup_test_env
+}
+
+test_theme_set_the_current_theme_still_warns_about_a_pin() {
+  setup
+  "$TEEUP" theme set catppuccin >/dev/null
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_THEME="nord"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  local out
+  out="$("$TEEUP" theme set catppuccin 2>&1)" || true
+  unset TEEUP_MACHINES_DIR
+  assert_contains "$out" "catppuccin is already the theme; nothing changed." || return 1
+  assert_contains "$out" "pins TEEUP_THEME=nord" || return 1
+  cleanup_test_env
+}
+
+test_theme_set_the_current_theme_says_nothing_changed() {
+  setup
+  "$TEEUP" theme set catppuccin >/dev/null
+  local state name_file before out rc=0
+  state="$TEST_HOME/.local/state/teeup"
+  name_file="$state/current/theme.name"
+  before="$(cat "$name_file")"
+  out="$("$TEEUP" theme set catppuccin 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "catppuccin is already the theme; nothing changed." || return 1
+  assert_contains "$out" "Re-render it with: teeup theme set --reload" "the message must point at a command that actually works (I2)" || return 1
+  assert_not_contains "$out" "Theme set to catppuccin" "a repeat set must not re-render" || return 1
+  assert_equals "$before" "$(cat "$name_file")" "the recorded theme name is untouched" || return 1
+  cleanup_test_env
+}
+
+# I2: unlike a plain `teeup theme set <current>`, --reload always re-renders,
+# which is the whole point of it existing: a rendered file that went missing
+# or stale needs a command that really writes it again.
+test_theme_set_reload_re_renders_the_current_theme() {
+  setup
+  "$TEEUP" theme set catppuccin >/dev/null
+  local state rendered out
+  state="$TEST_HOME/.local/state/teeup"
+  rendered="$state/current/theme/dark/colors.toml"
+  assert_file_exists "$rendered" || return 1
+  rm -f "$rendered"
+  out="$("$TEEUP" theme set --reload 2>&1)"
+  assert_contains "$out" "Theme set to catppuccin" "--reload with no name must re-render the current theme" || return 1
+  assert_file_exists "$rendered" "the missing render must come back" || return 1
+  cleanup_test_env
+}
+
+# --reload with an explicit name that happens to already be current must
+# still render, not take the no-op branch.
+test_theme_set_reload_with_the_current_name_still_renders() {
+  setup
+  "$TEEUP" theme set catppuccin >/dev/null
+  local out
+  out="$("$TEEUP" theme set --reload catppuccin 2>&1)"
+  assert_contains "$out" "Theme set to catppuccin" || return 1
+  assert_not_contains "$out" "nothing changed" || return 1
+  cleanup_test_env
+}
+
+# With no theme ever set, --reload has nothing to default to, and must say so
+# rather than silently doing nothing or rendering the fallback theme.
+test_theme_set_reload_with_no_current_theme_dies() {
+  setup
+  local out rc=0
+  out="$("$TEEUP" theme set --reload 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "No theme has been applied yet" || return 1
+  cleanup_test_env
+}
+
+test_theme_picker_choosing_the_current_theme_says_nothing_changed() {
+  setup
+  # Two complete palettes, so choosing option 2 really means "zzz-second".
+  export TEEUP_THEMES_DIR="$TEST_HOME/themes"
+  mkdir -p "$TEEUP_THEMES_DIR"
+  cp -R "$TEEUP_PATH/themes/catppuccin" "$TEEUP_THEMES_DIR/aaa-first"
+  cp -R "$TEEUP_PATH/themes/catppuccin" "$TEEUP_THEMES_DIR/zzz-second"
+  "$TEEUP" theme set zzz-second >/dev/null
+  local out rc=0
+  out="$(printf '2\n' | "$TEEUP" theme set 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "zzz-second is already the theme; nothing changed." || return 1
+  assert_not_contains "$out" "Theme set to zzz-second" "picking the current theme must not re-render" || return 1
+  cleanup_test_env
+}
+
 echo "bin/teeup"
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install skips a done requirement but repairs the target" test_install_skips_a_done_requirement_but_repairs_the_target
@@ -2450,6 +2554,13 @@ run_test "menu route to a leaf runs its action" test_menu_route_to_a_leaf_runs_i
 run_test "menu dry run prints the action" test_menu_dry_run_prints_the_action_instead_of_running_it
 run_test "menu cancel inside a submenu goes back a level" test_menu_cancel_inside_a_submenu_goes_back_a_level
 run_test "theme set without a name opens the picker" test_theme_set_without_a_name_opens_the_picker
+run_test "theme set on the current theme says nothing changed" test_theme_set_the_current_theme_says_nothing_changed
+run_test "theme set --reload re-renders the current theme" test_theme_set_reload_re_renders_the_current_theme
+run_test "theme set --reload with the current name still renders" test_theme_set_reload_with_the_current_name_still_renders
+run_test "theme set --reload with no current theme dies" test_theme_set_reload_with_no_current_theme_dies
+run_test "theme set the current theme still warns about a pin" test_theme_set_the_current_theme_still_warns_about_a_pin
+run_test "config set theme hint names a reload" test_config_set_theme_hint_names_a_reload
+run_test "theme picker choosing the current theme says nothing changed" test_theme_picker_choosing_the_current_theme_says_nothing_changed
 run_test "migrate requires a known target" test_migrate_requires_a_known_target
 run_test "migrate legacy runs every step and closes with a real command" test_migrate_legacy_runs_every_step_and_closes_with_a_real_command
 run_test "migrate legacy refuses the chezmoi half without teeup's zsh layer" test_migrate_legacy_refuses_the_chezmoi_half_without_teeups_zsh_layer

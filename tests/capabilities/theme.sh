@@ -515,7 +515,15 @@ test_doctor_reports_a_template_that_was_never_rendered() {
   out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "latecomer.conf has never been rendered" || return 1
-  assert_contains "$(cat "$report")" "teeup theme set catppuccin" || return 1
+  assert_contains "$(cat "$report")" "teeup theme set --reload catppuccin" || return 1
+  # I2: `teeup theme set catppuccin` alone is now a no-op against the theme
+  # that is already current, so running the printed fix has to mean
+  # `--reload`, and it has to actually clear the finding.
+  DRY_RUN=false "$TEEUP" theme set --reload catppuccin >/dev/null 2>&1
+  rc=0
+  : > "$report"
+  out="$(DRY_RUN=false cap_run theme doctor 2>&1)" || rc=$?
+  assert_success "$rc" "the doctor's own printed fix must clear the finding: $out" || return 1
   cleanup_test_env
 }
 
