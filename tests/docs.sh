@@ -84,7 +84,26 @@ test_manual_remove_script_count_matches_the_tree() {
   return 0
 }
 
-# (The old readme verb check was deleted because test_manual_only_shows_verbs_that_exist already guards the manual)
+# Every `teeup <verb>` the README shows, in a code block or a backtick span,
+# has to be a verb bin/teeup accepts: the README is the first page anybody
+# reads, and a command it shows that the CLI rejects loses their trust.
+test_readme_only_shows_verbs_that_exist() {
+  local verbs word bad=""
+  verbs=" $(teeup_verbs | tr '\n' ' ') "
+  for word in $( { grep -oE '`(DRY_RUN=[^ ]+ )?teeup [a-z][a-z-]*' "$REPO/README.md"
+                   awk '/^```/ { f = !f; next } f' "$REPO/README.md" | grep -oE '^(DRY_RUN=[^ ]+ )?teeup [a-z][a-z-]*'
+                 } | sed -E 's/.*teeup //' | sort -u); do
+    case "$verbs" in
+      *" $word "*) ;;
+      *) bad="$bad $word" ;;
+    esac
+  done
+  if [[ -n "$bad" ]]; then
+    echo "README shows commands bin/teeup does not accept:$bad"
+    return 1
+  fi
+  return 0
+}
 
 # The manual's menu-field table (R5.2's `label icon action when title`) has
 # to name exactly the fields lib/menu.awk's valid_field() accepts. Derived
@@ -482,6 +501,7 @@ test_nothing_tracked_points_at_the_deleted_legacy_tree() {
 }
 
 echo "docs"
+run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "manual names every capability remove refuses" test_manual_names_every_capability_remove_refuses
 run_test "manual's remove count matches the tree" test_manual_remove_count_matches_the_tree
 run_test "manual's remove-script count matches the tree" test_manual_remove_script_count_matches_the_tree
