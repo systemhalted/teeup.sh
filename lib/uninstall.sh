@@ -746,6 +746,35 @@ uninstall_launchagents() {
   done
 }
 
+# uninstall_agent_skills
+# The reverse of agent_skill_link (lib/files.sh): removes the "teeup" symlink
+# it created in every agent CLI's skill directory it found. Ownership is
+# decided the same way agent_skill_link decides it -- by where the symlink
+# resolves, physically on both sides, not by how its path looks -- so a fork
+# or a user's own skills repository laid out the same way is left alone, and
+# so is anything at that name that is not a symlink at all: somebody else's
+# skill, or their own file. uninstall_rm gives the removal itself the same
+# safety gate and dry-run behaviour every other deletion in this file gets.
+uninstall_agent_skills() {
+  local dir target current resolved_src resolved_current
+  resolved_src="$(cd -P "$TEEUP_PATH/share/agents/skills/teeup" 2>/dev/null && pwd -P)" || resolved_src=""
+  for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.gemini/skills"; do
+    target="$dir/teeup"
+    [[ -e "$target" || -L "$target" ]] || continue
+    if [[ ! -L "$target" ]]; then
+      uninstall_note kept "$target: it is not a symlink teeup wrote."
+      continue
+    fi
+    current="$(readlink "$target" 2>/dev/null || true)"
+    resolved_current="$(cd -P "$(dirname "$target")" 2>/dev/null && cd -P "$current" 2>/dev/null && pwd -P)" || resolved_current=""
+    if [[ -z "$resolved_src" || -z "$resolved_current" || "$resolved_current" != "$resolved_src" ]]; then
+      uninstall_note kept "$target: a symlink to $current, not this checkout's own skill; teeup left it."
+      continue
+    fi
+    uninstall_rm "$target" "the agent skill link ($target)" || true
+  done
+}
+
 # --- configuration files --------------------------------------------------------
 
 # uninstall_stock_paths -> every file teeup holds a stock record for, one per

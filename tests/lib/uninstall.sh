@@ -1137,6 +1137,55 @@ test_configs_leaves_zsh_home_files_at_an_old_zdotdir_for_uninstall_shell() {
   cleanup_test_env
 }
 
+# agent_skill_link (lib/files.sh) symlinks teeup's own share/agents/skills/
+# teeup into every agent CLI's skill directory it finds. uninstall_agent_skills
+# is the reverse of exactly that: it removes only a link whose target
+# resolves, physically, to this checkout's own skill directory, and leaves
+# anything else at that name -- a real file, or a symlink into somewhere
+# else -- named as kept.
+test_uninstall_agent_skills_removes_teeups_own_links() {
+  setup
+  mkdir -p "$TEST_HOME/.claude"
+  agent_skill_link "$TEEUP_PATH/share/agents/skills/teeup" teeup >/dev/null
+  assert_equals "$TEEUP_PATH/share/agents/skills/teeup" "$(readlink "$TEST_HOME/.agents/skills/teeup")" "fixture: the link exists before uninstall" || return 1
+  uninstall_agent_skills
+  [[ ! -e "$TEST_HOME/.agents/skills/teeup" && ! -L "$TEST_HOME/.agents/skills/teeup" ]] || { echo "the tool-neutral link must be removed"; return 1; }
+  [[ ! -e "$TEST_HOME/.claude/skills/teeup" && ! -L "$TEST_HOME/.claude/skills/teeup" ]] || { echo "the claude link must be removed"; return 1; }
+  assert_contains "$_UNINSTALL_REMOVED" "agent skill link" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_agent_skills_keeps_a_foreign_symlink() {
+  setup
+  mkdir -p "$TEST_HOME/.agents/skills" "$TEST_HOME/elsewhere"
+  ln -s "$TEST_HOME/elsewhere" "$TEST_HOME/.agents/skills/teeup"
+  uninstall_agent_skills
+  assert_equals "$TEST_HOME/elsewhere" "$(readlink "$TEST_HOME/.agents/skills/teeup")" "a symlink teeup did not write must be left alone" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "$TEST_HOME/.agents/skills/teeup" "the kept line must name the link" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_agent_skills_keeps_a_file_it_did_not_write() {
+  setup
+  mkdir -p "$TEST_HOME/.agents/skills/teeup"
+  printf 'mine\n' > "$TEST_HOME/.agents/skills/teeup/SKILL.md"
+  uninstall_agent_skills
+  assert_file_exists "$TEST_HOME/.agents/skills/teeup/SKILL.md" "a real directory teeup did not write must survive" || return 1
+  assert_equals "mine" "$(cat "$TEST_HOME/.agents/skills/teeup/SKILL.md")" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "$TEST_HOME/.agents/skills/teeup" "the kept line must name it" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_agent_skills_dry_run_removes_nothing() {
+  setup
+  mkdir -p "$TEST_HOME/.codex"
+  agent_skill_link "$TEEUP_PATH/share/agents/skills/teeup" teeup >/dev/null
+  DRY_RUN=true uninstall_agent_skills
+  assert_equals "$TEEUP_PATH/share/agents/skills/teeup" "$(readlink "$TEST_HOME/.agents/skills/teeup")" "a dry run must remove nothing" || return 1
+  assert_equals "$TEEUP_PATH/share/agents/skills/teeup" "$(readlink "$TEST_HOME/.codex/skills/teeup")" || return 1
+  cleanup_test_env
+}
+
 echo "lib/uninstall.sh"
 run_test "rm removes a file, a directory and a link without following it" test_rm_removes_a_file_a_directory_and_a_link_without_following_it
 run_test "rm refuses outside HOME and in a git checkout, with a fix that works" test_rm_refuses_outside_home_and_in_a_git_checkout_with_a_fix_that_works
@@ -1196,4 +1245,8 @@ run_test "launchagents refuses a linked LaunchAgents directory" test_launchagent
 run_test "teardown keeps a file it did not write in the state dir" test_teardown_keeps_a_file_it_did_not_write_in_the_state_dir
 run_test "shell handles zsh home files left at an old ZDOTDIR" test_shell_handles_zsh_home_files_left_at_an_old_zdotdir
 run_test "configs leaves zsh home files at an old ZDOTDIR for uninstall_shell" test_configs_leaves_zsh_home_files_at_an_old_zdotdir_for_uninstall_shell
+run_test "agent_skills removes teeup's own links" test_uninstall_agent_skills_removes_teeups_own_links
+run_test "agent_skills keeps a foreign symlink" test_uninstall_agent_skills_keeps_a_foreign_symlink
+run_test "agent_skills keeps a file it did not write" test_uninstall_agent_skills_keeps_a_file_it_did_not_write
+run_test "agent_skills dry run removes nothing" test_uninstall_agent_skills_dry_run_removes_nothing
 print_summary

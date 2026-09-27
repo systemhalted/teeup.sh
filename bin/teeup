@@ -235,9 +235,11 @@ cmd_remove() {
 #   2. every installed capability, dependents first, through the same
 #      cap_remove `teeup remove` uses -- packages only when asked;
 #   3. any LaunchAgent of teeup's still loaded;
-#   4. the config files, by the stock-checksum rule;
-#   5. with --identity, git's identity and git/local (never an SSH key);
-#   6. teeup's own command, config and state, only after a clean run.
+#   4. the "teeup" symlink agent_skill_link put in each agent CLI's skill
+#      directory;
+#   5. the config files, by the stock-checksum rule;
+#   6. with --identity, git's identity and git/local (never an SSH key);
+#   7. teeup's own command, config and state, only after a clean run.
 # It asks several questions, only on a terminal, each defaulting to the
 # answer that removes less (plus one more per pristine file it can restore an
 # earlier copy of, uninstall_offer_restore). Without a terminal it needs
@@ -294,6 +296,7 @@ cmd_uninstall() {
   uninstall_shell
   uninstall_capabilities
   uninstall_launchagents
+  uninstall_agent_skills
   uninstall_configs
   if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then
     uninstall_identity
