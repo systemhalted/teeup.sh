@@ -400,6 +400,46 @@ test_migrate_legacy_paths_carries_on_past_a_refusal() {
   cleanup_test_env
 }
 
+# The rc-file edits go through the same safety gate migrate_rm and
+# migrate_backup already pass every path through: a ZDOTDIR that resolves
+# outside the physical $HOME is refused, not written through.
+test_migrate_legacy_paths_refuses_a_zdotdir_rc_file_outside_home() {
+  setup
+  no_chezmoi
+  local outside
+  outside="$(mktemp -d)"
+  export ZDOTDIR="$outside"
+  printf 'source "$HOME/.teeup.common"\nexport KEEP=1\n' > "$ZDOTDIR/.zshrc"
+  local rc=0 out
+  out="$(migrate_legacy_paths 2>&1)" || rc=$?
+  assert_failure "$rc" "a refused rc file must make the step return non-zero" || return 1
+  assert_equals 'source "$HOME/.teeup.common"
+export KEEP=1' "$(cat "$ZDOTDIR/.zshrc")" "a file outside HOME must not be edited" || return 1
+  assert_contains "$out" "$ZDOTDIR/.zshrc" "the refusal must name the file" || return 1
+  assert_contains "$out" "yourself" "the refusal must name the manual fix" || return 1
+  rm -rf "$outside"
+  cleanup_test_env
+}
+
+# Same gate, the other refusal it shares with migrate_rm and migrate_backup:
+# a ZDOTDIR inside a git checkout under $HOME is refused too.
+test_migrate_legacy_paths_refuses_a_zdotdir_rc_file_inside_a_git_checkout() {
+  setup
+  no_chezmoi
+  export ZDOTDIR="$TEST_HOME/code/project"
+  mkdir -p "$ZDOTDIR"
+  mkdir -p "$TEST_HOME/code/project/.git"
+  printf 'source "$HOME/.teeup.common"\nexport KEEP=1\n' > "$ZDOTDIR/.zshrc"
+  local rc=0 out
+  out="$(migrate_legacy_paths 2>&1)" || rc=$?
+  assert_failure "$rc" "a refused rc file must make the step return non-zero" || return 1
+  assert_equals 'source "$HOME/.teeup.common"
+export KEEP=1' "$(cat "$ZDOTDIR/.zshrc")" "a file inside a git checkout must not be edited" || return 1
+  assert_contains "$out" "$ZDOTDIR/.zshrc" "the refusal must name the file" || return 1
+  assert_contains "$out" "yourself" "the refusal must name the manual fix" || return 1
+  cleanup_test_env
+}
+
 test_migrate_runtime_pattern_is_narrow_enough_to_be_safe() {
   setup
   local rc=0
@@ -794,6 +834,8 @@ run_test "migrate_rc_paths honours ZDOTDIR without duplicating" test_migrate_rc_
 run_test "migrate_legacy_paths removes the files and neutralises the lines" test_migrate_legacy_paths_removes_the_files_and_neutralises_the_lines
 run_test "migrate_legacy_paths neutralises the ZDOTDIR rc file" test_migrate_legacy_paths_neutralises_the_zdotdir_rc_file
 run_test "migrate_legacy_paths carries on past a refusal" test_migrate_legacy_paths_carries_on_past_a_refusal
+run_test "migrate_legacy_paths refuses a ZDOTDIR rc file outside HOME" test_migrate_legacy_paths_refuses_a_zdotdir_rc_file_outside_home
+run_test "migrate_legacy_paths refuses a ZDOTDIR rc file inside a git checkout" test_migrate_legacy_paths_refuses_a_zdotdir_rc_file_inside_a_git_checkout
 run_test "migrate_runtime_pattern is narrow enough to be safe" test_migrate_runtime_pattern_is_narrow_enough_to_be_safe
 run_test "migrate_disable_runtime_inits neutralises each manager" test_migrate_disable_runtime_inits_neutralises_each_manager
 run_test "migrate_disable_runtime_inits names the toolchains without deleting them" test_migrate_disable_runtime_inits_names_the_toolchains_without_deleting_them
