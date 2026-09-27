@@ -29,12 +29,12 @@ nothing_to_remove() {
   done
 }
 
-test_readme_names_every_capability_remove_refuses() {
+test_manual_names_every_capability_remove_refuses() {
   local name missing="" bullet
   # The bullet that makes the claim, not the whole file: a capability named
-  # elsewhere in the README must not satisfy this.
-  bullet="$(awk '/^- \*\*`teeup remove/,/^- \*\*`?[A-Z]/' "$REPO/README.md")"
-  [[ -n "$bullet" ]] || { echo "could not find the teeup remove bullet in README.md"; return 1; }
+  # elsewhere in the manual must not satisfy this.
+  bullet="$(awk '/^- \*\*`teeup remove/,/^- \*\*`?[A-Z]/' "$REPO/docs/manual/src/the-teeup-command.md")"
+  [[ -n "$bullet" ]] || { echo "could not find the teeup remove bullet in the-teeup-command.md"; return 1; }
   for name in $(nothing_to_remove); do
     case "$bullet" in
       *"\`$name\`"*) ;;
@@ -42,30 +42,30 @@ test_readme_names_every_capability_remove_refuses() {
     esac
   done
   if [[ -n "$missing" ]]; then
-    echo "README's teeup remove bullet does not name: $missing"
+    echo "manual's teeup remove bullet does not name: $missing"
     echo "(these ship no remove script and no packages or casks, so teeup remove refuses them)"
     return 1
   fi
   return 0
 }
 
-test_readme_remove_count_matches_the_tree() {
+test_manual_remove_count_matches_the_tree() {
   local n bullet
   n="$(nothing_to_remove | wc -l | tr -d ' ')"
-  bullet="$(awk '/^- \*\*`teeup remove/,/^- \*\*`?[A-Z]/' "$REPO/README.md")"
+  bullet="$(awk '/^- \*\*`teeup remove/,/^- \*\*`?[A-Z]/' "$REPO/docs/manual/src/the-teeup-command.md")"
   case "$n" in
-    7) printf '%s' "$bullet" | grep -q 'Seven capabilities' || { echo "the README says a different number than the seven in the tree"; return 1; } ;;
-    *) echo "the set changed size (now $n): update the README bullet and this test's spelling"; return 1 ;;
+    7) printf '%s' "$bullet" | grep -q 'Seven capabilities' || { echo "the manual says a different number than the seven in the tree"; return 1; } ;;
+    *) echo "the set changed size (now $n): update the manual bullet and this test's spelling"; return 1 ;;
   esac
   return 0
 }
 
-# The README also counts the capabilities that ship a remove script. That
+# The manual also counts the capabilities that ship a remove script. That
 # number moves whenever one gains or loses the file, and nothing else notices.
-test_readme_remove_script_count_matches_the_tree() {
+test_manual_remove_script_count_matches_the_tree() {
   local n bullet word
   n="$(find "$REPO/capabilities" -mindepth 2 -maxdepth 2 -name remove | wc -l | tr -d ' ')"
-  bullet="$(awk '/^- \*\*`teeup remove/,/^- \*\*`?[A-Z]/' "$REPO/README.md")"
+  bullet="$(awk '/^- \*\*`teeup remove/,/^- \*\*`?[A-Z]/' "$REPO/docs/manual/src/the-teeup-command.md")"
   case "$n" in
     5) word=five ;;
     6) word=six ;;
@@ -75,53 +75,18 @@ test_readme_remove_script_count_matches_the_tree() {
     10) word=ten ;;
     11) word=eleven ;;
     12) word=twelve ;;
-    *) echo "no spelling for $n remove scripts: update this test and the README"; return 1 ;;
+    *) echo "no spelling for $n remove scripts: update this test and the manual"; return 1 ;;
   esac
   printf '%s' "$bullet" | grep -q "$word capabilities ship one today" || {
-    echo "the README does not say $word capabilities ship a remove script, but $n do"
+    echo "the manual does not say $word capabilities ship a remove script, but $n do"
     return 1
   }
   return 0
 }
 
-# Every `teeup <verb>` the README shows in a command block has to be a verb
-# bin/teeup actually accepts. The README is the page somebody reads before
-# trusting a command that deletes things, and documenting a verb the CLI
-# rejects with "Unknown verb" is the fastest way to lose that trust. Prose
-# ("teeup ships", "teeup replaced") is not checked -- only fenced code blocks,
-# where a line really is something to type.
-#
-# This exists because the migration section was written against `teeup doctor`
-# while the doctor branch had not merged, and nothing would have caught it.
-# teeup_verbs itself now lives in lib/dev.sh (sourced above).
-test_readme_only_shows_verbs_that_exist() {
-  local in_block=false line word verbs bad=""
-  verbs=" $(teeup_verbs | tr '\n' ' ') "
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    case "$line" in
-      '```'*) if [[ "$in_block" == "true" ]]; then in_block=false; else in_block=true; fi; continue ;;
-    esac
-    [[ "$in_block" == "true" ]] || continue
-    # A command line starting with teeup, or one behind a DRY_RUN= prefix.
-    case "$line" in
-      teeup\ *|DRY_RUN=*\ teeup\ *) ;;
-      *) continue ;;
-    esac
-    word="$(printf '%s\n' "$line" | sed -e 's/^DRY_RUN=[^ ]* //' -e 's/^teeup  *//' -e 's/[ #].*$//')"
-    [[ -n "$word" ]] || continue
-    case "$verbs" in
-      *" $word "*) ;;
-      *) bad="$bad $word" ;;
-    esac
-  done < "$TEEUP_PATH/README.md"
-  if [[ -n "$bad" ]]; then
-    echo "README shows commands bin/teeup does not accept:$bad"
-    return 1
-  fi
-  return 0
-}
+# (The old readme verb check was deleted because test_manual_only_shows_verbs_that_exist already guards the manual)
 
-# The README's menu-field table (R5.2's `label icon action when title`) has
+# The manual's menu-field table (R5.2's `label icon action when title`) has
 # to name exactly the fields lib/menu.awk's valid_field() accepts. Derived
 # from the parser rather than hard-coded here, so a field added to one and
 # not the other fails this test instead of drifting silently (R10.4).
@@ -134,33 +99,33 @@ _menu_awk_fields() {
   printf '%s\n' "$inner" | tr '|' '\n' | sort
 }
 
-_readme_menu_fields() {
-  awk '/^\| Field \| Meaning \|$/,/^$/' "$REPO/README.md" \
+_manual_menu_fields() {
+  awk '/^\| Field \| Meaning \|$/,/^$/' "$REPO/docs/manual/src/hooks-and-extending.md" \
     | grep -oE '^\| `[a-z]+`' | sed -e 's/^| `//' -e 's/`$//' | sort
 }
 
-test_readme_menu_field_table_matches_menu_awk() {
-  local awk_fields readme_fields
+test_manual_menu_field_table_matches_menu_awk() {
+  local awk_fields manual_fields
   awk_fields="$(_menu_awk_fields)"
-  readme_fields="$(_readme_menu_fields)"
-  [[ -n "$readme_fields" ]] || { echo "could not find the menu field table in README.md"; return 1; }
-  if [[ "$awk_fields" != "$readme_fields" ]]; then
-    echo "README's menu field table ($(printf '%s' "$readme_fields" | tr '\n' ' ')) does not match lib/menu.awk's valid_field() list ($(printf '%s' "$awk_fields" | tr '\n' ' '))"
+  manual_fields="$(_manual_menu_fields)"
+  [[ -n "$manual_fields" ]] || { echo "could not find the menu field table in hooks-and-extending.md"; return 1; }
+  if [[ "$awk_fields" != "$manual_fields" ]]; then
+    echo "manual's menu field table ($(printf '%s' "$manual_fields" | tr '\n' ' ')) does not match lib/menu.awk's valid_field() list ($(printf '%s' "$awk_fields" | tr '\n' ' '))"
     return 1
   fi
   return 0
 }
 
-test_readme_documents_ai_leaves_progress_and_lazy_log() {
-  local readme
-  readme="$(cat "$REPO/README.md")"
+test_manual_documents_ai_leaves_progress_and_lazy_log() {
+  local manual
+  manual="$(cat "$REPO/docs/manual/src/ai-tools.md")"
   local leaf
   for leaf in ai-claude ai-codex ai-gemini ai-copilot ai-opencode; do
-    assert_contains "$readme" "\`$leaf\`" "README must name $leaf" || return 1
+    assert_contains "$manual" "\`$leaf\`" "manual must name $leaf" || return 1
   done
-  assert_contains "$readme" 'Installing Claude Code through mise (first run, can take a minute)...' || return 1
-  assert_contains "$readme" '$TEEUP_STATE_DIR/logs/lazy.log' || return 1
-  assert_contains "$readme" '`teeup install ai` installs all five' || return 1
+  assert_contains "$manual" 'Installing Claude Code through mise (first run, can take a minute)...' || return 1
+  assert_contains "$manual" '`~/.local/state/teeup/logs/lazy.log`' || return 1
+  assert_contains "$manual" '`teeup install ai` installs all five' || return 1
 }
 
 test_menu_offers_each_ai_leaf_and_the_bundle() {
@@ -517,12 +482,11 @@ test_nothing_tracked_points_at_the_deleted_legacy_tree() {
 }
 
 echo "docs"
-run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
-run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
-run_test "README's remove count matches the tree" test_readme_remove_count_matches_the_tree
-run_test "README's remove-script count matches the tree" test_readme_remove_script_count_matches_the_tree
-run_test "README's menu field table matches menu.awk" test_readme_menu_field_table_matches_menu_awk
-run_test "README documents AI leaves, progress and lazy log" test_readme_documents_ai_leaves_progress_and_lazy_log
+run_test "manual names every capability remove refuses" test_manual_names_every_capability_remove_refuses
+run_test "manual's remove count matches the tree" test_manual_remove_count_matches_the_tree
+run_test "manual's remove-script count matches the tree" test_manual_remove_script_count_matches_the_tree
+run_test "manual's menu field table matches menu.awk" test_manual_menu_field_table_matches_menu_awk
+run_test "manual documents AI leaves, progress and lazy log" test_manual_documents_ai_leaves_progress_and_lazy_log
 run_test "menu offers each AI leaf and the bundle" test_menu_offers_each_ai_leaf_and_the_bundle
 run_test "manual only shows verbs that exist" test_manual_only_shows_verbs_that_exist
 run_test "manual verb check catches an unknown verb" test_manual_verb_check_catches_an_unknown_verb
