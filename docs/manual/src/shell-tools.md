@@ -10,7 +10,7 @@ teeup makes `/bin/zsh` your login shell and configures it with plain scripts, no
 | `capabilities/zsh/default/` | teeup | `PATH`, the editor, history, completion, aliases, functions and tool setup. |
 | `~/.config/zsh/local.zsh` | You | Loaded last, so anything here wins. Your aliases, exports and `PATH` entries go here. |
 
-The layer adds [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions), [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting) and zsh-completions, keeps 50,000 lines of shared history, and starts mise, Starship, zoxide and fzf. *Prompt*, in Part 2, covers Starship.
+The layer adds [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions), [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting) and zsh-completions, keeps 50,000 lines of shared history, and starts mise, Starship, zoxide and fzf. Starship reads `~/.config/starship.toml`, which teeup copies once (see [Dotfiles](dotfiles.md)).
 
 ## The tools
 
@@ -40,12 +40,12 @@ The same capability also installs `tree`, `wget`, `curl` and `gnupg`. fzf's key 
 | `lt` | `eza --tree --level=2 --long --icons --git` |
 | `cd` | `zd`: a real directory is a plain `cd`; anything else is a zoxide jump |
 | `..`, `...`, `....` | Up one, two or three directories |
-| `c=, =cls` | `clear` |
-| `g=, =gs`, `ga`, `gd`, `gp`, `gpl` | `git`, `git status`, `git add`, `git diff`, `git push`, `git pull` |
+| `c`, `cls` | `clear` |
+| `g`, `gs`, `ga`, `gd`, `gp`, `gpl` | `git`, `git status`, `git add`, `git diff`, `git push`, `git pull` |
 | `gcm`, `gcam`, `gco` | `git commit -m`, `git commit -a -m`, `git checkout` |
 | `gl` | `git log --oneline --graph --decorate` |
 | `lg` | `lazygit` |
-| `e=, =et` | `emacsclient -c`, `emacsclient -t` |
+| `e`, `et` | `emacsclient -c`, `emacsclient -t` |
 | `showhidden`, `hidehidden` | Show or hide dotfiles in Finder |
 
 Each alias is only defined when its tool is installed. Without eza, `ll` and `la` fall back to plain `ls`.
@@ -56,4 +56,4 @@ The file and folder icons in `ls` need a Nerd Font in the terminal. WezTerm has 
 
 ## tmux
 
-tmux is lazy: type `tmux` and teeup offers to install it. Its configuration, `~/.config/tmux/tmux.conf`, is copied once and is yours. It sets the prefix to Ctrl+A, turns the mouse on, and binds `|= and =-` to split. If you already have a `~/.tmux.conf`, teeup leaves it alone and does not add its own.
+tmux is lazy: type `tmux` and teeup offers to install it. Its configuration, `~/.config/tmux/tmux.conf`, is copied once and is yours. It sets the prefix to Ctrl+A, turns the mouse on, and binds `|` and `-` to split. If you already have a `~/.tmux.conf`, teeup leaves it alone and does not add its own.

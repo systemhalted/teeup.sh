@@ -40,6 +40,6 @@ Cursor needs macOS 12 or newer. teeup installs the cask and nothing else: it doe
 
 ## Theme and font
 
-`teeup theme set` and `teeup install font` reach Zed, VS Code and Neovim when they are installed, and tell a running copy to pick up the change. Cursor is not themed. *Themes* and *Fonts*, in Part 2, cover both commands.
+`teeup theme set` and `teeup install font` reach Zed, VS Code and Neovim when they are installed, and tell a running copy to pick up the change. Cursor is not themed. [The teeup command](the-teeup-command.md) lists both commands.
 
 <!-- SCREENSHOT: Zed and VS Code side by side after `teeup theme set`, both showing the same palette. -->

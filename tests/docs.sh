@@ -240,6 +240,69 @@ _manual_summary_problems() {
   return 0
 }
 
+# The manual's first pages were converted from Org, where =code= is inline
+# code, and a conversion bug left the markers behind: `c=, =cls` for two
+# spans, a bare =word= for one that was never converted. Fenced blocks are
+# skipped (a shell line may say KEY=value); inline code spans are checked for
+# the "closing marker, gap, opening marker" shape, and the prose around them
+# for a whole =word= marker.
+# _manual_org_markers <src dir> -> "file:line: text" for every suspect line.
+_manual_org_markers() {
+  local dir="$1" f
+  for f in "$dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    awk -v file="${f##*/}" '
+      /^```/ { fence = !fence; next }
+      fence { next }
+      {
+        line = $0; bad = 0; rest = line
+        while (match(rest, /`[^`]+`/)) {
+          span = substr(rest, RSTART + 1, RLENGTH - 2)
+          if (span ~ /[^ =]=[,.;:]? .* =[^ =]/ || span ~ /[^ =]=(, | and | or )=[^ =]/) bad = 1
+          rest = substr(rest, RSTART + RLENGTH)
+        }
+        prose = line
+        gsub(/`[^`]+`/, "", prose)
+        if (prose ~ /(^|[ (|"[{])=[^= ]([^=]*[^= ])?=($|[ .,;:)|!?"}]|\])/) bad = 1
+        if (bad) print file ":" NR ": " line
+      }
+    ' "$f"
+  done
+}
+
+test_manual_has_no_org_code_markers() {
+  local found
+  found="$(_manual_org_markers "$REPO/docs/manual/src")"
+  if [[ -n "$found" ]]; then
+    echo "Org =code= markers left in the manual (use Markdown backticks):"
+    printf '%s\n' "$found"
+    return 1
+  fi
+  return 0
+}
+
+test_manual_org_marker_check_catches_leftovers() {
+  local dir found
+  dir="$(mktemp -d)"
+  # shellcheck disable=SC2016  # the backticks are Markdown, not a substitution
+  printf '%s\n' \
+    '| `c=, =cls` | clear |' \
+    'teeup runs mise from `/= for this, so a =mise.toml` here.' \
+    'Run =teeup status= to see it.' \
+    'Is it =teeup status=? Run "=teeup status=!" [=teeup doctor=] {=teeup list=}' \
+    'Set `DRY_RUN=true` and `--icons=auto`, or `config = { a = 1 }`.' \
+    '```sh' 'DRY_RUN=true teeup update' 'x =y= z' '```' > "$dir/page.md"
+  found="$(_manual_org_markers "$dir")"
+  rm -rf "$dir"
+  assert_contains "$found" "page.md:1:" || return 1
+  assert_contains "$found" "page.md:2:" || return 1
+  assert_contains "$found" "page.md:3:" || return 1
+  assert_contains "$found" "page.md:4:" || return 1
+  assert_not_contains "$found" "page.md:5:" || return 1
+  assert_not_contains "$found" "page.md:7:" || return 1
+  assert_not_contains "$found" "page.md:8:" || return 1
+}
+
 test_manual_only_shows_verbs_that_exist() {
   local bad
   bad="$(_manual_bad_verbs "$REPO/docs/manual/src")"
@@ -300,4 +363,6 @@ run_test "manual only shows verbs that exist" test_manual_only_shows_verbs_that_
 run_test "manual verb check catches an unknown verb" test_manual_verb_check_catches_an_unknown_verb
 run_test "manual SUMMARY.md matches the pages" test_manual_summary_matches_the_pages
 run_test "manual SUMMARY.md check catches both mistakes" test_manual_summary_check_catches_both_mistakes
+run_test "manual has no Org code markers" test_manual_has_no_org_code_markers
+run_test "manual Org marker check catches leftovers" test_manual_org_marker_check_catches_leftovers
 print_summary

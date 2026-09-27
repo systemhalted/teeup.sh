@@ -7,7 +7,7 @@ teeup update
 DRY_RUN=true teeup update    # the same, as a preview that changes nothing
 ```
 
-`teeup update` also repairs. Every step checks before it acts, so running it after a bootstrap that stopped half way finishes the job.
+`teeup update` refreshes a Mac that is already set up. It configures only capabilities that are marked installed, so it does not finish a bootstrap that stopped half way: run `./bootstrap` again for that (see [Getting started](getting-started.md)).
 
 ## What runs, in order
 
@@ -33,12 +33,12 @@ Step 5 is what applies a changed answer. If you set a new Emacs flavor with `tee
 
 ## When something goes wrong
 
-Two problems stop the update before it does anything else:
+Two problems stop the update, at different points:
 
-| Problem | What teeup says |
-|---|---|
-| The checkout has uncommitted changes | "... has uncommitted changes, so teeup update will not pull." Commit, stash or discard them, then run it again. |
-| A migration fails | "Migration ... failed, so the migrations after it did not run." Fix the cause and run it again. |
+| Problem | When | What teeup says |
+|---|---|---|
+| The checkout has uncommitted changes | Before step 1, so nothing has run yet | "... has uncommitted changes, so teeup update will not pull." Commit, stash or discard them, then run it again. |
+| A migration fails | At step 4, after the pull, the package upgrades and `mise upgrade` have already run | "Migration ... failed, so the migrations after it did not run." The configure, theme and hook steps do not run. Fix the cause and run it again. |
 
 Everything else is a warning, and the run goes on: being offline, a pull that cannot fast-forward, a formula that will not build, one capability's `configure` failing. At the end teeup says either "teeup is up to date." or "teeup update finished, with the problems above.", and the exit status is non-zero in the second case.
 

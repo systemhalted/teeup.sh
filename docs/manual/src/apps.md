@@ -37,7 +37,7 @@ The main keys all use Option (`alt`):
 |---|---|
 | `alt-enter` | Open a new WezTerm window |
 | `alt-h`, `alt-j`, `alt-k`, `alt-l` | Focus left, down, up, right |
-| `alt-shift-h`, `j=, =k`, `l` | Move the window left, down, up, right |
+| `alt-shift-h`, `alt-shift-j`, `alt-shift-k`, `alt-shift-l` | Move the window left, down, up, right |
 | `alt-1` to `alt-9` | Switch to workspace 1 to 9 |
 | `alt-shift-1` to `alt-shift-9` | Move the window to that workspace |
 | `alt-tab` | Back to the previous workspace |
@@ -46,7 +46,7 @@ The main keys all use Option (`alt`):
 | `alt-minus` / `alt-equal` | Shrink / grow |
 | `alt-shift-semicolon` | Service mode |
 
-`alt-ctrl` with `b=, =n`, `p= and =f` does the same as `h=, =j`, `k= and =l`, for Emacs hands.
+`alt-ctrl` with `b`, `n`, `p` and `f` does the same as `h`, `j`, `k` and `l`, for Emacs hands.
 
 <!-- SCREENSHOT: Three windows tiled by AeroSpace (WezTerm, Emacs, Firefox Developer Edition) on workspace 1. -->
 
