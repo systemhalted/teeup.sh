@@ -425,6 +425,26 @@ test_doom_flavor_adds_the_theme_line_once() {
   cleanup_test_env
 }
 
+test_doom_configure_after_the_core_theme_creates_every_loaded_file() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  printf ';;; config.el\n' > "$DOOM_DIR/config.el"
+
+  # Fresh-bootstrap order: core theme runs before daily Emacs exists, so the
+  # rendered mode files exist but Emacs's hook has not written its loader.
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null
+  local theme_dir="$TEST_HOME/.local/state/teeup/current/theme"
+  assert_file_exists "$theme_dir/dark/doom-theme.el" || return 1
+  assert_file_exists "$theme_dir/light/doom-theme.el" || return 1
+  [[ ! -e "$theme_dir/doom-theme-loader.el" ]] || { echo "the pre-Emacs theme run unexpectedly wrote the loader"; return 1; }
+
+  DRY_RUN=false "$TEEUP" configure emacs >/dev/null
+  assert_file_exists "$theme_dir/doom-theme-loader.el" "configure must create the loader before config.el names it" || return 1
+  assert_contains "$(cat "$DOOM_DIR/config.el")" "$theme_dir/doom-theme-loader.el" || return 1
+  cleanup_test_env
+}
+
 # I3: a marked line written by a teeup before this fix names one mode's own
 # doom-theme.el directly (the mode fixed at the moment configure last ran,
 # never re-evaluated afterward). configure must rewrite just that one line to
@@ -825,6 +845,36 @@ test_doom_theme_apply_survives_a_load_theme_error() {
   cleanup_test_env
 }
 
+test_doom_theme_registers_the_macos_appearance_hook_once() {
+  setup
+  local NO_EMACS_RC=0
+  if no_real_emacs; then
+    cleanup_test_env
+    return "$NO_EMACS_RC"
+  fi
+  source "$TEEUP_PATH/lib/all.sh"
+  local rendered="$TEST_HOME/doom-theme.el" palette="$TEST_HOME/palette.toml" out rc=0
+  printf 'mode = "dark"\ndoom_theme = "doom-dracula"\n' > "$palette"
+  theme_palette_load "$palette" dark || { echo "palette did not load"; return 1; }
+  theme_render "$TEEUP_PATH/capabilities/emacs/themed/doom-theme.el.tpl" "$rendered" || { echo "theme did not render"; return 1; }
+
+  out="$("$EMACS_REAL" -Q --batch -l "$rendered" \
+    --eval '(princ (format "BOUND=%s" (boundp (quote ns-system-appearance-change-functions))))' 2>&1)" || rc=$?
+  assert_success "$rc" "the rendered Doom theme must load when the macOS hook variable is absent: $out" || return 1
+  assert_equals "BOUND=nil" "$out" "a non-macOS Emacs must not gain the macOS hook variable" || return 1
+
+  out="$("$EMACS_REAL" -Q --batch \
+    --eval '(defvar ns-system-appearance-change-functions nil)' \
+    -l "$rendered" -l "$rendered" \
+    --eval '(defvar teeup-hook-called nil)' \
+    --eval '(defun teeup-apply () (setq teeup-hook-called t))' \
+    --eval '(run-hook-with-args (quote ns-system-appearance-change-functions) (quote dark))' \
+    --eval '(princ (format "COUNT=%d CALLED=%s" (length ns-system-appearance-change-functions) teeup-hook-called))' 2>&1)" || rc=$?
+  assert_success "$rc" "the registered appearance hook must run: $out" || return 1
+  assert_equals "COUNT=1 CALLED=t" "$out" "the callback is registered once and calls teeup-apply" || return 1
+  cleanup_test_env
+}
+
 # I3: the loader capabilities/emacs/theme-apply renders must pick a mode at
 # Emacs load time, not carry one baked in by whoever last ran `teeup theme
 # set`. This runs a real `teeup theme set` (the same path a real machine
@@ -927,6 +977,7 @@ run_test "the machine file wins over the answer" test_the_machine_file_wins_over
 run_test "unknown flavor warns and uses the starter" test_unknown_flavor_warns_and_uses_the_starter
 run_test "a legacy ~/.emacs.d is reported, not moved" test_a_legacy_emacs_d_is_reported_not_moved
 run_test "doom flavor adds the theme line once" test_doom_flavor_adds_the_theme_line_once
+run_test "doom configure after the core theme creates every loaded file" test_doom_configure_after_the_core_theme_creates_every_loaded_file
 run_test "doom flavor rewrites an old-style theme line to the loader" test_doom_flavor_rewrites_an_old_style_theme_line
 run_test "doom flavor without a cookie adds the line at the top" test_doom_flavor_without_a_cookie_adds_the_line_at_the_top
 run_test "doom flavor dry run leaves config.el untouched" test_doom_flavor_dry_run_leaves_config_el_untouched
@@ -947,6 +998,7 @@ run_test "env file paths survive special bytes" test_env_file_paths_survive_spec
 run_test "doom theme-apply picks up a new theme without restarting" test_doom_theme_apply_picks_up_a_new_theme_without_restarting
 run_test "doom theme-apply honors a non-default TEEUP_STATE_DIR" test_doom_theme_apply_honors_a_non_default_teeup_state_dir
 run_test "doom theme-apply survives a load-theme error" test_doom_theme_apply_survives_a_load_theme_error
+run_test "doom theme registers the macOS appearance hook once" test_doom_theme_registers_the_macos_appearance_hook_once
 run_test "doom theme loader picks the current appearance at load time" test_doom_theme_loader_picks_the_current_appearance_at_load_time
 run_test "unquote degrades without string-search" test_unquote_degrades_without_string_search
 print_summary

@@ -109,7 +109,7 @@ _theme_sed_entry() {
 TEEUP_PALETTE_VALUE_RE='^[#A-Za-z0-9][A-Za-z0-9 ._()+-]*$'
 
 theme_palette_load() {
-  local file="$1" expected_mode="${2:-}" key value upper old mode_seen=0
+  local file="$1" expected_mode="${2:-}" key value upper old mode_seen=0 doom_theme_seen=0 doom_theme_default
   if [[ ! -f "$file" ]]; then
     err "Palette file not found: $file"
     return 1
@@ -139,6 +139,7 @@ theme_palette_load() {
         return 1
       fi
     fi
+    if [[ "$key" == "doom_theme" ]]; then doom_theme_seen=1; fi
     upper="$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
     export "TEEUP_COLOR_$upper=$value"
     TEEUP_COLOR_KEYS="$TEEUP_COLOR_KEYS$key "
@@ -147,6 +148,19 @@ theme_palette_load() {
   if [[ -n "$expected_mode" && "$mode_seen" -eq 0 ]]; then
     warn "Invalid palette value in $file: missing mode key (expected $expected_mode)"
     return 1
+  fi
+  # User palettes created before Doom theming have no doom_theme key. Keep
+  # them usable for every editor by supplying Doom's standard light or dark
+  # theme from the palette mode.
+  if [[ "$doom_theme_seen" -eq 0 && "$mode_seen" -eq 1 ]]; then
+    if [[ "${TEEUP_COLOR_MODE:-}" == "light" ]]; then
+      doom_theme_default="doom-one-light"
+    else
+      doom_theme_default="doom-one"
+    fi
+    export "TEEUP_COLOR_DOOM_THEME=$doom_theme_default"
+    TEEUP_COLOR_KEYS="$TEEUP_COLOR_KEYS doom_theme"
+    _theme_sed_entry doom_theme "$doom_theme_default"
   fi
   export TEEUP_COLOR_KEYS
 }

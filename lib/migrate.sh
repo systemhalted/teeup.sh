@@ -260,8 +260,10 @@ TEEUP_MIGRATE_PROMPT_RC_PATTERN='powerlevel10k|p10k|POWERLEVEL9K_|oh-my-zsh|ohmy
 migrate_rc_pattern_matches() {
   local file="$1" pattern="$2"
   [[ -f "$file" ]] || return 1
-  TEEUP_MRPM_PATTERN="$pattern" awk '
-    $0 ~ ENVIRON["TEEUP_MRPM_PATTERN"] && $0 !~ /^[ \t]*[:#]/ { found = 1 }
+  TEEUP_MRPM_PATTERN="$pattern" TEEUP_MRPM_OPENER="$(block_opener_ere)" awk '
+    $0 ~ ENVIRON["TEEUP_MRPM_PATTERN"] && $0 !~ /^[ \t]*[:#]/ {
+      if ($0 !~ ENVIRON["TEEUP_MRPM_OPENER"]) { found = 1 }
+    }
     END { exit found ? 0 : 1 }
   ' "$file" 2>/dev/null
 }
@@ -302,6 +304,11 @@ migrate_disable_rc_lines() {
     return 1
   fi
   disable_matching_lines "$file" "$pattern" "$reason"
+  if [[ "$DRY_RUN" != "true" ]] && migrate_rc_pattern_matches "$file" "$pattern"; then
+    warn "$file still contains a live $reason line, so the migration is incomplete."
+    return 1
+  fi
+  return 0
 }
 
 # migrate_legacy_paths

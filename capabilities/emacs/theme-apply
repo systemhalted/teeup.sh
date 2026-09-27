@@ -8,7 +8,7 @@
 # daemon up" probe; `-a false` keeps it a probe, because the zsh layer exports
 # an empty ALTERNATE_EDITOR, which would otherwise start a daemon (emacsclient
 # Options: -a on the command line takes precedence over the variable).
-if ! state_done check "cap-$TEEUP_CAP"; then
+if ! state_done check "cap-$TEEUP_CAP" && [[ "${TEEUP_CONFIGURING:-}" != "$TEEUP_CAP" ]]; then
   exit 0
 fi
 

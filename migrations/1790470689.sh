@@ -40,6 +40,7 @@ if cap_exists terminal-app; then
     warn "Skipping terminal-app (TEEUP_SKIP)."
   elif ! state_done check cap-theme; then
     log "theme is not installed here yet, so terminal-app was left for a later teeup update."
+    exit 1
   else
     cap_install_verbs terminal-app || exit 1
   fi

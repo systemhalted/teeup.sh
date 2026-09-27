@@ -17,7 +17,9 @@ description: >
 
 teeup turns a Mac into a working machine and keeps it that way. It is a git
 checkout plus one command. Every piece of state it keeps is a file whose
-presence or content you can read; nothing runs in the background and nothing
+presence or content you can read; very little runs in the background (only
+LaunchAgents like `sh.teeup.emacs` and `sh.teeup.keyboard`, whose plists are written and bootstrapped by
+`configure`, and booted out and deleted by `remove` and `uninstall`), and nothing
 is cached anywhere you cannot open in an editor.
 
 macOS only. If you keep a separate dotfiles repository for Linux, teeup never
@@ -68,9 +70,10 @@ Inside a capability the same split appears as three directories:
 6. **A sibling dotfiles repository for Linux, if you keep one.** It is
    read-only reference that keeps serving Linux. `teeup migrate legacy` never
    runs `chezmoi purge` and is written so that no argument can make it name
-   that directory. Keep it that way. Never touch `~/.ssh` keys either: no
-   teeup command generates, rotates or deletes one, and no change here should
-   start.
+   that directory. Keep it that way. Never touch `~/.ssh` keys either: teeup
+   can generate missing keys (see `capabilities/ssh/configure`), but never
+   deletes or moves one on remove or uninstall; an agent must never delete,
+   move or regenerate a user's keys.
 
 ## What a capability is
 
