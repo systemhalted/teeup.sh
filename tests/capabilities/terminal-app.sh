@@ -515,6 +515,22 @@ test_the_hook_waits_until_the_capability_is_installed() {
   cleanup_test_env
 }
 
+# Real Mac, 2026-09-26: a theme rendered before this capability existed has
+# no terminal-app.colors, so install built nothing until a --reload.
+test_install_renders_a_theme_that_predates_the_capability() {
+  setup
+  set_appearance dark
+  DRY_RUN=false "$TEEUP" configure theme >/dev/null 2>&1
+  rm -f "$TEST_HOME"/.local/state/teeup/current/theme/*/terminal-app.colors
+  : > "$MOCK_LOG"
+  local out rc=0
+  out="$(DRY_RUN=false "$TEEUP" configure terminal-app 2>&1)" || rc=$?
+  assert_equals 0 "$rc" || { echo "$out"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "osascript" "the profile must be built now" || { echo "$out"; return 1; }
+  assert_not_contains "$out" "No rendered theme" || return 1
+  cleanup_test_env
+}
+
 test_no_rendered_theme_is_a_quiet_no_op() {
   setup
   set_appearance dark
@@ -625,6 +641,7 @@ run_test "remove falls back to Basic when the old profile is gone" test_remove_f
 run_test "remove keeps a recorded profile it cannot check" test_remove_keeps_a_recorded_profile_it_cannot_check
 run_test "a failed profile delete keeps it installed" test_a_failed_profile_delete_keeps_it_installed
 run_test "uninstall runs terminal-app's remove before the state teardown" test_uninstall_runs_terminal_apps_remove_before_the_state_teardown
+run_test "install renders a theme that predates the capability" test_install_renders_a_theme_that_predates_the_capability
 run_test "the shipped migration installs terminal-app on an existing machine" test_the_shipped_migration_installs_terminal_app_on_an_existing_machine
 run_test "the shipped migration leaves a skipped terminal-app alone" test_the_shipped_migration_leaves_a_skipped_terminal_app_alone
 run_test "a fresh bootstrap marks the shipped migration without running it" test_a_fresh_bootstrap_marks_the_shipped_migration_without_running_it
