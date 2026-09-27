@@ -35,3 +35,5 @@ test_suite_timeouts_kill_the_suite_and_carry_on() {
 }
 
 run_test "a hung test suite times out" test_suite_timeouts_kill_the_suite_and_carry_on
+
+print_summary

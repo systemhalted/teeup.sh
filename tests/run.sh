@@ -114,6 +114,7 @@ if [[ "$jobs_wanted" -le 1 ]]; then
     watchdog=$!
     rc=0
     wait "$pid" 2>/dev/null || rc=$?
+    pkill -9 -P "$watchdog" 2>/dev/null || true  # its sleep, which would outlive it
     kill -9 "$watchdog" 2>/dev/null || true
     wait "$watchdog" 2>/dev/null || true
     if [[ "$rc" -ne 0 ]]; then
@@ -156,6 +157,7 @@ else
       watchdog=$!
       rc=0
       wait "$pid" 2>/dev/null || rc=$?
+      pkill -9 -P "$watchdog" 2>/dev/null || true  # its sleep, which would outlive it
       kill -9 "$watchdog" 2>/dev/null || true
       wait "$watchdog" 2>/dev/null || true
       printf '%s\n' "$rc" > "$out_dir/$key.rc"
