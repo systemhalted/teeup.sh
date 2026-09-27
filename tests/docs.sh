@@ -11,6 +11,7 @@ source "$(dirname "$0")/helper.sh"
 source "$TEEUP_PATH/lib/dev.sh"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd -P)"
+SKILL="$REPO/share/agents/skills/teeup/SKILL.md"
 
 # Every capability with no remove script and no packages or casks: the set
 # `teeup remove` refuses outright, because there is nothing for it to undo.
@@ -351,6 +352,78 @@ test_manual_summary_check_catches_both_mistakes() {
   assert_not_contains "$problems" "here.md" || return 1
 }
 
+# The agent skill (share/agents/skills/teeup/SKILL.md) is the mental model an
+# agent CLI loads before it touches the checkout. These four checks read it
+# the same way the manual and README checks above read their documents:
+# derive a claim from the runtime and compare, rather than trusting prose.
+
+test_the_skill_has_frontmatter_a_name_and_a_description() {
+  assert_file_exists "$SKILL" "the agent skill ships in the checkout" || return 1
+  local first
+  first="$(head -1 "$SKILL")"
+  assert_equals "---" "$first" "frontmatter opens on line 1 or the whole file is content" || return 1
+  local front
+  front="$(awk 'NR>1 && /^---$/{exit} NR>1{print}' "$SKILL")"
+  assert_contains "$front" "name: teeup" "the skill names itself" || return 1
+  assert_contains "$front" "description:" "the skill says when to load it" || return 1
+}
+
+test_the_skill_names_only_paths_that_exist() {
+  # Backticked paths that start with one of the checkout's top-level
+  # directories. A path containing < is a placeholder (capabilities/<name>/)
+  # and never matches the character class below, so it is skipped along with
+  # anything else the class does not spell out.
+  local missing="" p
+  for p in $(grep -oE '`(bin|lib|capabilities|share|themes|migrations|tests|docs|machines)/[A-Za-z0-9._/-]+`' "$SKILL" |
+             tr -d '`' | sort -u); do
+    if [[ ! -e "$REPO/$p" ]]; then
+      missing="$missing $p"
+    fi
+  done
+  assert_equals "" "$missing" "every path the skill names exists in the checkout" || return 1
+}
+
+# skill_verbs: every verb the skill names, from the two places it names one --
+# a backticked `teeup <verb>` span, and the summary block under "## The verbs".
+# Bare prose is not scanned, because "a teeup checkout" would otherwise read as
+# a verb called "checkout". Compared against teeup_verbs (lib/dev.sh), the
+# dispatcher's own list, rather than shelling out to `./bin/teeup help`: that
+# would source the real answers file and machine config (see the file header),
+# and teeup_verbs already reads the same source `teeup dev check`'s menu lint
+# does, so the two checks cannot silently disagree about what a real verb is.
+skill_verbs() {
+  {
+    grep -oE '`teeup [a-z][a-z-]*' "$SKILL" | sed 's/^`teeup //'
+    awk '/^## The verbs$/{f=1;next} /^## /{f=0} f' "$SKILL" |
+      grep -oE 'teeup [a-z][a-z-]*' | sed 's/^teeup //'
+  } | sort -u
+}
+
+test_the_skill_names_only_verbs_teeup_has() {
+  local verbs named unknown="" v
+  verbs=" $(teeup_verbs | tr '\n' ' ') "
+  named="$(skill_verbs)"
+  assert_contains "$named" "install" "the verb summary was found at all" || return 1
+  for v in $named; do
+    case "$verbs" in
+      *" $v "*) ;;
+      *) unknown="$unknown $v" ;;
+    esac
+  done
+  assert_equals "" "$unknown" "every verb the skill names is a verb teeup has" || return 1
+}
+
+test_the_skill_marks_the_generated_and_borrowed_trees_read_only() {
+  local body
+  body="$(cat "$SKILL")"
+  # No leading ~ in the needle: shellcheck's SC2088 fires on a quoted word that
+  # starts with one, and the path is what matters, not the tilde.
+  assert_contains "$body" '.local/state/teeup/' "the generated tree is named as read-only" || return 1
+  assert_contains "$body" 'docs/superpowers/' "the decision record is named as read-only" || return 1
+  assert_contains "$body" '.superpowers/' "another agent's workspace is named as read-only" || return 1
+  assert_contains "$body" 'Never edit these' "the read-only rules have a heading of their own" || return 1
+}
+
 echo "docs"
 run_test "README only shows verbs that exist" test_readme_only_shows_verbs_that_exist
 run_test "README names every capability remove refuses" test_readme_names_every_capability_remove_refuses
@@ -365,4 +438,8 @@ run_test "manual SUMMARY.md matches the pages" test_manual_summary_matches_the_p
 run_test "manual SUMMARY.md check catches both mistakes" test_manual_summary_check_catches_both_mistakes
 run_test "manual has no Org code markers" test_manual_has_no_org_code_markers
 run_test "manual Org marker check catches leftovers" test_manual_org_marker_check_catches_leftovers
+run_test "the skill has frontmatter, a name and a description" test_the_skill_has_frontmatter_a_name_and_a_description
+run_test "the skill names only paths that exist" test_the_skill_names_only_paths_that_exist
+run_test "the skill names only verbs teeup has" test_the_skill_names_only_verbs_teeup_has
+run_test "the skill marks the generated and borrowed trees read-only" test_the_skill_marks_the_generated_and_borrowed_trees_read_only
 print_summary
