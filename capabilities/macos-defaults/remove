@@ -27,6 +27,7 @@ defaults_restore com.apple.screencapture location || restore_failed=$((restore_f
 
 run_cmd killall Finder || true
 run_cmd killall Dock || true
+run_cmd killall SystemUIServer || true
 if [[ "$restore_failed" -gt 0 ]]; then
   err "$restore_failed preference(s) could not be put back; the warnings above say which."
   err "macos-defaults stays marked installed so you can fix the cause and run: teeup remove macos-defaults"
