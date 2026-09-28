@@ -31,6 +31,7 @@
 - [Answers and machines](answers-and-machines.md)
 - [Dotfiles](dotfiles.md)
 - [Identity](identity.md)
+- [Company certificates](company-certificates.md)
 - [Secrets](secrets.md)
 - [macOS defaults](macos-defaults.md)
 - [Hooks and extending](hooks-and-extending.md)
