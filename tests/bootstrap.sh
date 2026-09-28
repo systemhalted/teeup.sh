@@ -24,8 +24,15 @@ setup() {
   mock_command_script brew <<'EOF2'
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
-  # /usr/bin/security is macOS-only; 44 is its "no such item" exit code.
-  mock_command security 44 ""
+  # /usr/bin/security is macOS-only. The admin trust query has a healthy
+  # empty-domain answer; every unrelated Keychain lookup keeps security's
+  # "no such item" status.
+  mock_command_script security <<'EOF2'
+case "$1 $2" in
+  "dump-trust-settings -d") echo "Number of trusted certs = 0"; exit 0 ;;
+  *) exit 44 ;;
+esac
+EOF2
   # zsh capability: the login-shell probe, the change itself, and the
   # appearance read the shell layer performs (never reached from bootstrap,
   # mocked so a stray call cannot touch the host).
@@ -175,6 +182,50 @@ test_the_package_manager_is_asked_before_it_is_installed() {
   # The choice is recorded before the capability that installs it runs, so the
   # capability agrees with it instead of recording a backend of its own.
   assert_contains "$out" "Package manager already recorded: homebrew" || return 1
+  cleanup_test_env
+}
+
+test_ca_bundle_refreshes_before_package_manager_work() {
+  setup
+  export DRY_RUN=false
+  export TEEUP_PLUTIL="$MOCK_BIN/plutil"
+  export TEEUP_SYSTEM_ROOT_KEYCHAIN="$TEST_HOME/SystemRootCertificates.keychain"
+  export TEEUP_SYSTEM_KEYCHAIN="$TEST_HOME/System.keychain"
+  touch "$TEEUP_SYSTEM_ROOT_KEYCHAIN" "$TEEUP_SYSTEM_KEYCHAIN"
+  mock_command_script security <<'EOF2'
+case "$1" in
+  dump-trust-settings) echo "Number of trusted certs = 1"; echo "Cert 0: Company Root" ;;
+  trust-settings-export)
+    printf '%s\n' '<plist><dict><key>trustList</key><dict>' \
+      '<key>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</key><dict></dict>' \
+      '</dict></dict></plist>' > "$3"
+    ;;
+  find-certificate)
+    case "$*" in
+      *SystemRootCertificates.keychain*)
+        printf '%s\n' '-----BEGIN CERTIFICATE-----' 'SYSTEM_ROOT' '-----END CERTIFICATE-----' ;;
+      *System.keychain*)
+        printf '%s\n' 'SHA-1 hash: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+          '-----BEGIN CERTIFICATE-----' 'COMPANY_ROOT' '-----END CERTIFICATE-----' ;;
+    esac
+    ;;
+  *) exit 44 ;;
+esac
+EOF2
+  mock_command_script plutil <<'EOF2'
+cp "$5" "$4"
+EOF2
+  # This real-run integration keeps every package command inside the mock.
+  export TEEUP_TEST_MISSING="gum jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit emacs emacsclient"
+  : > "$MOCK_LOG"
+
+  "$BOOT" --skip-daily <<<$'1\nAda Lovelace\nada@example.com\n1\nn\n' >/dev/null 2>&1
+
+  local export_line package_line
+  export_line="$(grep -n 'security trust-settings-export -d' "$MOCK_LOG" | head -1 | cut -d: -f1)"
+  package_line="$(grep -n 'brew update' "$MOCK_LOG" | head -1 | cut -d: -f1)"
+  [[ -n "$export_line" && -n "$package_line" ]] || { echo "expected trust export and package-manager work"; cat "$MOCK_LOG"; return 1; }
+  [[ "$export_line" -lt "$package_line" ]] || { echo "package-manager work ran before the CA bundle refresh"; return 1; }
   cleanup_test_env
 }
 
@@ -747,6 +798,7 @@ run_test "unknown flag exits 2" test_unknown_flag_exits_2
 run_test "dry run walks core tier in order" test_dry_run_walks_core_tier_in_order
 run_test "the theme is rendered once" test_the_theme_is_rendered_once
 run_test "the package manager is asked before it is installed" test_the_package_manager_is_asked_before_it_is_installed
+run_test "CA bundle refreshes before package-manager work" test_ca_bundle_refreshes_before_package_manager_work
 run_test "choosing macports runs the MacPorts path" test_choosing_macports_runs_the_macports_path
 run_test "git is reconfigured after ssh makes the keys" test_git_is_reconfigured_after_ssh_makes_the_keys
 run_test "post-bootstrap hooks run before the summary" test_post_bootstrap_hooks_run_before_the_summary

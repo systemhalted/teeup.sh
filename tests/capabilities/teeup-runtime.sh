@@ -49,6 +49,33 @@ test_configure_creates_state_env_and_link() {
   cleanup_test_env
 }
 
+test_configured_env_loads_the_ca_bundle_for_shells() {
+  setup
+  mkdir -p "$TEST_HOME/.local/state/teeup"
+  printf '%s\n' '-----BEGIN CERTIFICATE-----' 'COMPANY_ROOT' '-----END CERTIFICATE-----' \
+    > "$TEST_HOME/.local/state/teeup/ca-bundle.pem"
+  printf 'cacert = "%s"\n' "$TEST_HOME/.local/state/teeup/ca-bundle.pem" \
+    > "$TEST_HOME/.local/state/teeup/ca-bundle.curlrc"
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  local values
+  values="$( (
+    unset SSL_CERT_FILE GIT_SSL_CAINFO CURL_CA_BUNDLE REQUESTS_CA_BUNDLE NODE_EXTRA_CA_CERTS HOMEBREW_CURLRC
+    # shellcheck source=/dev/null
+    source "$TEST_HOME/.config/teeup/env"
+    printf '%s\n' "$SSL_CERT_FILE" "$GIT_SSL_CAINFO" "$CURL_CA_BUNDLE" \
+      "$REQUESTS_CA_BUNDLE" "$NODE_EXTRA_CA_CERTS" "$HOMEBREW_CURLRC"
+  ) )"
+  local bundle="$TEST_HOME/.local/state/teeup/ca-bundle.pem"
+  local curlrc="$TEST_HOME/.local/state/teeup/ca-bundle.curlrc"
+  assert_equals "$bundle
+$bundle
+$bundle
+$bundle
+$bundle
+$curlrc" "$values" || return 1
+  cleanup_test_env
+}
+
 test_configure_quotes_a_path_with_shell_metacharacters() {
   setup
   export XDG_CONFIG_HOME="$TEST_HOME/we\`ird \$dir \"q\" \\b"
@@ -462,6 +489,7 @@ test_doctor_fix_repairs_a_dangling_skill_link() {
 echo "capabilities/teeup-runtime"
 run_test "install gets gum and jq" test_install_gets_gum_and_jq
 run_test "configure creates state, env and link" test_configure_creates_state_env_and_link
+run_test "configured env loads the CA bundle for shells" test_configured_env_loads_the_ca_bundle_for_shells
 run_test "configure quotes a path with shell metacharacters" test_configure_quotes_a_path_with_shell_metacharacters
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
