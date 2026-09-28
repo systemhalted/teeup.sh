@@ -130,8 +130,11 @@ check_apply() {
     role="${line#*=}"
     want="$(palette_value "$palette" "$role")"
     [[ -n "$want" ]] || { echo "themes/$theme/$mode.toml has no $role"; return 1; }
-    printf '%s\n' "$pairs" | grep -qxF "$key=$want" ||
-      { echo "$theme $mode: expected $key=$want ($role), got: $(printf '%s\n' "$pairs" | grep "^$key=" || echo nothing)"; return 1; }
+    # A here-string, not printf | grep -q: under pipefail, grep -q exits on
+    # the first match and printf can die of SIGPIPE, failing a check that
+    # matched.
+    grep -qxF "$key=$want" <<<"$pairs" ||
+      { echo "$theme $mode: expected $key=$want ($role), got: $(grep "^$key=" <<<"$pairs" || echo nothing)"; return 1; }
   done <<EOF_MAP
 $TERMINAL_MAP
 EOF_MAP
