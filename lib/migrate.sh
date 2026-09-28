@@ -65,6 +65,11 @@ chezmoi_ro() {
 #   0 with no output -- chezmoi is not installed, so there is no repo to guard
 #   1                -- chezmoi is here but teeup could not find out where its
 #                       source is, which is NOT the same as there being none
+# A source-path that names nothing on disk is the second case, not the third:
+# chezmoi prints its default directory even when there is none, which is what
+# a second `teeup migrate legacy` sees once the first retired chezmoi's config.
+# Nothing can be inside a directory that does not exist. A dangling symlink
+# still counts as there, so it goes through pwd -P and fails closed.
 # Physical form (pwd -P), so a symlinked path cannot slip past the string
 # comparisons in migrate_path_is_safe.
 migrate_chezmoi_source() {
@@ -72,6 +77,7 @@ migrate_chezmoi_source() {
   have chezmoi || return 0
   src="$(chezmoi_ro source-path 2>/dev/null)" || return 1
   [[ -n "$src" ]] || return 1
+  [[ -e "$src" || -L "$src" ]] || return 0
   src="$(cd "$src" 2>/dev/null && pwd -P)" || return 1
   printf '%s\n' "$src"
 }
