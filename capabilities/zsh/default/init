@@ -2,15 +2,31 @@
 # Every block is guarded: on a machine without the tool the shell pays nothing
 # and prints nothing.
 
-if command -v mise >/dev/null 2>&1; then
-  eval "$(mise activate zsh)"
+if _teeup_mise_path="$(command -v mise)" 2>/dev/null; then
+  eval "$("$_teeup_mise_path" activate zsh)"
   # mise rewrites PATH per directory, so command hashing has to be off.
   setopt NO_HASH_CMDS
 fi
 
-if command -v starship >/dev/null 2>&1 && [[ "${TERM:-}" != "dumb" ]]; then
-  eval "$(starship init zsh)"
+if _teeup_starship_path="$(command -v starship)" 2>/dev/null && [[ "${TERM:-}" != "dumb" ]]; then
+  eval "$("$_teeup_starship_path" init zsh)"
 fi
+
+_teeup_hook_guard() {
+  if (( ${+_teeup_starship_path} )) && [[ ! -x "$_teeup_starship_path" ]]; then
+    precmd_functions=("${(@)precmd_functions:#starship_precmd}")
+    preexec_functions=("${(@)preexec_functions:#starship_preexec}")
+    PROMPT='%~ %# '
+    unset _teeup_starship_path
+  fi
+  if (( ${+_teeup_mise_path} )) && [[ ! -x "$_teeup_mise_path" ]]; then
+    precmd_functions=("${(@)precmd_functions:#_mise_hook}")
+    chpwd_functions=("${(@)chpwd_functions:#_mise_hook}")
+    unset _teeup_mise_path
+  fi
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _teeup_hook_guard
 
 if command -v zoxide >/dev/null 2>&1; then
   eval "$(zoxide init zsh)"

@@ -945,4 +945,171 @@ run_test "doctor is clean once migrate has run" test_doctor_stops_flagging_lefto
 run_test "doctor is clean after migrate keeps an && opener" test_doctor_is_clean_after_migrate_keeps_an_and_opener
 run_test "doctor flags a chezmoi source directory" test_doctor_flags_a_chezmoi_source_directory_that_still_points_here
 run_test "doctor reports unknown when chezmoi fails" test_doctor_reports_unknown_when_chezmoi_fails
+
+
+test_hook_guard_removes_hooks_when_binaries_are_deleted() {
+  setup
+  require_zsh || return 1
+
+  local bin="$TEST_HOME/bin"
+  mkdir -p "$bin"
+
+  cat > "$bin/starship" <<'INNER'
+#!/bin/sh
+if [ "$1" = "init" ] && [ "$2" = "zsh" ]; then
+  echo 'starship_precmd() { :; }'
+  echo 'starship_preexec() { :; }'
+  echo 'precmd_functions+=(starship_precmd)'
+  echo 'preexec_functions+=(starship_preexec)'
+fi
+INNER
+  chmod +x "$bin/starship"
+
+  cat > "$bin/mise" <<'INNER'
+#!/bin/sh
+if [ "$1" = "activate" ] && [ "$2" = "zsh" ]; then
+  echo '_mise_hook() { :; }'
+  echo 'precmd_functions+=(_mise_hook)'
+  echo 'chpwd_functions+=(_mise_hook)'
+fi
+INNER
+  chmod +x "$bin/mise"
+
+  local test_script="$TEST_HOME/run.zsh"
+  cat > "$test_script" <<INNER
+export PATH="$bin:\$PATH"
+export TERM=xterm-256color
+autoload -Uz add-zsh-hook
+precmd_functions=()
+preexec_functions=()
+chpwd_functions=()
+
+# Source the layer
+. "$TEEUP_PATH/capabilities/zsh/default/init"
+
+# Ensure hooks were added
+if (( \${precmd_functions[(I)starship_precmd]} == 0 )); then
+  print "starship_precmd not added" >&2
+  exit 1
+fi
+if (( \${precmd_functions[(I)_mise_hook]} == 0 )); then
+  print "_mise_hook not added" >&2
+  exit 1
+fi
+
+# Delete binaries
+rm -f "$bin/starship" "$bin/mise"
+
+# Run precmd as a prompt would
+for fn in "\$precmd_functions[@]"; do
+  "\$fn"
+done
+
+# Assert PROMPT is plain and hooks are removed
+if [[ "\$PROMPT" != '%~ %# ' ]]; then
+  print "PROMPT not reset, got: \$PROMPT" >&2
+  exit 1
+fi
+
+if (( \${precmd_functions[(I)starship_precmd]} > 0 )); then
+  print "starship_precmd not removed" >&2
+  exit 1
+fi
+if (( \${preexec_functions[(I)starship_preexec]} > 0 )); then
+  print "starship_preexec not removed" >&2
+  exit 1
+fi
+if (( \${precmd_functions[(I)_mise_hook]} > 0 )); then
+  print "_mise_hook not removed from precmd_functions" >&2
+  exit 1
+fi
+if (( \${chpwd_functions[(I)_mise_hook]} > 0 )); then
+  print "_mise_hook not removed from chpwd_functions" >&2
+  exit 1
+fi
+
+print "success"
+INNER
+
+  local out rc=0
+  out="$(zsh -f "$test_script" 2>&1)" || rc=$?
+  assert_success "$rc" "test script failed with: $out" || return 1
+  assert_equals "success" "$out" || return 1
+
+  cleanup_test_env
+}
+
+test_hook_guard_keeps_hooks_when_binaries_exist() {
+  setup
+  require_zsh || return 1
+
+  local bin="$TEST_HOME/bin"
+  mkdir -p "$bin"
+
+  cat > "$bin/starship" <<'INNER'
+#!/bin/sh
+if [ "$1" = "init" ] && [ "$2" = "zsh" ]; then
+  echo 'starship_precmd() { :; }'
+  echo 'starship_preexec() { :; }'
+  echo 'precmd_functions+=(starship_precmd)'
+  echo 'preexec_functions+=(starship_preexec)'
+fi
+INNER
+  chmod +x "$bin/starship"
+
+  cat > "$bin/mise" <<'INNER'
+#!/bin/sh
+if [ "$1" = "activate" ] && [ "$2" = "zsh" ]; then
+  echo '_mise_hook() { :; }'
+  echo 'precmd_functions+=(_mise_hook)'
+  echo 'chpwd_functions+=(_mise_hook)'
+fi
+INNER
+  chmod +x "$bin/mise"
+
+  local test_script="$TEST_HOME/run.zsh"
+  cat > "$test_script" <<INNER
+export PATH="$bin:\$PATH"
+export TERM=xterm-256color
+autoload -Uz add-zsh-hook
+precmd_functions=()
+preexec_functions=()
+chpwd_functions=()
+PROMPT='original'
+
+# Source the layer
+. "$TEEUP_PATH/capabilities/zsh/default/init"
+
+# Run precmd
+for fn in "\$precmd_functions[@]"; do
+  "\$fn"
+done
+
+# Assert PROMPT is NOT plain and hooks remain
+if [[ "\$PROMPT" == '%~ %# ' ]]; then
+  print "PROMPT was reset when it shouldn't have been" >&2
+  exit 1
+fi
+
+if (( \${precmd_functions[(I)starship_precmd]} == 0 )); then
+  print "starship_precmd removed" >&2
+  exit 1
+fi
+if (( \${precmd_functions[(I)_mise_hook]} == 0 )); then
+  print "_mise_hook removed" >&2
+  exit 1
+fi
+
+print "success"
+INNER
+
+  local out rc=0
+  out="$(zsh -f "$test_script" 2>&1)" || rc=$?
+  assert_success "$rc" "test script failed with: $out" || return 1
+  assert_equals "success" "$out" || return 1
+
+  cleanup_test_env
+}
+run_test "hook guard removes hooks when binaries are deleted" test_hook_guard_removes_hooks_when_binaries_are_deleted
+run_test "hook guard keeps hooks when binaries exist" test_hook_guard_keeps_hooks_when_binaries_exist
 print_summary
