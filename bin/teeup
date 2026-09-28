@@ -855,7 +855,8 @@ _config_apply_hint() {
     # narrower command and does not touch anything else.
     TEEUP_EMACS_FLAVOR) log "Run: teeup configure emacs -- that is what reads $key (teeup update now covers it too)." ;;
     TEEUP_DAILY) log "Run: ./bootstrap -- that is what reads $key." ;;
-    TEEUP_GITHUB_UPLOAD_PERSONAL|TEEUP_GITHUB_UPLOAD_WORK) log "Run: teeup configure github -- that is what reads $key." ;;
+    TEEUP_GITHUB_UPLOAD_PERSONAL) log "Run: teeup configure github -- that is what reads $key, and it re-runs teeup configure git so commit signing follows." ;;
+    TEEUP_GITHUB_UPLOAD_WORK) log "Run: teeup configure github -- that is what reads $key." ;;
     # --reload, because a plain `theme set` of the theme already current is
     # a no-op, and this write may name exactly that theme.
     TEEUP_THEME) log "Run: teeup theme set --reload${value:+ $value} -- it validates the name and re-renders every themed tool, which this write alone does not." ;;

@@ -303,6 +303,30 @@ test_configure_without_a_terminal_keeps_uploading_by_default() {
   cleanup_test_env
 }
 
+test_declining_the_upload_turns_commit_signing_off() {
+  setup
+  seed_keys
+  # git runs before github in the core list, so on a first bootstrap git has
+  # already rendered signing on by the time github asks the question.
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = true" || return 1
+  printf 'n\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = false" || return 1
+  cleanup_test_env
+}
+
+test_changing_the_answer_back_to_yes_turns_commit_signing_on() {
+  setup
+  seed_keys
+  DRY_RUN=false "$TEEUP" config set TEEUP_GITHUB_UPLOAD_PERSONAL no >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = false" || return 1
+  DRY_RUN=false "$TEEUP" config set TEEUP_GITHUB_UPLOAD_PERSONAL yes >/dev/null 2>&1
+  TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = true" || return 1
+  cleanup_test_env
+}
+
 test_config_set_accepts_the_github_upload_answer() {
   setup
   local out
@@ -1186,6 +1210,8 @@ run_test "configure uploads authentication and signing keys" test_configure_uplo
 run_test "configure declines both key uploads" test_configure_declines_both_uploads
 run_test "configure remembers a declined upload" test_configure_remembers_a_declined_upload
 run_test "configure without a terminal keeps uploading by default" test_configure_without_a_terminal_keeps_uploading_by_default
+run_test "declining the upload turns commit signing off" test_declining_the_upload_turns_commit_signing_off
+run_test "changing the answer back to yes turns commit signing on" test_changing_the_answer_back_to_yes_turns_commit_signing_on
 run_test "config set accepts the GitHub upload answer" test_config_set_accepts_the_github_upload_answer
 run_test "configure skips a key GitHub already has" test_configure_skips_a_key_github_already_has
 run_test "configure recognises the real five-column ssh-key list row" test_configure_recognises_the_real_five_column_row

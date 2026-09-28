@@ -69,6 +69,31 @@ _github_upload_declined() {
   log "To change this choice: teeup config set $answer_key yes && teeup configure github"
 }
 
+# _github_sync_git_signing: the git capability renders commit.gpgsign from
+# TEEUP_GITHUB_UPLOAD_PERSONAL, but git runs before github in the core list.
+# On a first bootstrap git rendered before this script asked the question,
+# and a later `teeup config set` of the answer never reaches git either. So
+# re-run git's configure whenever the rendered value no longer matches the
+# answer. Only when git has been configured already, as ssh/configure does,
+# and only with both halves of the personal key on disk: without them git
+# keeps signing off whatever the answer says.
+_github_sync_git_signing() {
+  local generated want have key
+  generated="$(user_config_dir)/git/teeup-generated"
+  [[ -f "$generated" ]] || return 0
+  key="$(identity_key personal)"
+  want=true
+  if [[ "$(answers_get TEEUP_GITHUB_UPLOAD_PERSONAL)" == "no" ]]; then
+    want=false
+  elif [[ ! -f "$key" || ! -f "$key.pub" ]]; then
+    return 0
+  fi
+  have="$(sed -n 's/^[[:space:]]*gpgsign = //p' "$generated")"
+  [[ "$have" != "$want" ]] || return 0
+  log "Re-running the git configuration so commit signing follows TEEUP_GITHUB_UPLOAD_PERSONAL."
+  cap_run git configure || warn "Could not re-run the git configuration. Run: teeup configure git"
+}
+
 # github_configure_identity <identity>: everything done on the host and
 # account already selected for this identity. A function rather than the body
 # of the loop so that its several early exits cannot skip the switch back to
@@ -203,6 +228,9 @@ for identity in $(identity_list); do
   fi
 
   github_configure_identity "$identity" "$gh_host" "$gh_account"
+  if [[ "$identity" == "personal" ]]; then
+    _github_sync_git_signing
+  fi
 
   # Skipped under DRY_RUN: no login ran, so the account on the host is still
   # whatever it was and would only produce a warning about a mismatch this run
