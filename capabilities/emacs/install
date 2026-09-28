@@ -11,10 +11,29 @@ if casks_supported; then
   # ("It seems there is already a Binary at .../emacs from formula emacs;
   # skipping link.") and still exits 0, so the cask install "succeeds" while
   # emacs/emacsclient keep pointing at the formula's terminal-only build.
+  # With a terminal, offer to uninstall the formula; without one (or on a
+  # no), keep it and say how. A formula another formula depends on makes
+  # brew refuse, which is the same warning.
+  formula_removed=false
   if pkg_installed emacs; then
-    warn "Homebrew's emacs formula is installed; the emacs-app cask will not link emacs or emacsclient over it, so the daemon and emacsclient -c would keep using the terminal-only build. Run: brew uninstall emacs, then: teeup configure emacs"
+    if lazy_is_tty && ui_confirm "Homebrew's emacs formula is the terminal-only build, and it keeps the Emacs app from linking emacs and emacsclient. Uninstall the emacs formula so the Emacs app's emacs and emacsclient take over?" yes; then
+      if run_cmd brew uninstall emacs; then
+        ok_unless_dry "Uninstalled Homebrew's emacs formula."
+        formula_removed=true
+      else
+        warn "Could not uninstall Homebrew's emacs formula. Run: brew uninstall emacs, then: teeup configure emacs"
+      fi
+    else
+      warn "Homebrew's emacs formula is installed; the emacs-app cask will not link emacs or emacsclient over it, so the daemon and emacsclient -c would keep using the terminal-only build. Run: brew uninstall emacs, then: teeup configure emacs"
+    fi
   fi
-  cask_install emacs-app
+  # An emacs-app installed while the formula was here was never linked, and
+  # cask_install skips an installed cask, so reinstall it to link them now.
+  if [[ "$formula_removed" == "true" ]] && cask_installed emacs-app; then
+    run_cmd brew reinstall --cask emacs-app || warn "Could not relink the emacs-app cask. Run: brew reinstall --cask emacs-app"
+  else
+    cask_install emacs-app
+  fi
 else
   pkg_install emacs emacs || warn "No emacs port could be installed; download Emacs from https://emacsformacosx.com and re-run: teeup configure emacs"
 fi

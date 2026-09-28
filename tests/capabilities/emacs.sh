@@ -124,6 +124,62 @@ EOF2
   cleanup_test_env
 }
 
+# brew reports the emacs formula installed; the emacs-app cask is installed
+# only when $1 is "cask".
+_mock_brew_with_the_formula() {
+  if [[ "${1:-}" == "cask" ]]; then
+    mock_command_script brew <<'EOF2'
+case "$1 $2 $3" in
+  "list --formula emacs"|"list --cask emacs-app") exit 0 ;;
+  list*) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  else
+    mock_command_script brew <<'EOF2'
+case "$1 $2 $3" in
+  "list --formula emacs") exit 0 ;;
+  list*) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF2
+  fi
+}
+
+test_install_offers_to_swap_the_formula_for_the_app() {
+  setup
+  _mock_brew_with_the_formula
+  local out
+  out="$(printf 'y\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=true "$TEEUP" install emacs 2>&1)"
+  assert_contains "$out" "Uninstall the emacs formula so the Emacs app's emacs and emacsclient take over?" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: brew uninstall emacs" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: brew install --cask emacs-app" || return 1
+  assert_not_contains "$out" "Run: brew uninstall emacs" || return 1
+  cleanup_test_env
+}
+
+test_install_keeps_the_formula_when_the_swap_is_declined() {
+  setup
+  _mock_brew_with_the_formula
+  local out
+  out="$(printf 'n\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=true "$TEEUP" install emacs 2>&1)"
+  assert_not_contains "$out" "Would execute: brew uninstall emacs" || return 1
+  assert_contains "$out" "Run: brew uninstall emacs, then: teeup configure emacs" || return 1
+  cleanup_test_env
+}
+
+test_install_relinks_an_installed_app_after_the_swap() {
+  setup
+  # The cask is already installed, so its install step would be skipped and
+  # emacs/emacsclient would stay unlinked; a reinstall links them.
+  _mock_brew_with_the_formula cask
+  local out
+  out="$(printf 'y\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=true "$TEEUP" install emacs 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: brew uninstall emacs" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: brew reinstall --cask emacs-app" || return 1
+  cleanup_test_env
+}
+
 test_configure_prefers_the_app_bundle_over_a_path_emacs() {
   setup
   # Simulates I2 on hardware: the emacs-app cask is installed (its bundle
@@ -1072,6 +1128,9 @@ echo "capabilities/emacs"
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install falls back to the port on macports" test_install_falls_back_to_the_port_on_macports
 run_test "install warns when the formula is already installed" test_install_warns_when_the_formula_is_already_installed
+run_test "install offers to swap the formula for the app" test_install_offers_to_swap_the_formula_for_the_app
+run_test "install keeps the formula when the swap is declined" test_install_keeps_the_formula_when_the_swap_is_declined
+run_test "install relinks an installed app after the swap" test_install_relinks_an_installed_app_after_the_swap
 run_test "configure prefers the app bundle over a PATH emacs" test_configure_prefers_the_app_bundle_over_a_path_emacs
 run_test "configure finds the bundle under macports_apps_dir" test_configure_finds_the_bundle_under_macports_apps_dir
 run_test "configure qualifies the window claim for a terminal-only build" test_configure_qualifies_the_window_claim_for_a_terminal_only_build
