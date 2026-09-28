@@ -64,7 +64,10 @@ fi
 # all.
 gpgsign="true"
 key="$(identity_key personal)"
-if [[ ! -f "$key" ]]; then
+if [[ "$(answers_get TEEUP_GITHUB_UPLOAD_PERSONAL)" == "no" ]]; then
+  gpgsign="false"
+  log "GitHub upload was declined for the personal key; commit signing stays off."
+elif [[ ! -f "$key" ]]; then
   gpgsign="false"
   log "No $key yet; commit signing stays off."
   log "After the ssh capability has made your keys, run: teeup configure git"

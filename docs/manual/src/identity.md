@@ -38,11 +38,19 @@ If your own `~/.ssh/config` already names a key for GitHub, teeup uses that key 
 
 The `github` capability installs the GitHub CLI, `gh`, and then:
 
-1. signs you in with `gh auth login --web`, which opens your browser;
-2. uploads your public key twice, as an authentication key and as a signing key;
+1. signs you in with `gh auth login --web --skip-ssh-key`, which opens your browser without asking about an SSH key;
+2. asks once whether teeup may upload your public key, then uploads it as an authentication key and as a signing key;
 3. sets `gh` to use SSH for git.
 
-If it cannot finish, for example because you closed the browser, it says so and you can run `teeup configure github` again. Keys already on your account are not uploaded twice.
+The upload question defaults to yes. teeup remembers the answer as `TEEUP_GITHUB_UPLOAD_PERSONAL` or `TEEUP_GITHUB_UPLOAD_WORK`. A saved `no` skips both uploads and leaves commit signing off for the personal identity. To change the personal choice later, run:
+
+```sh
+teeup config set TEEUP_GITHUB_UPLOAD_PERSONAL yes && teeup configure github
+```
+
+Use `TEEUP_GITHUB_UPLOAD_WORK` for the work identity. When teeup runs without a terminal and no answer is saved, it uploads the keys, matching the earlier behavior.
+
+If setup cannot finish, for example because you closed the browser, it says so and you can run `teeup configure github` again. Keys already on your account are not uploaded twice.
 
 ## A work identity
 
@@ -56,6 +64,6 @@ A Mac you also use for work can have a second SSH key. Set it in the machine fil
 
 With `TEEUP_WORK_EMAIL` set, teeup creates `~/.ssh/id_ed25519_work`, adds a `github.com-work` host to a new `~/.ssh/config`, and uploads the work key to the work host. Clone work repositories as `git@github.com-work:org/repo.git` to use it.
 
-When work and personal share `github.com`, `gh` can only act as one account per host. teeup switches to `TEEUP_WORK_GH_ACCOUNT` for the upload and back afterwards; both accounts must already be signed in with `gh auth login`. Without that key it refuses to upload the work key, rather than put it on your personal account.
+When work and personal share `github.com`, `gh` can only act as one account per host. teeup switches to `TEEUP_WORK_GH_ACCOUNT` for the upload and back afterwards; both accounts must already be signed in with `gh auth login --skip-ssh-key`. Without that key it refuses to upload the work key, rather than put it on your personal account.
 
 git itself still has one identity. The work key changes which key SSH offers, not the email on your commits.

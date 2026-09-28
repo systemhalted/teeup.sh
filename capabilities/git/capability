@@ -1,4 +1,4 @@
-summary="git with two identities, SSH signing, delta and lazygit"
+summary="git with your identity, SSH commit signing, delta and lazygit"
 group=git
 tier=core
 requires="dev-dirs cli-tools"

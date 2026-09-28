@@ -245,7 +245,7 @@ test_configure_logs_in_with_the_two_scopes() {
   seed_keys
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$(cat "$MOCK_LOG")" "auth login --hostname github.com --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "auth login --hostname github.com --web --git-protocol ssh --skip-ssh-key --scopes admin:public_key,admin:ssh_signing_key" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "config set git_protocol ssh --host github.com" || return 1
   cleanup_test_env
 }
@@ -253,11 +253,86 @@ test_configure_logs_in_with_the_two_scopes() {
 test_configure_uploads_authentication_and_signing_keys() {
   setup
   seed_keys
-  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  local out
+  out="$(printf 'y\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
   local calls
   calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Upload $TEST_HOME/.ssh/id_ed25519_personal.pub to GitHub (github.com, testuser) for pushing and commit signing?" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication --title testmac personal" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type signing --title testmac personal (signing)" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"' || return 1
+  cleanup_test_env
+}
+
+test_configure_declines_both_uploads() {
+  setup
+  seed_keys
+  local out calls
+  out="$(printf 'n\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Upload $TEST_HOME/.ssh/id_ed25519_personal.pub to GitHub (github.com, testuser) for pushing and commit signing?" || return 1
+  assert_not_contains "$calls" "ssh-key add" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_GITHUB_UPLOAD_PERSONAL="no"' || return 1
+  assert_contains "$out" "teeup config set TEEUP_GITHUB_UPLOAD_PERSONAL yes && teeup configure github" || return 1
+  cleanup_test_env
+}
+
+test_configure_remembers_a_declined_upload() {
+  setup
+  seed_keys
+  printf 'n\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  : > "$MOCK_LOG"
+  local out calls
+  out="$(printf 'y\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$out" "Upload $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  assert_not_contains "$calls" "ssh-key add" || return 1
+  assert_contains "$out" "teeup config set TEEUP_GITHUB_UPLOAD_PERSONAL yes && teeup configure github" || return 1
+  cleanup_test_env
+}
+
+test_configure_without_a_terminal_keeps_uploading_by_default() {
+  setup
+  seed_keys
+  local out calls
+  out="$(TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$out" "Upload $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type signing" || return 1
+  cleanup_test_env
+}
+
+test_declining_the_upload_turns_commit_signing_off() {
+  setup
+  seed_keys
+  # git runs before github in the core list, so on a first bootstrap git has
+  # already rendered signing on by the time github asks the question.
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = true" || return 1
+  printf 'n\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = false" || return 1
+  cleanup_test_env
+}
+
+test_changing_the_answer_back_to_yes_turns_commit_signing_on() {
+  setup
+  seed_keys
+  DRY_RUN=false "$TEEUP" config set TEEUP_GITHUB_UPLOAD_PERSONAL no >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = false" || return 1
+  DRY_RUN=false "$TEEUP" config set TEEUP_GITHUB_UPLOAD_PERSONAL yes >/dev/null 2>&1
+  TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "gpgsign = true" || return 1
+  cleanup_test_env
+}
+
+test_config_set_accepts_the_github_upload_answer() {
+  setup
+  local out
+  out="$(DRY_RUN=false "$TEEUP" config set TEEUP_GITHUB_UPLOAD_PERSONAL no 2>&1)"
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_GITHUB_UPLOAD_PERSONAL="no"' || return 1
+  assert_contains "$out" "teeup configure github" || return 1
   cleanup_test_env
 }
 
@@ -587,7 +662,7 @@ test_configure_uploads_the_work_key_to_a_github_enterprise_host() {
   assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   local calls
   calls="$(cat "$MOCK_LOG")"
-  assert_contains "$calls" "auth login --hostname github.enterprise.example.com --web --git-protocol ssh --scopes admin:public_key,admin:ssh_signing_key" || return 1
+  assert_contains "$calls" "auth login --hostname github.enterprise.example.com --web --git-protocol ssh --skip-ssh-key --scopes admin:public_key,admin:ssh_signing_key" || return 1
   assert_contains "$calls" "config set git_protocol ssh --host github.enterprise.example.com" || return 1
   # The personal key still goes to github.com...
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication --title testmac personal" || return 1
@@ -1132,6 +1207,12 @@ test_doctor_will_not_check_a_key_against_an_account_it_cannot_name() {
 run_test "install gets gh" test_install_gets_gh
 run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
 run_test "configure uploads authentication and signing keys" test_configure_uploads_authentication_and_signing_keys
+run_test "configure declines both key uploads" test_configure_declines_both_uploads
+run_test "configure remembers a declined upload" test_configure_remembers_a_declined_upload
+run_test "configure without a terminal keeps uploading by default" test_configure_without_a_terminal_keeps_uploading_by_default
+run_test "declining the upload turns commit signing off" test_declining_the_upload_turns_commit_signing_off
+run_test "changing the answer back to yes turns commit signing on" test_changing_the_answer_back_to_yes_turns_commit_signing_on
+run_test "config set accepts the GitHub upload answer" test_config_set_accepts_the_github_upload_answer
 run_test "configure skips a key GitHub already has" test_configure_skips_a_key_github_already_has
 run_test "configure recognises the real five-column ssh-key list row" test_configure_recognises_the_real_five_column_row
 run_test "configure lets the active account decide the scopes" test_configure_lets_the_active_account_decide_the_scopes
