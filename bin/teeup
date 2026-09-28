@@ -33,7 +33,8 @@ teeup - your Mac, ready to code
   teeup remove <capability>      undo what a capability installed
   teeup uninstall [--packages] [--identity] [--yes]
                                  take teeup off this Mac (asks first; keeps your
-                                  edits, identity and packages unless told)
+                                  edits, identity and packages unless told);
+                                 --yes means "no terminal, take every default", for scripts only.
   teeup list [--tier core|daily|lazy]
   teeup theme set [--reload] <name>|list|current   apply (or re-render), list or print the cross-tool theme
   teeup launch <app|capability>  open a GUI app, installing its cask first if needed
@@ -246,13 +247,13 @@ cmd_remove() {
 # --yes, which also takes every default. A dry run asks nothing and changes
 # nothing.
 cmd_uninstall() {
-  local arg yes=false tty=false rc=0 teeup_q confirm_msg
-  _UNINSTALL_PACKAGES=""
+  local arg yes=false tty=false rc=0 teeup_q command packages_flag=false identity_flag=false
+  _UNINSTALL_PACKAGES=false
   _UNINSTALL_IDENTITY=false
   for arg in "$@"; do
     case "$arg" in
-      --packages) _UNINSTALL_PACKAGES=true ;;
-      --identity) _UNINSTALL_IDENTITY=true ;;
+      --packages) _UNINSTALL_PACKAGES=true; packages_flag=true ;;
+      --identity) _UNINSTALL_IDENTITY=true; identity_flag=true ;;
       --yes) yes=true ;;
       *) die "Usage: teeup uninstall [--packages] [--identity] [--yes]" ;;
     esac
@@ -265,29 +266,41 @@ cmd_uninstall() {
   if [[ "$DRY_RUN" != "true" ]]; then
     if [[ "$tty" == "true" && "$yes" != "true" ]]; then
       _UNINSTALL_ASK=true
-      confirm_msg="Take teeup off this Mac? Your edited files, package manager and the checkout stay."
-      if [[ "$_UNINSTALL_IDENTITY" == "true" ]]; then
-        confirm_msg="$confirm_msg Your identity comes off if you confirm the next question."
-      else
-        confirm_msg="$confirm_msg Your identity stays too."
-      fi
-      if ! ui_confirm "$confirm_msg" no; then
-        log "Nothing was changed."
-        return 0
-      fi
     elif [[ "$yes" != "true" ]]; then
-      die "teeup uninstall asks before it removes anything, and there is no terminal to ask on. Preview it with: DRY_RUN=true teeup uninstall$(uninstall_active_flags), then run: teeup uninstall --yes$(uninstall_active_flags)"
+      die "teeup uninstall asks before it removes anything, and there is no terminal to ask on. --yes means \"no terminal, take every default\", for scripts only. Preview it with: DRY_RUN=true teeup uninstall$(uninstall_active_flags), then run: teeup uninstall --yes$(uninstall_active_flags)"
     fi
   fi
-  if [[ -z "$_UNINSTALL_PACKAGES" ]]; then
-    _UNINSTALL_PACKAGES=false
-    if uninstall_ask "Also uninstall the packages and apps teeup installed (ripgrep, WezTerm, Emacs and the rest)? Homebrew or MacPorts itself stays either way."; then
+
+  if ! uninstall_is_installed; then
+    log "teeup is not installed on this Mac."
+    uninstall_collect_packages all
+    while IFS= read -r command; do
+      [[ -n "$command" ]] || continue
+      log "Software listed in teeup's metadata is still installed. Remove it by hand with: $command"
+    done <<EOF
+$(uninstall_package_commands)
+EOF
+    return 0
+  fi
+
+  if [[ "$_UNINSTALL_ASK" == "true" ]]; then
+    if ! ui_confirm "Remove teeup from this Mac?" no; then
+      log "Nothing was changed."
+      return 0
+    fi
+  fi
+  if [[ "$packages_flag" != "true" ]]; then
+    if [[ "$_UNINSTALL_ASK" == "true" ]]; then
+      uninstall_collect_packages marked
+      uninstall_print_package_lists
+    fi
+    if uninstall_ask "Also uninstall the packages and apps teeup installed?"; then
       _UNINSTALL_PACKAGES=true
     fi
   fi
-  if [[ "$_UNINSTALL_IDENTITY" == "true" && "$_UNINSTALL_ASK" == "true" ]]; then
-    if ! ui_confirm "Also take off your git identity: remove teeup's generated git identity file, move git/local aside, and (if teeup put them there unedited) remove ~/.ssh/config and $(user_config_dir)/git/config? teeup never deletes an SSH key; it will only print how to remove one by hand." no; then
-      _UNINSTALL_IDENTITY=false
+  if [[ "$identity_flag" != "true" ]]; then
+    if uninstall_ask "Also move aside your git identity files (~/.config/git/local) and remove teeup's git and ssh config? SSH keys are never touched."; then
+      _UNINSTALL_IDENTITY=true
     fi
   fi
   uninstall_report_reset

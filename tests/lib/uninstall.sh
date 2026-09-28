@@ -568,6 +568,41 @@ EOF2
   cleanup_test_env
 }
 
+test_package_inventory_lists_metadata_software_and_prints_commands_that_work() {
+  setup
+  mock_brew_all_installed
+  make_cap first core "" "ripgrep" "wezterm"
+  make_cap second lazy "" "ripgrep jq" "zed"
+  uninstall_collect_packages all
+  assert_equals "ripgrep jq" "$_UNINSTALL_KEPT_PKGS" || return 1
+  assert_equals "wezterm zed" "$_UNINSTALL_KEPT_CASKS" || return 1
+  local out fix
+  out="$(uninstall_package_commands)"
+  assert_contains "$out" "brew uninstall ripgrep jq" || return 1
+  assert_contains "$out" "brew uninstall --cask wezterm zed" || return 1
+  while IFS= read -r fix; do
+    [[ -n "$fix" ]] || continue
+    run_fix "$fix" || { echo "the printed uninstall command failed: $fix"; return 1; }
+  done <<EOF2
+$out
+EOF2
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep jq" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm zed" || return 1
+  cleanup_test_env
+}
+
+test_package_inventory_uses_only_marked_capabilities_for_an_installed_teeup() {
+  setup
+  mock_brew_all_installed
+  make_cap installed core "" "ripgrep" "wezterm"
+  make_cap unmarked lazy "" "jq" "zed"
+  state_done mark cap-installed
+  uninstall_collect_packages marked
+  assert_equals "ripgrep" "$_UNINSTALL_KEPT_PKGS" || return 1
+  assert_equals "wezterm" "$_UNINSTALL_KEPT_CASKS" || return 1
+  cleanup_test_env
+}
+
 test_capabilities_name_what_the_tools_made_for_themselves() {
   setup
   make_cap mise core
@@ -1353,6 +1388,8 @@ run_test "doom theme line is a no-op with no config.el" test_doom_theme_line_is_
 run_test "doom theme line refuses a symlinked config.el" test_doom_theme_line_refuses_a_symlinked_config_el
 run_test "doom theme line honors DOOMDIR" test_doom_theme_line_honors_doomdir
 run_test "capabilities keep packages by default and name how to remove them" test_capabilities_keep_packages_by_default_and_name_how_to_remove_them
+run_test "package inventory lists metadata software and prints commands that work" test_package_inventory_lists_metadata_software_and_prints_commands_that_work
+run_test "package inventory uses only marked capabilities for an installed teeup" test_package_inventory_uses_only_marked_capabilities_for_an_installed_teeup
 run_test "capabilities name what the tools made for themselves" test_capabilities_name_what_the_tools_made_for_themselves
 run_test "capabilities uninstall packages when asked" test_capabilities_uninstall_packages_when_asked
 run_test "capabilities decide each of the seven remove refuses" test_capabilities_decide_each_of_the_seven_remove_refuses

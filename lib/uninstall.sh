@@ -571,6 +571,18 @@ _UNINSTALL_GONE=" "
 _UNINSTALL_KEPT_PKGS=""
 _UNINSTALL_KEPT_CASKS=""
 
+# uninstall_is_installed -> 0 only when teeup has capability records. The
+# directory alone is not enough: a partial or already-removed state directory
+# cannot tell us which software teeup installed.
+uninstall_is_installed() {
+  local marker
+  [[ -d "$TEEUP_STATE_DIR" ]] || return 1
+  for marker in "$TEEUP_STATE_DIR/done"/cap-*; do
+    [[ -e "$marker" ]] && return 0
+  done
+  return 1
+}
+
 # uninstall_login_shell -> the login shell macOS has on record for this user.
 uninstall_login_shell() {
   dscl . -read "/Users/${USER:-$(id -un)}" UserShell 2>/dev/null | awk '{print $2}'
@@ -610,9 +622,54 @@ _uninstall_keep_packages() {
   casks_supported || return 0
   for cask in $(cap_meta_get "$name" casks); do
     if cask_installed "$cask" >/dev/null 2>&1; then
-      _UNINSTALL_KEPT_CASKS="${_UNINSTALL_KEPT_CASKS:+$_UNINSTALL_KEPT_CASKS }$cask"
+      case " $_UNINSTALL_KEPT_CASKS " in
+        *" $cask "*) ;;
+        *) _UNINSTALL_KEPT_CASKS="${_UNINSTALL_KEPT_CASKS:+$_UNINSTALL_KEPT_CASKS }$cask" ;;
+      esac
     fi
   done
+}
+
+# uninstall_collect_packages <marked|all>
+# Builds the same package and app lists the kept summary uses. "marked" is
+# for an installed teeup and trusts only its capability records. "all" is
+# for a machine without those records: it checks every capability's metadata
+# so the user can remove matching software by hand without teeup claiming it
+# installed any of it.
+uninstall_collect_packages() {
+  local scope="$1" names name
+  _UNINSTALL_KEPT_PKGS=""
+  _UNINSTALL_KEPT_CASKS=""
+  case "$scope" in
+    marked) names="$(uninstall_caps)" ;;
+    all) names="$(cap_list)" ;;
+    *) die "uninstall_collect_packages: expected marked or all" ;;
+  esac
+  for name in $names; do
+    _uninstall_keep_packages "$name"
+  done
+}
+
+# uninstall_package_commands -> pasteable commands for the lists most
+# recently built by uninstall_collect_packages or uninstall_capabilities.
+uninstall_package_commands() {
+  if [[ -n "$_UNINSTALL_KEPT_PKGS" ]]; then
+    case "$(pkg_backend)" in
+      homebrew) printf 'brew uninstall %s\n' "$_UNINSTALL_KEPT_PKGS" ;;
+      macports) printf 'sudo port uninstall %s\n' "$_UNINSTALL_KEPT_PKGS" ;;
+    esac
+  fi
+  if [[ -n "$_UNINSTALL_KEPT_CASKS" ]]; then
+    printf 'brew uninstall --cask %s\n' "$_UNINSTALL_KEPT_CASKS"
+  fi
+}
+
+# uninstall_print_package_lists
+# Show both categories before the package question, including an explicit
+# "none" when no installed metadata item belongs in one of them.
+uninstall_print_package_lists() {
+  printf 'Packages: %s\n' "${_UNINSTALL_KEPT_PKGS:-none}"
+  printf 'Apps: %s\n' "${_UNINSTALL_KEPT_CASKS:-none}"
 }
 
 # uninstall_policy <name> -> what uninstall does with a capability that
