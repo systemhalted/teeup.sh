@@ -6,4 +6,4 @@ provides=""
 packages=""
 casks="emacs-app"
 apps="Emacs"
-interactive=false
+interactive=true
