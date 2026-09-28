@@ -514,6 +514,122 @@ test_doom_flavor_without_config_el_writes_nothing() {
   cleanup_test_env
 }
 
+test_doom_flavor_comments_out_the_template_default_theme() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  cat > "$DOOM_DIR/config.el" <<'EOF'
+;;; config.el
+;; `load-theme' function. This is the default:
+(setq doom-theme 'doom-one)
+EOF
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$(cat "$DOOM_DIR/config.el")" ";; (setq doom-theme 'doom-one)  ; teeup: disabled Doom's template default so the teeup theme applies" || return 1
+  assert_contains "$out" "Disabled Doom's template default doom-theme in config.el so the teeup theme applies" || return 1
+  # Idempotent: second run does nothing
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_not_contains "$out" "Disabled Doom's template default doom-theme" || return 1
+  assert_equals "1" "$(grep -c ";; (setq doom-theme 'doom-one)" "$DOOM_DIR/config.el")" || return 1
+  cleanup_test_env
+}
+
+test_doom_flavor_leaves_a_user_theme_untouched_and_logs() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  cat > "$DOOM_DIR/config.el" <<'EOF'
+;;; config.el
+(setq doom-theme 'doom-dracula)
+EOF
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$(cat "$DOOM_DIR/config.el")" "(setq doom-theme 'doom-dracula)" || return 1
+  assert_contains "$out" "config.el sets its own doom-theme, which overrides the teeup theme" || return 1
+  cleanup_test_env
+}
+
+
+test_doom_flavor_leaves_an_unmarked_doom_one_untouched_and_logs() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  cat > "$DOOM_DIR/config.el" <<'CONFIG'
+;;; config.el
+(setq doom-theme 'doom-one)
+CONFIG
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$(cat "$DOOM_DIR/config.el")" "(setq doom-theme 'doom-one)" || return 1
+  assert_contains "$out" "config.el sets its own doom-theme, which overrides the teeup theme" || return 1
+  cleanup_test_env
+}
+
+test_doom_flavor_leaves_an_indented_doom_one_untouched_and_logs() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  cat > "$DOOM_DIR/config.el" <<'CONFIG'
+;;; config.el
+;; `load-theme' function. This is the default:
+  (setq doom-theme 'doom-one)
+CONFIG
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$(cat "$DOOM_DIR/config.el")" "  (setq doom-theme 'doom-one)" || return 1
+  assert_contains "$out" "config.el sets its own doom-theme, which overrides the teeup theme" || return 1
+  cleanup_test_env
+}
+test_doom_flavor_dry_run_shows_template_comment_out() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  cat > "$DOOM_DIR/config.el" <<'EOF'
+;;; config.el
+;; `load-theme' function. This is the default:
+(setq doom-theme 'doom-one)
+EOF
+  local before out
+  before="$(cat "$DOOM_DIR/config.el")"
+  out="$(DRY_RUN=true "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would comment out the template default doom-theme in config.el" || return 1
+  assert_equals "$before" "$(cat "$DOOM_DIR/config.el")" || return 1
+  cleanup_test_env
+}
+
+test_doom_flavor_refuses_to_comment_template_in_symlink() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  cat > "$TEST_HOME/real-config.el" <<'EOF'
+;;; config.el
+;; `load-theme' function. This is the default:
+(setq doom-theme 'doom-one)
+EOF
+  ln -s "$TEST_HOME/real-config.el" "$DOOM_DIR/config.el"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
+  assert_contains "$out" "config.el is a symlink; teeup does not write through it. Comment out (setq doom-theme 'doom-one) by hand." || return 1
+  assert_contains "$(cat "$TEST_HOME/real-config.el")" "(setq doom-theme 'doom-one)" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_restores_the_commented_template_default() {
+  setup
+  set_flavor doom
+  stub_doom_checkout
+  source "$TEEUP_PATH/lib/all.sh"
+  cat > "$DOOM_DIR/config.el" <<'EOF'
+;;; config.el
+;; (setq doom-theme 'doom-one)  ; teeup: disabled Doom's template default so the teeup theme applies
+EOF
+  uninstall_report_reset
+  DRY_RUN=false uninstall_doom_theme_line
+  assert_contains "$(cat "$DOOM_DIR/config.el")" "(setq doom-theme 'doom-one)" || return 1
+  assert_contains "$_UNINSTALL_REMOVED" "Restored Doom's template default doom-theme in" || return 1
+  cleanup_test_env
+}
+
 test_starter_flavor_leaves_doom_config_el_untouched() {
   setup
   mkdir -p "$DOOM_DIR"
@@ -982,6 +1098,13 @@ run_test "doom flavor rewrites an old-style theme line to the loader" test_doom_
 run_test "doom flavor without a cookie adds the line at the top" test_doom_flavor_without_a_cookie_adds_the_line_at_the_top
 run_test "doom flavor dry run leaves config.el untouched" test_doom_flavor_dry_run_leaves_config_el_untouched
 run_test "doom flavor without config.el writes nothing" test_doom_flavor_without_config_el_writes_nothing
+run_test "doom flavor comments out the template default theme" test_doom_flavor_comments_out_the_template_default_theme
+run_test "doom flavor leaves a user theme untouched and logs" test_doom_flavor_leaves_a_user_theme_untouched_and_logs
+run_test "doom flavor leaves an unmarked doom-one untouched and logs" test_doom_flavor_leaves_an_unmarked_doom_one_untouched_and_logs
+run_test "doom flavor leaves an indented doom-one untouched and logs" test_doom_flavor_leaves_an_indented_doom_one_untouched_and_logs
+run_test "doom flavor dry run shows template comment out" test_doom_flavor_dry_run_shows_template_comment_out
+run_test "doom flavor refuses to comment template in symlink" test_doom_flavor_refuses_to_comment_template_in_symlink
+run_test "uninstall restores the commented template default" test_uninstall_restores_the_commented_template_default
 run_test "starter flavor leaves Doom's config.el untouched" test_starter_flavor_leaves_doom_config_el_untouched
 run_test "plist escapes metacharacters in paths" test_plist_escapes_metacharacters_in_paths
 run_test "the TMPDIR gate holds across a different session" test_the_tmpdir_gate_holds_across_a_different_session
