@@ -67,7 +67,7 @@ test_configure_runs_no_command() {
   # answers_load's hostname lookup is the harness's, not the capability's;
   # the not_applicable guard's own casks_supported check reads sw_vers the
   # same read-only way, to tell a MacPorts Mac from a Homebrew one.
-  assert_equals "" "$(grep -Ev '^(hostname|sw_vers)' "$MOCK_LOG" || true)" "configure ran a command" || return 1
+  assert_equals "" "$(grep -Ev '^(hostname|sw_vers|uname)' "$MOCK_LOG" || true)" "configure ran a command" || return 1
   [[ ! -e "$TEST_HOME/.config/teeup/answers" ]] || { echo "configure wrote an answer"; return 1; }
   cleanup_test_env
 }

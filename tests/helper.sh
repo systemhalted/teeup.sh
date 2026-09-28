@@ -194,6 +194,7 @@ EOF2
   mock_command hostname 0 "testmac"
   mock_command sudo 0 ""
   mock_command id 0 "501"
+  mock_command security 0 "Number of trusted certs = 0"
 }
 
 assert_equals() {

@@ -873,6 +873,7 @@ exit 0
 EOF2
   mock_command brew 0 ""
   mock_command mise 0 ""
+  mock_command security 0 "Number of trusted certs = 0"
 }
 
 mock_ca_bundle_world() {

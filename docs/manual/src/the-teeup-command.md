@@ -23,11 +23,11 @@ Everything teeup does after the first run goes through one command, `teeup`. It 
 ## Removing a capability
 
 - **`teeup remove <capability>`** runs the capability's `remove` script if it
-  has one. (twelve capabilities ship one today: `macos-defaults` restores
+  has one. (thirteen capabilities ship one today: `macos-defaults` restores
   preferences; `terminal-app` deletes teeup's profiles and restores the default;
   `emacs` and `keyboard` unload their LaunchAgents; `colima` stops its VM;
   each of the five `ai-*` capabilities deletes its wrapper; the `ai` bundle
-  removes all five leaves; `emacs` and `wezterm` uninstall their MacPorts ports.)
+  removes all five leaves; `ca-bundle` deletes its PEM bundle; `emacs` and `wezterm` uninstall their MacPorts ports.)
   Next, it uninstalls the casks and packages listed in its metadata. Finally, it
   forgets the capability. Your configuration files remain. The command refuses
   to run if another installed capability requires it. It refuses to run if the
