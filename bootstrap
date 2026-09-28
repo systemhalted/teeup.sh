@@ -258,6 +258,7 @@ answers_load
 if [[ "$RECONFIGURE" == "true" || -z "$(answers_get TEEUP_PACKAGE_MANAGER)" ]]; then
   ask_package_manager
 fi
+ca_bundle_rebuild || true  # warns itself; only matters behind a re-signing proxy
 run_capability package-manager || die "Core capability package-manager failed. Fix the cause and re-run ./bootstrap."
 pkg_backend_path
 

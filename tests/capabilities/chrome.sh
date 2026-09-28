@@ -67,7 +67,7 @@ test_configure_runs_no_command() {
   # the not_applicable guard's own macos_major/casks_supported checks read
   # sw_vers the same read-only way, to tell whether this machine can ever
   # have Chrome.
-  assert_equals "" "$(grep -Ev '^(hostname|sw_vers)' "$MOCK_LOG" || true)" "configure ran a command" || return 1
+  assert_equals "" "$(grep -Ev '^(hostname|sw_vers|uname)' "$MOCK_LOG" || true)" "configure ran a command" || return 1
   [[ ! -e "$TEST_HOME/.config/teeup/answers" ]] || { echo "configure wrote an answer"; return 1; }
   cleanup_test_env
 }

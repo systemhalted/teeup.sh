@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distribution that replaces the old installer. See the [manual](https://teeup.systemhalted.in) and [CONTRIBUTING.md](CONTRIBUTING.md) to learn how to use it or how it works.
 
 ### Added
+- **Company certificates.** Builds a certificate bundle from your macOS System keychain so command-line tools trust a network proxy that re-signs HTTPS.
 - **`bootstrap` and the wizard.** A setup script that asks for your name, email, package manager, theme, whether to install the daily set, and the Emacs flavor, and handles the first installation. Run it with `./bootstrap`.
 - **Tiers.** Capabilities are organized into core, daily, and lazy tiers.
 - **Homebrew or MacPorts.** You can choose your package manager during bootstrap, and teeup will use it to install native packages.

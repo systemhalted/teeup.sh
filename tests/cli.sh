@@ -873,6 +873,39 @@ exit 0
 EOF2
   mock_command brew 0 ""
   mock_command mise 0 ""
+  mock_command security 0 "Number of trusted certs = 0"
+}
+
+mock_ca_bundle_world() {
+  export TEEUP_PLUTIL="$MOCK_BIN/plutil"
+  export TEEUP_SYSTEM_ROOT_KEYCHAIN="$TEST_HOME/SystemRootCertificates.keychain"
+  export TEEUP_SYSTEM_KEYCHAIN="$TEST_HOME/System.keychain"
+  touch "$TEEUP_SYSTEM_ROOT_KEYCHAIN" "$TEEUP_SYSTEM_KEYCHAIN"
+  mock_command_script security <<'EOF2'
+case "$1" in
+  dump-trust-settings) echo "Number of trusted certs = 1"; echo "Cert 0: Company Root" ;;
+  trust-settings-export)
+    printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+      '<plist version="1.0"><dict><key>trustList</key><dict>' \
+      '<key>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</key><dict></dict>' \
+      '</dict></dict></plist>' > "$3"
+    ;;
+  find-certificate)
+    case "$*" in
+      *SystemRootCertificates.keychain*)
+        printf '%s\n' '-----BEGIN CERTIFICATE-----' 'SYSTEM_ROOT' '-----END CERTIFICATE-----'
+        ;;
+      *System.keychain*)
+        printf '%s\n' 'SHA-1 hash: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+          '-----BEGIN CERTIFICATE-----' 'COMPANY_ROOT' '-----END CERTIFICATE-----'
+        ;;
+    esac
+    ;;
+esac
+EOF2
+  mock_command_script plutil <<'EOF2'
+cp "$5" "$4"
+EOF2
 }
 
 # A migration that adjusts a config for a NEW version of a tool has to run
@@ -1293,6 +1326,55 @@ EOF2
   assert_contains "$out" "git pull --ff-only failed" || return 1
   assert_contains "$out" "configure:alpha" "the rest of the update still ran" || return 1
   assert_contains "$out" "teeup update finished, with the problems above." || return 1
+  cleanup_test_env
+}
+
+test_update_refreshes_the_ca_bundle_before_git_pull() {
+  setup
+  mock_ca_bundle_world
+  mock_command_script git <<'EOF2'
+case "$*" in
+  *status*) exit 0 ;;
+  *pull*)
+    [ -s "${SSL_CERT_FILE:-}" ] || { echo "pull ran without a CA bundle" >&2; exit 97; }
+    ;;
+esac
+exit 0
+EOF2
+  mock_command brew 0 ""
+  mock_command mise 0 ""
+  "$TEEUP" install alpha >/dev/null
+  : > "$MOCK_LOG"
+
+  "$TEEUP" update >/dev/null 2>&1
+
+  local export_line pull_line
+  export_line="$(grep -n 'security trust-settings-export -d' "$MOCK_LOG" | head -1 | cut -d: -f1)"
+  pull_line="$(grep -n "git -C $TEEUP_PATH pull --ff-only" "$MOCK_LOG" | head -1 | cut -d: -f1)"
+  [[ -n "$export_line" && -n "$pull_line" ]] || { echo "expected refresh and pull calls"; cat "$MOCK_LOG"; return 1; }
+  [[ "$export_line" -lt "$pull_line" ]] || { echo "git pull ran before the CA bundle refresh"; return 1; }
+  cleanup_test_env
+}
+
+test_update_explains_a_certificate_pull_failure() {
+  setup
+  mock_ca_bundle_world
+  mock_command_script git <<'EOF2'
+case "$*" in
+  *status*) exit 0 ;;
+  *pull*) echo "SSL certificate problem: self signed certificate in certificate chain" >&2; exit 128 ;;
+esac
+exit 0
+EOF2
+  mock_command brew 0 ""
+  mock_command mise 0 ""
+  "$TEEUP" install alpha >/dev/null
+  local rc=0 out
+  out="$("$TEEUP" update 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "network proxy is re-signing HTTPS" || return 1
+  assert_contains "$out" "teeup doctor ca-bundle" || return 1
+  assert_contains "$out" "Continuing with the checkout as it is." || return 1
   cleanup_test_env
 }
 
@@ -2598,6 +2680,8 @@ run_test "update skips a daily capability never installed or skipped" test_updat
 run_test "update does not configure a lazy capability" test_update_does_not_configure_a_lazy_capability
 run_test "update refuses a dirty checkout" test_update_refuses_a_dirty_checkout
 run_test "update carries on when the pull fails" test_update_carries_on_when_the_pull_fails
+run_test "update refreshes the CA bundle before git pull" test_update_refreshes_the_ca_bundle_before_git_pull
+run_test "update explains a certificate pull failure" test_update_explains_a_certificate_pull_failure
 run_test "update one capability upgrades its packages and configures" test_update_one_capability_upgrades_its_packages_and_configures
 run_test "update one capability refuses what it cannot update" test_update_one_capability_refuses_what_it_cannot_update
 run_test "update runs a capability's own update script" test_update_runs_a_capabilitys_own_update_script

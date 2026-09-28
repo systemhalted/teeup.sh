@@ -45,6 +45,8 @@ write_managed_file "$TEEUP_CONFIG_DIR/env" "teeup env" <<TEEUP_ENV || true
 export TEEUP_PATH=$teeup_path_q
 export TEEUP_CONFIG_DIR=$teeup_config_dir_q
 export TEEUP_STATE_DIR=$teeup_state_dir_q
+# shellcheck source=/dev/null
+[ -f "\$TEEUP_PATH/lib/certs.sh" ] && source "\$TEEUP_PATH/lib/certs.sh" || true
 TEEUP_ENV
 
 link="$HOME/.local/bin/teeup"
