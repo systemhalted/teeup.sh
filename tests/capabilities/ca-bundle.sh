@@ -277,6 +277,18 @@ test_no_trust_settings_exit_means_no_admin_roots() {
   cleanup_test_env
 }
 
+test_configure_warns_but_does_not_fail_bootstrap() {
+  setup
+  # ca-bundle is core: a failing configure stops ./bootstrap. A Mac whose
+  # trust settings cannot be read still needs the rest of teeup.
+  export MOCK_SECURITY_MODE=dump_failure
+  local rc=0 out
+  out="$(cap_run ca-bundle configure 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "teeup doctor ca-bundle" || return 1
+  cleanup_test_env
+}
+
 test_doctor_reports_present_and_current() {
   setup
   ca_bundle_rebuild || return 1
@@ -358,6 +370,7 @@ run_test "failed or empty export keeps a good bundle" test_failed_or_empty_expor
 run_test "environment keeps user-set values including empty" test_environment_keeps_user_set_values_including_empty
 run_test "doctor reports not needed without admin roots" test_doctor_reports_not_needed_without_admin_roots
 run_test "no-trust-settings exit means no admin roots" test_no_trust_settings_exit_means_no_admin_roots
+run_test "configure warns but does not fail bootstrap" test_configure_warns_but_does_not_fail_bootstrap
 run_test "doctor reports present and current" test_doctor_reports_present_and_current
 run_test "doctor reports missing bundle with fix" test_doctor_reports_missing_bundle_with_fix
 run_test "doctor reports an older bundle" test_doctor_reports_bundle_older_than_system_keychain
