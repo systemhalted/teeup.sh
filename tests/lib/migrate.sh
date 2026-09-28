@@ -193,6 +193,22 @@ EOF2
   cleanup_test_env
 }
 
+# A second `teeup migrate legacy`, after the first retired chezmoi's config:
+# `chezmoi source-path` still answers, with its default directory, which does
+# not exist. Nothing can be inside a directory that is not there, so this is
+# "no repo to protect", not "could not determine".
+test_migrate_path_is_safe_allows_paths_when_the_source_does_not_exist() {
+  setup
+  mock_chezmoi
+  export TEEUP_TEST_CHEZMOI_SRC="$TEST_HOME/.local/share/chezmoi"
+  local home out
+  home="$(phys_home)"
+  assert_equals "" "$(migrate_chezmoi_source)" || return 1
+  out="$(migrate_path_is_safe "$home/.teeup.common" 2>&1)" || { echo "a missing source directory must not refuse: $out"; return 1; }
+  assert_not_contains "$out" "could not determine" || return 1
+  cleanup_test_env
+}
+
 # T2.1(b), Blocking. The sibling repo is a git checkout, and so is anything
 # else a user keeps under $HOME. A key that resolves inside one -- through a
 # symlinked ~/.config, say -- must be refused even when chezmoi says nothing
@@ -823,6 +839,7 @@ run_test "migrate_resolve leaves the last component alone" test_migrate_resolve_
 run_test "migrate_path_is_safe refuses HOME itself and anything outside it" test_migrate_path_is_safe_refuses_home_itself_and_anything_outside_it
 run_test "migrate_path_is_safe refuses the chezmoi source directory" test_migrate_path_is_safe_refuses_the_chezmoi_source_directory
 run_test "migrate_path_is_safe fails closed when the source cannot be determined" test_migrate_path_is_safe_fails_closed_when_the_source_cannot_be_determined
+run_test "migrate_path_is_safe allows paths when the chezmoi source does not exist" test_migrate_path_is_safe_allows_paths_when_the_source_does_not_exist
 run_test "migrate_path_is_safe refuses anything inside a git checkout" test_migrate_path_is_safe_refuses_anything_inside_a_git_checkout
 run_test "migrate_rm refuses a key it was never given" test_migrate_rm_refuses_a_key_it_was_never_given
 run_test "migrate_rm removes a file, a dir and a symlink" test_migrate_rm_removes_a_file_a_dir_and_a_symlink
