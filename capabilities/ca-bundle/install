@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# The configure step owns generation. Keeping install empty lets
+# `teeup configure ca-bundle` remain the one repair command.
+:

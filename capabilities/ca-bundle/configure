@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+ca_bundle_rebuild

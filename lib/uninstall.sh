@@ -1218,7 +1218,7 @@ uninstall_mark_state_dir() {
 # bin/teeup), defaults (lib/macos.sh's _defaults_record_path), terminal-app
 # (capabilities/terminal-app/theme-apply's exported .terminal files, final
 # review I5). CONTRIBUTING.md item 33 says a new one belongs here too.
-_UNINSTALL_STATE_ENTRIES="done na toggles migrations stock shims current logs defaults terminal-app"
+_UNINSTALL_STATE_ENTRIES="done na toggles migrations stock shims current logs defaults terminal-app ca-bundle.pem ca-bundle.curlrc"
 
 # _uninstall_is_state_entry <name> -> 0 when <name> is one of
 # _UNINSTALL_STATE_ENTRIES.

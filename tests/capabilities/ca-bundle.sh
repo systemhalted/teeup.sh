@@ -2,14 +2,14 @@
 set -euo pipefail
 source "$(dirname "$0")/../helper.sh"
 
-TRUSTED_HASH="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-UNTRUSTED_HASH="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-
 setup() {
   setup_test_env
   mock_macos_base
   export MOCK_SECURITY_MODE=admin_roots
   export TEEUP_PLUTIL="$MOCK_BIN/plutil"
+  export TEEUP_SYSTEM_ROOT_KEYCHAIN="$TEST_HOME/SystemRootCertificates.keychain"
+  export TEEUP_SYSTEM_KEYCHAIN="$TEST_HOME/System.keychain"
+  touch "$TEEUP_SYSTEM_ROOT_KEYCHAIN" "$TEEUP_SYSTEM_KEYCHAIN"
 
   mock_command_script security <<'EOF_SECURITY'
 case "$1" in
@@ -175,10 +175,73 @@ test_environment_keeps_user_set_values_including_empty() {
   cleanup_test_env
 }
 
+test_doctor_reports_not_needed_without_admin_roots() {
+  setup
+  export MOCK_SECURITY_MODE=no_roots
+  local rc=0 out
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "not needed" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_present_and_current() {
+  setup
+  ca_bundle_rebuild || return 1
+  local rc=0 out
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "present and current" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_missing_bundle_with_fix() {
+  setup
+  local rc=0 out report="$TEST_HOME/doctor-report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "missing" || return 1
+  assert_contains "$(cat "$report")" "teeup configure ca-bundle" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_bundle_older_than_system_keychain() {
+  setup
+  ca_bundle_rebuild || return 1
+  sleep 1
+  touch "$TEEUP_SYSTEM_KEYCHAIN"
+  local rc=0 out report="$TEST_HOME/doctor-report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "older" || return 1
+  assert_contains "$(cat "$report")" "teeup configure ca-bundle" || return 1
+  cleanup_test_env
+}
+
+test_remove_deletes_bundle_and_curlrc() {
+  setup
+  ca_bundle_rebuild || return 1
+
+  cap_run ca-bundle remove >/dev/null
+
+  [[ ! -e "$TEEUP_STATE_DIR/ca-bundle.pem" ]] || { echo "remove kept the bundle"; return 1; }
+  [[ ! -e "$TEEUP_STATE_DIR/ca-bundle.curlrc" ]] || { echo "remove kept the curlrc"; return 1; }
+  cleanup_test_env
+}
+
 echo "capabilities/ca-bundle"
 run_test "no admin roots leave no bundle or environment" test_no_admin_roots_leave_no_bundle_or_environment
 run_test "bundle includes public and trusted admin roots only" test_bundle_contains_public_and_trusted_admin_roots_only
 run_test "unchanged content keeps mtimes" test_unchanged_content_keeps_bundle_and_curlrc_mtimes
 run_test "failed or empty export keeps a good bundle" test_failed_or_empty_export_keeps_a_good_bundle
 run_test "environment keeps user-set values including empty" test_environment_keeps_user_set_values_including_empty
+run_test "doctor reports not needed without admin roots" test_doctor_reports_not_needed_without_admin_roots
+run_test "doctor reports present and current" test_doctor_reports_present_and_current
+run_test "doctor reports missing bundle with fix" test_doctor_reports_missing_bundle_with_fix
+run_test "doctor reports an older bundle" test_doctor_reports_bundle_older_than_system_keychain
+run_test "remove deletes bundle and curlrc" test_remove_deletes_bundle_and_curlrc
 print_summary

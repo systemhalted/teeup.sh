@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+roots_rc=0
+ca_bundle_admin_roots_present || roots_rc=$?
+case "$roots_rc" in
+  1)
+    doctor_ok "The command-line CA bundle is not needed because this Mac has no administrator-trusted certificates."
+    ;;
+  2)
+    doctor_unknown "Could not read the administrator certificate trust settings." "teeup doctor ca-bundle"
+    ;;
+  *)
+    bundle="$(ca_bundle_path)"
+    curlrc="$(ca_bundle_curlrc_path)"
+    if [[ ! -s "$bundle" || ! -s "$curlrc" ]]; then
+      doctor_fail "The command-line CA bundle or its Homebrew curl configuration is missing." "teeup configure ca-bundle"
+    elif ca_bundle_is_current; then
+      doctor_ok "The command-line CA bundle is present and current."
+    else
+      doctor_fail "The command-line CA bundle is older than a source keychain or its Homebrew curl configuration is stale." "teeup configure ca-bundle"
+    fi
+    ;;
+esac
+doctor_verdict
