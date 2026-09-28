@@ -97,12 +97,29 @@ report() {
   [[ "$rc" == "0" ]] || failed=$((failed + 1))
 }
 
+
+# suite_timeout <suite> -> seconds this suite gets before the watchdog kills
+# it. Every suite defaults to TEEUP_TEST_SUITE_TIMEOUT (600s). tests/bootstrap.sh
+# gets its own, longer default: each of its tests forks a real bootstrap
+# subprocess tree (dozens of `source`, `mktemp` and capability-script execs
+# per dry run), so the whole suite is legitimately slower than any other --
+# the worker-pool ordering above already singles it out for the same reason.
+# On a slow or oversubscribed CI runner that adds up past 600s even with
+# nothing broken, so it needs real headroom rather than a bigger shared
+# default that would also let a genuinely hung suite run far longer.
+suite_timeout() {
+  case "$1" in
+    */bootstrap.sh) printf '%s\n' "${TEEUP_TEST_BOOTSTRAP_TIMEOUT:-1800}" ;;
+    *) printf '%s\n' "${TEEUP_TEST_SUITE_TIMEOUT:-600}" ;;
+  esac
+}
+
 if [[ "$jobs_wanted" -le 1 ]]; then
   for suite in ${suites+"${suites[@]}"}; do
     ran=$((ran + 1))
     echo ""
     echo "== ${suite#"$TESTS_DIR"/} =="
-    timeout="${TEEUP_TEST_SUITE_TIMEOUT:-600}"
+    timeout="$(suite_timeout "$suite")"
     perl -e 'setpgrp 0,0; exec @ARGV' bash "$suite" &
     pid=$!
     (
@@ -145,7 +162,7 @@ else
     key="$(suite_key "$suite")"
     # Each job writes its own log and exit code; nothing is shared but $out_dir.
     (
-      timeout="${TEEUP_TEST_SUITE_TIMEOUT:-600}"
+      timeout="$(suite_timeout "$suite")"
       perl -e 'setpgrp 0,0; exec @ARGV' bash "$suite" > "$out_dir/$key.log" 2>&1 &
       pid=$!
       (
