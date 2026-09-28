@@ -61,12 +61,15 @@ _ca_bundle_clear_own_env() {
 ca_bundle_admin_roots_present() {
   local output rc=0
   output="$(security dump-trust-settings -d 2>&1)" || rc=$?
+  # Read the words before the exit status: with no admin trust settings at
+  # all, macOS prints "No Trust Settings were found." and exits 1, which is
+  # an answer, not a failure (seen on a real Mac, 2026-09-28).
+  if printf '%s\n' "$output" | grep -Eq '^Number of trusted certs = 0$|No Trust Settings were found'; then
+    return 1
+  fi
   [[ $rc -eq 0 ]] || return 2
   if printf '%s\n' "$output" | grep -Eq '^Cert [0-9]+:|^Number of trusted certs = [1-9][0-9]*$'; then
     return 0
-  fi
-  if printf '%s\n' "$output" | grep -Eq '^Number of trusted certs = 0$|No Trust Settings were found'; then
-    return 1
   fi
   return 2
 }

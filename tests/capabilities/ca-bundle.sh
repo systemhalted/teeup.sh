@@ -16,6 +16,9 @@ case "$1" in
   dump-trust-settings)
     case "$MOCK_SECURITY_MODE" in
       no_roots) echo "Number of trusted certs = 0" ;;
+      # What macOS actually does with no admin trust settings: says so on
+      # stderr and exits 1.
+      no_trust_settings) echo "SecTrustSettingsCopyCertificates: No Trust Settings were found." >&2; exit 1 ;;
       dump_failure) echo "could not read trust settings" >&2; exit 1 ;;
       *) echo "Number of trusted certs = 1"; echo "Cert 0: Company Root" ;;
     esac
@@ -262,6 +265,18 @@ test_doctor_reports_not_needed_without_admin_roots() {
   cleanup_test_env
 }
 
+test_no_trust_settings_exit_means_no_admin_roots() {
+  setup
+  export MOCK_SECURITY_MODE=no_trust_settings
+  local rc=0 out
+  ca_bundle_rebuild || { echo "rebuild failed on a Mac with no admin trust settings"; return 1; }
+  [[ ! -e "$TEEUP_STATE_DIR/ca-bundle.pem" ]] || { echo "a bundle was built"; return 1; }
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "not needed" || return 1
+  cleanup_test_env
+}
+
 test_doctor_reports_present_and_current() {
   setup
   ca_bundle_rebuild || return 1
@@ -342,6 +357,7 @@ run_test "unchanged content keeps mtimes" test_unchanged_content_keeps_bundle_an
 run_test "failed or empty export keeps a good bundle" test_failed_or_empty_export_keeps_a_good_bundle
 run_test "environment keeps user-set values including empty" test_environment_keeps_user_set_values_including_empty
 run_test "doctor reports not needed without admin roots" test_doctor_reports_not_needed_without_admin_roots
+run_test "no-trust-settings exit means no admin roots" test_no_trust_settings_exit_means_no_admin_roots
 run_test "doctor reports present and current" test_doctor_reports_present_and_current
 run_test "doctor reports missing bundle with fix" test_doctor_reports_missing_bundle_with_fix
 run_test "doctor reports an older bundle" test_doctor_reports_bundle_older_than_system_keychain
