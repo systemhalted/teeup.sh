@@ -28,6 +28,77 @@ case "$1" in
         printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
           '<plist version="1.0"><dict><key>trustList</key><dict></dict></dict></plist>' > "$3"
         ;;
+      mixed_trust)
+        # AAAA: an entry with no result (trust root). CCCC: Deny (3).
+        # DDDD: trusted but not in System.keychain. EEEE: Unspecified (4)
+        # only. FFFF: TrustAsRoot (2). Spread over lines as plutil writes it.
+        cat > "$3" <<'EOF_PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>trustList</key>
+	<dict>
+		<key>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</key>
+		<dict>
+			<key>issuerName</key>
+			<data>AAAA</data>
+			<key>trustSettings</key>
+			<array>
+				<dict/>
+			</array>
+		</dict>
+		<key>CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC</key>
+		<dict>
+			<key>trustSettings</key>
+			<array>
+				<dict>
+					<key>kSecTrustSettingsPolicyString</key>
+					<string>example.com</string>
+					<key>kSecTrustSettingsResult</key>
+					<integer>1</integer>
+				</dict>
+				<dict>
+					<key>kSecTrustSettingsResult</key>
+					<integer>3</integer>
+				</dict>
+			</array>
+		</dict>
+		<key>DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD</key>
+		<dict>
+			<key>trustSettings</key>
+			<array/>
+		</dict>
+		<key>EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE</key>
+		<dict>
+			<key>trustSettings</key>
+			<array>
+				<dict>
+					<key>kSecTrustSettingsResult</key>
+					<integer>4</integer>
+				</dict>
+			</array>
+		</dict>
+		<key>FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF</key>
+		<dict>
+			<key>trustSettings</key>
+			<array>
+				<dict>
+					<key>kSecTrustSettingsResult</key>
+					<integer>2</integer>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+</dict>
+</plist>
+EOF_PLIST
+        ;;
+      all_denied)
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+          '<plist version="1.0"><dict><key>trustList</key><dict>' \
+          '<key>CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC</key><dict><key>trustSettings</key><array><dict><key>kSecTrustSettingsResult</key><integer>3</integer></dict></array></dict>' \
+          '</dict></dict></plist>' > "$3"
+        ;;
       *)
         printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
           '<plist version="1.0"><dict><key>trustList</key><dict>' \
@@ -48,7 +119,13 @@ case "$1" in
           'SHA-1 hash: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
           '-----BEGIN CERTIFICATE-----' 'TRUSTED_ADMIN_ROOT' '-----END CERTIFICATE-----' \
           'SHA-1 hash: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' \
-          '-----BEGIN CERTIFICATE-----' 'UNTRUSTED_SYSTEM_CERT' '-----END CERTIFICATE-----'
+          '-----BEGIN CERTIFICATE-----' 'UNTRUSTED_SYSTEM_CERT' '-----END CERTIFICATE-----' \
+          'SHA-1 hash: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC' \
+          '-----BEGIN CERTIFICATE-----' 'DENIED_CERT' '-----END CERTIFICATE-----' \
+          'SHA-1 hash: EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE' \
+          '-----BEGIN CERTIFICATE-----' 'UNSPECIFIED_CERT' '-----END CERTIFICATE-----' \
+          'SHA-1 hash: FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' \
+          '-----BEGIN CERTIFICATE-----' 'TRUST_AS_ROOT_CERT' '-----END CERTIFICATE-----'
         ;;
     esac
     ;;
@@ -234,6 +311,31 @@ test_remove_deletes_bundle_and_curlrc() {
 }
 
 echo "capabilities/ca-bundle"
+test_bundle_follows_each_certificates_trust_result() {
+  setup
+  export MOCK_SECURITY_MODE=mixed_trust
+  local out bundle="$TEEUP_STATE_DIR/ca-bundle.pem"
+  out="$(ca_bundle_rebuild 2>&1)" || { echo "rebuild failed: $out"; return 1; }
+  assert_contains "$(cat "$bundle")" "TRUSTED_ADMIN_ROOT" || return 1
+  assert_contains "$(cat "$bundle")" "TRUST_AS_ROOT_CERT" || return 1
+  assert_not_contains "$(cat "$bundle")" "DENIED_CERT" || return 1
+  assert_not_contains "$(cat "$bundle")" "UNSPECIFIED_CERT" || return 1
+  assert_not_contains "$(cat "$bundle")" "UNTRUSTED_SYSTEM_CERT" || return 1
+  # A trusted certificate that is not in System.keychain is skipped, not fatal.
+  assert_contains "$out" "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD" || return 1
+  cleanup_test_env
+}
+
+test_only_denied_admin_certificates_leave_no_bundle() {
+  setup
+  export MOCK_SECURITY_MODE=all_denied
+  mkdir -p "$TEEUP_STATE_DIR"
+  printf 'old bundle\n' > "$TEEUP_STATE_DIR/ca-bundle.pem"
+  ca_bundle_rebuild || return 1
+  [[ ! -e "$TEEUP_STATE_DIR/ca-bundle.pem" ]] || { echo "a bundle was kept with no trusted admin roots"; return 1; }
+  cleanup_test_env
+}
+
 run_test "no admin roots leave no bundle or environment" test_no_admin_roots_leave_no_bundle_or_environment
 run_test "bundle includes public and trusted admin roots only" test_bundle_contains_public_and_trusted_admin_roots_only
 run_test "unchanged content keeps mtimes" test_unchanged_content_keeps_bundle_and_curlrc_mtimes
@@ -244,4 +346,6 @@ run_test "doctor reports present and current" test_doctor_reports_present_and_cu
 run_test "doctor reports missing bundle with fix" test_doctor_reports_missing_bundle_with_fix
 run_test "doctor reports an older bundle" test_doctor_reports_bundle_older_than_system_keychain
 run_test "remove deletes bundle and curlrc" test_remove_deletes_bundle_and_curlrc
+run_test "bundle follows each certificate's trust result" test_bundle_follows_each_certificates_trust_result
+run_test "only denied admin certificates leave no bundle" test_only_denied_admin_certificates_leave_no_bundle
 print_summary

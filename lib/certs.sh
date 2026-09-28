@@ -91,10 +91,61 @@ _ca_bundle_fail() {
   return 1
 }
 
+# _ca_bundle_trusted_hashes <trust xml> -> the SHA-1 hashes, upper case, one
+# per line, of the certificates the admin trust settings trust as a root.
+# The export's trustList maps each hash to a dict whose trustSettings array
+# holds one dict per usage constraint, each with an optional
+# kSecTrustSettingsResult: 1 TrustRoot, 2 TrustAsRoot, 3 Deny, 4 Unspecified
+# (Apple's SecTrustSettings.h). A missing result means TrustRoot, and an
+# empty array means "trusted as a root for everything". A certificate is kept
+# when nothing in its array denies it and something trusts it; one Deny
+# anywhere drops it, since a bundle cannot carry per-policy trust and an
+# administrator's "Never Trust" must not become a trust anchor. The parse
+# splits the XML on "<", so it does not depend on plutil's line layout.
+_ca_bundle_trusted_hashes() {
+  awk 'BEGIN { RS = "<" }
+    NR == 1 { next }
+    {
+      tag = $0; sub(/>.*/, "", tag)
+      text = $0; sub(/^[^>]*>/, "", text); gsub(/[ \t\r\n]/, "", text)
+    }
+    tag == "key" && cur == "" && length(text) == 40 && text !~ /[^0-9A-Fa-f]/ {
+      cur = toupper(text); cdepth = depth; entries = 0; bare = 0; trust = 0; deny = 0
+      next
+    }
+    tag == "dict" {
+      depth++
+      if (cur != "" && depth == cdepth + 2) { entries++; has_result = 0 }
+      next
+    }
+    tag == "dict/" {
+      if (cur != "" && depth == cdepth + 1) { entries++; bare++ }
+      next
+    }
+    tag == "/dict" {
+      if (cur != "" && depth == cdepth + 2 && !has_result) bare++
+      depth--
+      if (cur != "" && depth == cdepth) {
+        if (!deny && (trust || bare > 0 || entries == 0)) print cur
+        cur = ""
+      }
+      next
+    }
+    tag == "key" && cur != "" && text == "kSecTrustSettingsResult" { want_result = 1; next }
+    tag == "integer" && want_result {
+      want_result = 0; has_result = 1
+      if (text == 3) deny = 1
+      else if (text == 1 || text == 2) trust = 1
+      next
+    }
+    tag !~ /^\// { want_result = 0 }
+  ' "$1"
+}
+
 # ca_bundle_rebuild
 # security's admin trust export is a plist whose trustList dictionary is keyed
-# by SHA-1 certificate hashes. Convert it to XML, read those keys, then match
-# them against the `SHA-1 hash:` records paired with PEM blocks from
+# by SHA-1 certificate hashes. Convert it to XML, keep the hashes trusted as
+# a root (_ca_bundle_trusted_hashes), then match them against the `SHA-1 hash:` records paired with PEM blocks from
 # `security find-certificate -a -Z -p /Library/Keychains/System.keychain`.
 # This deliberately does not append the whole System keychain: applications
 # store certificates there that have no administrator trust setting, and a PEM
@@ -142,10 +193,20 @@ ca_bundle_rebuild() {
     _ca_bundle_fail "$work" "The administrator certificate trust export was empty; the existing CA bundle was kept." || return 1
   "$plutil" -convert xml1 -o "$trust_xml" "$trust_plist" >/dev/null 2>&1 ||
     _ca_bundle_fail "$work" "Could not read the administrator certificate trust export; the existing CA bundle was kept." || return 1
-  sed -n 's/.*<key>\([0-9A-Fa-f]\{40\}\)<\/key>.*/\1/p' "$trust_xml" |
-    tr '[:lower:]' '[:upper:]' > "$hashes"
-  [[ -s "$hashes" ]] ||
+  # No hash at all contradicts dump-trust-settings, which just listed some:
+  # an unreadable export, so keep the bundle. Hashes none of which is trusted
+  # as a root is a real answer, handled below.
+  grep -Eq '<key>[0-9A-Fa-f]{40}</key>' "$trust_xml" ||
     _ca_bundle_fail "$work" "The administrator certificate trust export contained no certificate hashes; the existing CA bundle was kept." || return 1
+  _ca_bundle_trusted_hashes "$trust_xml" > "$hashes" ||
+    _ca_bundle_fail "$work" "Could not read the administrator certificate trust export; the existing CA bundle was kept." || return 1
+  if [[ ! -s "$hashes" ]]; then
+    # Admin trust settings exist, but none trusts a certificate as a root
+    # (all Deny or Unspecified): the same as having no company roots.
+    rm -rf "$work"
+    ca_bundle_remove
+    return 0
+  fi
 
   security find-certificate -a -p "${TEEUP_SYSTEM_ROOT_KEYCHAIN:-/System/Library/Keychains/SystemRootCertificates.keychain}" > "$system_pem" 2>/dev/null ||
     _ca_bundle_fail "$work" "Could not export the macOS public roots; the existing CA bundle was kept." || return 1
@@ -168,12 +229,21 @@ ca_bundle_rebuild() {
     selected && in_cert { print }
     selected && /^-----END CERTIFICATE-----$/ { matched[hash] = 1; in_cert = 0; selected = 0 }
     END {
-      for (hash in wanted) if (!(hash in matched)) exit 3
+      for (hash in wanted) if (!(hash in matched)) print hash > missing
     }
-  ' "$system_records" > "$admin_pem" ||
-    _ca_bundle_fail "$work" "An administrator-trusted certificate was not found in the System keychain; the existing CA bundle was kept." || return 1
+  ' missing="$work/missing" "$system_records" > "$admin_pem" ||
+    _ca_bundle_fail "$work" "Could not read the System keychain export; the existing CA bundle was kept." || return 1
+  # Trust settings can outlive their certificate (a profile removed, a
+  # certificate kept in another keychain). One such entry is a note, not a
+  # reason to leave every tool without the company roots that are here.
+  if [[ -s "$work/missing" ]]; then
+    local missing_hash
+    while IFS= read -r missing_hash; do
+      warn "An administrator-trusted certificate (SHA-1 $missing_hash) is not in the System keychain, so it is not in the CA bundle."
+    done < "$work/missing"
+  fi
   grep -q '^-----BEGIN CERTIFICATE-----$' "$admin_pem" ||
-    _ca_bundle_fail "$work" "The administrator certificate export was empty; the existing CA bundle was kept." || return 1
+    _ca_bundle_fail "$work" "None of the administrator-trusted certificates is in the System keychain; the existing CA bundle was kept." || return 1
 
   cat "$system_pem" "$admin_pem" > "$staged_bundle" ||
     _ca_bundle_fail "$work" "Could not stage the command-line CA bundle; the existing bundle was kept." || return 1

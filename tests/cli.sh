@@ -1373,8 +1373,8 @@ EOF2
   out="$("$TEEUP" update 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "network proxy is re-signing HTTPS" || return 1
-  assert_contains "$out" "teeup configure ca-bundle" || return 1
-  assert_contains "$out" "teeup doctor" || return 1
+  assert_contains "$out" "teeup doctor ca-bundle" || return 1
+  assert_contains "$out" "Continuing with the checkout as it is." || return 1
   cleanup_test_env
 }
 

@@ -371,9 +371,8 @@ _update_checkout() {
   [[ -z "$pull_out" ]] || printf '%s\n' "$pull_out"
   if [[ $rc -ne 0 ]]; then
     if [[ "$pull_out" == *"certificate"* ]]; then
-      warn "git pull --ff-only failed; a network proxy is re-signing HTTPS."
-      warn "To fix this, run: teeup configure ca-bundle"
-      warn "Check your status with: teeup doctor"
+      warn "git pull --ff-only failed: git does not trust the certificate it was shown, which usually means a network proxy is re-signing HTTPS. Continuing with the checkout as it is."
+      warn "teeup builds a certificate bundle from the Keychain when the Mac has company root certificates. Run: teeup doctor ca-bundle"
     else
       warn "git pull --ff-only failed; continuing with the checkout as it is."
     fi
@@ -437,7 +436,9 @@ _update_configure_tier() {
 # configure, because a script can decide "not applicable" during this very
 # run, not only at install time.
 cmd_update() {
-  ca_bundle_rebuild
+  # Before the pull and brew update below; its own warning is enough when it
+  # fails, since a missing bundle only matters behind a re-signing proxy.
+  ca_bundle_rebuild || true
   local target="${1:-}" failed=0 name pkg cask rc=0 theme_done=false current_theme
   if [[ -n "$target" ]]; then
     cap_exists "$target" || die "Unknown capability: $target"
