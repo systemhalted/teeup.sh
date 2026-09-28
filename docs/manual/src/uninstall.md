@@ -9,12 +9,14 @@ teeup uninstall
 
 | Command | What it does |
 |---|---|
-| `teeup uninstall` | Asks "Take teeup off this Mac?", then asks whether the packages should go too. Both default to no. |
+| `teeup uninstall` | Asks whether to remove teeup, its packages and apps, and its git and SSH config. Each question defaults to no. SSH keys are never touched. |
 | `teeup uninstall --packages` | Also uninstalls the packages and apps teeup installed, without asking about them. |
-| `teeup uninstall --identity` | Also takes off your git identity, after one more question (see below). |
-| `teeup uninstall --yes` | Asks nothing and takes every default, so the packages and your identity stay unless you name their flags. |
+| `teeup uninstall --identity` | Also takes off your git identity and teeup's git and SSH config, without asking about them (see below). |
+| `teeup uninstall --yes` | `--yes` means "no terminal, take every default", for scripts only. It asks nothing, so packages and identity stay unless their flags are also present. |
 
-Run the command as your user, not root. Without a terminal, it refuses to run unless you pass `--yes`. It prints a preview and the `--yes` command.
+Run the command as your user, not root. Without a terminal, it refuses to run unless you pass `--yes`. `--yes` means "no terminal, take every default", for scripts only. The error prints a preview and the `--yes` command.
+
+Before the package question, teeup lists the installed packages and apps it recorded. If teeup has no state directory or capability records, it cannot tell which matching software it installed. It removes nothing and prints the package-manager commands you can run by hand.
 
 <!-- SCREENSHOT: The end of `DRY_RUN=true teeup uninstall`, showing the "teeup uninstall summary" with its "Would remove" and "Kept" sections and the "Run it for real with:" line. -->
 

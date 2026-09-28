@@ -2746,6 +2746,7 @@ test_uninstall_refuses_to_run_unasked() {
   local out rc=0
   out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
+  assert_contains "$out" '--yes means "no terminal, take every default", for scripts only.' || return 1
   assert_contains "$out" "teeup uninstall --yes" || return 1
   rc=0
   out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --frobnicate 2>&1)" || rc=$?
@@ -2756,37 +2757,78 @@ test_uninstall_refuses_to_run_unasked() {
   out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "not as root" || return 1
-  assert_contains "$("$TEEUP" help)" "teeup uninstall [--packages] [--identity] [--yes]" || return 1
+  out="$("$TEEUP" help)"
+  assert_contains "$out" "teeup uninstall [--packages] [--identity] [--yes]" || return 1
+  assert_contains "$out" '--yes means "no terminal, take every default", for scripts only.' || return 1
   cleanup_test_env
 }
 
-test_uninstall_on_a_terminal_asks_first_and_no_changes_nothing() {
+test_uninstall_on_a_terminal_asks_all_three_questions_in_order() {
+  setup
+  uninstall_fixture
+  printf 'packages="ripgrep"\ncasks="wezterm"\n' >> "$TEEUP_CAPS_DIR/mise/capability"
+  local out
+  out="$(printf 'y\n\n\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
+  case "$out" in
+    *"Remove teeup from this Mac? [y/N]"*"Packages: ripgrep"*"Apps: wezterm"*"Also uninstall the packages and apps teeup installed? [y/N]"*"Also move aside your git identity files (~/.config/git/local) and remove teeup's git and ssh config? SSH keys are never touched. [y/N]"*) ;;
+    *) echo "the three questions and package lists are out of order"; printf '%s\n' "$out"; return 1 ;;
+  esac
+  cleanup_test_env
+}
+
+test_uninstall_on_a_terminal_no_to_the_first_question_changes_nothing() {
   setup
   uninstall_fixture
   local before out
   before="$(home_snapshot)"
   out="$(printf 'n\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
-  assert_contains "$out" "Take teeup off this Mac?" || return 1
+  assert_contains "$out" "Remove teeup from this Mac? [y/N]" || return 1
   assert_contains "$out" "Nothing was changed." || return 1
+  assert_not_contains "$out" "Also uninstall the packages" || return 1
+  assert_not_contains "$out" "Also move aside your git identity" || return 1
   assert_equals "$before" "$(home_snapshot)" || return 1
   cleanup_test_env
 }
 
-test_uninstall_asks_about_packages_and_keeps_them_by_default() {
+test_uninstall_yes_yes_no_removes_packages_and_keeps_identity() {
+  setup
+  uninstall_fixture
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/mise/capability"
+  mkdir -p "$HOME/.config/git"
+  printf 'mine\n' > "$HOME/.config/git/local"
+  local out
+  out="$(printf 'y\ny\nn\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" "a yes uninstalls packages" || return 1
+  assert_file_exists "$HOME/.config/git/local" "a no keeps git/local" || return 1
+  assert_equals "mine" "$(cat "$HOME/.config/git/local")" || return 1
+  cleanup_test_env
+}
+
+test_uninstall_flags_skip_their_questions() {
   setup
   uninstall_fixture
   printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/mise/capability"
   local out
-  out="$(printf 'y\n\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
-  assert_contains "$out" "Also uninstall the packages and apps teeup installed" || return 1
-  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall" "an empty answer keeps the packages" || return 1
-  assert_contains "$out" "brew uninstall ripgrep" "and says how to remove them later" || return 1
+  out="$(printf 'y\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall --packages --identity 2>&1)"
+  assert_contains "$out" "Remove teeup from this Mac? [y/N]" || return 1
+  assert_not_contains "$out" "Also uninstall the packages" || return 1
+  assert_not_contains "$out" "Also move aside your git identity" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
   cleanup_test_env
+}
+
+test_uninstall_reports_when_teeup_is_not_installed_and_names_leftover_packages() {
   setup
-  uninstall_fixture
-  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/mise/capability"
-  out="$(printf 'y\ny\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
-  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" "a yes uninstalls them" || return 1
+  printf 'packages="ripgrep"\ncasks="wezterm"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  mock_command brew 0 ""
+  local out rc=0
+  out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes --packages 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "teeup is not installed on this Mac." || return 1
+  assert_contains "$out" "brew uninstall ripgrep" || return 1
+  assert_contains "$out" "brew uninstall --cask wezterm" || return 1
+  assert_not_contains "$out" "Nothing was changed." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew uninstall" "leftover software is not removed without teeup records" || return 1
   cleanup_test_env
 }
 
@@ -2814,7 +2856,7 @@ test_uninstall_twice_does_nothing_the_second_time() {
   before="$(home_snapshot)"
   out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
   assert_success "$rc" || return 1
-  assert_contains "$out" "Nothing of teeup's was left to remove." || return 1
+  assert_contains "$out" "teeup is not installed on this Mac." || return 1
   assert_equals "$before" "$(home_snapshot)" || return 1
   cleanup_test_env
 }
@@ -2839,7 +2881,7 @@ test_uninstall_removes_a_defaults_directory_and_a_rerun_is_a_no_op() {
   rc=0
   out="$(TEEUP_TEST_TTY=no "$TEEUP" uninstall --yes 2>&1)" || rc=$?
   assert_success "$rc" || return 1
-  assert_contains "$out" "Nothing of teeup's was left to remove." || return 1
+  assert_contains "$out" "teeup is not installed on this Mac." || return 1
   assert_equals "$before" "$(home_snapshot)" || return 1
   cleanup_test_env
 }
@@ -2992,8 +3034,11 @@ test_uninstall_reports_a_refused_state_dir_and_still_finishes() {
 
 run_test "uninstall takes the shell layer off before what it hooks" test_uninstall_takes_the_shell_layer_off_before_what_it_hooks
 run_test "uninstall refuses to run unasked" test_uninstall_refuses_to_run_unasked
-run_test "uninstall on a terminal asks first, and no changes nothing" test_uninstall_on_a_terminal_asks_first_and_no_changes_nothing
-run_test "uninstall asks about packages and keeps them by default" test_uninstall_asks_about_packages_and_keeps_them_by_default
+run_test "uninstall on a terminal asks all three questions in order" test_uninstall_on_a_terminal_asks_all_three_questions_in_order
+run_test "uninstall on a terminal stops unchanged after no to the first question" test_uninstall_on_a_terminal_no_to_the_first_question_changes_nothing
+run_test "uninstall yes/yes/no removes packages and keeps identity" test_uninstall_yes_yes_no_removes_packages_and_keeps_identity
+run_test "uninstall flags skip their questions" test_uninstall_flags_skip_their_questions
+run_test "uninstall reports not installed and names leftover packages" test_uninstall_reports_when_teeup_is_not_installed_and_names_leftover_packages
 run_test "uninstall dry run changes nothing" test_uninstall_dry_run_changes_nothing
 run_test "uninstall twice does nothing the second time" test_uninstall_twice_does_nothing_the_second_time
 run_test "uninstall removes a defaults directory and a rerun is a no-op" test_uninstall_removes_a_defaults_directory_and_a_rerun_is_a_no_op

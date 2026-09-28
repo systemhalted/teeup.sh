@@ -79,6 +79,7 @@ test_configure_writes_every_preference() {
   assert_contains "$log_body" "defaults write com.apple.screencapture location -string $TEST_HOME/Screenshots" || return 1
   assert_contains "$log_body" "killall Finder" || return 1
   assert_contains "$log_body" "killall Dock" || return 1
+  assert_contains "$log_body" "killall SystemUIServer" || return 1
   cleanup_test_env
 }
 
@@ -188,6 +189,21 @@ test_a_dock_change_restarts_only_the_dock() {
   assert_contains "$(cat "$MOCK_LOG")" "defaults write com.apple.dock autohide -bool true" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "killall Dock" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "killall Finder" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "killall SystemUIServer" || return 1
+  cleanup_test_env
+}
+
+test_a_screenshot_location_change_restarts_only_SystemUIServer() {
+  setup
+  mock_defaults_db
+  DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
+  seed_default com.apple.screencapture location string "$TEST_HOME/Old Screenshots"
+  : > "$MOCK_LOG"
+  DRY_RUN=false "$TEEUP" configure macos-defaults >/dev/null
+  assert_contains "$(cat "$MOCK_LOG")" "defaults write com.apple.screencapture location -string $TEST_HOME/Screenshots" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "killall SystemUIServer" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "killall Finder" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "killall Dock" || return 1
   cleanup_test_env
 }
 
@@ -214,6 +230,7 @@ test_remove_restores_every_key() {
   log_body="$(cat "$MOCK_LOG")"
   assert_contains "$log_body" "defaults delete com.apple.dock autohide" || return 1
   assert_contains "$log_body" "defaults delete com.apple.screencapture location" || return 1
+  assert_contains "$log_body" "killall SystemUIServer" || return 1
   assert_equals "0" "$(find "$RECORDS" -type f | wc -l | tr -d ' ')" "every record is consumed" || return 1
   cleanup_test_env
 }
@@ -235,6 +252,7 @@ test_remove_dry_run_does_not_claim_the_preferences_were_restored() {
   local out
   out="$(DRY_RUN=true cap_run macos-defaults remove 2>&1)"
   assert_contains "$out" "[DRY-RUN] Would execute: killall Finder" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: killall SystemUIServer" || return 1
   assert_not_contains "$out" "macOS preferences restored" || return 1
   cleanup_test_env
 }
@@ -246,6 +264,7 @@ run_test "configure records a prior value" test_configure_records_a_prior_value
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "a second configure writes nothing and restarts nothing" test_a_second_configure_writes_nothing_and_restarts_nothing
 run_test "a Dock change restarts only the Dock" test_a_dock_change_restarts_only_the_dock
+run_test "a screenshot location change restarts only SystemUIServer" test_a_screenshot_location_change_restarts_only_SystemUIServer
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "remove restores every key" test_remove_restores_every_key
 run_test "remove rewrites a recorded value" test_remove_rewrites_a_recorded_value
