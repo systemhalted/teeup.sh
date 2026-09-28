@@ -51,6 +51,7 @@ test_configure_creates_state_env_and_link() {
 
 test_configured_env_loads_the_ca_bundle_for_shells() {
   setup
+  mock_macos_base
   mkdir -p "$TEST_HOME/.local/state/teeup"
   printf '%s\n' '-----BEGIN CERTIFICATE-----' 'COMPANY_ROOT' '-----END CERTIFICATE-----' \
     > "$TEST_HOME/.local/state/teeup/ca-bundle.pem"

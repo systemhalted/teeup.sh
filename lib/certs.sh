@@ -51,6 +51,7 @@ _ca_bundle_clear_own_env() {
   [[ "${REQUESTS_CA_BUNDLE:-}" == "$bundle" ]] && unset REQUESTS_CA_BUNDLE
   [[ "${NODE_EXTRA_CA_CERTS:-}" == "$bundle" ]] && unset NODE_EXTRA_CA_CERTS
   [[ "${HOMEBREW_CURLRC:-}" == "$curlrc" ]] && unset HOMEBREW_CURLRC
+  return 0
 }
 
 # ca_bundle_admin_roots_present -> 0 present, 1 confirmed empty, 2 unreadable.
