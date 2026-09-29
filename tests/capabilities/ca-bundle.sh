@@ -326,6 +326,34 @@ test_doctor_reports_bundle_older_than_system_keychain() {
   cleanup_test_env
 }
 
+# Seen on a real Mac, 2026-09-28: the keychain's date moved, the rebuild found
+# the same certificates and rightly left the bundle alone, and doctor kept
+# calling it stale because it compared the bundle's own date.
+test_doctor_is_satisfied_after_a_rebuild_that_changed_nothing() {
+  setup
+  ca_bundle_rebuild || return 1
+  sleep 1
+  touch "$TEEUP_SYSTEM_KEYCHAIN"
+  ca_bundle_rebuild || return 1
+  local rc=0 out
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  cleanup_test_env
+}
+
+test_an_unwritable_marker_is_dropped_not_trusted() {
+  setup
+  ca_bundle_rebuild || return 1
+  local marker="$TEEUP_STATE_DIR/ca-bundle.checked"
+  chmod 0444 "$marker"
+  [[ -w "$marker" ]] && { cleanup_test_env; return 0; }  # running as root: cannot simulate
+  local out
+  out="$(ca_bundle_rebuild 2>&1)" || { echo "rebuild failed: $out"; return 1; }
+  [[ ! -e "$marker" ]] || { echo "the unwritable marker was kept"; return 1; }
+  assert_contains "$out" "judge the bundle by its own date" || return 1
+  cleanup_test_env
+}
+
 test_remove_deletes_bundle_and_curlrc() {
   setup
   ca_bundle_rebuild || return 1
@@ -366,6 +394,8 @@ test_only_denied_admin_certificates_leave_no_bundle() {
 run_test "no admin roots leave no bundle or environment" test_no_admin_roots_leave_no_bundle_or_environment
 run_test "bundle includes public and trusted admin roots only" test_bundle_contains_public_and_trusted_admin_roots_only
 run_test "unchanged content keeps mtimes" test_unchanged_content_keeps_bundle_and_curlrc_mtimes
+run_test "doctor is satisfied after a rebuild that changed nothing" test_doctor_is_satisfied_after_a_rebuild_that_changed_nothing
+run_test "an unwritable marker is dropped, not trusted" test_an_unwritable_marker_is_dropped_not_trusted
 run_test "failed or empty export keeps a good bundle" test_failed_or_empty_export_keeps_a_good_bundle
 run_test "environment keeps user-set values including empty" test_environment_keeps_user_set_values_including_empty
 run_test "doctor reports not needed without admin roots" test_doctor_reports_not_needed_without_admin_roots

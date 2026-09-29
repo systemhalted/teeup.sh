@@ -8,6 +8,13 @@ ca_bundle_path() {
   printf '%s/ca-bundle.pem\n' "${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
 }
 
+# ca_bundle_checked_path -> a file whose date is the last successful rebuild.
+# The bundle keeps its own date when a rebuild finds nothing new, so doctor
+# compares the keychains with this instead.
+ca_bundle_checked_path() {
+  printf '%s/ca-bundle.checked\n' "${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
+}
+
 ca_bundle_curlrc_path() {
   printf '%s/ca-bundle.curlrc\n' "${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
 }
@@ -79,10 +86,10 @@ ca_bundle_remove() {
   bundle="$(ca_bundle_path)"
   curlrc="$(ca_bundle_curlrc_path)"
   if [[ "${DRY_RUN:-false}" == "true" ]]; then
-    [[ ! -e "$bundle" && ! -e "$curlrc" ]] || run_cmd rm -f "$bundle" "$curlrc"
+    [[ ! -e "$bundle" && ! -e "$curlrc" ]] || run_cmd rm -f "$bundle" "$curlrc" "$(ca_bundle_checked_path)"
     return 0
   fi
-  rm -f "$bundle" "$curlrc"
+  rm -f "$bundle" "$curlrc" "$(ca_bundle_checked_path)"
   _ca_bundle_clear_own_env
 }
 
@@ -268,19 +275,29 @@ ca_bundle_rebuild() {
       _ca_bundle_fail "$work" "Could not install Homebrew's curl configuration." || return 1
   fi
   rm -rf "$work"
+  # A marker that cannot be updated would make doctor keep trusting its old
+  # date, so drop it and let doctor fall back to the bundle's own date.
+  local checked
+  checked="$(ca_bundle_checked_path)"
+  if ! { : > "$checked"; } 2>/dev/null; then
+    rm -f "$checked" 2>/dev/null || true
+    warn "Could not update $checked; teeup doctor will judge the bundle by its own date."
+  fi
   ca_bundle_apply_env
 }
 
 ca_bundle_is_current() {
-  local bundle curlrc roots keychain
+  local bundle curlrc roots keychain checked
   bundle="$(ca_bundle_path)"
   curlrc="$(ca_bundle_curlrc_path)"
   roots="${TEEUP_SYSTEM_ROOT_KEYCHAIN:-/System/Library/Keychains/SystemRootCertificates.keychain}"
   keychain="${TEEUP_SYSTEM_KEYCHAIN:-/Library/Keychains/System.keychain}"
   [[ -s "$bundle" && -s "$curlrc" ]] || return 1
   grep -qF "$bundle" "$curlrc" || return 1
-  [[ ! -e "$roots" || ! "$roots" -nt "$bundle" ]] || return 1
-  [[ ! -e "$keychain" || ! "$keychain" -nt "$bundle" ]] || return 1
+  checked="$(ca_bundle_checked_path)"
+  [[ -e "$checked" ]] || checked="$bundle"
+  [[ ! -e "$roots" || ! "$roots" -nt "$checked" ]] || return 1
+  [[ ! -e "$keychain" || ! "$keychain" -nt "$checked" ]] || return 1
   return 0
 }
 
