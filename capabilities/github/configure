@@ -193,7 +193,12 @@ github_configure_identity() {
   [[ -n "$target_account" ]] || target_account="$(_gh_active_account "$gh_host")"
 
   if [[ -n "$target_account" ]]; then
-    ssh_out="$(ssh -T -i "$(identity_key "$identity")" -o IdentitiesOnly=yes "git@$gh_host" 2>&1 || true)"
+    # Only the key being uploaded: -F /dev/null ignores ~/.ssh/config, whose
+    # Host block for this host may add another identity's key that GitHub
+    # would then answer for (seen on a work Mac: the personal key, not yet on
+    # GitHub, "belonged" to the work account). BatchMode: never stop at a
+    # passphrase or host-key prompt; an unknown answer lets the upload go on.
+    ssh_out="$(ssh -F /dev/null -T -i "$(identity_key "$identity")" -o IdentitiesOnly=yes -o BatchMode=yes "git@$gh_host" 2>&1 || true)"
     if [[ "$ssh_out" =~ Hi\ ([^!]+)!\ You\'ve\ successfully ]]; then
       ssh_login="${BASH_REMATCH[1]}"
       if [[ "$ssh_login" != "$target_account" ]]; then

@@ -8,6 +8,11 @@ setup() {
   mock_command_script ssh <<'EOF_SSH_MOCK'
 if [[ " $* " == *" -T "* && " $* " == *" git@"* ]]; then
   login="$(cat "$HOME/ssh-mock-login" 2>/dev/null || true)"
+  # Like the owner's ~/.ssh/config, whose Host github.com block adds the work
+  # key: without -F /dev/null, a key GitHub rejects falls back to that one.
+  if [[ " $* " != *" -F /dev/null "* && -f "$HOME/ssh-mock-config-login" ]]; then
+    [[ -n "$login" && "$login" != "error" ]] || login="$(cat "$HOME/ssh-mock-config-login")"
+  fi
   if [[ "$login" == "error" ]]; then
     exit 255
   elif [[ -n "$login" ]]; then
@@ -1364,4 +1369,24 @@ run_test "configure skips refresh if answer is no" test_configure_skips_refresh_
 run_test "configure names identity in messages" test_configure_names_identity_in_messages
 run_test "configure recognises received credentials for other" test_configure_recognises_received_credentials_for_other
 
+# Seen on the owner's work Mac: the personal key was not on GitHub yet, and
+# the owner check read ~/.ssh/config, whose github.com block added the work
+# key, so GitHub answered for the work account and a correct upload was
+# refused. The check must test only the key being uploaded.
+test_owner_check_ignores_the_ssh_config() {
+  setup
+  seed_keys
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
+  # The personal key itself is unknown to GitHub; the config would fall back
+  # to the work account.
+  printf 'palakm_tmcc\n' > "$TEST_HOME/ssh-mock-config-login"
+  local out calls
+  out="$(TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$out" "Refusing upload" "a key GitHub does not know yet was refused" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  cleanup_test_env
+}
+run_test "the owner check ignores the ssh config" test_owner_check_ignores_the_ssh_config
 print_summary
