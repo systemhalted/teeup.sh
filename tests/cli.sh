@@ -854,7 +854,7 @@ EOF2
   out="$("$TEEUP" remove alpha 2>&1)"
   assert_contains "$out" "reported it is not applicable on this machine, so it undid nothing of its own" || return 1
   out="$("$TEEUP" status 2>&1)"
-  if printf '%s\n' "$out" | grep -q 'not applicable'; then
+  if grep -q 'not applicable' <<<"$out"; then
     echo "status calls a removed capability not applicable"
     return 1
   fi
@@ -1544,7 +1544,7 @@ EOF2
   assert_failure "$rc" "one failed capability fails the run" || return 1
   assert_contains "$out" "alpha configure failed; continuing." || return 1
   assert_contains "$out" "configure:beta" "the capabilities after it still run" || return 1
-  if printf '%s\n' "$out" | grep -q 'teeup is up to date'; then
+  if grep -q 'teeup is up to date' <<<"$out"; then
     echo "claimed success after a capability failed"
     return 1
   fi
