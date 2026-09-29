@@ -529,32 +529,6 @@ cmd_update() {
   _update_configure_tier core
   _update_configure_tier daily
 
-  local lazy_name na
-  for lazy_name in $(cap_list); do
-    if [[ "$(cap_meta_get "$lazy_name" tier)" == "lazy" ]] && state_done check "cap-$lazy_name"; then
-      if cap_skipped "$lazy_name"; then
-        log "Skipping $lazy_name (TEEUP_SKIP)"
-        continue
-      fi
-      if state_na check "cap-$lazy_name"; then
-        log "$lazy_name is not applicable on this machine; skipping."
-        continue
-      fi
-      na=false
-      if cap_run "$lazy_name" configure; then
-        [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
-        if [[ "$na" == "true" ]]; then
-          state_done clear "cap-$lazy_name" || true
-          state_na mark "cap-$lazy_name"
-          log "$lazy_name is not applicable on this machine any more; it is no longer marked installed."
-        fi
-      else
-        warn "$lazy_name configure failed; continuing."
-        failed=1
-      fi
-    fi
-  done
-
   # The theme capability's configure already renders every template, so this
   # only covers a run where it did not happen (skipped, not installed, or the
   # theme capability's own configure answered not-applicable).

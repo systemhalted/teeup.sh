@@ -302,7 +302,7 @@ test_the_zed_command_gets_a_shim() {
   cleanup_test_env
 }
 
-test_an_installed_zed_receives_hooks_and_updates() {
+test_an_installed_zed_follows_the_theme_through_update() {
   setup || return 1
   mock_command brew 0 ""
   mock_command mise 0 ""
@@ -322,7 +322,10 @@ EOF2
   assert_equals "Catppuccin Mocha" "$(read_setting .theme.dark)" || return 1
   local out
   out="$(DRY_RUN=false "$TEEUP" update 2>&1)"
+  # The theme hook keeps an installed Zed current; update does not run its
+  # configure (lazy capabilities are left alone).
   assert_contains "$out" "Already current: $SETTINGS" || return 1
+  assert_not_contains "$out" "Starting: zed configure" || return 1
   cleanup_test_env
 }
 
@@ -346,6 +349,6 @@ run_test "hooks without jq warn and continue" test_hooks_without_jq_warn_and_con
 run_test "theme renders the zed names" test_theme_renders_the_zed_names
 run_test "the tier is lazy" test_the_tier_is_lazy
 run_test "the zed command gets a shim" test_the_zed_command_gets_a_shim
-run_test "an installed zed receives hooks and updates" test_an_installed_zed_receives_hooks_and_updates
+run_test "an installed zed follows the theme through update" test_an_installed_zed_follows_the_theme_through_update
 
 print_summary
