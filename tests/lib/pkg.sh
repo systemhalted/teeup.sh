@@ -324,6 +324,33 @@ EOF2
   cleanup_test_env
 }
 
+# teeup-runtime installs gum and jq without declaring them (declaring would let
+# `teeup remove` uninstall teeup's own tools); the upgrade still covers them,
+# and uninstall's package list does not gain them.
+test_upgrade_all_includes_teeups_own_tools() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula") [[ "$3" == "gum" || "$3" == "jq" ]] && exit 0 || exit 1 ;;
+  "list --cask") exit 1 ;;
+esac
+exit 0
+EOF2
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  mkdir -p "$TEEUP_CAPS_DIR/teeup-runtime"
+  printf 'provides=""\n' > "$TEEUP_CAPS_DIR/teeup-runtime/capability"
+  state_done mark cap-teeup-runtime
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  unset TEEUP_PKG_BACKEND
+  pkg_upgrade_all
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula gum jq" || return 1
+  TEEUP_COLLECTED_PKGS=""
+  pkg_collect_installed_items teeup-runtime
+  assert_equals "" "$TEEUP_COLLECTED_PKGS" "uninstall's collector must not list teeup's own tools" || return 1
+  cleanup_test_env
+}
+
 test_update_and_upgrade_all_on_both_backends() {
   setup
   mock_command_script brew <<'EOF2'
@@ -482,6 +509,7 @@ run_test "run_privileged prefixes sudo" test_run_privileged_prefixes_sudo
 run_test "cask_install dies on invalid backend" test_cask_install_dies_on_invalid_backend
 run_test "uninstall removes only what is installed" test_uninstall_removes_only_what_is_installed
 run_test "update and upgrade_all on both backends" test_update_and_upgrade_all_on_both_backends
+run_test "upgrade_all includes teeup's own tools" test_upgrade_all_includes_teeups_own_tools
 run_test "upgrade one package or cask only when it is installed" test_upgrade_one_package_or_cask_only_when_it_is_installed
 run_test "cask_upgrade is a note on MacPorts" test_cask_upgrade_is_a_note_on_macports
 run_test "upgrade failures are reported" test_upgrade_failures_are_reported
