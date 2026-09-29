@@ -100,7 +100,7 @@ _github_sync_git_signing() {
 # the account that was active before teeup ran.
 github_configure_identity() {
   local identity="$1" gh_host="$2" gh_account="$3"
-  local status_out pub body listed type title answer_key upload_answer upload_account needs_upload
+  local status_out pub body listed type title answer_key upload_answer upload_account needs_upload target_account ssh_out ssh_login
 
   # --active narrows the report to the one account gh will actually use for
   # this host (gh 2.100.0: "-a, --active  Display the active account only").
@@ -159,6 +159,20 @@ github_configure_identity() {
     log "Already uploaded (authentication): $pub"
     log "Already uploaded (signing): $pub"
     return 0
+  fi
+
+  target_account="$gh_account"
+  [[ -n "$target_account" ]] || target_account="$(_gh_active_account "$gh_host")"
+
+  if [[ -n "$target_account" ]]; then
+    ssh_out="$(ssh -T -i "$(identity_key "$identity")" -o IdentitiesOnly=yes "git@$gh_host" 2>&1 || true)"
+    if [[ "$ssh_out" =~ Hi\ ([^!]+)!\ You\'ve\ successfully ]]; then
+      ssh_login="${BASH_REMATCH[1]}"
+      if [[ "$ssh_login" != "$target_account" ]]; then
+        warn "Refusing upload: the $identity key belongs to GitHub account '$ssh_login', but gh is targeting '$target_account'."
+        return 0
+      fi
+    fi
   fi
 
   if [[ "$upload_answer" != "yes" ]]; then
