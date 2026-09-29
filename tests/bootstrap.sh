@@ -687,6 +687,21 @@ test_the_wizard_says_nothing_about_work_on_a_clean_answers_file() {
   cleanup_test_env
 }
 
+# A password typed into the email prompt by mistake must not come back: not
+# in the warning, and not as the retry's default ("Personal email [<it>]").
+test_the_wizard_never_shows_a_rejected_answer_again() {
+  setup
+  source_wizard
+  mkdir -p "$TEST_HOME/.config/teeup"
+  : > "$TEST_HOME/.config/teeup/answers"
+  answers_load
+  local out
+  out="$(DRY_RUN=false wizard 2>&1 <<<$'Ada Lovelace\nhunter2Secret\nada@example.com\n1\ny\n')"
+  assert_not_contains "$out" "hunter2" "the wizard showed the rejected answer again" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_EMAIL="ada@example.com"' || return 1
+  cleanup_test_env
+}
+
 test_wizard_email_validator_rejects_a_trailing_dot() {
   setup
   source_wizard_validators
@@ -821,6 +836,7 @@ run_test "valid wizard answers pass validation on the first try" test_valid_wiza
 run_test "the retry limit dies with a clear message" test_the_retry_limit_dies_with_a_clear_message
 run_test "the wizard clears a stale work email" test_the_wizard_clears_a_stale_work_email
 run_test "the wizard says nothing about work on a clean answers file" test_the_wizard_says_nothing_about_work_on_a_clean_answers_file
+run_test "the wizard never shows a rejected answer again" test_the_wizard_never_shows_a_rejected_answer_again
 run_test "wizard email validator rejects a trailing dot" test_wizard_email_validator_rejects_a_trailing_dot
 run_test "wizard email validator still accepts a normal address" test_wizard_email_validator_still_accepts_a_normal_address
 run_test "wizard name validator stores the trimmed value" test_wizard_name_validator_stores_the_trimmed_value

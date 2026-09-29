@@ -121,7 +121,9 @@ wizard_ask() {
       printf '%s\n' "$validated"
       return 0
     fi
-    default="$answer"
+    # The retry offers the original default again, never the rejected answer:
+    # that can be a password typed into the wrong prompt, and a default is
+    # printed on screen ("Personal email [<default>]").
   done
   die "Too many invalid answers for: $prompt. Run ./bootstrap --reconfigure once you have a valid value."
 }
