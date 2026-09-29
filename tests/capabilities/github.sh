@@ -1316,7 +1316,11 @@ run_test "configure allows upload when ssh cannot tell" test_configure_allows_up
 test_configure_skips_refresh_if_answer_is_no() {
   setup
   seed_keys
-  answers_set TEEUP_GITHUB_UPLOAD_PERSONAL no
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="no"\n' >> "$TEST_HOME/.config/teeup/answers"
+  # Signed in but missing the signing scope: without the "no", teeup would
+  # refresh here.
+  printf "'repo', 'admin:public_key'\n" > "$TEST_HOME/gh-session"
   : > "$MOCK_LOG"
   local out calls
   out="$(TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
@@ -1331,7 +1335,10 @@ test_configure_skips_refresh_if_answer_is_no() {
 test_configure_names_identity_in_messages() {
   setup
   seed_keys
-  answers_set TEEUP_GITHUB_UPLOAD_PERSONAL yes
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
+  # Signed in but missing the signing scope, so teeup refreshes.
+  printf "'repo', 'admin:public_key'\n" > "$TEST_HOME/gh-session"
   local out calls
   out="$(TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
@@ -1342,7 +1349,10 @@ test_configure_names_identity_in_messages() {
 test_configure_recognises_received_credentials_for_other() {
   setup
   seed_keys
-  answers_set TEEUP_GITHUB_UPLOAD_PERSONAL yes
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
+  # Signed in but missing the signing scope, so teeup refreshes.
+  printf "'repo', 'admin:public_key'\n" > "$TEST_HOME/gh-session"
   export MOCK_GH_REFRESH_ERROR="error refreshing credentials for systemhalted, received credentials for palakm_tmcc, did you use the correct account?"
   local out calls
   out="$(TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
