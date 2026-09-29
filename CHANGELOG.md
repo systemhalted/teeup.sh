@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.1-beta] - UNRELEASED
 
 ### Added
+- **Personal GitHub Account:** Added `TEEUP_PERSONAL_GH_ACCOUNT` to the machine file. When two identities share `github.com`, the personal identity can now switch accounts for its upload, exactly like the work identity does.
 - Ghostty, Alacritty, and iTerm2 are now available as lazy capabilities (`ghostty`, `alacritty`, `iterm2`).
 - **Configurable SSH host aliases:** Added `TEEUP_PERSONAL_SSH_HOST` and `TEEUP_WORK_SSH_HOST` to the machine file so identities can be tied to different SSH Host blocks.
 

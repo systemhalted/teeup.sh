@@ -237,22 +237,23 @@ for identity in $(identity_list); do
   gh_account="$(identity_gh_account "$identity")"
   export GH_HOST="$gh_host"
   restore_account=""
-  verify_after_login=false
   if [[ -n "$gh_account" ]]; then
     active_account="$(_gh_active_account "$gh_host")"
-    if [[ -z "$active_account" ]]; then
-      # Nothing is signed in on this host, so there is no account to switch
-      # from: the `gh auth login` below decides who teeup ends up as, and it
-      # is whoever answers in the browser, not necessarily the account named
-      # here. Check afterwards rather than assume.
-      verify_after_login=true
-    elif [[ "$active_account" != "$gh_account" ]]; then
-      if run_cmd gh auth switch --hostname "$gh_host" --user "$gh_account"; then
-        restore_account="$active_account"
-      else
-        warn "Could not switch gh to $gh_account on $gh_host; skipping the $identity identity."
-        warn "Check the account name in $(machine_file), or run: gh auth login --hostname $gh_host --skip-ssh-key"
-        continue
+    if [[ "$active_account" == "$gh_account" ]]; then
+      :
+    elif run_cmd gh auth switch --hostname "$gh_host" --user "$gh_account"; then
+      [[ -n "$active_account" ]] && restore_account="$active_account"
+    else
+      warn "The $identity identity specifies account '$gh_account', but it is not signed in to $gh_host."
+      warn "Sign in first: gh auth login --hostname $gh_host --skip-ssh-key"
+      continue
+    fi
+  elif [[ "$identity" == "personal" ]]; then
+    active_account="$(_gh_active_account "$gh_host")"
+    if [[ -n "$active_account" ]]; then
+      account_count="$(gh auth status -h "$gh_host" 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "account") print $(i + 1) }' | sort -u | wc -l | tr -d ' ')"
+      if [[ "$account_count" -gt 1 ]]; then
+        warn "gh has multiple accounts on $gh_host (active: $active_account). Set TEEUP_PERSONAL_GH_ACCOUNT in $(machine_file) to pin it."
       fi
     fi
   elif [[ "$identity" != "personal" && "$gh_host" == "$(identity_gh_host personal)" ]]; then
@@ -267,17 +268,6 @@ for identity in $(identity_list); do
   github_configure_identity "$identity" "$gh_host" "$gh_account"
   if [[ "$identity" == "personal" ]]; then
     _github_sync_git_signing
-  fi
-
-  # Skipped under DRY_RUN: no login ran, so the account on the host is still
-  # whatever it was and would only produce a warning about a mismatch this run
-  # never created.
-  if [[ "$verify_after_login" == "true" && "$DRY_RUN" != "true" ]]; then
-    active_account="$(_gh_active_account "$gh_host")"
-    if [[ -n "$active_account" && "$active_account" != "$gh_account" ]]; then
-      warn "gh is signed in to $gh_host as $active_account, not the $gh_account named in $(machine_file)."
-      warn "The $identity key went to $active_account. Sign in as $gh_account (gh auth login --hostname $gh_host --skip-ssh-key) and re-run: teeup configure github"
-    fi
   fi
 
   if [[ -n "$restore_account" ]]; then

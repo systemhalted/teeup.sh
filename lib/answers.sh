@@ -292,7 +292,7 @@ identity_gh_host() {
 # do the work upload, and switches back afterwards.
 identity_gh_account() {
   case "$1" in
-    personal) printf '\n' ;;
+    personal) machine_get TEEUP_PERSONAL_GH_ACCOUNT || printf '\n' ;;
     work) work_get TEEUP_WORK_GH_ACCOUNT ;;
     *) die "identity_gh_account: unknown identity '$1' (expected personal or work)" ;;
   esac

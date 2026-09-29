@@ -219,6 +219,12 @@ case "$1 ${2:-}" in
     printf '%s\tssh-ed25519 %s\t2026-09-11T09:12:33Z\t%s\t%s\n' \
       "$ssh_key_title" "$ssh_key_body" "$ssh_key_id" "$ssh_key_type" >> "$keys_file"
     ;;
+  "auth switch")
+    if [ -f "$HOME/gh-auth-switch-fail" ]; then
+      echo "gh: account not signed in" >&2
+      exit 1
+    fi
+    ;;
   *) : ;;
 esac
 exit 0
@@ -813,49 +819,8 @@ test_configure_reads_only_the_first_line_of_a_public_key() {
 # switch from, so `gh auth login` decides who teeup ends up as -- and whoever
 # that is never got checked against the account the machine file names. The key
 # would land on the wrong account with teeup reporting the work identity done.
-test_configure_warns_when_the_login_lands_on_another_account() {
-  setup
-  seed_keys
-  seed_work_key
-  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "ada-corp"
-  # github.com is signed in; the Enterprise host is not, so it goes through
-  # auth login, which the mock completes as "testuser".
-  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
-  local out
-  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "ada-corp" || return 1
-  assert_contains "$out" "testuser" || return 1
-  assert_contains "$out" "$TEST_HOME/machines/testmac.conf" || return 1
-  unset TEEUP_MACHINES_DIR
-  cleanup_test_env
-}
 
-test_configure_says_nothing_when_the_login_lands_on_the_named_account() {
-  setup
-  seed_keys
-  seed_work_key
-  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "testuser"
-  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
-  local out
-  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_not_contains "$out" "not the testuser" || return 1
-  assert_not_contains "$out" "named in" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type authentication" || return 1
-  unset TEEUP_MACHINES_DIR
-  cleanup_test_env
-}
 
-test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run() {
-  setup
-  seed_keys
-  seed_work_key
-  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "ada-corp"
-  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
-  local out
-  out="$(DRY_RUN=true "$TEEUP" configure github 2>&1)"
-  assert_not_contains "$out" "is signed in to" "a dry run ran no login, so there is no account to check" || return 1
-  cleanup_test_env
-}
 
 # identity_list itself only reads the machine file (work_get), never the
 # answers file, so this is not strictly needed for identity_list to see the
@@ -1257,9 +1222,6 @@ run_test "a stale work email answer uploads nothing extra" test_a_stale_work_ema
 run_test "configure refuses the work upload with no account named" test_configure_refuses_the_work_upload_with_no_account_named
 run_test "configure switches accounts for a second github.com account" test_configure_switches_accounts_for_a_second_github_com_account
 run_test "configure needs no account on a separate host" test_configure_needs_no_account_on_a_separate_host
-run_test "configure warns when the login lands on another account" test_configure_warns_when_the_login_lands_on_another_account
-run_test "configure says nothing when the login lands on the named account" test_configure_says_nothing_when_the_login_lands_on_the_named_account
-run_test "configure dry run checks no account after a login it did not run" test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run
 run_test "configure uploads the work key to a GitHub Enterprise host" test_configure_uploads_the_work_key_to_a_github_enterprise_host
 run_test "configure signs in to each host independently" test_configure_signs_in_to_each_host_independently
 run_test "configure skips a key already uploaded to the Enterprise host" test_configure_skips_a_key_already_uploaded_to_the_enterprise_host
@@ -1452,4 +1414,103 @@ test_real_ssh_limits_the_alias_to_the_pinned_identity() {
   cleanup_test_env
 }
 run_test "real ssh limits the alias to the pinned identity" test_real_ssh_limits_the_alias_to_the_pinned_identity
+
+test_configure_switches_accounts_for_the_personal_identity() {
+  setup
+  seed_keys
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_PERSONAL_GH_ACCOUNT="systemhalted"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  # Signed in on github.com as testuser (the mock's active account).
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$calls" "auth switch --hostname github.com --user systemhalted" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication --title testmac personal" || return 1
+  assert_contains "$calls" "auth switch --hostname github.com --user testuser" || return 1
+  local order
+  order="$(grep -n 'auth switch\|ssh-key add .*id_ed25519_personal.pub --type authentication' "$MOCK_LOG" | cut -d: -f1 | tr '\n' ' ')"
+  local first second third
+  read -r first second third <<ORDER
+$order
+ORDER
+  [[ "$first" -lt "$second" && "$second" -lt "$third" ]] ||
+    { echo "switch/upload/restore out of order: $order"; return 1; }
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+run_test "configure switches accounts for the personal identity" test_configure_switches_accounts_for_the_personal_identity
+
+test_configure_refuses_the_personal_upload_when_the_account_is_not_signed_in() {
+  setup
+  seed_keys
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_PERSONAL_GH_ACCOUNT="systemhalted"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+
+  : > "$TEST_HOME/gh-auth-switch-fail"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "The personal identity specifies account 'systemhalted', but it is not signed in to github.com." || return 1
+  assert_contains "$out" "gh auth login --hostname github.com --skip-ssh-key" || return 1
+  local calls
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$calls" "ssh-key add" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+run_test "configure refuses the personal upload when the account is not signed in" test_configure_refuses_the_personal_upload_when_the_account_is_not_signed_in
+
+test_configure_notifies_when_personal_is_not_set_and_multiple_accounts_exist() {
+  setup
+  seed_keys
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  : > "$TEEUP_MACHINES_DIR/testmac.conf"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  printf "'admin:public_key'" > "$TEST_HOME/gh-inactive-scopes"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "gh has multiple accounts on github.com (active: testuser). Set TEEUP_PERSONAL_GH_ACCOUNT in $TEST_HOME/machines/testmac.conf to pin it." || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+run_test "configure notifies when personal is not set and multiple accounts exist" test_configure_notifies_when_personal_is_not_set_and_multiple_accounts_exist
+
+test_configure_unchanged_when_personal_is_not_set_and_one_account_exists() {
+  setup
+  seed_keys
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_not_contains "$out" "gh has multiple accounts on github.com" || return 1
+  cleanup_test_env
+}
+run_test "configure unchanged when personal is not set and one account exists" test_configure_unchanged_when_personal_is_not_set_and_one_account_exists
+
+test_configure_compares_owner_against_the_configured_personal_account() {
+  setup
+  seed_keys
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_PERSONAL_GH_ACCOUNT="systemhalted"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+
+  printf 'systemhalted\n' > "$TEST_HOME/ssh-mock-login"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_not_contains "$out" "Refusing upload: the personal key" || return 1
+
+  printf 'otheruser\n' > "$TEST_HOME/ssh-mock-login"
+  rm -f "$TEST_HOME/gh-keys"
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "Refusing upload: the personal key ($TEST_HOME/.ssh/id_ed25519_personal) belongs to GitHub account 'otheruser', but gh is targeting 'systemhalted' on github.com." || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+run_test "configure compares owner against the configured personal account" test_configure_compares_owner_against_the_configured_personal_account
+
 print_summary

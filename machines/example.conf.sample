@@ -41,6 +41,10 @@
 # Defaults to github.com.
 #TEEUP_PERSONAL_SSH_HOST="github.com"
 
+# The GitHub login the personal key belongs to, when both personal and work
+# accounts live on github.com. Works exactly like TEEUP_WORK_GH_ACCOUNT.
+#TEEUP_PERSONAL_GH_ACCOUNT="ada-personal"
+
 # The SSH host alias for the work identity. Defaults to github.com-work.
 #TEEUP_WORK_SSH_HOST="github.com-work"
 
