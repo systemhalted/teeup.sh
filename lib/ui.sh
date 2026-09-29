@@ -5,11 +5,22 @@
 
 _ui_gum() { [[ -z "${TEEUP_NO_GUM:-}" ]] && have gum; }
 
+# _ui_gum_rc <status> -> <status>, unless it is 130. gum puts the terminal in
+# raw mode, so Ctrl-C reaches gum as a key: gum exits 130 and teeup gets no
+# SIGINT. Taking that as an empty answer or a no kept the wizard going, so
+# send the interrupt the key would have sent, to the whole foreground job.
+_ui_gum_rc() {
+  if [[ "$1" -eq 130 ]]; then
+    kill -INT 0
+  fi
+  return "$1"
+}
+
 # ui_input <prompt> [default] -> prints the answer
 ui_input() {
   local prompt="$1" default="${2:-}" answer
   if _ui_gum; then
-    answer="$(gum input --prompt "$prompt: " --value "$default" --placeholder "$default")" || answer=""
+    answer="$(gum input --prompt "$prompt: " --value "$default" --placeholder "$default")" || { _ui_gum_rc $?; answer=""; }
   else
     printf '%s' "$prompt" >&2
     [[ -n "$default" ]] && printf ' [%s]' "$default" >&2
@@ -24,7 +35,7 @@ ui_input() {
 ui_secret() {
   local prompt="$1" answer
   if _ui_gum; then
-    answer="$(gum input --password --prompt "$prompt: ")" || answer=""
+    answer="$(gum input --password --prompt "$prompt: ")" || { _ui_gum_rc $?; answer=""; }
   else
     printf '%s: ' "$prompt" >&2
     IFS= read -rs answer || true
@@ -38,9 +49,9 @@ ui_confirm() {
   local prompt="$1" default="${2:-yes}" answer hint
   if _ui_gum; then
     if [[ "$default" == "yes" ]]; then
-      gum confirm "$prompt"
+      gum confirm "$prompt" || _ui_gum_rc $?
     else
-      gum confirm --default=false "$prompt"
+      gum confirm --default=false "$prompt" || _ui_gum_rc $?
     fi
     return $?
   fi
@@ -62,7 +73,7 @@ ui_choose() {
   shift
   local answer i opt n=$#
   if _ui_gum; then
-    gum choose --header "$prompt" "$@"
+    gum choose --header "$prompt" "$@" || _ui_gum_rc $?
     return $?
   fi
   printf '%s\n' "$prompt" >&2

@@ -82,6 +82,24 @@ test_gum_is_used_when_available() {
   cleanup_test_env
 }
 
+# gum reads Ctrl-C itself (raw mode) and exits 130, so no SIGINT reaches
+# teeup. Each prompt must stop the run then, not take it as an empty answer
+# or a no. The script runs in its own process group, as a terminal's
+# foreground job would, so the interrupt stays inside it.
+test_ctrl_c_in_gum_stops_the_run() {
+  setup
+  unset TEEUP_NO_GUM
+  mock_command gum 130 ""
+  local fn out rc
+  for fn in 'ui_input Name' 'ui_secret Value' 'ui_confirm Sure' 'ui_choose Pick a b'; do
+    rc=0
+    out="$(perl -e 'setpgrp 0,0; exec @ARGV' bash -c 'source "$TEEUP_PATH/lib/all.sh"; '"$fn"' </dev/null; echo carried-on' 2>&1)" || rc=$?
+    assert_not_contains "$out" "carried-on" "$fn went on after Ctrl-C" || return 1
+    assert_equals 130 "$rc" "$fn exit status" || return 1
+  done
+  cleanup_test_env
+}
+
 test_choose_accepts_leading_zero_number() {
   setup
   local err
@@ -102,5 +120,6 @@ run_test "choose defaults to first on empty" test_choose_defaults_to_first_on_em
 run_test "secret reads a piped value without echoing it" test_secret_reads_a_piped_value_without_echoing_it
 run_test "secret uses gum password mode" test_secret_uses_gum_password_mode
 run_test "gum is used when available" test_gum_is_used_when_available
+run_test "Ctrl-C in gum stops the run" test_ctrl_c_in_gum_stops_the_run
 run_test "choose accepts leading zero number" test_choose_accepts_leading_zero_number
 print_summary
