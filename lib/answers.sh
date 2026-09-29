@@ -298,16 +298,16 @@ identity_gh_account() {
   esac
 }
 
-# ssh_host_alias <identity> -> the Host name teeup's own shipped ssh config
-# (capabilities/ssh/config/ssh/config) uses for this identity. Fixed, unlike
-# identity_gh_host: it names a *local* alias, not the real GitHub host, so a
-# work identity on a GitHub Enterprise host still clones through
-# git@github.com-work:org/repo.git.
-ssh_host_alias() {
+# identity_ssh_host <identity> -> the SSH host alias (the Host block in ssh config)
+# for this identity. Read from machines/<hostname>.conf, defaulting to
+# github.com and github.com-work.
+#
+#
+identity_ssh_host() {
   case "$1" in
-    personal) printf 'github.com\n' ;;
-    work) printf 'github.com-work\n' ;;
-    *) die "ssh_host_alias: unknown identity '$1' (expected personal or work)" ;;
+    personal) work_get TEEUP_PERSONAL_SSH_HOST github.com ;;
+    work) work_get TEEUP_WORK_SSH_HOST github.com-work ;;
+    *) die "identity_ssh_host: unknown identity '$1' (expected personal or work)" ;;
   esac
 }
 
@@ -365,7 +365,7 @@ _ssh_path_expand() {
 # first entry is what ssh would offer first.
 ssh_config_named_key() {
   local identity="$1" alias config user_keys default_keys key chosen="" first=""
-  alias="$(ssh_host_alias "$identity")"
+  alias="$(identity_ssh_host "$identity")"
   config="$HOME/.ssh/config"
   [[ -f "$config" ]] || return 1
   if ! have ssh; then
