@@ -237,11 +237,27 @@ M.font_with_fallback = function(specs) return specs end
 M.add_to_config_reload_watch_list = function() end
 M.default_hyperlink_rules = function() return {} end
 M.action = setmetatable({}, { __index = function() return function(...) return {} end end })
-M.run_child_process = function()
+M.run_child_process = function(args)
+  if args and args[1] == "defaults" then
+    if os.getenv("WEZTERM_TEST_DEFAULTS_ERRORS") then
+      error("command not found")
+    end
+    if os.getenv("WEZTERM_TEST_DEFAULTS_EXITS_NONZERO") then
+      return false, "", ""
+    end
+    return true, os.getenv("WEZTERM_TEST_DEFAULTS_RETURNS") or "Dark\n", ""
+  end
   if os.getenv("WEZTERM_TEST_SYSCTL_ERRORS") then
     error("command not found")
   end
   return true, os.getenv("WEZTERM_TEST_SYSCTL_RETURNS") or "0\n", ""
+end
+if os.getenv("WEZTERM_TEST_HAS_GUI") == "1" then
+  M.gui = {
+    get_appearance = function()
+      return os.getenv("WEZTERM_TEST_GUI_APPEARANCE") or "Light"
+    end
+  }
 end
 return M
 FAKE
@@ -716,7 +732,36 @@ EOF2
   cleanup_test_env
 }
 
+test_appearance_asks_macos_defaults_first() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return "$(missing_tool_status)"
+  fi
+  local out
+
+  # defaults says Dark while gui says Light -> dark
+  out="$(export WEZTERM_TEST_DEFAULTS_RETURNS="Dark\n" WEZTERM_TEST_HAS_GUI="1" WEZTERM_TEST_GUI_APPEARANCE="Light"; _wezterm_config_keys '{}' color_scheme)"
+  assert_contains "$out" "color_scheme=Catppuccin Mocha" "defaults Dark should win over gui Light" || return 1
+
+  # defaults exits 1 -> light
+  out="$(export WEZTERM_TEST_DEFAULTS_EXITS_NONZERO="1" WEZTERM_TEST_HAS_GUI="1" WEZTERM_TEST_GUI_APPEARANCE="Dark"; _wezterm_config_keys '{}' color_scheme)"
+  assert_contains "$out" "color_scheme=Catppuccin Latte" "defaults non-zero exit should win over gui Dark" || return 1
+
+  # run_child_process errors -> falls back to gui ("DarkHighContrast" -> dark)
+  out="$(export WEZTERM_TEST_DEFAULTS_ERRORS="1" WEZTERM_TEST_HAS_GUI="1" WEZTERM_TEST_GUI_APPEARANCE="DarkHighContrast"; _wezterm_config_keys '{}' color_scheme)"
+  assert_contains "$out" "color_scheme=Catppuccin Mocha" "pcall failure should fall back to gui" || return 1
+
+  # no gui (mux) and no process -> dark
+  out="$(export WEZTERM_TEST_DEFAULTS_ERRORS="1" WEZTERM_TEST_HAS_GUI="0"; _wezterm_config_keys '{}' color_scheme)"
+  assert_contains "$out" "color_scheme=Catppuccin Mocha" "no process and no gui should default to Dark" || return 1
+
+  cleanup_test_env
+}
+
 echo "capabilities/wezterm"
+run_test "appearance asks macOS defaults first" test_appearance_asks_macos_defaults_first
 run_test "reset leaves the local override alone" test_reset_leaves_the_local_override_alone
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install falls back to a port on macports" test_install_falls_back_to_a_port_on_macports

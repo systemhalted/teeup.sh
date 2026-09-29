@@ -57,11 +57,26 @@ function M.get_appearance()
   return "Dark"
 end
 
--- A substring match on purpose: WezTerm reports "Dark", "DarkHighContrast",
--- "Light" or "LightHighContrast". The exact `== "Dark"` rule elsewhere is for
--- `defaults read -g AppleInterfaceStyle`, which prints only "Dark"; do not
--- make the two match, or high-contrast dark users get the light palette.
+-- WezTerm's own gui.get_appearance() picks the light palette in a new
+-- workspace window. Ask macOS directly first: `defaults read -g
+-- AppleInterfaceStyle` prints "Dark" in dark mode and exits non-zero in light
+-- mode. WezTerm still re-evaluates the config when the system appearance
+-- changes, so switching light/dark keeps working.
+--
+-- Fallback: a substring match on purpose: WezTerm reports "Dark",
+-- "DarkHighContrast", "Light" or "LightHighContrast". The exact `== "Dark"`
+-- rule is for `defaults`, which prints only "Dark"; do not make the two
+-- match, or high-contrast dark users get the light palette.
 function M.mode()
+  local ok, success, stdout = pcall(wezterm.run_child_process, {"defaults", "read", "-g", "AppleInterfaceStyle"})
+  if ok then
+    if success and type(stdout) == "string" and stdout:match("^Dark") then
+      return "dark"
+    elseif not success then
+      return "light"
+    end
+  end
+
   if M.get_appearance():find("Dark") then
     return "dark"
   end
