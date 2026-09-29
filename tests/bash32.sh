@@ -42,7 +42,7 @@ strays="$(cd "$sandbox" && find . -path ./tmp -prune -o \( -type f -o -type l \)
 if [[ -n "$strays" ]]; then
   echo ""
   echo "A test wrote into HOME itself instead of \$TEST_HOME (outside a sandbox this is your real home):"
-  printf '  %s\n' $strays
+  sed 's/^/  /' <<<"$strays"
   [[ $rc -ne 0 ]] || rc=1
 fi
 exit $rc
