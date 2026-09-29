@@ -195,6 +195,7 @@ cmd_remove() {
     die "$target is required by:$dependents. Remove those first, then $target."
   fi
   cap_remove "$target" true || rc=$?
+  ui_rc_or_exit $rc || true
   case "$rc" in
     2) die "$target ships no remove script and installs no packages or casks that teeup tracks, so teeup remove cannot undo it; $target is still marked installed." ;;
     3) die "$target's remove script failed; nothing was uninstalled." ;;
