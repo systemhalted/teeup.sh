@@ -921,6 +921,7 @@ EOF2
 test_update_upgrades_packages_before_running_migrations() {
   setup
   mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
   "$TEEUP" install alpha >/dev/null
   export TEEUP_MIGRATIONS_DIR="$TEST_HOME/migrations"
   mkdir -p "$TEEUP_MIGRATIONS_DIR"
@@ -1204,6 +1205,7 @@ test_migrate_appears_in_help() {
 test_update_walks_every_step_in_order() {
   setup
   mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
   "$TEEUP" install alpha >/dev/null
   "$TEEUP" install beta >/dev/null
   mkdir -p "$TEST_HOME/.config/teeup/hooks/post-update.d"
@@ -1216,7 +1218,7 @@ test_update_walks_every_step_in_order() {
   assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH pull --ff-only" || return 1
   assert_contains "$out" "migration ran" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / upgrade" || return 1
   assert_contains "$out" "configure:alpha" || return 1
   assert_contains "$out" "configure:beta" || return 1
@@ -1224,6 +1226,44 @@ test_update_walks_every_step_in_order() {
   assert_contains "$out" "post-update hook:[]" || return 1
   assert_contains "$out" "teeup is up to date." || return 1
   assert_file_exists "$TEST_HOME/.local/state/teeup/migrations/1780000000.sh" || return 1
+  cleanup_test_env
+}
+
+test_update_upgrades_only_what_teeup_installed() {
+  setup
+  mock_update_world
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  mkdir -p "$TEEUP_CAPS_DIR"
+  make_cap with-pkg core
+  printf "packages=\"ripgrep fzf\"\n" >> "$TEEUP_CAPS_DIR/with-pkg/capability"
+  make_cap with-cask core
+  printf "casks=\"wezterm arc\"\n" >> "$TEEUP_CAPS_DIR/with-cask/capability"
+  printf "with-pkg\nwith-cask\n" > "$TEEUP_CAPS_DIR/core.list"
+  : > "$TEEUP_CAPS_DIR/daily.list"
+  "$TEEUP" install with-pkg >/dev/null
+  "$TEEUP" install with-cask >/dev/null
+  : > "$MOCK_LOG"
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep fzf" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask wezterm arc" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask$" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade$" || return 1
+  assert_contains "$out" "Other Homebrew packages are left to you" || return 1
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$*" in
+  "upgrade --formula "*) echo "error" >&2; exit 1 ;;
+  "ls --versions "*) exit 0 ;;
+esac
+exit 0
+EOF2
+  : > "$MOCK_LOG"
+  local rc=0
+  out="$("$TEEUP" update 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Could not upgrade formulas: ripgrep fzf" || return 1
+  assert_contains "$out" "teeup update finished, with the problems above." || return 1
   cleanup_test_env
 }
 
@@ -2681,6 +2721,7 @@ run_test "reset dry run changes nothing" test_reset_dry_run_changes_nothing
 run_test "reset refuses what it cannot reset" test_reset_refuses_what_it_cannot_reset
 run_test "reset reports a refused write plainly" test_reset_reports_a_refused_write_plainly
 run_test "dev add-migration creates a named scaffold" test_dev_add_migration_creates_a_named_scaffold
+run_test "update upgrades only what teeup installed" test_update_upgrades_only_what_teeup_installed
 run_test "update upgrades packages before running migrations" test_update_upgrades_packages_before_running_migrations
 run_test "update runs migrations before configuring" test_update_runs_migrations_before_configuring
 run_test "update walks every step in order" test_update_walks_every_step_in_order

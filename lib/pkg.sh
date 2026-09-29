@@ -269,22 +269,72 @@ pkg_update() {
   esac
 }
 
-# pkg_upgrade_all -> upgrade everything the package manager installed.
-# Homebrew keeps formulae and casks apart, so both lines are needed; MacPorts
-# has no casks, so `port upgrade outdated` covers it. A non-zero exit is
-# reported to the caller, which turns it into a warning: `teeup update` must
-# not stop because one formula will not build, and MacPorts does not document
-# the status `port upgrade outdated` returns with nothing to upgrade.
+# pkg_collect_installed_items <name>
+# Adds whichever of <name>'s packages and casks are installed here to
+# TEEUP_COLLECTED_PKGS and TEEUP_COLLECTED_CASKS, under the names the package
+# manager knows them by.
+pkg_collect_installed_items() {
+  local name="$1" pkgs pkg candidate cask
+  pkgs="$(cap_meta_get "$name" packages) ${TEEUP_COLLECT_EXTRA:-}"
+  for pkg in $pkgs; do
+    for candidate in $(package_candidates "$pkg"); do
+      if pkg_installed "$candidate" >/dev/null 2>&1; then
+        case " $TEEUP_COLLECTED_PKGS " in
+          *" $candidate "*) ;;
+          *) TEEUP_COLLECTED_PKGS="${TEEUP_COLLECTED_PKGS:+$TEEUP_COLLECTED_PKGS }$candidate" ;;
+        esac
+        break
+      fi
+    done
+  done
+  casks_supported || return 0
+  for cask in $(cap_meta_get "$name" casks); do
+    if cask_installed "$cask" >/dev/null 2>&1; then
+      case " $TEEUP_COLLECTED_CASKS " in
+        *" $cask "*) ;;
+        *) TEEUP_COLLECTED_CASKS="${TEEUP_COLLECTED_CASKS:+$TEEUP_COLLECTED_CASKS }$cask" ;;
+      esac
+    fi
+  done
+}
+
+# pkg_upgrade_all -> upgrade everything teeup installed.
+# A failure warns and names the package manager; update carries on.
 pkg_upgrade_all() {
   _pkg_backend_resolve
-  local rc=0
+  local rc=0 name
+  TEEUP_COLLECTED_PKGS=""
+  TEEUP_COLLECTED_CASKS=""
+
+  # reuse uninstall_caps logic
+  # teeup's own tools: teeup-runtime installs gum and jq but does not declare
+  # them, because a declared package is one `teeup remove` may uninstall and
+  # teeup needs these to run. Only the upgrade adds them.
+  for name in $(uninstall_caps); do
+    if [[ "$name" == "teeup-runtime" ]]; then
+      TEEUP_COLLECT_EXTRA="gum jq" pkg_collect_installed_items "$name"
+    else
+      pkg_collect_installed_items "$name"
+    fi
+  done
+
   case "$TEEUP_PKG_BACKEND" in
     homebrew)
-      run_cmd brew upgrade || rc=1
-      run_cmd brew upgrade --cask || rc=1
+      if [[ -n "$TEEUP_COLLECTED_PKGS" ]]; then
+        # shellcheck disable=SC2086
+        run_cmd brew upgrade --formula $TEEUP_COLLECTED_PKGS || { warn "Could not upgrade formulas: $TEEUP_COLLECTED_PKGS"; rc=1; }
+      fi
+      if [[ -n "$TEEUP_COLLECTED_CASKS" ]]; then
+        # shellcheck disable=SC2086
+        run_cmd brew upgrade --cask $TEEUP_COLLECTED_CASKS || { warn "Could not upgrade casks: $TEEUP_COLLECTED_CASKS"; rc=1; }
+      fi
+      ok_unless_dry "Other Homebrew packages are left to you (run brew upgrade)."
       ;;
     macports)
-      run_privileged port upgrade outdated || rc=1
+      if [[ -n "$TEEUP_COLLECTED_PKGS" ]]; then
+        # shellcheck disable=SC2086
+        run_privileged port upgrade $TEEUP_COLLECTED_PKGS || { warn "Could not upgrade ports: $TEEUP_COLLECTED_PKGS"; rc=1; }
+      fi
       ;;
   esac
   return $rc

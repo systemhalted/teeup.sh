@@ -569,8 +569,8 @@ _UNINSTALL_IDENTITY="${_UNINSTALL_IDENTITY:-false}"
 _UNINSTALL_GONE=" "
 # Installed package and cask names left on the machine, for the one "kept"
 # line that says how to remove them later.
-_UNINSTALL_KEPT_PKGS=""
-_UNINSTALL_KEPT_CASKS=""
+TEEUP_COLLECTED_PKGS=""
+TEEUP_COLLECTED_CASKS=""
 
 # uninstall_is_installed -> 0 only when teeup has capability records. The
 # directory alone is not enough: a partial or already-removed state directory
@@ -604,32 +604,6 @@ uninstall_blockers() {
   printf '%s\n' "${out# }"
 }
 
-# _uninstall_keep_packages <name>
-# Adds whichever of <name>'s packages and casks are installed here to the
-# kept lists, under the name the package manager knows them by.
-_uninstall_keep_packages() {
-  local name="$1" pkg candidate cask
-  for pkg in $(cap_meta_get "$name" packages); do
-    for candidate in $(package_candidates "$pkg"); do
-      if pkg_installed "$candidate" >/dev/null 2>&1; then
-        case " $_UNINSTALL_KEPT_PKGS " in
-          *" $candidate "*) ;;
-          *) _UNINSTALL_KEPT_PKGS="${_UNINSTALL_KEPT_PKGS:+$_UNINSTALL_KEPT_PKGS }$candidate" ;;
-        esac
-        break
-      fi
-    done
-  done
-  casks_supported || return 0
-  for cask in $(cap_meta_get "$name" casks); do
-    if cask_installed "$cask" >/dev/null 2>&1; then
-      case " $_UNINSTALL_KEPT_CASKS " in
-        *" $cask "*) ;;
-        *) _UNINSTALL_KEPT_CASKS="${_UNINSTALL_KEPT_CASKS:+$_UNINSTALL_KEPT_CASKS }$cask" ;;
-      esac
-    fi
-  done
-}
 
 # uninstall_collect_packages <marked|all>
 # Builds the same package and app lists the kept summary uses. "marked" is
@@ -639,29 +613,29 @@ _uninstall_keep_packages() {
 # installed any of it.
 uninstall_collect_packages() {
   local scope="$1" names name
-  _UNINSTALL_KEPT_PKGS=""
-  _UNINSTALL_KEPT_CASKS=""
+  TEEUP_COLLECTED_PKGS=""
+  TEEUP_COLLECTED_CASKS=""
   case "$scope" in
     marked) names="$(uninstall_caps)" ;;
     all) names="$(cap_list)" ;;
     *) die "uninstall_collect_packages: expected marked or all" ;;
   esac
   for name in $names; do
-    _uninstall_keep_packages "$name"
+    pkg_collect_installed_items "$name"
   done
 }
 
 # uninstall_package_commands -> pasteable commands for the lists most
 # recently built by uninstall_collect_packages or uninstall_capabilities.
 uninstall_package_commands() {
-  if [[ -n "$_UNINSTALL_KEPT_PKGS" ]]; then
+  if [[ -n "$TEEUP_COLLECTED_PKGS" ]]; then
     case "$(pkg_backend)" in
-      homebrew) printf 'brew uninstall %s\n' "$_UNINSTALL_KEPT_PKGS" ;;
-      macports) printf 'sudo port uninstall %s\n' "$_UNINSTALL_KEPT_PKGS" ;;
+      homebrew) printf 'brew uninstall %s\n' "$TEEUP_COLLECTED_PKGS" ;;
+      macports) printf 'sudo port uninstall %s\n' "$TEEUP_COLLECTED_PKGS" ;;
     esac
   fi
-  if [[ -n "$_UNINSTALL_KEPT_CASKS" ]]; then
-    printf 'brew uninstall --cask %s\n' "$_UNINSTALL_KEPT_CASKS"
+  if [[ -n "$TEEUP_COLLECTED_CASKS" ]]; then
+    printf 'brew uninstall --cask %s\n' "$TEEUP_COLLECTED_CASKS"
   fi
 }
 
@@ -669,11 +643,11 @@ uninstall_package_commands() {
 # Show both categories before the package question, including an explicit
 # "none" when no installed metadata item belongs in one of them.
 uninstall_print_package_lists() {
-  printf 'Packages: %s\n' "${_UNINSTALL_KEPT_PKGS:-none}"
-  printf 'Apps: %s\n' "${_UNINSTALL_KEPT_CASKS:-none}"
+  printf 'Packages: %s\n' "${TEEUP_COLLECTED_PKGS:-none}"
+  printf 'Apps: %s\n' "${TEEUP_COLLECTED_CASKS:-none}"
   # The lists come from capability metadata, not from a record of what teeup
   # itself installed, so software the user brew-installed first shows up too.
-  if [[ -n "$_UNINSTALL_KEPT_PKGS$_UNINSTALL_KEPT_CASKS" ]]; then
+  if [[ -n "$TEEUP_COLLECTED_PKGS$TEEUP_COLLECTED_CASKS" ]]; then
     warn "teeup lists what its capabilities use, so a package you installed yourself before teeup can be here too. Answer no to keep them all; the summary then prints the commands to remove the rest by hand."
   fi
 }
@@ -779,7 +753,7 @@ _uninstall_remove_one() {
         if [[ "$with" == "true" ]]; then
           uninstall_note removed "$name's packages: $names"
         else
-          _uninstall_keep_packages "$name"
+          pkg_collect_installed_items "$name"
         fi
       fi
       ;;
@@ -808,8 +782,8 @@ uninstall_capabilities() {
   # accumulate if the caller (a test, most likely) runs this twice in one
   # process.
   _UNINSTALL_GONE=" "
-  _UNINSTALL_KEPT_PKGS=""
-  _UNINSTALL_KEPT_CASKS=""
+  TEEUP_COLLECTED_PKGS=""
+  TEEUP_COLLECTED_CASKS=""
   had=" $(uninstall_caps | tr '\n' ' ')"
   for name in $had; do
     blockers="$(uninstall_blockers "$name")"
@@ -841,14 +815,14 @@ uninstall_capabilities() {
         ;;
     esac
   done
-  if [[ -n "$_UNINSTALL_KEPT_PKGS" ]]; then
+  if [[ -n "$TEEUP_COLLECTED_PKGS" ]]; then
     case "$(pkg_backend)" in
-      homebrew) uninstall_note kept "Packages: $_UNINSTALL_KEPT_PKGS. Remove them later with: brew uninstall $_UNINSTALL_KEPT_PKGS" ;;
-      macports) uninstall_note kept "Packages: $_UNINSTALL_KEPT_PKGS. Remove them later with: sudo port uninstall $_UNINSTALL_KEPT_PKGS" ;;
+      homebrew) uninstall_note kept "Packages: $TEEUP_COLLECTED_PKGS. Remove them later with: brew uninstall $TEEUP_COLLECTED_PKGS" ;;
+      macports) uninstall_note kept "Packages: $TEEUP_COLLECTED_PKGS. Remove them later with: sudo port uninstall $TEEUP_COLLECTED_PKGS" ;;
     esac
   fi
-  if [[ -n "$_UNINSTALL_KEPT_CASKS" ]]; then
-    uninstall_note kept "Apps: $_UNINSTALL_KEPT_CASKS. Remove them later with: brew uninstall --cask $_UNINSTALL_KEPT_CASKS"
+  if [[ -n "$TEEUP_COLLECTED_CASKS" ]]; then
+    uninstall_note kept "Apps: $TEEUP_COLLECTED_CASKS. Remove them later with: brew uninstall --cask $TEEUP_COLLECTED_CASKS"
   fi
   # What a tool made for itself was never teeup's to track, so it is named
   # rather than silently left behind.

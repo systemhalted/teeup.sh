@@ -14,7 +14,7 @@ DRY_RUN=true teeup update    # the same, as a preview that changes nothing
 | Step | What happens |
 |---|---|
 | 1. Pull | `git pull --ff-only` in the teeup checkout, which brings in the new version of teeup itself. |
-| 2. Packages | Homebrew: `brew update`, `brew upgrade`, `brew upgrade --cask`. MacPorts: `port selfupdate`, `port upgrade outdated`. |
+| 2. Packages | Homebrew: `brew update`, then `brew upgrade` only for the packages and casks teeup installed for the capabilities on this Mac. Other Homebrew packages are left to you (`brew upgrade`). A package a capability uses counts as teeup's even if you installed it before teeup, so it is upgraded too (letting you choose is planned: issue #79). MacPorts: `port selfupdate`, then `port upgrade` for the ports teeup installed. |
 | 3. mise | `mise upgrade` for every tool in your global mise configuration: the language runtimes and the AI tools. |
 | 4. Migrations | Any migration script this Mac has not run yet. |
 | 5. Configure | `configure` again for every installed capability in the core tier, then the daily tier. |
