@@ -86,6 +86,16 @@ test_run_propagates_failure() {
   cleanup_test_env
 }
 
+test_run_exit_130_stops_the_caller() {
+  setup
+  printf '#!/usr/bin/env bash\nexit 130\n' > "$TEEUP_CAPS_DIR/alpha/install"
+  local rc=0 out
+  out="$(cap_run alpha install || ui_rc_or_exit $?; echo carried-on)" || rc=$?
+  assert_not_contains "$out" "carried-on" "caller went on after capability Ctrl-C" || return 1
+  assert_equals 130 "$rc" "capability Ctrl-C exit status" || return 1
+  cleanup_test_env
+}
+
 test_run_missing_verb_fails_clearly() {
   setup
   local rc=0 out
@@ -417,6 +427,7 @@ run_test "tier list skips comments" test_tier_list_skips_comments
 run_test "order puts requires first and dedupes" test_order_puts_requires_first_and_dedupes
 run_test "run executes script with lib and env" test_run_executes_script_with_lib_and_env
 run_test "run propagates failure" test_run_propagates_failure
+run_test "run exit 130 stops the caller" test_run_exit_130_stops_the_caller
 run_test "run missing verb fails clearly" test_run_missing_verb_fails_clearly
 run_test "run returns not-applicable without failing" test_run_returns_not_applicable_without_failing
 run_test "run treats a bare matching exit code as a real failure" test_run_a_bare_matching_exit_code_is_still_a_failure
