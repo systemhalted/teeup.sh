@@ -275,7 +275,14 @@ ca_bundle_rebuild() {
       _ca_bundle_fail "$work" "Could not install Homebrew's curl configuration." || return 1
   fi
   rm -rf "$work"
-  : > "$(ca_bundle_checked_path)" || true
+  # A marker that cannot be updated would make doctor keep trusting its old
+  # date, so drop it and let doctor fall back to the bundle's own date.
+  local checked
+  checked="$(ca_bundle_checked_path)"
+  if ! { : > "$checked"; } 2>/dev/null; then
+    rm -f "$checked" 2>/dev/null || true
+    warn "Could not update $checked; teeup doctor will judge the bundle by its own date."
+  fi
   ca_bundle_apply_env
 }
 
