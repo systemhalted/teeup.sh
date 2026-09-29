@@ -1454,7 +1454,7 @@ test_configure_refuses_the_personal_upload_when_the_account_is_not_signed_in() {
 
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "The personal identity specifies account 'systemhalted', but it is not signed in to github.com." || return 1
+  assert_contains "$out" "Could not switch gh to systemhalted on github.com; skipping the personal identity." || return 1
   assert_contains "$out" "gh auth login --hostname github.com --skip-ssh-key" || return 1
   local calls
   calls="$(cat "$MOCK_LOG")"
@@ -1474,7 +1474,7 @@ test_configure_notifies_when_personal_is_not_set_and_multiple_accounts_exist() {
   printf "'admin:public_key'" > "$TEST_HOME/gh-inactive-scopes"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_contains "$out" "gh has multiple accounts on github.com (active: testuser). Set TEEUP_PERSONAL_GH_ACCOUNT in $TEST_HOME/machines/testmac.conf to pin it." || return 1
+  assert_contains "$out" "gh has more than one account on github.com; the personal key goes to the active one, testuser. To choose, set TEEUP_PERSONAL_GH_ACCOUNT in $TEST_HOME/machines/testmac.conf." || return 1
   unset TEEUP_MACHINES_DIR
   cleanup_test_env
 }
@@ -1486,7 +1486,7 @@ test_configure_unchanged_when_personal_is_not_set_and_one_account_exists() {
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  assert_not_contains "$out" "gh has multiple accounts on github.com" || return 1
+  assert_not_contains "$out" "gh has more than one account" || return 1
   cleanup_test_env
 }
 run_test "configure unchanged when personal is not set and one account exists" test_configure_unchanged_when_personal_is_not_set_and_one_account_exists
@@ -1513,4 +1513,48 @@ test_configure_compares_owner_against_the_configured_personal_account() {
 }
 run_test "configure compares owner against the configured personal account" test_configure_compares_owner_against_the_configured_personal_account
 
+test_configure_warns_when_the_login_lands_on_another_account() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "ada-corp"
+  # github.com is signed in; the Enterprise host is not, so it goes through
+  # auth login, which the mock completes as "testuser".
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "ada-corp" || return 1
+  assert_contains "$out" "testuser" || return 1
+  assert_contains "$out" "$TEST_HOME/machines/testmac.conf" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+run_test "configure warns when the login lands on another account" test_configure_warns_when_the_login_lands_on_another_account
+test_configure_says_nothing_when_the_login_lands_on_the_named_account() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "testuser"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_not_contains "$out" "not the testuser" || return 1
+  assert_not_contains "$out" "named in" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "ssh-key add $TEST_HOME/.ssh/id_ed25519_work.pub --type authentication" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+run_test "configure says nothing when the login lands on the named account" test_configure_says_nothing_when_the_login_lands_on_the_named_account
+test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run() {
+  setup
+  seed_keys
+  seed_work_key
+  seed_machine_work "ada@corp.example" "github.enterprise.example.com" "ada-corp"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" configure github 2>&1)"
+  assert_not_contains "$out" "is signed in to" "a dry run ran no login, so there is no account to check" || return 1
+  cleanup_test_env
+}
+run_test "configure dry run checks no account after a login it did not run" test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run
 print_summary
