@@ -273,7 +273,7 @@ test_existing_key_is_not_regenerated() {
   printf 'ssh-ed25519 MINE comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
-  assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_ed25519_personal (for the personal identity, active account on github.com)" || return 1
   assert_equals "MINE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
   cleanup_test_env
 }
@@ -296,8 +296,8 @@ Host github.com
 CFG
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
-  assert_contains "$out" "Using the personal key already named in $TEST_HOME/.ssh/config: $TEST_HOME/.ssh/id_rsa_legacy" || return 1
-  assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_rsa_legacy" || return 1
+  assert_contains "$out" "Using the personal key already named in $TEST_HOME/.ssh/config for active account on github.com for active account on github.com: $TEST_HOME/.ssh/id_rsa_legacy" || return 1
+  assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_rsa_legacy (for the personal identity, active account on github.com)" || return 1
   [[ ! -e "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "teeup generated a second personal key"; return 1; }
   assert_not_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519" || return 1
   cleanup_test_env
@@ -334,7 +334,7 @@ Host github.com
 CFG
   local out
   out="$(DRY_RUN=true "$TEEUP" configure ssh 2>&1)"
-  assert_contains "$out" "Using the personal key already named in $TEST_HOME/.ssh/config" || return 1
+  assert_contains "$out" "Using the personal key already named in $TEST_HOME/.ssh/config for active account on github.com" || return 1
   assert_not_contains "$out" "Would execute: ssh-keygen -t ed25519" || return 1
   [[ ! -e "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "key generated in dry run"; return 1; }
   cleanup_test_env
@@ -357,7 +357,7 @@ test_configure_rebuilds_a_missing_public_half() {
   printf 'MINE-PRIVATE\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
-  assert_contains "$out" "Rebuilding the missing public half" || return 1
+  assert_contains "$out" "Rebuilding the missing public half for the personal identity (active account on github.com, key $TEST_HOME/.ssh/id_ed25519_personal)" || return 1
   assert_file_exists "$TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
   # Exactly what the mocked `ssh-keygen -y` printed, moved into place whole.
   assert_equals "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY rebuilt" \
@@ -383,7 +383,7 @@ test_configure_rebuilds_a_zero_byte_public_half() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
   assert_not_contains "$out" "Already present" || return 1
-  assert_contains "$out" "Rebuilding the missing public half" || return 1
+  assert_contains "$out" "Rebuilding the missing public half for the personal identity (active account on github.com, key $TEST_HOME/.ssh/id_ed25519_personal)" || return 1
   assert_equals "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY rebuilt" \
     "$(cat "$TEST_HOME/.ssh/id_ed25519_personal.pub")" || return 1
   assert_equals "MINE-PRIVATE" "$(cat "$TEST_HOME/.ssh/id_ed25519_personal")" || return 1
@@ -409,7 +409,7 @@ test_configure_replaces_a_zero_byte_private_key() {
   [[ ! -s "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "private key changed in dry run"; return 1; }
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
   assert_not_contains "$out" "Already present" || return 1
-  assert_contains "$out" "Empty private key at $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_contains "$out" "Empty private key at $TEST_HOME/.ssh/id_ed25519_personal (personal identity, active account on github.com)" || return 1
   assert_contains "$out" "Backed up $TEST_HOME/.ssh/id_ed25519_personal to" || return 1
   assert_contains "$out" "Backed up $TEST_HOME/.ssh/id_ed25519_personal.pub to" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519 -C ada@example.com -f $TEST_HOME/.ssh/id_ed25519_personal" || return 1
@@ -529,7 +529,7 @@ test_configure_twice_changes_nothing() {
   : > "$marker"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
-  assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_ed25519_personal (for the personal identity, active account on github.com)" || return 1
   assert_contains "$out" "Already present: $TEST_HOME/.ssh/config" || return 1
   assert_not_contains "$out" "Generating the" || return 1
   # chmod_once keeps the second run silent, so nothing under $HOME may change.

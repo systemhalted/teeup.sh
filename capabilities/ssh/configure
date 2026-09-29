@@ -95,10 +95,13 @@ unset ssh_macos_major
 
 for identity in $(identity_list); do
   key="$(identity_key "$identity")"
+  gh_host="$(identity_gh_host "$identity")"
+  gh_account="$(identity_gh_account "$identity")"
+  [[ -n "$gh_account" ]] || gh_account="active account"
   # identity_key already consulted ~/.ssh/config; a path that differs from
   # teeup's own convention came from there, and is worth saying so about.
   if [[ "$key" != "$HOME/.ssh/id_ed25519_$identity" ]]; then
-    log "Using the $identity key already named in $ssh_dir/config: $key"
+    log "Using the $identity key already named in $ssh_dir/config for $gh_account on $gh_host: $key"
   fi
   # -s, not -f, for both halves: a zero-byte file is a missing one. The first
   # version of the rebuild below left exactly such a $key.pub behind when the
@@ -109,7 +112,7 @@ for identity in $(identity_list); do
   # github capability would upload an orphan .pub. Routing both through the
   # repair paths is what makes a re-run the repair path again.
   if [[ -s "$key" && -s "$key.pub" ]]; then
-    log "Already present: $key"
+    log "Already present: $key (for the $identity identity, $gh_account on $gh_host)"
   elif [[ -s "$key" && ! -s "$key.pub" ]]; then
     # ssh-keygen can succeed after the user declines to overwrite $key.pub at
     # its interactive prompt, leaving a private key with no matching public
@@ -127,7 +130,7 @@ for identity in $(identity_list); do
     # halves present, skipped the repair for good, and handed GitHub an empty
     # key. Only a ssh-keygen that succeeded and produced a non-empty file is
     # moved into place; anything else takes the temp file with it.
-    log "Rebuilding the missing public half for the $identity identity..."
+    log "Rebuilding the missing public half for the $identity identity ($gh_account on $gh_host, key $key)..."
     if ! run_cmd bash -c '
       tmp="$(mktemp "$1.teeup_rebuild_XXXXXX")" || exit 1
       if ssh-keygen -y -f "$1" > "$tmp" && [ -s "$tmp" ]; then
@@ -154,7 +157,7 @@ for identity in $(identity_list); do
       # Zero bytes (the -s tests above failed). Moved aside rather than left
       # for ssh-keygen, whose "Overwrite (y/n)?" prompt on an existing file
       # would stall a run that has no answer for it.
-      log "Empty private key at $key; backing it up before generating a fresh pair."
+      log "Empty private key at $key ($identity identity, $gh_account on $gh_host); backing it up before generating a fresh pair."
       backup_target "$key" >/dev/null
     fi
     if [[ -e "$key.pub" || -L "$key.pub" ]]; then
@@ -162,7 +165,7 @@ for identity in $(identity_list); do
       # a fresh keygen below does not silently discard it.
       backup_target "$key.pub" >/dev/null
     fi
-    log "Generating the $identity ed25519 key (you will be asked for a passphrase)..."
+    log "Generating the $identity ed25519 key for the $identity identity ($gh_account on $gh_host, key $key)... (you will be asked for a passphrase)"
     if ! run_cmd ssh-keygen -t ed25519 -C "$(identity_email "$identity")" -f "$key"; then
       warn "ssh-keygen failed for the $identity identity; skipping the rest of it."
       continue
@@ -186,6 +189,9 @@ ssh_alias_block() {
   alias="$(identity_ssh_host "$identity")"
   host="$(identity_gh_host "$identity")"
   key="$(identity_key "$identity")"
+  gh_host="$(identity_gh_host "$identity")"
+  gh_account="$(identity_gh_account "$identity")"
+  [[ -n "$gh_account" ]] || gh_account="active account"
   display="$key"
   case "$key" in "$HOME"/*) display="~${key#"$HOME"}" ;; esac
   if [[ "$identity" == "work" ]]; then

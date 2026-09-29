@@ -101,86 +101,23 @@ _github_sync_git_signing() {
 github_configure_identity() {
   local identity="$1" gh_host="$2" gh_account="$3"
   local status_out pub body listed type title answer_key upload_answer upload_account needs_upload target_account ssh_out ssh_login
+  local refresh_out refresh_status active_account
 
-  # --active narrows the report to the one account gh will actually use for
-  # this host (gh 2.100.0: "-a, --active  Display the active account only").
-  # Without it, `gh auth status -h $gh_host` reports every account known on
-  # the host and exits 1 if any of them has a problem, so an unrelated stale
-  # account would trigger a pointless login; worse, the scope check below
-  # would happily find the required scopes on an *inactive* account while the
-  # active one lacks them, and every `gh ssh-key add` would then fail with a
-  # scope error and only warn.
-  if status_out="$(gh auth status --active -h "$gh_host" 2>&1)"; then
-    ok "Already signed in to GitHub ($gh_host)."
-    # A machine that authenticated `gh` before teeup existed may be missing
-    # the scopes the key uploads below need. `gh auth status` prints them on
-    # a "Token scopes:" line; refresh rather than assume they are there.
-    if [[ "$status_out" != *"admin:public_key"* || "$status_out" != *"admin:ssh_signing_key"* ]]; then
-      log "Refreshing gh's token scopes for SSH key uploads on $gh_host."
-      run_cmd gh auth refresh -h "$gh_host" -s admin:public_key,admin:ssh_signing_key ||
-        warn "Could not refresh gh's auth scopes for $gh_host. Re-run: teeup configure github"
-    fi
-  else
-    log "Signing in to GitHub ($gh_host). A browser window opens; approve the SSH key scopes."
-    if ! run_cmd gh auth login --hostname "$gh_host" --web --git-protocol ssh --skip-ssh-key --scopes admin:public_key,admin:ssh_signing_key; then
-      warn "gh auth login did not complete for $gh_host. Re-run: teeup configure github"
-      return 0
-    fi
-  fi
-
-  run_cmd gh config set git_protocol ssh --host "$gh_host" || warn "Could not set gh's git protocol to ssh for $gh_host."
-
-  # One upload per identity, twice: an authentication key for pushing and a
-  # signing key for the SSH commit signatures the git capability turns on.
   pub="$(identity_key "$identity").pub"
   if [[ ! -f "$pub" ]]; then
-    warn "No $pub yet. Run: teeup configure ssh"
+    local early_account="$gh_account"; [[ -n "$early_account" ]] || early_account="active account"; warn "No ${pub%.pub} yet (for the $identity identity, $early_account on $gh_host). Run: teeup configure ssh"
     return 0
   fi
 
   answer_key="$(_github_upload_answer_key "$identity")"
   upload_answer="$(answers_get "$answer_key")"
-  if [[ "$upload_answer" == "no" ]]; then
-    _github_upload_declined "$answer_key"
-    return 0
-  fi
-  # NR == 1: a .pub is one line, but a file with a stray second line would
-  # otherwise yield a multi-line body that can never match a listed row, and
-  # the key would be re-uploaded on every run.
-  body="$(awk 'NR == 1 { print $2 }' < "$pub")"
-  listed="$(gh ssh-key list 2>/dev/null || true)"
-  needs_upload=false
-  for type in authentication signing; do
-    if [[ -z "$body" ]] || ! _github_key_uploaded "$listed" "$body" "$type"; then
-      needs_upload=true
-    fi
-  done
-  if [[ "$needs_upload" != "true" ]]; then
-    log "Already uploaded (authentication): $pub"
-    log "Already uploaded (signing): $pub"
-    return 0
-  fi
 
-  target_account="$gh_account"
-  [[ -n "$target_account" ]] || target_account="$(_gh_active_account "$gh_host")"
-
-  if [[ -n "$target_account" ]]; then
-    ssh_out="$(ssh -T -i "$(identity_key "$identity")" -o IdentitiesOnly=yes "git@$gh_host" 2>&1 || true)"
-    if [[ "$ssh_out" =~ Hi\ ([^!]+)!\ You\'ve\ successfully ]]; then
-      ssh_login="${BASH_REMATCH[1]}"
-      if [[ "$ssh_login" != "$target_account" ]]; then
-        warn "Refusing upload: the $identity key belongs to GitHub account '$ssh_login', but gh is targeting '$target_account'."
-        return 0
-      fi
-    fi
-  fi
-
-  if [[ "$upload_answer" != "yes" ]]; then
+  if [[ "$upload_answer" != "yes" && "$upload_answer" != "no" ]]; then
     if lazy_is_tty; then
       upload_account="$gh_account"
       [[ -n "$upload_account" ]] || upload_account="$(_gh_active_account "$gh_host")"
       [[ -n "$upload_account" ]] || upload_account="active account"
-      if ui_confirm "Upload $pub to GitHub ($gh_host, $upload_account) for pushing and commit signing?" yes; then
+      if ui_confirm "Upload ${pub%.pub} to GitHub for the $identity identity ($upload_account on $gh_host) for pushing and commit signing?" yes; then
         upload_answer=yes
       else
         ui_rc_or_exit $? || true
@@ -191,23 +128,95 @@ github_configure_identity() {
       upload_answer=yes
     fi
   fi
+
   if [[ "$upload_answer" == "no" ]]; then
     _github_upload_declined "$answer_key"
     return 0
   fi
 
+  active_account="$(_gh_active_account "$gh_host")"
+  target_account="$gh_account"
+  [[ -n "$target_account" ]] || target_account="$active_account"
+
+  # Need to check ssh login early if we can, to refuse before login?
+  # The brief doesn't specify doing it before login, but doing it early is safe.
+  # Let's just do it after login, once we are sure `target_account` is accurate.
+
+  if status_out="$(gh auth status --active -h "$gh_host" 2>&1)"; then
+    ok "Already signed in to GitHub ($gh_host)."
+    if [[ "$status_out" != *"admin:public_key"* || "$status_out" != *"admin:ssh_signing_key"* ]]; then
+      local display_account="$target_account"
+      [[ -n "$display_account" ]] || display_account="unknown account"
+      log "Refreshing gh's permissions for the $identity identity ($display_account on $gh_host, key ${pub%.pub}). In the browser, sign in as $display_account."
+
+      if [[ "$DRY_RUN" == "true" ]]; then
+        run_cmd gh auth refresh -h "$gh_host" -s admin:public_key,admin:ssh_signing_key
+      else
+        refresh_status=0
+        refresh_out="$(gh auth refresh -h "$gh_host" -s admin:public_key,admin:ssh_signing_key 2>&1)" || refresh_status=$?
+        if [[ $refresh_status -ne 0 ]]; then
+          if [[ "$refresh_out" =~ error\ refreshing\ credentials\ for\ ([^,]+),\ received\ credentials\ for\ ([^,]+) ]]; then
+            warn "The browser was signed in as ${BASH_REMATCH[2]}, not ${BASH_REMATCH[1]}. Sign in as ${BASH_REMATCH[1]} in the browser (or sign out of ${BASH_REMATCH[2]}), then re-run: teeup configure github"
+          else
+            printf '%s\n' "$refresh_out"
+            warn "Could not refresh gh's auth scopes for $gh_host. Re-run: teeup configure github"
+          fi
+          return 0
+        fi
+      fi
+    fi
+  else
+    local display_account="$target_account"
+    [[ -n "$display_account" ]] || display_account="unknown account"
+    log "Signing in to GitHub for the $identity identity ($display_account on $gh_host, key ${pub%.pub}). A browser window opens; approve the SSH key scopes."
+    if ! run_cmd gh auth login --hostname "$gh_host" --web --git-protocol ssh --skip-ssh-key --scopes admin:public_key,admin:ssh_signing_key; then
+      warn "gh auth login did not complete for $gh_host. Re-run: teeup configure github"
+      return 0
+    fi
+  fi
+
+  run_cmd gh config set git_protocol ssh --host "$gh_host" || warn "Could not set gh's git protocol to ssh for $gh_host."
+
+  body="$(awk 'NR == 1 { print $2 }' < "$pub")"
+  listed="$(gh ssh-key list 2>/dev/null || true)"
+  needs_upload=false
+  for type in authentication signing; do
+    if [[ -z "$body" ]] || ! _github_key_uploaded "$listed" "$body" "$type"; then
+      needs_upload=true
+    fi
+  done
+  if [[ "$needs_upload" != "true" ]]; then
+    log "Already uploaded (authentication): ${pub%.pub} (for the $identity identity, $target_account on $gh_host)"
+    log "Already uploaded (signing): ${pub%.pub} (for the $identity identity, $target_account on $gh_host)"
+    return 0
+  fi
+
+  # target account might have changed if we just logged in
+  target_account="$gh_account"
+  [[ -n "$target_account" ]] || target_account="$(_gh_active_account "$gh_host")"
+
+  if [[ -n "$target_account" ]]; then
+    ssh_out="$(ssh -T -i "$(identity_key "$identity")" -o IdentitiesOnly=yes "git@$gh_host" 2>&1 || true)"
+    if [[ "$ssh_out" =~ Hi\ ([^!]+)!\ You\'ve\ successfully ]]; then
+      ssh_login="${BASH_REMATCH[1]}"
+      if [[ "$ssh_login" != "$target_account" ]]; then
+        warn "Refusing upload: the $identity key (${pub%.pub}) belongs to GitHub account '$ssh_login', but gh is targeting '$target_account' on $gh_host."
+        return 0
+      fi
+    fi
+  fi
+
   for type in authentication signing; do
     if [[ -n "$body" ]] && _github_key_uploaded "$listed" "$body" "$type"; then
-      log "Already uploaded ($type): $pub"
+      log "Already uploaded ($type): ${pub%.pub} (for the $identity identity, $target_account on $gh_host)"
       continue
     fi
     title="$host_short $identity"
     [[ "$type" == "signing" ]] && title="$title (signing)"
     run_cmd gh ssh-key add "$pub" --type "$type" --title "$title" ||
-      warn "Could not upload $pub as a $type key."
+      warn "Could not upload ${pub%.pub} as a $type key for the $identity identity ($target_account on $gh_host)."
   done
 }
-
 host_short="$(hostname -s 2>/dev/null || hostname)"
 
 for identity in $(identity_list); do
