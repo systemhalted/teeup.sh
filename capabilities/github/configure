@@ -91,7 +91,7 @@ _github_sync_git_signing() {
   have="$(sed -n 's/^[[:space:]]*gpgsign = //p' "$generated")"
   [[ "$have" != "$want" ]] || return 0
   log "Re-running the git configuration so commit signing follows TEEUP_GITHUB_UPLOAD_PERSONAL."
-  cap_run git configure || warn "Could not re-run the git configuration. Run: teeup configure git"
+  cap_run git configure || { local rc=$?; ui_rc_or_exit $rc; warn "Could not re-run the git configuration. Run: teeup configure git"; }
 }
 
 # github_configure_identity <identity>: everything done on the host and
@@ -169,6 +169,7 @@ github_configure_identity() {
       if ui_confirm "Upload $pub to GitHub ($gh_host, $upload_account) for pushing and commit signing?" yes; then
         upload_answer=yes
       else
+        ui_rc_or_exit $?
         upload_answer=no
       fi
       answers_set "$answer_key" "$upload_answer"
