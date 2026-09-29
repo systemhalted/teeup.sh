@@ -13,10 +13,28 @@ case "$roots_rc" in
     curlrc="$(ca_bundle_curlrc_path)"
     if [[ ! -s "$bundle" || ! -s "$curlrc" ]]; then
       doctor_fail "The command-line CA bundle or its Homebrew curl configuration is missing." "teeup configure ca-bundle"
-    elif ca_bundle_is_current; then
-      doctor_ok "The command-line CA bundle is present and current."
     else
-      doctor_fail "The command-line CA bundle is older than a source keychain or its Homebrew curl configuration is stale." "teeup configure ca-bundle"
+      status="$(ca_bundle_is_current)" || true
+      case "$status" in
+        current)
+          doctor_ok "The command-line CA bundle is present and current."
+          ;;
+        curlrc_stale)
+          doctor_fail "Homebrew's curl configuration does not point at the command-line CA bundle." "teeup configure ca-bundle"
+          ;;
+        changed)
+          doctor_fail "The administrator-trusted certificates changed since the command-line CA bundle was built." "teeup configure ca-bundle"
+          ;;
+        could_not_check)
+          doctor_unknown "Could not compare the command-line CA bundle with the keychains." "teeup doctor ca-bundle"
+          ;;
+        missing)
+          doctor_fail "The command-line CA bundle or its Homebrew curl configuration is missing." "teeup configure ca-bundle"
+          ;;
+        *)
+          doctor_unknown "Could not compare the command-line CA bundle with the keychains." "teeup doctor ca-bundle"
+          ;;
+      esac
     fi
     ;;
 esac

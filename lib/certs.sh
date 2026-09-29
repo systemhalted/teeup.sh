@@ -152,7 +152,10 @@ _ca_bundle_trusted_hashes() {
   ' "$1"
 }
 
-# ca_bundle_rebuild
+# _ca_bundle_stage <work dir> -> 0 with ca-bundle.pem and ca-bundle.curlrc
+# staged in <work dir>, 1 when an export fails (after a warning on stderr),
+# 2 when no admin certificate is trusted as a root. Callers remove <work dir>.
+#
 # security's admin trust export is a plist whose trustList dictionary is keyed
 # by SHA-1 certificate hashes. Convert it to XML, keep the hashes trusted as
 # a root (_ca_bundle_trusted_hashes), then match them against the `SHA-1 hash:` records paired with PEM blocks from
@@ -160,33 +163,11 @@ _ca_bundle_trusted_hashes() {
 # This deliberately does not append the whole System keychain: applications
 # store certificates there that have no administrator trust setting, and a PEM
 # bundle would otherwise promote every one of them to a trust anchor.
-ca_bundle_rebuild() {
-  _ca_bundle_is_macos || return 0
-  local roots_rc=0
-  ca_bundle_admin_roots_present || roots_rc=$?
-  case "$roots_rc" in
-    0) ;;
-    1)
-      ca_bundle_remove
-      return 0
-      ;;
-    *)
-      warn "Could not read the administrator certificate trust settings; the existing CA bundle was kept."
-      return 1
-      ;;
-  esac
-
-  local state_dir bundle curlrc work trust_plist trust_xml hashes
+_ca_bundle_stage() {
+  local work="$1"
+  local bundle trust_plist trust_xml hashes
   local system_pem system_records admin_pem staged_bundle staged_curlrc plutil
-  state_dir="${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
   bundle="$(ca_bundle_path)"
-  curlrc="$(ca_bundle_curlrc_path)"
-  if [[ "${DRY_RUN:-false}" == "true" ]]; then
-    log "[DRY-RUN] Would rebuild the command-line CA bundle at $bundle"
-    return 0
-  fi
-  mkdir -p "$state_dir" || return 1
-  work="$(mktemp -d "$state_dir/.ca-bundle.XXXXXX")" || return 1
   trust_plist="$work/admin-trust.plist"
   trust_xml="$work/admin-trust.xml"
   hashes="$work/admin-hashes"
@@ -198,33 +179,31 @@ ca_bundle_rebuild() {
   plutil="${TEEUP_PLUTIL:-/usr/bin/plutil}"
 
   security trust-settings-export -d "$trust_plist" >/dev/null 2>&1 ||
-    _ca_bundle_fail "$work" "Could not export the administrator certificate trust settings; the existing CA bundle was kept." || return 1
+    { warn "Could not export the administrator certificate trust settings; the existing CA bundle was kept."; return 1; }
   [[ -s "$trust_plist" ]] ||
-    _ca_bundle_fail "$work" "The administrator certificate trust export was empty; the existing CA bundle was kept." || return 1
+    { warn "The administrator certificate trust export was empty; the existing CA bundle was kept."; return 1; }
   "$plutil" -convert xml1 -o "$trust_xml" "$trust_plist" >/dev/null 2>&1 ||
-    _ca_bundle_fail "$work" "Could not read the administrator certificate trust export; the existing CA bundle was kept." || return 1
+    { warn "Could not read the administrator certificate trust export; the existing CA bundle was kept."; return 1; }
   # No hash at all contradicts dump-trust-settings, which just listed some:
   # an unreadable export, so keep the bundle. Hashes none of which is trusted
   # as a root is a real answer, handled below.
   grep -Eq '<key>[0-9A-Fa-f]{40}</key>' "$trust_xml" ||
-    _ca_bundle_fail "$work" "The administrator certificate trust export contained no certificate hashes; the existing CA bundle was kept." || return 1
+    { warn "The administrator certificate trust export contained no certificate hashes; the existing CA bundle was kept."; return 1; }
   _ca_bundle_trusted_hashes "$trust_xml" > "$hashes" ||
-    _ca_bundle_fail "$work" "Could not read the administrator certificate trust export; the existing CA bundle was kept." || return 1
+    { warn "Could not read the administrator certificate trust export; the existing CA bundle was kept."; return 1; }
   if [[ ! -s "$hashes" ]]; then
     # Admin trust settings exist, but none trusts a certificate as a root
     # (all Deny or Unspecified): the same as having no company roots.
-    rm -rf "$work"
-    ca_bundle_remove
-    return 0
+    return 2
   fi
 
   security find-certificate -a -p "${TEEUP_SYSTEM_ROOT_KEYCHAIN:-/System/Library/Keychains/SystemRootCertificates.keychain}" > "$system_pem" 2>/dev/null ||
-    _ca_bundle_fail "$work" "Could not export the macOS public roots; the existing CA bundle was kept." || return 1
+    { warn "Could not export the macOS public roots; the existing CA bundle was kept."; return 1; }
   grep -q '^-----BEGIN CERTIFICATE-----$' "$system_pem" ||
-    _ca_bundle_fail "$work" "The macOS public-root export was empty; the existing CA bundle was kept." || return 1
+    { warn "The macOS public-root export was empty; the existing CA bundle was kept."; return 1; }
 
   security find-certificate -a -Z -p "${TEEUP_SYSTEM_KEYCHAIN:-/Library/Keychains/System.keychain}" > "$system_records" 2>/dev/null ||
-    _ca_bundle_fail "$work" "Could not export certificates from the System keychain; the existing CA bundle was kept." || return 1
+    { warn "Could not export certificates from the System keychain; the existing CA bundle was kept."; return 1; }
   awk -v hashes="$hashes" '
     BEGIN {
       while ((getline hash < hashes) > 0) { wanted[toupper(hash)] = 1 }
@@ -242,7 +221,7 @@ ca_bundle_rebuild() {
       for (hash in wanted) if (!(hash in matched)) print hash > missing
     }
   ' missing="$work/missing" "$system_records" > "$admin_pem" ||
-    _ca_bundle_fail "$work" "Could not read the System keychain export; the existing CA bundle was kept." || return 1
+    { warn "Could not read the System keychain export; the existing CA bundle was kept."; return 1; }
   # Trust settings can outlive their certificate (a profile removed, a
   # certificate kept in another keychain). One such entry is a note, not a
   # reason to leave every tool without the company roots that are here.
@@ -253,14 +232,60 @@ ca_bundle_rebuild() {
     done < "$work/missing"
   fi
   grep -q '^-----BEGIN CERTIFICATE-----$' "$admin_pem" ||
-    _ca_bundle_fail "$work" "None of the administrator-trusted certificates is in the System keychain; the existing CA bundle was kept." || return 1
+    { warn "None of the administrator-trusted certificates is in the System keychain; the existing CA bundle was kept."; return 1; }
 
   cat "$system_pem" "$admin_pem" > "$staged_bundle" ||
-    _ca_bundle_fail "$work" "Could not stage the command-line CA bundle; the existing bundle was kept." || return 1
+    { warn "Could not stage the command-line CA bundle; the existing bundle was kept."; return 1; }
   local curl_bundle
   curl_bundle="$(printf '%s' "$bundle" | sed 's/\\/\\\\/g; s/"/\\"/g')"
   printf 'cacert = "%s"\n' "$curl_bundle" > "$staged_curlrc" ||
-    _ca_bundle_fail "$work" "Could not stage Homebrew's curl configuration; the existing CA bundle was kept." || return 1
+    { warn "Could not stage Homebrew's curl configuration; the existing CA bundle was kept."; return 1; }
+}
+
+# ca_bundle_rebuild
+# Stages a bundle (_ca_bundle_stage) and installs it only when it differs, so
+# an unchanged bundle keeps its date.
+ca_bundle_rebuild() {
+  _ca_bundle_is_macos || return 0
+  local roots_rc=0
+  ca_bundle_admin_roots_present || roots_rc=$?
+  case "$roots_rc" in
+    0) ;;
+    1)
+      ca_bundle_remove
+      return 0
+      ;;
+    *)
+      warn "Could not read the administrator certificate trust settings; the existing CA bundle was kept."
+      return 1
+      ;;
+  esac
+
+  local state_dir bundle curlrc work staged_bundle staged_curlrc
+  state_dir="${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
+  bundle="$(ca_bundle_path)"
+  curlrc="$(ca_bundle_curlrc_path)"
+  if [[ "${DRY_RUN:-false}" == "true" ]]; then
+    log "[DRY-RUN] Would rebuild the command-line CA bundle at $bundle"
+    return 0
+  fi
+  mkdir -p "$state_dir" || return 1
+  work="$(mktemp -d "$state_dir/.ca-bundle.XXXXXX")" || return 1
+  staged_bundle="$work/ca-bundle.pem"
+  staged_curlrc="$work/ca-bundle.curlrc"
+
+  local stage_rc=0
+  _ca_bundle_stage "$work" || stage_rc=$?
+  if [[ "$stage_rc" -eq 2 ]]; then
+    # Admin trust settings exist, but none trusts a certificate as a root
+    # (all Deny or Unspecified): the same as having no company roots.
+    rm -rf "$work"
+    ca_bundle_remove
+    return 0
+  elif [[ "$stage_rc" -ne 0 ]]; then
+    rm -rf "$work"
+    return 1
+  fi
 
   if [[ -f "$bundle" ]] && cmp -s "$staged_bundle" "$bundle"; then
     rm -f "$staged_bundle"
@@ -286,19 +311,68 @@ ca_bundle_rebuild() {
   ca_bundle_apply_env
 }
 
+# _ca_bundle_cert_set <pem file> -> each certificate on one line, sorted, so
+# two bundles compare equal when they hold the same certificates in any order
+# (a keychain rewrite can change the order security lists them in).
+_ca_bundle_cert_set() {
+  awk '
+    /^-----BEGIN CERTIFICATE-----$/ { cert = ""; in_cert = 1; next }
+    /^-----END CERTIFICATE-----$/ { if (in_cert) print cert; in_cert = 0; next }
+    in_cert { cert = cert $0 }
+  ' "$1" | LC_ALL=C sort
+}
+
+# ca_bundle_is_current -> prints current, missing, curlrc_stale, changed or
+# could_not_check; returns 0 only for current. Device-management software
+# rewrites System.keychain without changing its certificates (seen on a real
+# Mac, 2026-09-29), so a keychain newer than the last check is not enough:
+# stage a bundle and compare it with the installed one. A match refreshes the
+# marker so the next doctor run takes the cheap path. Never touches the
+# installed bundle or curlrc.
 ca_bundle_is_current() {
-  local bundle curlrc roots keychain checked
+  local bundle curlrc roots keychain checked state_dir work stage_rc=0
   bundle="$(ca_bundle_path)"
   curlrc="$(ca_bundle_curlrc_path)"
   roots="${TEEUP_SYSTEM_ROOT_KEYCHAIN:-/System/Library/Keychains/SystemRootCertificates.keychain}"
   keychain="${TEEUP_SYSTEM_KEYCHAIN:-/Library/Keychains/System.keychain}"
-  [[ -s "$bundle" && -s "$curlrc" ]] || return 1
-  grep -qF "$bundle" "$curlrc" || return 1
+  if [[ ! -s "$bundle" || ! -s "$curlrc" ]]; then
+    echo missing
+    return 1
+  fi
+  if ! grep -qF "$bundle" "$curlrc"; then
+    echo curlrc_stale
+    return 1
+  fi
   checked="$(ca_bundle_checked_path)"
   [[ -e "$checked" ]] || checked="$bundle"
-  [[ ! -e "$roots" || ! "$roots" -nt "$checked" ]] || return 1
-  [[ ! -e "$keychain" || ! "$keychain" -nt "$checked" ]] || return 1
-  return 0
+  if [[ ( ! -e "$roots" || ! "$roots" -nt "$checked" ) &&
+        ( ! -e "$keychain" || ! "$keychain" -nt "$checked" ) ]]; then
+    echo current
+    return 0
+  fi
+
+  state_dir="${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
+  if ! work="$(mktemp -d "$state_dir/.ca-bundle.XXXXXX" 2>/dev/null)"; then
+    echo could_not_check
+    return 1
+  fi
+  _ca_bundle_stage "$work" 2>/dev/null || stage_rc=$?
+  if [[ "$stage_rc" -eq 0 ]] &&
+     [[ "$(_ca_bundle_cert_set "$work/ca-bundle.pem")" == "$(_ca_bundle_cert_set "$bundle")" ]]; then
+    rm -rf "$work"
+    { : > "$(ca_bundle_checked_path)"; } 2>/dev/null || true
+    echo current
+    return 0
+  fi
+  rm -rf "$work"
+  # 2: no admin certificate is trusted as a root any more, so the bundle
+  # should go; that is a change too.
+  if [[ "$stage_rc" -eq 1 ]]; then
+    echo could_not_check
+  else
+    echo changed
+  fi
+  return 1
 }
 
 # Sourcing this file is the shared environment path for teeup, lazy shims and
