@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.1-beta] - UNRELEASED
+
+### Fixed
+- **starship:** Escaped bare `$` in the `stashed` format string to suppress an error parsing warning.
+
 ## [0.1.0-beta] - 2026-09-28
 
 teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distribution that replaces the old installer. See the [manual](https://teeup.systemhalted.in) and [CONTRIBUTING.md](CONTRIBUTING.md) to learn how to use it or how it works.
