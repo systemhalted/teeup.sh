@@ -820,6 +820,8 @@ run_test "a fresh bootstrap marks every migration without running it" test_a_fre
 
 test_ctrl_c_in_capability_stops_bootstrap() {
   setup
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  cp -r "$TEEUP_PATH/capabilities" "$TEEUP_CAPS_DIR"
   printf '#!/usr/bin/env bash\nexit 130\n' > "$TEEUP_CAPS_DIR/package-manager/install"
   local rc=0 out
   out="$("$BOOT" --dry-run </dev/null 2>&1)" || rc=$?

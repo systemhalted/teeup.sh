@@ -255,7 +255,7 @@ ask_package_manager() {
 }
 
 # --- 1. Xcode Command Line Tools, Rosetta ------------------------------------
-cap_run xcode-clt install || die "Xcode Command Line Tools are required. Complete the installer and re-run ./bootstrap."
+cap_run xcode-clt install || { rc=$?; ui_rc_or_exit $rc || true; die "Xcode Command Line Tools are required. Complete the installer and re-run ./bootstrap."; }
 
 # --- 2. package manager -------------------------------------------------------
 answers_load
@@ -263,11 +263,11 @@ if [[ "$RECONFIGURE" == "true" || -z "$(answers_get TEEUP_PACKAGE_MANAGER)" ]]; 
   ask_package_manager
 fi
 ca_bundle_rebuild || true  # warns itself; only matters behind a re-signing proxy
-run_capability package-manager || die "Core capability package-manager failed. Fix the cause and re-run ./bootstrap."
+run_capability package-manager || { rc=$?; ui_rc_or_exit $rc || true; die "Core capability package-manager failed. Fix the cause and re-run ./bootstrap."; }
 pkg_backend_path
 
 # --- 3. teeup runtime (env file, command link, gum, jq) -----------------------
-run_capability teeup-runtime || die "Core capability teeup-runtime failed. Fix the cause and re-run ./bootstrap."
+run_capability teeup-runtime || { rc=$?; ui_rc_or_exit $rc || true; die "Core capability teeup-runtime failed. Fix the cause and re-run ./bootstrap."; }
 
 # --- 4. answers ---------------------------------------------------------------
 if answers_exist && [[ "$RECONFIGURE" != "true" ]]; then
@@ -293,7 +293,7 @@ fi
 if cap_exists theme && ! cap_skipped theme; then
   case "$CONFIGURED_THIS_RUN" in
     *" theme "*) ;;
-    *) cap_run theme configure || warn "Theme configuration failed; run: teeup theme set $(answers_get TEEUP_THEME)" ;;
+    *) cap_run theme configure || { rc=$?; ui_rc_or_exit $rc || true; warn "Theme configuration failed; run: teeup theme set $(answers_get TEEUP_THEME)"; } ;;
   esac
 fi
 if ! state_done check bootstrap; then
