@@ -219,6 +219,20 @@ github_configure_identity() {
     fi
   fi
 
+  # Last check before anything is uploaded: gh must be acting as the account
+  # this identity targets. A switch to an account whose token has expired, or
+  # a browser login that landed elsewhere, would otherwise send the key to
+  # whichever account ended up active.
+  if [[ "$DRY_RUN" != "true" && -n "$target_account" ]]; then
+    local acting_account
+    acting_account="$(_gh_active_account "$gh_host")"
+    if [[ -n "$acting_account" && "$acting_account" != "$target_account" ]]; then
+      warn "gh is acting as $acting_account on $gh_host, not $target_account (the $identity account); not uploading ${pub}."
+      warn "Sign in as $target_account (gh auth login --hostname $gh_host --skip-ssh-key), then re-run: teeup configure github"
+      return 0
+    fi
+  fi
+
   for type in authentication signing; do
     if [[ -n "$body" ]] && _github_key_uploaded "$listed" "$body" "$type"; then
       log "Already uploaded ($type): ${pub%.pub} (for the $identity identity, $target_account on $gh_host)"
@@ -253,6 +267,19 @@ for identity in $(identity_list); do
         warn "Could not switch gh to $gh_account on $gh_host; skipping the $identity identity."
         warn "Check the account name in $(machine_file), or run: gh auth login --hostname $gh_host --skip-ssh-key"
         continue
+      fi
+    fi
+  elif [[ "$identity" == "personal" ]]; then
+    # No TEEUP_PERSONAL_GH_ACCOUNT: the personal key goes to whichever account
+    # gh has active. With one account that is the only choice; with several it
+    # may be a work login (seen 2026-09-29), so say how to pin it.
+    active_account="$(_gh_active_account "$gh_host")"
+    if [[ -n "$active_account" ]]; then
+      # 2>&1: gh prints to stderr (and exits 1) when any saved account has an
+      # expired token, which is exactly when there is more than one to count.
+      account_count="$(gh auth status -h "$gh_host" 2>&1 | awk '{ for (i = 1; i < NF; i++) if ($i == "account") print $(i + 1) }' | sort -u | wc -l | tr -d ' ')"
+      if [[ "${account_count:-0}" -gt 1 ]]; then
+        warn "gh has more than one account on $gh_host; the personal key goes to the active one, $active_account. To choose, set TEEUP_PERSONAL_GH_ACCOUNT in $(machine_file)."
       fi
     fi
   elif [[ "$identity" != "personal" && "$gh_host" == "$(identity_gh_host personal)" ]]; then

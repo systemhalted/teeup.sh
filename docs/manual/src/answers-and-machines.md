@@ -63,6 +63,7 @@ Everything in it is optional:
 | `TEEUP_THEME` | `TEEUP_THEME="catppuccin"` | Pins the theme. |
 | `TEEUP_EMACS_FLAVOR` | `TEEUP_EMACS_FLAVOR="doom"` | Pins the Emacs flavor. |
 | `TEEUP_WORK_EMAIL` and friends | see [Identity](identity.md) | A second, work SSH key. |
+| `TEEUP_PERSONAL_SSH_HOST` and `TEEUP_PERSONAL_GH_ACCOUNT` | see [Identity](identity.md) | SSH host alias and GitHub login for the personal identity. |
 
 A pinned key overrides the answers file. The wizard does not ask about a pinned theme, flavor or package manager, and `teeup config set` warns that the pin overrides it when you set a different value. Change the machine file instead.
 
