@@ -133,11 +133,17 @@ case "$1 ${2:-}" in
       if [ -f "$HOME/gh-auth-status-no-account-token" ]; then
         echo "  Logged in to $host (keyring)"
       else
-        echo "  Logged in to $host account testuser (keyring)"
+        echo "  Logged in to $host account $(cat "$HOME/gh-active-user" 2>/dev/null || echo testuser) (keyring)"
       fi
       echo "  - Active account: true"
       echo "  Token scopes: $(cat "$session_file")"
       if [ "$active" = "0" ] && [ "$host" = "github.com" ] && [ -f "$HOME/gh-inactive-scopes" ]; then
+        if [ -f "$HOME/gh-inactive-expired" ]; then
+          # Like gh: an account with a bad token goes to stderr, exit 1.
+          echo "  X Failed to log in to $host account otheruser (keyring)" >&2
+          echo "  - The token in keyring is invalid." >&2
+          exit 1
+        fi
         echo "  Logged in to $host account otheruser (keyring)"
         echo "  - Active account: false"
         echo "  Token scopes: $(cat "$HOME/gh-inactive-scopes")"
@@ -224,6 +230,12 @@ case "$1 ${2:-}" in
       echo "gh: account not signed in" >&2
       exit 1
     fi
+    # Like gh: switching changes which account is active, even when that
+    # account's stored token has expired (gh-switch-lands-on keeps another).
+    user=""; p=""
+    for a in "$@"; do [ "$p" = "--user" ] && user="$a"; p="$a"; done
+    if [ -f "$HOME/gh-switch-lands-on" ]; then user="$(cat "$HOME/gh-switch-lands-on")"; fi
+    [ -z "$user" ] || printf '%s\n' "$user" > "$HOME/gh-active-user"
     ;;
   *) : ;;
 esac
@@ -1557,4 +1569,43 @@ test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run() {
   cleanup_test_env
 }
 run_test "configure dry run checks no account after a login it did not run" test_configure_dry_run_checks_no_account_after_a_login_it_did_not_run
+# Codex review of #98, P1: a switch can succeed onto an account whose token
+# has expired, and the login that follows can land on another account. The
+# key must not go to whichever account ends up active.
+test_configure_refuses_upload_when_gh_acts_as_another_account() {
+  setup
+  seed_keys
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  printf 'TEEUP_PERSONAL_GH_ACCOUNT="systemhalted"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  printf 'palakm_tmcc\n' > "$TEST_HOME/gh-switch-lands-on"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$calls" "ssh-key add" "the key was uploaded to the wrong account" || return 1
+  assert_contains "$out" "gh is acting as palakm_tmcc on github.com, not systemhalted (the personal account)" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+# Codex review of #98, P2: a second account with an expired token makes
+# gh auth status exit 1 and write to stderr; it still counts.
+test_configure_counts_an_account_with_an_expired_token() {
+  setup
+  seed_keys
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEEUP_MACHINES_DIR"
+  : > "$TEEUP_MACHINES_DIR/testmac.conf"
+  printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
+  printf "'admin:public_key'" > "$TEST_HOME/gh-inactive-scopes"
+  : > "$TEST_HOME/gh-inactive-expired"
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "gh has more than one account on github.com" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+run_test "configure refuses upload when gh acts as another account" test_configure_refuses_upload_when_gh_acts_as_another_account
+run_test "configure counts an account with an expired token" test_configure_counts_an_account_with_an_expired_token
 print_summary
