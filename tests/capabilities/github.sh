@@ -8,10 +8,15 @@ setup() {
   mock_command_script ssh <<'EOF_SSH_MOCK'
 if [[ " $* " == *" -T "* && " $* " == *" git@"* ]]; then
   login="$(cat "$HOME/ssh-mock-login" 2>/dev/null || true)"
-  # Like the owner's ~/.ssh/config, whose Host github.com block adds the work
-  # key: without -F /dev/null, a key GitHub rejects falls back to that one.
-  if [[ " $* " != *" -F /dev/null "* && -f "$HOME/ssh-mock-config-login" ]]; then
-    [[ -n "$login" && "$login" != "error" ]] || login="$(cat "$HOME/ssh-mock-config-login")"
+  # Keep the -F file the check used, so a test can inspect it.
+  cfg=""; prev=""
+  for a in "$@"; do [[ "$prev" == "-F" ]] && cfg="$a"; prev="$a"; done
+  [[ -z "$cfg" || ! -f "$cfg" ]] || cp "$cfg" "$HOME/ssh-mock-F"
+  # Like the owner's ~/.ssh/config, whose Host github.com block names the work
+  # key (also in the agent): while the config ssh reads names a key, that key
+  # is offered first and GitHub answers for its account.
+  if [[ -f "$HOME/ssh-mock-config-login" ]] && { [[ -z "$cfg" ]] || grep -qi "identityfile" "$cfg" 2>/dev/null; }; then
+    login="$(cat "$HOME/ssh-mock-config-login")"
   fi
   if [[ "$login" == "error" ]]; then
     exit 255
@@ -1383,12 +1388,12 @@ test_owner_check_ignores_the_ssh_config() {
   # The personal key itself is unknown to GitHub; the config would fall back
   # to the work account.
   printf 'palakm_tmcc\n' > "$TEST_HOME/ssh-mock-config-login"
+  printf 'Host github.com\n  IdentityFile ~/.ssh/id_ed25519\n  IdentitiesOnly yes\n' > "$TEST_HOME/.ssh/config"
   local out calls
   out="$(TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_not_contains "$out" "Refusing upload" "a key GitHub does not know yet was refused" || return 1
-  # No ~/.ssh/config here, so no route: no empty argument may reach ssh.
-  assert_contains "$(cat "$MOCK_LOG")" "ssh -F /dev/null -T -i " "no route must add nothing between -F /dev/null and -T" || return 1
+  assert_not_contains "$(cat "$TEST_HOME/ssh-mock-F")" "IdentityFile" "the check's config still names a key" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
   cleanup_test_env
 }
@@ -1401,14 +1406,25 @@ test_owner_check_keeps_the_ssh_route() {
   seed_keys
   mkdir -p "$TEST_HOME/.config/teeup"
   printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
-  printf 'Host github.com\n  HostName ssh.github.com\n  Port 443\n  ProxyCommand nc %%h %%p\n' > "$TEST_HOME/.ssh/config"
-  local out calls
-  out="$(TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github 2>&1)"
-  calls="$(grep '^ssh .* -T ' "$MOCK_LOG" || true)"
-  assert_contains "$calls" "-F /dev/null" "the owner check must not read the config's keys: $calls" || return 1
-  assert_contains "$calls" "-o hostname=ssh.github.com" "the route's HostName was dropped: $calls" || return 1
-  assert_contains "$calls" "-o port=443" "the route's Port was dropped: $calls" || return 1
-  assert_contains "$calls" "-o proxycommand=nc %h %p" "the route's ProxyCommand was dropped: $calls" || return 1
+  # A route through a jump host with its own Host block, plus key lines in
+  # both blocks (one spelled in capitals: ssh keywords are case-blind).
+  printf '%s\n' 'Host github.com' '  HostName ssh.github.com' '  Port 443' '  ProxyJump bastion' \
+    '  IdentityFile ~/.ssh/id_ed25519' '  IdentitiesOnly yes' '  AddKeysToAgent yes' \
+    'Host bastion' '  HostName jump.example.com' '  Port 2222' '  User me' '  IDENTITYFILE ~/.ssh/jump_key' \
+    > "$TEST_HOME/.ssh/config"
+  TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
+  local used
+  used="$(cat "$TEST_HOME/ssh-mock-F" 2>/dev/null)"
+  local want
+  for want in "HostName ssh.github.com" "Port 443" "ProxyJump bastion" "Host bastion" "HostName jump.example.com" "Port 2222" "User me"; do
+    assert_contains "$used" "$want" "the check's config lost '$want'" || return 1
+  done
+  assert_not_contains "$used" "IdentityFile" || return 1
+  assert_not_contains "$used" "IDENTITYFILE" || return 1
+  assert_not_contains "$used" "IdentitiesOnly" || return 1
+  assert_not_contains "$used" "AddKeysToAgent" || return 1
+  # The user's own config is untouched.
+  assert_contains "$(cat "$TEST_HOME/.ssh/config")" "IdentityFile ~/.ssh/id_ed25519" || return 1
   cleanup_test_env
 }
 run_test "the owner check keeps the ssh route" test_owner_check_keeps_the_ssh_route
