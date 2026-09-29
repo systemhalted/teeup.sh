@@ -27,26 +27,7 @@ An app name is matched without regard to case; a capability name must be typed a
 
 ## AeroSpace
 
-[AeroSpace](https://github.com/nikitabobko/AeroSpace) tiles your windows, i3 style. Its configuration is `~/.config/aerospace/aerospace.toml`, copied once and yours after that. If you already have `~/.aerospace.toml`, teeup keeps it and does not install its own, because AeroSpace refuses to run with two.
-
-Enable AeroSpace in System Settings > Privacy & Security > Accessibility. It cannot move windows without this access. teeup prints this reminder the first time. Start it with `open -a AeroSpace`.
-
-The main keys all use Option (`alt`):
-
-| Keys | Action |
-|---|---|
-| `alt-enter` | Open a new WezTerm window |
-| `alt-h`, `alt-j`, `alt-k`, `alt-l` | Focus left, down, up, right |
-| `alt-shift-h`, `alt-shift-j`, `alt-shift-k`, `alt-shift-l` | Move the window left, down, up, right |
-| `alt-1` to `alt-9` | Switch to workspace 1 to 9 |
-| `alt-shift-1` to `alt-shift-9` | Move the window to that workspace |
-| `alt-tab` | Back to the previous workspace |
-| `alt-f` | Full screen |
-| `alt-slash` / `alt-comma` | Tiles layout / accordion layout |
-| `alt-minus` / `alt-equal` | Shrink / grow |
-| `alt-shift-semicolon` | Service mode |
-
-`alt-ctrl` with `b`, `n`, `p` and `f` does the same as `h`, `j`, `k` and `l`, for Emacs users.
+[AeroSpace](https://github.com/nikitabobko/AeroSpace) tiles your windows, i3 style. See the [AeroSpace](aerospace.md) page for its keys and configuration.
 
 <!-- SCREENSHOT: Three windows tiled by AeroSpace (WezTerm, Emacs, Firefox Developer Edition) on workspace 1. -->
 
