@@ -145,7 +145,7 @@ cmd_reset() {
   export TEEUP_RESET="$target"
   cap_run "$target" configure || rc=$?
   unset TEEUP_RESET
-  ui_rc_or_exit $rc
+  ui_rc_or_exit $rc || true
   if [[ $rc -ne 0 ]]; then
     die "Resetting $target failed; the backups made so far are next to their files."
   fi
@@ -462,7 +462,7 @@ cmd_update() {
     # names are left alone; `configure` runs either way, because the point of
     # both paths is a capability that works after a new version lands.
     if [[ -f "$(cap_dir "$target")/update" ]]; then
-      cap_run "$target" update || { local rc=$?; ui_rc_or_exit $rc; warn "$target's update script failed."; failed=1; }
+      cap_run "$target" update || { local rc=$?; ui_rc_or_exit $rc || true; warn "$target's update script failed."; failed=1; }
     else
       for cask in $(cap_meta_get "$target" casks); do
         cask_upgrade "$cask" || failed=1
