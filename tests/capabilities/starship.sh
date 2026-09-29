@@ -463,6 +463,63 @@ test_no_doctor_test_depends_on_a_host_starship() {
 }
 
 echo "capabilities/starship"
+test_shipped_config_parses_cleanly() {
+  setup
+  local file="$TEEUP_PATH/capabilities/starship/config/starship.toml"
+  if command -v starship >/dev/null 2>&1; then
+    local out
+    out="$(STARSHIP_CONFIG="$file" starship print-config 2>&1 || true)"
+    assert_not_contains "$out" "Error parsing" "Starship warns on bad format strings" || return 1
+  else
+    # Exclude '\$'
+    # Exclude '\$ '
+    local bad
+    # Check if there is any `$` not followed by `{` or a letter, excluding `\$`
+    bad="$(grep -v '\\\$' "$file" | grep -o '\$[^a-zA-Z{]' || true)"
+    if [[ -n "$bad" ]]; then
+      echo "Unescaped bare \$ found: $bad"
+      return 1
+    fi
+  fi
+  cleanup_test_env
+}
+
+test_migration_escapes_stashed_variable() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local mig
+  mig="$(ls "$TEEUP_PATH"/migrations/179*.sh | head -n 1)"
+  # Wait, there are multiple migrations. Let's find the one for starship.
+  mig="$(grep -l 'cap_exists starship' "$TEEUP_PATH"/migrations/*.sh | head -n 1)"
+
+  local cfg
+  cfg="$(user_config_dir)/starship.toml"
+  mkdir -p "$(dirname "$cfg")"
+
+  # 1. original line fixed
+  cat "$TEEUP_PATH/capabilities/starship/config/starship.toml" | sed -e 's/stashed = '"'"'\\$ '"'"'/stashed = "$ "/' > "$cfg"
+  local original_size
+  original_size="$(wc -c < "$cfg")"
+
+  DRY_RUN=false bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; source "$1"' bash "$mig" >/dev/null 2>&1
+  assert_contains "$(cat "$cfg")" "stashed = '\\\$ '" || return 1
+
+  # rest of file identical? Size should be exactly original_size + 1 (added backslash)
+  local new_size
+  new_size="$(wc -c < "$cfg")"
+  assert_equals "$((original_size + 1))" "$new_size" || return 1
+
+  # 2. edited line untouched
+  sed -i.bak -e 's/stashed = '"'"'\\$ '"'"'/stashed = "! "/' "$cfg" && rm -f "$cfg.bak"
+  DRY_RUN=false bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; source "$1"' bash "$mig" >/dev/null 2>&1
+  assert_contains "$(cat "$cfg")" 'stashed = "! "' || return 1
+
+  # 3. second run changes nothing
+  DRY_RUN=false bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; source "$1"' bash "$mig" >/dev/null 2>&1
+  assert_contains "$(cat "$cfg")" 'stashed = "! "' || return 1
+
+  cleanup_test_env
+}
 run_test "install gets starship" test_install_gets_starship
 run_test "configure copies the config once" test_configure_copies_the_config_once
 run_test "shipped config carries the theme markers" test_shipped_config_carries_the_theme_markers
@@ -486,4 +543,6 @@ run_test "doctor accepts an indented root palette" test_doctor_accepts_an_indent
 run_test "doctor stops at an indented table header" test_doctor_stops_at_an_indented_table_header
 run_test "doctor names the root palette selected" test_doctor_names_the_root_palette_selected
 run_test "no doctor test depends on a host starship" test_no_doctor_test_depends_on_a_host_starship
+run_test "shipped config parses cleanly" test_shipped_config_parses_cleanly
+run_test "migration escapes stashed variable" test_migration_escapes_stashed_variable
 print_summary

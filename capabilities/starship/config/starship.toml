@@ -65,7 +65,7 @@ modified = "! "
 staged = "+ "
 renamed = "» "
 deleted = "✘ "
-stashed = "$ "
+stashed = '\$ '
 up_to_date = ""
 
 [cmd_duration]
