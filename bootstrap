@@ -87,7 +87,7 @@ run_tier() {
     if run_capability "$name"; then
       :
     else
-      ui_rc_or_exit $?
+      ui_rc_or_exit $? || true
       if [[ "$tier" == "core" ]]; then
         die "Core capability $name failed. See ${TEEUP_LOG_FILE:-the output above}, fix the cause, and re-run ./bootstrap."
       fi
@@ -185,7 +185,7 @@ wizard() {
   if ui_confirm "Install the daily set too (Emacs, Zed, Firefox Developer Edition, Obsidian)?" yes; then
     daily=yes
   else
-    ui_rc_or_exit $?
+    ui_rc_or_exit $? || true
     daily=no
   fi
   # The Emacs flavor only matters when the daily tier (where emacs lives) is

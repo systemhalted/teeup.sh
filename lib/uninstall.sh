@@ -182,7 +182,7 @@ uninstall_offer_restore() {
     uninstall_note failed "$path: could not put $backup back. Do it with: mv $(uninstall_q "$backup") $(uninstall_q "$path")"
     return 1
   fi
-  ui_rc_or_exit $?
+  ui_rc_or_exit $? || true
   uninstall_note kept "$backup, your copy from before teeup. Put it back with: mv $(uninstall_q "$backup") $(uninstall_q "$path")"
   return 1
 }

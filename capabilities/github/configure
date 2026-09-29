@@ -169,7 +169,7 @@ github_configure_identity() {
       if ui_confirm "Upload $pub to GitHub ($gh_host, $upload_account) for pushing and commit signing?" yes; then
         upload_answer=yes
       else
-        ui_rc_or_exit $?
+        ui_rc_or_exit $? || true
         upload_answer=no
       fi
       answers_set "$answer_key" "$upload_answer"

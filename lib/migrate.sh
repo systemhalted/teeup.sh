@@ -576,7 +576,7 @@ migrate_chezmoi() {
     if ui_confirm "Move the files above aside so teeup can take over this home directory?" no; then
       :
     else
-      ui_rc_or_exit $?
+      ui_rc_or_exit $? || true
       log "Nothing was moved. chezmoi still owns those files; re-run when you are ready."
       rm -f "$managed"
       return 1
@@ -643,7 +643,7 @@ migrate_chezmoi() {
         if cap_run "$owner" configure; then
           ok "Reinstalled teeup's $owner configuration."
         else
-          ui_rc_or_exit $?
+          ui_rc_or_exit $? || true
           warn "Could not reinstall teeup's $owner configuration; run: teeup configure $owner"
           rc=1
         fi
@@ -676,7 +676,7 @@ migrate_chezmoi() {
       rc=1
     fi
   else
-    ui_rc_or_exit $?
+    ui_rc_or_exit $? || true
     log "Keeping $chezmoi_config. Running 'chezmoi apply' again will put its files back over teeup's."
   fi
   return $rc

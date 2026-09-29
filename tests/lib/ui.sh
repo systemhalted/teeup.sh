@@ -84,8 +84,9 @@ test_gum_is_used_when_available() {
 
 # gum reads Ctrl-C itself (raw mode) and exits 130, so no SIGINT reaches
 # teeup. Each prompt must stop the run then, not take it as an empty answer
-# or a no. The script runs in its own process group, as a terminal's
-# foreground job would, so the interrupt stays inside it.
+# or a no. run.sh starts suites in the background, where SIGINT is ignored;
+# preserve that disposition while giving the script its own process group.
+# The prompt must still stop the script without depending on group signalling.
 test_ctrl_c_in_gum_stops_the_run() {
   setup
   unset TEEUP_NO_GUM
@@ -93,7 +94,7 @@ test_ctrl_c_in_gum_stops_the_run() {
   local fn out rc
   for fn in 'ui_input Name' 'ui_secret Value' 'ui_confirm Sure' 'ui_choose Pick a b'; do
     rc=0
-    out="$(perl -e 'setpgrp 0,0; exec @ARGV' bash -c 'source "$TEEUP_PATH/lib/all.sh"; '"$fn"' </dev/null; echo carried-on' 2>&1)" || rc=$?
+    out="$(trap '' INT; perl -e 'setpgrp 0,0; exec @ARGV' bash -c 'source "$TEEUP_PATH/lib/all.sh"; '"$fn"' </dev/null; echo carried-on' 2>&1)" || rc=$?
     assert_not_contains "$out" "carried-on" "$fn went on after Ctrl-C" || return 1
     assert_equals 130 "$rc" "$fn exit status" || return 1
   done

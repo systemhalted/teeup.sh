@@ -847,7 +847,7 @@ run_test "dry run walks the daily tier in order" test_dry_run_walks_the_daily_ti
 run_test "the wizard records the Emacs flavor" test_wizard_records_the_emacs_flavor
 run_test "the wizard does not ask the flavor without the daily tier" test_wizard_does_not_ask_the_flavor_without_the_daily_tier
 run_test "the wizard does not ask for a pinned flavor" test_wizard_does_not_ask_for_a_pinned_flavor
-print_summary
+
 
 test_ctrl_c_in_capability_stops_bootstrap() {
   setup
@@ -858,3 +858,4 @@ test_ctrl_c_in_capability_stops_bootstrap() {
   assert_equals 130 "$rc" "Ctrl-C in capability must stop bootstrap with 130" || return 1
   cleanup_test_env
 }
+print_summary

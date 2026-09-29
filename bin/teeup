@@ -288,7 +288,7 @@ EOF
     if ui_confirm "Remove teeup from this Mac?" no; then
       :
     else
-      ui_rc_or_exit $?
+      ui_rc_or_exit $? || true
       log "Nothing was changed."
       return 0
     fi
@@ -424,7 +424,7 @@ _update_configure_tier() {
       fi
       if [[ "$name" == "theme" && "$TEEUP_CAP_NA" != "true" ]]; then theme_done=true; fi
     else
-      ui_rc_or_exit $?
+      ui_rc_or_exit $? || true
       warn "$name configure failed; continuing."
       failed=1
     fi
@@ -474,7 +474,7 @@ cmd_update() {
     if cap_run "$target" configure; then
       [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
     else
-      ui_rc_or_exit $?
+      ui_rc_or_exit $? || true
       warn "$target configure failed."
       failed=1
     fi
@@ -709,7 +709,7 @@ cmd_lazy_run() {
   if ui_confirm "$command is provided by capability $cap. Install now?" yes; then
     :
   else
-    ui_rc_or_exit $?
+    ui_rc_or_exit $? || true
     err "Not installed. When you want it: teeup install $cap"
     exit 127
   fi

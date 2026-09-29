@@ -24,7 +24,7 @@ if casks_supported; then
         warn "Could not uninstall Homebrew's emacs formula. Run: brew uninstall emacs, then: teeup configure emacs"
       fi
     else
-      ui_rc_or_exit $?
+      ui_rc_or_exit $? || true
       warn "Homebrew's emacs formula is installed; the emacs-app cask will not link emacs or emacsclient over it, so the daemon and emacsclient -c would keep using the terminal-only build. Run: brew uninstall emacs, then: teeup configure emacs"
     fi
   fi
