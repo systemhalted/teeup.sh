@@ -13,9 +13,37 @@ The wizard asks which configuration to install. The answer is `TEEUP_EMACS_FLAVO
 | `starter` | The default. A thin `~/.config/emacs/init.el` that loads teeup's small, built-ins-only layer from the checkout, plus `~/.config/emacs/local.el` for your own settings. |
 | `doom` | Clones [Doom Emacs](https://github.com/doomemacs/core) into `~/.config/emacs` and runs `doom install --no-env`. Your private config is `~/.config/doom`. |
 | `spacemacs` | Clones Spacemacs into `~/.emacs.d`. Spacemacs finishes its own setup, and writes `~/.spacemacs`, on the first start. |
-| `none` | Leaves your Emacs configuration alone. The daemon still runs. |
+| `none` | Leaves your Emacs configuration alone. The daemon still runs. See [Your own configuration and teeup's theme](#your-own-configuration-and-teeups-theme). |
 
 If a directory is in the way, for example a starter setup where Doom should go, teeup moves it aside as `<name>.teeup_backup_<timestamp>` rather than deleting it. Emacs reads `~/.emacs.el`, `~/.emacs` and `~/.emacs.d` before `~/.config/emacs`; if one of those exists, teeup warns you that Emacs reads it instead and leaves it where it is.
+
+## Your own configuration and teeup's theme
+
+When using the `none` flavor, you can add this snippet to your `init.el` to use teeup's theme and font. It only reads teeup's files. The theme follows macOS light/dark when the daemon starts and updates after each `teeup theme set` or `teeup install font`.
+
+```elisp
+;; Follow teeup's theme and font. teeup calls (teeup-apply) on a running
+;; daemon after every `teeup theme set` and `teeup install font`.
+(require 'subr-x)
+(defun teeup-apply ()
+  (let* ((state (expand-file-name "~/.local/state/teeup/"))
+         (dark (string= "Dark" (string-trim (shell-command-to-string
+                 "defaults read -g AppleInterfaceStyle 2>/dev/null"))))
+         (theme (expand-file-name (format "current/theme/%s/emacs.el"
+                                          (if dark "dark" "light"))
+                                  state))
+         (font (expand-file-name "current/font" state)))
+    (when (file-readable-p theme)
+      (load theme nil t)
+      (mapc #'disable-theme custom-enabled-themes)
+      (load-theme teeup-theme-name t))
+    (when (and (display-graphic-p) (file-readable-p font))
+      (set-face-attribute 'default nil :family
+                          (string-trim (with-temp-buffer
+                                         (insert-file-contents font)
+                                         (buffer-string)))))))
+(teeup-apply)
+```
 
 ## The daemon and emacsclient
 
