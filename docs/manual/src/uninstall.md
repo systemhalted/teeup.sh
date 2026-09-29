@@ -77,12 +77,12 @@ Open a new terminal, or run `exec /bin/zsh -l`. The shell you ran the uninstall 
 
 ## In scripts
 
-Each flag answers one question in advance, and `--yes` answers the rest with their defaults. Scripts need `--yes`, because without a terminal the command refuses to run.
+`--yes` confirms removing teeup without asking, so use it with care. Each other flag answers one optional question in advance. Scripts need `--yes`, because without a terminal the command refuses to run.
 
 | Flag | Answers |
 |---|---|
 | `--packages` | Yes to the packages and apps question. |
 | `--identity` | Yes to the git identity and config question. |
-| `--yes` | Every question not answered by a flag, with its default, which is no. |
+| `--yes` | Yes to removing teeup, and no to every optional question not answered by another flag. |
 
 `teeup uninstall --yes --packages`, for example, removes teeup and its packages and keeps your git identity.
