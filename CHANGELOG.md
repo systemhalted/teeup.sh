@@ -11,11 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Ghostty, Alacritty, and iTerm2 are now available as lazy capabilities (`ghostty`, `alacritty`, `iterm2`).
+- **Configurable SSH host aliases:** Added `TEEUP_PERSONAL_SSH_HOST` and `TEEUP_WORK_SSH_HOST` to the machine file so identities can be tied to different SSH Host blocks.
 
 ### Changed
 - Zed, Obsidian, and Firefox Developer Edition are now lazy capabilities. They install the first time you use them, rather than as part of the daily bootstrap set. Emacs is now the only daily capability.
 
 ### Fixed
+- **Safe SSH config:** `teeup doctor` no longer suggests replacing a user-owned `~/.ssh/config` when a host block is missing.
+- **GitHub upload safety:** `teeup configure github` verifies the SSH key's GitHub account before uploading to prevent pushing the key to the wrong account.
 - **starship:** Escaped bare `$` in the `stashed` format string to suppress an error parsing warning.
 
 ## [0.1.0-beta] - 2026-09-28

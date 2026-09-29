@@ -37,6 +37,13 @@
 # personal account. A work identity on its own host does not need it.
 #TEEUP_WORK_GH_ACCOUNT="ada-at-work"
 
+# The SSH host alias for the personal identity (the Host block in ~/.ssh/config).
+# Defaults to github.com.
+#TEEUP_PERSONAL_SSH_HOST="github.com"
+
+# The SSH host alias for the work identity. Defaults to github.com-work.
+#TEEUP_WORK_SSH_HOST="github.com-work"
+
 # Hard constraints unrelated to identity, shown here because they are the
 # other common reason a machine file exists at all.
 #TEEUP_PACKAGE_MANAGER="macports"

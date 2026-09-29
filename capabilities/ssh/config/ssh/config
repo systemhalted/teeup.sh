@@ -2,12 +2,7 @@
 # ssh keeps the FIRST value it finds for each keyword, so specific hosts come
 # first and the catch-all Host * block goes last.
 
-Host github.com
-  HostName github.com
-  User git
-  IdentityFile ~/.ssh/id_ed25519_personal
-  IdentitiesOnly yes
-
+#TEEUP_PERSONAL_ALIAS
 #TEEUP_WORK_ALIAS teeup renders the work alias here, and only on a machine
 #TEEUP_WORK_ALIAS whose machines/<hostname>.conf configures a work identity.
 #TEEUP_WORK_ALIAS An alias pointing at a key that does not exist, with

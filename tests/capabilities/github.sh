@@ -5,6 +5,20 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  mock_command_script ssh <<'EOF_SSH_MOCK'
+if [[ " $* " == *" -T "* && " $* " == *" git@"* ]]; then
+  login="$(cat "$HOME/ssh-mock-login" 2>/dev/null || true)"
+  if [[ "$login" == "error" ]]; then
+    exit 255
+  elif [[ -n "$login" ]]; then
+    echo "Hi $login! You've successfully authenticated, but GitHub does not provide shell access." >&2
+    exit 1
+  fi
+  exit 255
+fi
+real_ssh="$(which -a ssh | grep -v "mock_bin" | head -n 1)"
+exec "$real_ssh" "$@"
+EOF_SSH_MOCK
   # `--version` answers for real: an exit-0, silent brew reads as "cannot
   # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
   # off every package check below in silence (NI2).
@@ -146,6 +160,7 @@ case "$1 ${2:-}" in
     printf "'admin:public_key', 'admin:ssh_signing_key'" > "$session_file"
     ;;
   "auth refresh")
+    if [ -n "$MOCK_GH_REFRESH_ERROR" ]; then echo "$MOCK_GH_REFRESH_ERROR" >&2; exit 1; fi
     session_file="$HOME/gh-session"
     [ -z "$host" ] || [ "$host" = "github.com" ] || session_file="$HOME/gh-session-$host"
     printf "'admin:public_key', 'admin:ssh_signing_key'" > "$session_file"
@@ -257,7 +272,7 @@ test_configure_uploads_authentication_and_signing_keys() {
   out="$(printf 'y\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
   local calls
   calls="$(cat "$MOCK_LOG")"
-  assert_contains "$out" "Upload $TEST_HOME/.ssh/id_ed25519_personal.pub to GitHub (github.com, testuser) for pushing and commit signing?" || return 1
+  assert_contains "$out" "Upload $TEST_HOME/.ssh/id_ed25519_personal to GitHub for the personal identity (active account on github.com) for pushing and commit signing?" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication --title testmac personal" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type signing --title testmac personal (signing)" || return 1
   assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"' || return 1
@@ -270,7 +285,7 @@ test_configure_declines_both_uploads() {
   local out calls
   out="$(printf 'n\n' | TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
-  assert_contains "$out" "Upload $TEST_HOME/.ssh/id_ed25519_personal.pub to GitHub (github.com, testuser) for pushing and commit signing?" || return 1
+  assert_contains "$out" "Upload $TEST_HOME/.ssh/id_ed25519_personal to GitHub for the personal identity (active account on github.com) for pushing and commit signing?" || return 1
   assert_not_contains "$calls" "ssh-key add" || return 1
   assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_GITHUB_UPLOAD_PERSONAL="no"' || return 1
   assert_contains "$out" "teeup config set TEEUP_GITHUB_UPLOAD_PERSONAL yes && teeup configure github" || return 1
@@ -1259,4 +1274,94 @@ run_test "doctor reports it could not list keys" test_doctor_reports_it_could_no
 run_test "doctor reports a signing-only key as not ready for push" test_doctor_reports_a_signing_only_key_as_not_ready_for_push
 run_test "doctor checks the active account's scopes, not an inactive one's" test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones
 run_test "doctor does not match the key body against the title" test_doctor_does_not_match_the_key_body_against_the_title
+
+test_configure_refuses_upload_when_ssh_login_differs() {
+  setup
+  seed_keys
+  printf 'otheruser\n' > "$HOME/ssh-mock-login"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Refusing upload: the personal key ($TEST_HOME/.ssh/id_ed25519_personal) belongs to GitHub account 'otheruser', but gh is targeting 'testuser' on github.com" || return 1
+  assert_not_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must not be uploaded" || return 1
+  cleanup_test_env
+}
+
+test_configure_allows_upload_when_ssh_login_matches() {
+  setup
+  seed_keys
+  printf 'testuser\n' > "$HOME/ssh-mock-login"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$out" "Refusing upload" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must be uploaded" || return 1
+  cleanup_test_env
+}
+
+test_configure_allows_upload_when_ssh_cannot_tell() {
+  setup
+  seed_keys
+  printf 'error\n' > "$HOME/ssh-mock-login"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$out" "Refusing upload" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must be uploaded" || return 1
+  cleanup_test_env
+}
+run_test "configure refuses upload when ssh login differs" test_configure_refuses_upload_when_ssh_login_differs
+run_test "configure allows upload when ssh login matches" test_configure_allows_upload_when_ssh_login_matches
+run_test "configure allows upload when ssh cannot tell" test_configure_allows_upload_when_ssh_cannot_tell
+test_configure_skips_refresh_if_answer_is_no() {
+  setup
+  seed_keys
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="no"\n' >> "$TEST_HOME/.config/teeup/answers"
+  # Signed in but missing the signing scope: without the "no", teeup would
+  # refresh here.
+  printf "'repo', 'admin:public_key'\n" > "$TEST_HOME/gh-session"
+  : > "$MOCK_LOG"
+  local out calls
+  out="$(TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$calls" "auth refresh" || return 1
+  assert_not_contains "$calls" "auth login" || return 1
+  # it should not even check status to login
+  assert_contains "$out" "Not uploading the SSH key" || return 1
+  cleanup_test_env
+}
+
+test_configure_names_identity_in_messages() {
+  setup
+  seed_keys
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
+  # Signed in but missing the signing scope, so teeup refreshes.
+  printf "'repo', 'admin:public_key'\n" > "$TEST_HOME/gh-session"
+  local out calls
+  out="$(TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Refreshing gh's permissions for the personal identity (testuser on github.com, key $TEST_HOME/.ssh/id_ed25519_personal)." || return 1
+  cleanup_test_env
+}
+
+test_configure_recognises_received_credentials_for_other() {
+  setup
+  seed_keys
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
+  # Signed in but missing the signing scope, so teeup refreshes.
+  printf "'repo', 'admin:public_key'\n" > "$TEST_HOME/gh-session"
+  export MOCK_GH_REFRESH_ERROR="error refreshing credentials for systemhalted, received credentials for palakm_tmcc, did you use the correct account?"
+  local out calls
+  out="$(TEEUP_NO_GUM=1 TEEUP_TEST_TTY=yes DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  assert_contains "$out" "The browser was signed in as palakm_tmcc, not systemhalted." || return 1
+  assert_contains "$out" "Sign in as systemhalted in the browser (or sign out of palakm_tmcc), then re-run: teeup configure github" || return 1
+  cleanup_test_env
+}
+run_test "configure skips refresh if answer is no" test_configure_skips_refresh_if_answer_is_no
+run_test "configure names identity in messages" test_configure_names_identity_in_messages
+run_test "configure recognises received credentials for other" test_configure_recognises_received_credentials_for_other
+
 print_summary

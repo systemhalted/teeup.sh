@@ -14,7 +14,7 @@ mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || p
 # against ~/.ssh (verified against a real `ssh -G`), accepts several patterns
 # on one line, and globs each of them.
 #
-# Not following Include is a false NEGATIVE with teeth: a `Host github.com`
+# Not following Include is a false NEGATIVE with teeth: a `Host <alias>`
 # block in ~/.ssh/conf.d/ is a supported layout -- lib/answers.sh says in so
 # many words that it asks ssh rather than parsing because "Include was not
 # followed at all" -- so identity_key adopts a key from an included file on
@@ -229,7 +229,7 @@ for identity in $(identity_list); do
   esac
 done
 
-# Only the aliases identity_list actually names: github.com-work is rendered
+# Only the aliases identity_list actually names: the work alias is rendered
 # only on a machine whose machines/<hostname>.conf configures a work
 # identity, so checking for it unconditionally would fail every personal-only
 # machine, which is most of them.
@@ -266,7 +266,7 @@ $(ssh_expand_includes "$ssh_dir/config")
 EOF_SSH_ROOT
 )"
   for identity in $(identity_list); do
-    alias_name="$(ssh_host_alias "$identity")"
+    alias_name="$(identity_ssh_host "$identity")"
     matched=false
     while IFS= read -r host_line; do
       if [[ -z "$host_line" ]]; then
@@ -317,7 +317,19 @@ EOF_ID_FILES
         fi
       fi
     else
-      doctor_fail "$ssh_dir/config has no 'Host $alias_name' block." "teeup reset ssh"
+      if [[ -n "$(stock_sha "$ssh_dir/config" 2>/dev/null || true)" ]]; then
+        doctor_fail "$ssh_dir/config has no 'Host $alias_name' block." "teeup reset ssh"
+      else
+        doctor_warn "git@$alias_name:org/repo.git will not resolve until you add this to $ssh_dir/config:"
+        printf '\n' >&2
+        printf 'Host %s\n' "$alias_name" >&2
+        printf '  HostName %s\n' "$(identity_gh_host "$identity")" >&2
+        printf '  User git\n' >&2
+        printf '  IdentityFile %s\n' "$(identity_key "$identity")" >&2
+        printf '  IdentitiesOnly yes\n' >&2
+        printf '\n' >&2
+        doctor_fail "$ssh_dir/config has no 'Host $alias_name' block." "Add the Host $alias_name block printed above to $ssh_dir/config"
+      fi
     fi
   done
 fi

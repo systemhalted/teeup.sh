@@ -95,10 +95,13 @@ unset ssh_macos_major
 
 for identity in $(identity_list); do
   key="$(identity_key "$identity")"
+  gh_host="$(identity_gh_host "$identity")"
+  gh_account="$(identity_gh_account "$identity")"
+  [[ -n "$gh_account" ]] || gh_account="active account"
   # identity_key already consulted ~/.ssh/config; a path that differs from
   # teeup's own convention came from there, and is worth saying so about.
   if [[ "$key" != "$HOME/.ssh/id_ed25519_$identity" ]]; then
-    log "Using the $identity key already named in $ssh_dir/config: $key"
+    log "Using the $identity key already named in $ssh_dir/config for $gh_account on $gh_host: $key"
   fi
   # -s, not -f, for both halves: a zero-byte file is a missing one. The first
   # version of the rebuild below left exactly such a $key.pub behind when the
@@ -109,7 +112,7 @@ for identity in $(identity_list); do
   # github capability would upload an orphan .pub. Routing both through the
   # repair paths is what makes a re-run the repair path again.
   if [[ -s "$key" && -s "$key.pub" ]]; then
-    log "Already present: $key"
+    log "Already present: $key (for the $identity identity, $gh_account on $gh_host)"
   elif [[ -s "$key" && ! -s "$key.pub" ]]; then
     # ssh-keygen can succeed after the user declines to overwrite $key.pub at
     # its interactive prompt, leaving a private key with no matching public
@@ -127,7 +130,7 @@ for identity in $(identity_list); do
     # halves present, skipped the repair for good, and handed GitHub an empty
     # key. Only a ssh-keygen that succeeded and produced a non-empty file is
     # moved into place; anything else takes the temp file with it.
-    log "Rebuilding the missing public half for the $identity identity..."
+    log "Rebuilding the missing public half for the $identity identity ($gh_account on $gh_host, key $key)..."
     if ! run_cmd bash -c '
       tmp="$(mktemp "$1.teeup_rebuild_XXXXXX")" || exit 1
       if ssh-keygen -y -f "$1" > "$tmp" && [ -s "$tmp" ]; then
@@ -154,7 +157,7 @@ for identity in $(identity_list); do
       # Zero bytes (the -s tests above failed). Moved aside rather than left
       # for ssh-keygen, whose "Overwrite (y/n)?" prompt on an existing file
       # would stall a run that has no answer for it.
-      log "Empty private key at $key; backing it up before generating a fresh pair."
+      log "Empty private key at $key ($identity identity, $gh_account on $gh_host); backing it up before generating a fresh pair."
       backup_target "$key" >/dev/null
     fi
     if [[ -e "$key.pub" || -L "$key.pub" ]]; then
@@ -162,7 +165,7 @@ for identity in $(identity_list); do
       # a fresh keygen below does not silently discard it.
       backup_target "$key.pub" >/dev/null
     fi
-    log "Generating the $identity ed25519 key (you will be asked for a passphrase)..."
+    log "Generating the $identity ed25519 key for the $identity identity ($gh_account on $gh_host, key $key)... (you will be asked for a passphrase)"
     if ! run_cmd ssh-keygen -t ed25519 -C "$(identity_email "$identity")" -f "$key"; then
       warn "ssh-keygen failed for the $identity identity; skipping the rest of it."
       continue
@@ -180,20 +183,18 @@ for identity in $(identity_list); do
   run_cmd ssh-add "$ssh_keychain_flag" "$key" || warn "ssh-add failed for $key."
 done
 
-# ssh_work_alias_block: the Host block teeup's own config uses for the work
-# identity, printed only when there is a work identity to name. The alias is
-# local (github.com-work), but HostName is the identity's real host, so a work
-# identity on a GitHub Enterprise instance is reachable through the same alias
-# as a second github.com account.
-ssh_work_alias_block() {
-  local alias host key display
-  alias="$(ssh_host_alias work)"
-  host="$(identity_gh_host work)"
-  key="$(identity_key work)"
+# ssh_alias_block: the Host block teeup's own config uses for the identity.
+ssh_alias_block() {
+  local identity="$1" alias host key display
+  alias="$(identity_ssh_host "$identity")"
+  host="$(identity_gh_host "$identity")"
+  key="$(identity_key "$identity")"
   display="$key"
   case "$key" in "$HOME"/*) display="~${key#"$HOME"}" ;; esac
-  printf '# Clone work repositories as git@%s:org/repo.git, which picks the\n' "$alias"
-  printf '# work key. git itself has one identity, whatever the directory.\n'
+  if [[ "$identity" == "work" ]]; then
+    printf '# Clone work repositories as git@%s:org/repo.git, which picks the\n' "$alias"
+    printf '# work key. git itself has one identity, whatever the directory.\n'
+  fi
   printf 'Host %s\n  HostName %s\n  User git\n  IdentityFile %s\n  IdentitiesOnly yes\n\n' \
     "$alias" "$host" "$display"
 }
@@ -215,14 +216,21 @@ else
   # block naming a key that does not exist, under IdentitiesOnly yes.
   ssh_rendered_config="$(mktemp)"
   ssh_work_alias_written=false
+  ssh_personal_alias_written=false
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
+      "#TEEUP_PERSONAL_ALIAS"*)
+        if [[ "$ssh_personal_alias_written" == "false" ]]; then
+          ssh_alias_block personal
+          ssh_personal_alias_written=true
+        fi
+        ;;
       "#TEEUP_WORK_ALIAS"*)
         # The marker's own lines never reach the installed file; the block
         # takes the place of the first of them, and only when this machine
         # has a work identity at all.
         if [[ "$ssh_work_alias_written" == "false" ]] && answers_has_work; then
-          ssh_work_alias_block
+          ssh_alias_block work
           ssh_work_alias_written=true
         fi
         ;;
@@ -252,9 +260,9 @@ if [[ "$ssh_config_is_foreign" == "true" ]]; then
     ssh_named_key="$(ssh_config_named_key "$identity" || true)"
     [[ "$ssh_named_key" == "$(identity_key "$identity")" ]] && continue
     warn "$ssh_dir/config is yours and has no Host block for the $identity key."
-    warn "git@$(ssh_host_alias "$identity"):org/repo.git will not resolve until you add this to $ssh_dir/config:"
+    warn "git@$(identity_ssh_host "$identity"):org/repo.git will not resolve until you add this to $ssh_dir/config:"
     printf '\n'
-    printf 'Host %s\n' "$(ssh_host_alias "$identity")"
+    printf 'Host %s\n' "$(identity_ssh_host "$identity")"
     printf '  HostName %s\n' "$(identity_gh_host "$identity")"
     printf '  User git\n'
     printf '  IdentityFile %s\n' "$(identity_key "$identity")"

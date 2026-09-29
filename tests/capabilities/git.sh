@@ -303,7 +303,7 @@ test_configure_quotes_include_paths_with_hash_and_semicolon_in_xdg_config_home()
   # Prove the identity actually loads, not just that the path string is
   # intact.
   local loaded_email
-  loaded_email="$(GIT_CONFIG_GLOBAL="$cfg" command -p git config --get user.email)"
+  loaded_email="$(cd /tmp && GIT_CONFIG_GLOBAL="$cfg" command -p git config --get user.email)"
   assert_equals "ada@example.com" "$loaded_email" || return 1
   cleanup_test_env
 }
