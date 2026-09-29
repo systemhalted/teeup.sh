@@ -57,8 +57,11 @@ done
 # run is interrupted or the test fails early, and then it is a stray config
 # that changes what every later run resolves.
 _mode_snapshot() {
+  # .shellenv/ holds shellenv's sandbox home when tests/bash32.sh runs the
+  # suite; it is not part of the checkout.
   find "$(dirname "$TESTS_DIR")" \
     -name .git -prune -o \
+    -name .shellenv -prune -o \
     -type f -print 2>/dev/null \
   | LC_ALL=C sort \
   | while IFS= read -r f; do
