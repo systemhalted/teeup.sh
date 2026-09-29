@@ -326,23 +326,42 @@ EOF2
 
 test_update_and_upgrade_all_on_both_backends() {
   setup
-  mock_command brew 0 ""
-  mock_command port 0 ""
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula") [[ "$3" == "ripgrep" || "$3" == "fzf" ]] && exit 0 || exit 1 ;;
+  "list --cask") [ "$3" = "wezterm" ] && exit 0 || exit 1 ;;
+esac
+exit 0
+EOF2
+  mock_command_script port <<'EOF2'
+echo "port $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "installed ripgrep") echo "  ripgrep @1.0 (active)"; exit 0 ;;
+  "installed fzf") echo "  fzf @1.0 (active)"; exit 0 ;;
+esac
+exit 0
+EOF2
   mock_command sudo 0 ""
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  mkdir -p "$TEEUP_CAPS_DIR/fakecap"
+  printf 'packages="ripgrep fzf"\ncasks="wezterm"\n' > "$TEEUP_CAPS_DIR/fakecap/capability"
+  state_done mark cap-fakecap
+
   export TEEUP_PACKAGE_MANAGER=homebrew
   unset TEEUP_PKG_BACKEND
   pkg_update
   pkg_upgrade_all
   assert_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep fzf" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask wezterm" || return 1
   : > "$MOCK_LOG"
   export TEEUP_PACKAGE_MANAGER=macports
   unset TEEUP_PKG_BACKEND
   pkg_update
   pkg_upgrade_all
   assert_contains "$(cat "$MOCK_LOG")" "sudo port selfupdate" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "sudo port upgrade outdated" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "sudo port upgrade ripgrep fzf" || return 1
   cleanup_test_env
 }
 
@@ -389,6 +408,11 @@ case "$1 $2" in
 esac
 exit 1
 EOF2
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  mkdir -p "$TEEUP_CAPS_DIR/fakecap"
+  printf 'packages="ripgrep"\n' > "$TEEUP_CAPS_DIR/fakecap/capability"
+  state_done mark cap-fakecap
+
   export TEEUP_PACKAGE_MANAGER=homebrew
   unset TEEUP_PKG_BACKEND
   local rc=0 out
@@ -398,19 +422,34 @@ EOF2
   rc=0
   out="$(pkg_upgrade_all 2>&1)" || rc=$?
   assert_failure "$rc" "a failed upgrade is reported to the caller" || return 1
+  assert_contains "$out" "Could not upgrade formulas: ripgrep" || return 1
   cleanup_test_env
 }
 
 test_update_and_upgrade_dry_run_change_nothing() {
   setup
-  mock_command brew 0 ""
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula") [[ "$3" == "ripgrep" ]] && exit 0 || exit 1 ;;
+  "list --cask") [[ "$3" == "wezterm" ]] && exit 0 || exit 1 ;;
+esac
+exit 0
+EOF2
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  mkdir -p "$TEEUP_CAPS_DIR/fakecap"
+  printf 'packages="ripgrep"\ncasks="wezterm"\n' > "$TEEUP_CAPS_DIR/fakecap/capability"
+  state_done mark cap-fakecap
+
   export TEEUP_PACKAGE_MANAGER=homebrew
   unset TEEUP_PKG_BACKEND
   local out
   out="$(DRY_RUN=true pkg_update; DRY_RUN=true pkg_upgrade_all)"
   assert_contains "$out" "[DRY-RUN] Would execute: brew update" || return 1
-  assert_contains "$out" "[DRY-RUN] Would execute: brew upgrade --cask" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: brew upgrade --formula ripgrep" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: brew upgrade --cask wezterm" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade" || return 1
   cleanup_test_env
 }
 

@@ -574,8 +574,8 @@ test_package_inventory_lists_metadata_software_and_prints_commands_that_work() {
   make_cap first core "" "ripgrep" "wezterm"
   make_cap second lazy "" "ripgrep jq" "zed"
   uninstall_collect_packages all
-  assert_equals "ripgrep jq" "$_UNINSTALL_KEPT_PKGS" || return 1
-  assert_equals "wezterm zed" "$_UNINSTALL_KEPT_CASKS" || return 1
+  assert_equals "ripgrep jq" "$TEEUP_COLLECTED_PKGS" || return 1
+  assert_equals "wezterm zed" "$TEEUP_COLLECTED_CASKS" || return 1
   local out fix
   out="$(uninstall_package_commands)"
   assert_contains "$out" "brew uninstall ripgrep jq" || return 1
@@ -598,8 +598,8 @@ test_package_inventory_uses_only_marked_capabilities_for_an_installed_teeup() {
   make_cap unmarked lazy "" "jq" "zed"
   state_done mark cap-installed
   uninstall_collect_packages marked
-  assert_equals "ripgrep" "$_UNINSTALL_KEPT_PKGS" || return 1
-  assert_equals "wezterm" "$_UNINSTALL_KEPT_CASKS" || return 1
+  assert_equals "ripgrep" "$TEEUP_COLLECTED_PKGS" || return 1
+  assert_equals "wezterm" "$TEEUP_COLLECTED_CASKS" || return 1
   cleanup_test_env
 }
 
