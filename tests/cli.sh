@@ -2672,6 +2672,35 @@ test_theme_picker_choosing_the_current_theme_says_nothing_changed() {
 }
 
 echo "bin/teeup"
+# 2026-09-28: an agent ran `HOME=/tmp/x bin/teeup configure ssh` on a Linux
+# machine; XDG_CONFIG_HOME still named the real home, and its git config was
+# replaced. Off macOS, teeup now changes nothing without the test flag.
+test_refuses_to_change_a_machine_that_is_not_a_mac() {
+  setup
+  mock_command uname 0 "Linux"
+  unset TEEUP_ALLOW_NON_MACOS
+  local rc=0 out
+  out="$("$TEEUP" install alpha 2>&1)" || rc=$?
+  assert_equals "1" "$rc" "$out" || return 1
+  assert_contains "$out" "teeup install changes a Mac, and this is Linux" || return 1
+  assert_not_contains "$out" "install:alpha" "the capability ran" || return 1
+  [[ ! -d "$TEST_HOME/.local/state/teeup/done" ]] || { echo "state was written"; return 1; }
+  cleanup_test_env
+}
+
+test_read_only_verbs_still_work_off_macos() {
+  setup
+  mock_command uname 0 "Linux"
+  unset TEEUP_ALLOW_NON_MACOS
+  local verb rc
+  for verb in version help list; do
+    rc=0
+    "$TEEUP" "$verb" >/dev/null 2>&1 || rc=$?
+    assert_equals "0" "$rc" "teeup $verb" || return 1
+  done
+  cleanup_test_env
+}
+
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install skips a done requirement but repairs the target" test_install_skips_a_done_requirement_but_repairs_the_target
 run_test "install runs a missing requirement" test_install_runs_a_missing_requirement
@@ -3186,4 +3215,6 @@ run_test "uninstall dry run with a refusal prints one rerun line" test_uninstall
 run_test "uninstall rerun command works without a terminal once fixed" test_uninstall_rerun_command_works_without_a_terminal_once_fixed
 run_test "uninstall reports a refused home file and still finishes" test_uninstall_reports_a_refused_home_file_and_still_finishes
 run_test "uninstall reports a refused state dir and still finishes" test_uninstall_reports_a_refused_state_dir_and_still_finishes
+run_test "refuses to change a machine that is not a Mac" test_refuses_to_change_a_machine_that_is_not_a_mac
+run_test "read-only verbs still work off macOS" test_read_only_verbs_still_work_off_macos
 print_summary

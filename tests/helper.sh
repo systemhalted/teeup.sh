@@ -23,6 +23,11 @@ setup_test_env() {
   export HOME="$TEST_HOME"
   export XDG_CONFIG_HOME="$TEST_HOME/.config"
   export XDG_STATE_HOME="$TEST_HOME/.local/state"
+  export XDG_DATA_HOME="$TEST_HOME/.local/share"
+  export XDG_CACHE_HOME="$TEST_HOME/.cache"
+  # bin/teeup refuses to change anything off macOS without this; every XDG
+  # directory above is inside TEST_HOME, so a test on Linux is safe.
+  export TEEUP_ALLOW_NON_MACOS=1
   MOCK_BIN="$(mktemp -d)"
   export MOCK_BIN
   export MOCK_LOG="$TEST_HOME/mock.log"
