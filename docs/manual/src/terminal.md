@@ -47,6 +47,16 @@ The leader key is Ctrl+Space. Press it, let go, then press the next key within a
 
 The split and pane keys follow Emacs: 2 and 3 split, 0 closes, 1 zooms, and o moves on.
 
+## The prompt (Starship)
+
+The shell prompt uses Starship. It shows the directory, git branch, git status, command duration, and a prompt character.
+
+Starship requires a Nerd Font for its symbols. Read [Fonts](fonts.md) to configure one.
+
+The configuration lives at `~/.config/starship.toml`. teeup copies it there once. The `teeup theme set` command recolours the prompt.
+
+Read the [Prompt](prompt.md) page for more details.
+
 ## WezTerm in a virtual machine
 
 In a macOS virtual machine, WezTerm can fail to open a window with "failed to create NSOpenGLPixelFormat". teeup switches WezTerm to its WebGpu renderer inside a macOS VM. You can override this in `~/.config/wezterm/local.lua`:
