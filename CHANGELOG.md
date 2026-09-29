@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Ghostty, Alacritty, and iTerm2 are now available as lazy capabilities (`ghostty`, `alacritty`, `iterm2`).
-
 - **Configurable SSH host aliases:** Added `TEEUP_PERSONAL_SSH_HOST` and `TEEUP_WORK_SSH_HOST` to the machine file so identities can be tied to different SSH Host blocks.
 
 ### Changed
