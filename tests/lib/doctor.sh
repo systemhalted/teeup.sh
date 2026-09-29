@@ -682,6 +682,25 @@ test_installed_any_sees_past_teeup_skip() {
   cleanup_test_env
 }
 
+# 2026-09-29, a work Mac: Emacs.app was already in /Applications, not from
+# Homebrew. brew refuses to install the cask over it, and teeup now uses the
+# app as it is, so doctor must not call the cask missing.
+test_metadata_check_accepts_an_app_installed_without_its_cask() {
+  setup
+  make_cap widget "" "widget-app" "Widget"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/Widget.app"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "the app it provides was installed another way" || return 1
+  assert_contains "$out" "Widget.app is installed" || return 1
+  assert_equals "" "$(cat "$REPORT")" "an app installed another way is not a finding" || return 1
+  cleanup_test_env
+}
+
 run_test "fail prints and records against the current capability" test_fail_prints_and_records_against_the_current_capability
 run_test "fail flattens tabs and newlines" test_fail_flattens_tabs_and_newlines_so_one_failure_is_one_record
 run_test "record without a report is a no-op" test_record_without_a_report_is_a_no_op
@@ -724,4 +743,5 @@ run_test "run one does not double count" test_run_one_does_not_double_count_a_do
 run_test "run one does not add a generic failure on top of an unknown" test_run_one_does_not_add_a_generic_failure_on_top_of_an_unknown
 run_test "run one accepts a real capability whose commands are on PATH" test_run_one_accepts_a_real_capability_whose_commands_are_on_path
 run_test "run one checks packages for a real capability with no doctor script" test_run_one_checks_packages_for_a_real_capability_with_no_doctor_script
+run_test "metadata check accepts an app installed without its cask" test_metadata_check_accepts_an_app_installed_without_its_cask
 print_summary

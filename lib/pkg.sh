@@ -243,6 +243,29 @@ cask_installed() {
     brew list --cask "$1" >/dev/null 2>&1
 }
 
+# cask_apps_already_here <capability> <cask> -> 0 when <cask> is one of the
+# capability's casks and every app it declares is already in /Applications
+# (or ~/Applications) without Homebrew: downloaded by hand or pushed by IT.
+# brew refuses to install over such an app ("It seems there is already an
+# App at '/Applications/Emacs.app'"), so teeup uses it as it is. teeup update
+# upgrades only what Homebrew installed for teeup, so it leaves the app alone.
+cask_apps_already_here() {
+  local cap="$1" cask="$2" app found=false
+  [[ -n "$cap" ]] || return 1
+  case " $(cap_meta_get "$cap" casks) " in
+    *" $cask "*) ;;
+    *) return 1 ;;
+  esac
+  while IFS= read -r app; do
+    [[ -n "$app" ]] || continue
+    app_installed "$app" || return 1
+    found=true
+  done <<EOF_APPS
+$(cap_apps "$cap")
+EOF_APPS
+  [[ "$found" == "true" ]]
+}
+
 # cask_install <cask>
 # On MacPorts machines GUI apps are skipped with a note rather than failing,
 # so a capability that is mostly CLI still installs its CLI half.
@@ -255,6 +278,15 @@ cask_install() {
   fi
   if cask_installed "$cask"; then
     log "Already installed: $cask (cask)"
+    return 0
+  fi
+  if cask_apps_already_here "${TEEUP_CAP:-}" "$cask"; then
+    local app
+    while IFS= read -r app; do
+      log "Using the $app.app that is already installed (not by Homebrew) instead of the $cask cask; teeup update leaves it to you."
+    done <<EOF_APPS
+$(cap_apps "$TEEUP_CAP")
+EOF_APPS
     return 0
   fi
   run_cmd brew install --cask "$cask" && ok_unless_dry "Installed $cask (cask)"

@@ -481,6 +481,52 @@ EOF2
 }
 
 echo "lib/pkg.sh"
+# 2026-09-29, a work Mac: `brew install --cask emacs-app` failed with "It
+# seems there is already an App at '/Applications/Emacs.app'". An app that is
+# already there, however it got there, is used as it is.
+test_cask_install_uses_an_app_installed_another_way() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1" in list) exit 1 ;; esac
+EOF2
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app"
+  local out
+  out="$(TEEUP_CAP=wezterm cask_install wezterm 2>&1)"
+  assert_not_contains "$(cat "$MOCK_LOG")" "install --cask" "brew was asked to install over the app" || return 1
+  assert_contains "$out" "Using the WezTerm.app that is already installed (not by Homebrew)" || return 1
+  cleanup_test_env
+}
+
+test_cask_install_installs_when_the_app_is_missing() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1" in list) exit 1 ;; esac
+EOF2
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR"
+  TEEUP_CAP=wezterm cask_install wezterm >/dev/null 2>&1 || true
+  assert_contains "$(cat "$MOCK_LOG")" "brew install --cask wezterm" || return 1
+  cleanup_test_env
+}
+
+# Outside a capability there are no apps to go by, so the cask installs.
+test_cask_install_outside_a_capability_still_installs() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1" in list) exit 1 ;; esac
+EOF2
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app"
+  unset TEEUP_CAP
+  cask_install wezterm >/dev/null 2>&1 || true
+  assert_contains "$(cat "$MOCK_LOG")" "brew install --cask wezterm" || return 1
+  cleanup_test_env
+}
+
 run_test "backend defaults to homebrew on modern macOS" test_backend_defaults_to_homebrew_on_modern_macos
 run_test "backend is macports on macOS 12" test_backend_is_macports_on_macos_12
 run_test "backend honours answer" test_backend_honours_answer
@@ -514,4 +560,7 @@ run_test "upgrade one package or cask only when it is installed" test_upgrade_on
 run_test "cask_upgrade is a note on MacPorts" test_cask_upgrade_is_a_note_on_macports
 run_test "upgrade failures are reported" test_upgrade_failures_are_reported
 run_test "update and upgrade dry run change nothing" test_update_and_upgrade_dry_run_change_nothing
+run_test "cask install uses an app installed another way" test_cask_install_uses_an_app_installed_another_way
+run_test "cask install installs when the app is missing" test_cask_install_installs_when_the_app_is_missing
+run_test "cask install outside a capability still installs" test_cask_install_outside_a_capability_still_installs
 print_summary

@@ -273,6 +273,8 @@ doctor_metadata_check() {
     fi
     if cask_installed "$item"; then
       doctor_ok "cask $item is installed."
+    elif cask_apps_already_here "$cap" "$item"; then
+      doctor_ok "cask $item is not installed; the app it provides was installed another way, and teeup uses that."
     else
       _doctor_report_failure "$cap" "cask $item is not installed." "teeup install $cap"
     fi
