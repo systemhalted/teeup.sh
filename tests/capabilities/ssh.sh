@@ -1240,7 +1240,7 @@ CFG
 
   # git configure sets signingkey to id_ed25519_personal.pub
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
-  assert_contains "$(cat "$TEST_HOME/.config/git/identity")" "signingkey = $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/git/identity")" "signingkey = \"$TEST_HOME/.ssh/id_ed25519_personal.pub\"" || return 1
 
   unset TEEUP_MACHINES_DIR
   cleanup_test_env
