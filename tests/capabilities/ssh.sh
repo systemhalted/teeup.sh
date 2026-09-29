@@ -1215,12 +1215,8 @@ CFG
   local before
   before="$(cat "$TEST_HOME/.ssh/config")"
 
-  printf '%s\n' '-----BEGIN OPENSSH PRIVATE KEY-----' > "$TEST_HOME/.ssh/id_ed25519_personal"
-  printf '%s\n' 'MINE-PERSONAL' >> "$TEST_HOME/.ssh/id_ed25519_personal"
-  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDRsRT+SScYXpp2FoOLOwP5x2bVjqqsSwLitVxbwufMT PERSONAL\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
-  printf '%s\n' '-----BEGIN OPENSSH PRIVATE KEY-----' > "$TEST_HOME/.ssh/id_ed25519"
-  printf '%s\n' 'MINE-WORK' >> "$TEST_HOME/.ssh/id_ed25519"
-  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOhb0yY7/9iXunApnMDyt2SXfzy+hY0p3CVHrRKzeCaa WORK\n' > "$TEST_HOME/.ssh/id_ed25519.pub"
+  ssh-keygen -t ed25519 -N "" -f "$TEST_HOME/.ssh/id_ed25519_personal" >/dev/null 2>&1
+  ssh-keygen -t ed25519 -N "" -f "$TEST_HOME/.ssh/id_ed25519" >/dev/null 2>&1
   chmod 600 "$TEST_HOME/.ssh/id_ed25519_personal" "$TEST_HOME/.ssh/id_ed25519"
 
   # identity_key behaves as requested
@@ -1244,7 +1240,7 @@ CFG
 
   # git configure sets signingkey to id_ed25519_personal.pub
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
-  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "signingkey = $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/git/identity")" "signingkey = $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
 
   unset TEEUP_MACHINES_DIR
   cleanup_test_env
