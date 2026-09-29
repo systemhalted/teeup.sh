@@ -1,0 +1,9 @@
+summary="iTerm2 terminal; teeup installs it, it does not theme it"
+group=apps
+tier=lazy
+requires="package-manager"
+provides=""
+packages=""
+casks="iterm2"
+apps="iTerm"
+interactive=false

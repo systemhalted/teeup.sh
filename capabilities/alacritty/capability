@@ -1,0 +1,9 @@
+summary="Alacritty terminal; teeup installs it, it does not theme it"
+group=apps
+tier=lazy
+requires="package-manager"
+provides="alacritty"
+packages=""
+casks="alacritty"
+apps="Alacritty"
+interactive=false

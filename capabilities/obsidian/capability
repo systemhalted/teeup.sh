@@ -1,6 +1,6 @@
 summary="Obsidian notes"
 group=apps
-tier=daily
+tier=lazy
 requires="package-manager"
 provides=""
 packages=""

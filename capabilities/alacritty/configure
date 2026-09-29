@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+if ! casks_supported; then
+  not_applicable "Alacritty is a Homebrew cask and MacPorts has no Alacritty port, so teeup cannot configure it on this machine."
+fi
+
+if app_installed Alacritty; then
+  if have alacritty; then
+    log "Open it with: teeup launch alacritty (or run alacritty in a project directory)"
+  else
+    log "Open it with: teeup launch alacritty"
+  fi
+else
+  warn "Alacritty is not installed; skipping launch guidance."
+fi

@@ -73,10 +73,10 @@ test_configure_runs_no_command() {
   cleanup_test_env
 }
 
-test_the_tier_is_daily() {
+test_the_tier_is_lazy() {
   setup
-  assert_contains "$("$TEEUP" list --tier daily)" "obsidian" || return 1
-  grep -qx "obsidian" "$TEEUP_PATH/capabilities/daily.list" || { echo "obsidian is not in daily.list"; return 1; }
+  assert_contains "$("$TEEUP" list --tier lazy)" "obsidian" || return 1
+  grep -qx "obsidian" "$TEEUP_PATH/capabilities/daily.list" && { echo "obsidian must not be in daily.list"; return 1; }
   cleanup_test_env
 }
 
@@ -86,5 +86,5 @@ run_test "install skips an installed cask" test_install_skips_an_installed_cask
 run_test "install warns on macports" test_install_warns_on_macports
 run_test "configure reports the app" test_configure_reports_the_app
 run_test "configure runs no command" test_configure_runs_no_command
-run_test "the tier is daily" test_the_tier_is_daily
+run_test "the tier is lazy" test_the_tier_is_lazy
 print_summary

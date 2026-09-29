@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+if ! casks_supported; then
+  not_applicable "Alacritty is a Homebrew cask and MacPorts has no Alacritty port, so teeup cannot install it on this machine."
+fi
+cask_install alacritty
