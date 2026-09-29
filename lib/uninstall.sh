@@ -670,6 +670,11 @@ uninstall_package_commands() {
 uninstall_print_package_lists() {
   printf 'Packages: %s\n' "${_UNINSTALL_KEPT_PKGS:-none}"
   printf 'Apps: %s\n' "${_UNINSTALL_KEPT_CASKS:-none}"
+  # The lists come from capability metadata, not from a record of what teeup
+  # itself installed, so software the user brew-installed first shows up too.
+  if [[ -n "$_UNINSTALL_KEPT_PKGS$_UNINSTALL_KEPT_CASKS" ]]; then
+    warn "teeup lists what its capabilities use, so a package you installed yourself before teeup can be here too. Answer no to keep them all; the summary then prints the commands to remove the rest by hand."
+  fi
 }
 
 # uninstall_policy <name> -> what uninstall does with a capability that
