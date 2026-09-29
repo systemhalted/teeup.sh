@@ -12,7 +12,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-15-intel, ubuntu-latest]
+        # macos-14 (Apple silicon, the oldest macOS tested), macos-26 (Apple
+        # silicon, current), macos-15-intel (Intel), ubuntu-latest (bash 5).
+        os: [macos-14, macos-26, macos-15-intel, ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v5
