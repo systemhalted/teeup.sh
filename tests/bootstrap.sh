@@ -435,6 +435,20 @@ test_wizard_runs_when_only_backend_recorded() {
   cleanup_test_env
 }
 
+test_ctrl_c_in_gum_stops_the_nested_wizard_prompt() {
+  setup
+  export TEEUP_TEST_MISSING="jq starship rg fd fzf bat eza zoxide yq btop tldr dust gpg delta git-lfs lazygit emacs emacsclient"
+  unset TEEUP_NO_GUM
+  mock_command gum 130 ""
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' > "$TEST_HOME/.config/teeup/answers"
+  local rc=0 out
+  out="$("$BOOT" --dry-run </dev/null 2>&1)" || rc=$?
+  assert_equals 130 "$rc" "Ctrl-C in wizard ui_input must keep status 130" || return 1
+  assert_not_contains "$out" "Bootstrap finished" "bootstrap went on after Ctrl-C" || return 1
+  cleanup_test_env
+}
+
 test_reconfigure_reruns_wizard() {
   setup
   mkdir -p "$TEST_HOME/.config/teeup"
@@ -807,8 +821,10 @@ run_test "a second bootstrap changes nothing" test_a_second_bootstrap_changes_no
 run_test "dry run touches nothing" test_dry_run_touches_nothing
 run_test "existing answers skip wizard" test_existing_answers_skip_wizard
 run_test "wizard runs when only backend recorded" test_wizard_runs_when_only_backend_recorded
+run_test "Ctrl-C in gum stops the nested wizard prompt" test_ctrl_c_in_gum_stops_the_nested_wizard_prompt
 run_test "--reconfigure reruns wizard" test_reconfigure_reruns_wizard
 run_test "--reconfigure does not ask for a pinned package manager" test_reconfigure_does_not_ask_for_a_pinned_package_manager
+run_test "Ctrl-C in capability stops bootstrap" test_ctrl_c_in_capability_stops_bootstrap
 run_test "an empty machine pin is still a pin" test_an_empty_machine_pin_is_still_a_pin
 run_test "the wizard does not ask for a pinned theme" test_wizard_does_not_ask_for_a_pinned_theme
 run_test "the wizard offers every shipped theme" test_the_wizard_offers_every_shipped_theme
@@ -832,3 +848,13 @@ run_test "the wizard records the Emacs flavor" test_wizard_records_the_emacs_fla
 run_test "the wizard does not ask the flavor without the daily tier" test_wizard_does_not_ask_the_flavor_without_the_daily_tier
 run_test "the wizard does not ask for a pinned flavor" test_wizard_does_not_ask_for_a_pinned_flavor
 print_summary
+
+test_ctrl_c_in_capability_stops_bootstrap() {
+  setup
+  printf '#!/usr/bin/env bash\nexit 130\n' > "$TEEUP_CAPS_DIR/package-manager/install"
+  local rc=0 out
+  out="$("$BOOT" --dry-run </dev/null 2>&1)" || rc=$?
+  assert_not_contains "$out" "Bootstrap finished" "bootstrap went on after capability Ctrl-C" || return 1
+  assert_equals 130 "$rc" "Ctrl-C in capability must stop bootstrap with 130" || return 1
+  cleanup_test_env
+}
