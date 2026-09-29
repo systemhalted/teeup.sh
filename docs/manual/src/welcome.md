@@ -13,9 +13,9 @@ After the first run you have:
 - a zsh login shell with teeup's own configuration, the [Starship prompt](prompt.md), and a modern command-line set (ripgrep, fd, fzf, bat, eza, zoxide and more);
 - git with your identity, an ed25519 SSH key, and the GitHub CLI signed in;
 - mise for language runtimes, WezTerm as the terminal, the JetBrainsMono Nerd Font, AeroSpace for tiling windows, Caps Lock as Control, and a set of macOS preferences for development;
-- if you say yes to it, Emacs, Zed, Firefox Developer Edition and Obsidian.
+- if you say yes to it, Emacs.
 
-Everything else, such as Neovim, VS Code, Cursor, Docker through Colima, and the AI coding tools, waits until you ask for it. Typing `docker` or `claude` for the first time offers to install it.
+Everything else, such as Zed, Obsidian, Firefox Developer Edition, Neovim, VS Code, Cursor, Docker through Colima, and the AI coding tools, waits until you ask for it. Typing `docker` or `claude` for the first time offers to install it.
 
 <!-- SCREENSHOT: A WezTerm window on a freshly bootstrapped Mac, showing the Starship prompt and the output of `teeup status`. -->
 

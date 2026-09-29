@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+iterm2_macos_major="$(macos_major)"
+if [[ "${iterm2_macos_major:-99}" -lt 13 ]] 2>/dev/null; then
+  not_applicable "iTerm2 requires macOS 13 or newer; this Mac is on macOS $iterm2_macos_major, so there is nothing to configure."
+fi
+unset iterm2_macos_major
+
+if ! casks_supported; then
+  not_applicable "iTerm2 is a Homebrew cask and MacPorts has no iTerm2 port, so teeup cannot configure it on this machine."
+fi
+
+if app_installed iTerm; then
+  log "Open it with: teeup launch iterm2"
+else
+  warn "iTerm2 is not installed; skipping launch guidance."
+fi

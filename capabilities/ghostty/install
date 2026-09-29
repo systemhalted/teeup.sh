@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+ghostty_macos_major="$(macos_major)"
+if [[ "${ghostty_macos_major:-99}" -lt 13 ]] 2>/dev/null; then
+  not_applicable "Ghostty requires macOS 13 or newer; this Mac is on macOS $ghostty_macos_major, so there is nothing to install."
+fi
+unset ghostty_macos_major
+
+if ! casks_supported; then
+  not_applicable "Ghostty is a Homebrew cask and MacPorts has no Ghostty port, so teeup cannot install it on this machine."
+fi
+cask_install ghostty

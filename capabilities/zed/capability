@@ -1,8 +1,8 @@
 summary="Zed editor, following the teeup theme and font"
 group=editors
-tier=daily
+tier=lazy
 requires="package-manager cli-tools"
-provides=""
+provides="zed"
 packages=""
 casks="zed"
 apps="Zed"

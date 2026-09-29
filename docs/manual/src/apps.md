@@ -4,8 +4,8 @@ Besides the terminal and the editors, teeup installs additional apps.
 
 | App | Capability | Tier | Notes |
 |---|---|---|---|
-| Firefox Developer Edition | `firefox-developer-edition` | daily | The daily browser. |
-| Obsidian | `obsidian` | daily | Notes. Needs macOS 12 or newer. |
+| Firefox Developer Edition | `firefox-developer-edition` | lazy | The daily browser. |
+| Obsidian | `obsidian` | lazy | Notes. Needs macOS 12 or newer. |
 | Google Chrome | `chrome` | lazy | Needs macOS 13 or newer. |
 | AeroSpace | `aerospace` | core | Tiling window manager. Needs macOS 13 or newer. |
 | Ollama | `ollama` | lazy | Local language models. No model is downloaded for you. |

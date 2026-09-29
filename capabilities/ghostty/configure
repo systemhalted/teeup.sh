@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+ghostty_macos_major="$(macos_major)"
+if [[ "${ghostty_macos_major:-99}" -lt 13 ]] 2>/dev/null; then
+  not_applicable "Ghostty requires macOS 13 or newer; this Mac is on macOS $ghostty_macos_major, so there is nothing to configure."
+fi
+unset ghostty_macos_major
+
+if ! casks_supported; then
+  not_applicable "Ghostty is a Homebrew cask and MacPorts has no Ghostty port, so teeup cannot configure it on this machine."
+fi
+
+if app_installed Ghostty; then
+  if have ghostty; then
+    log "Open it with: teeup launch ghostty (or run ghostty in a project directory)"
+  else
+    log "Open it with: teeup launch ghostty"
+  fi
+else
+  warn "Ghostty is not installed; skipping launch guidance."
+fi

@@ -43,18 +43,18 @@ The first prompt asks which package manager to use. This happens after installin
 | Your full name | The name on your macOS account | `TEEUP_NAME` |
 | Personal email (your git identity) | none | `TEEUP_EMAIL` |
 | Theme | the first theme listed | `TEEUP_THEME` |
-| Install the daily set too (Emacs, Zed, Firefox Developer Edition, Obsidian)? | yes | `TEEUP_DAILY` |
+| Install the daily set too (Emacs)? | yes | `TEEUP_DAILY` |
 | Emacs flavor: `starter`, `doom`, `spacemacs` or `none` | `starter` | `TEEUP_EMACS_FLAVOR` |
 
 The Emacs question only appears when you said yes to the daily set. An empty name or an invalid email is asked again, three tries in all. A package manager, theme or Emacs flavor pinned in your machine file (see [Answers and machines](answers-and-machines.md)) is not asked at all; teeup says it is pinned and moves on.
 
 The answers go to `~/.config/teeup/answers`. A second `./bootstrap` reuses them without asking. To change them, run `./bootstrap --reconfigure` or use `teeup config`.
 
-<!-- SCREENSHOT: The bootstrap wizard in Terminal.app with gum, showing the "Install the daily set too (Emacs, Zed, Firefox Developer Edition, Obsidian)?" confirmation. -->
+<!-- SCREENSHOT: The bootstrap wizard in Terminal.app with gum, showing the "Install the daily set too (Emacs)?" confirmation. -->
 
 ## What it installs
 
-The core tier comes first, in this order: the Xcode Command Line Tools, the package manager, teeup's runtime, `~/Work`, zsh, Starship, the command-line tools, Keychain secrets, git, SSH, the GitHub CLI, mise, WezTerm, the Nerd Font, AeroSpace, the Caps Lock mapping, macOS preferences, and the theme. Then, if you said yes, the daily tier: Emacs, Zed, Firefox Developer Edition and Obsidian. [Tiers](tiers.md) explains the difference.
+The core tier comes first, in this order: the Xcode Command Line Tools, the package manager, teeup's runtime, `~/Work`, zsh, Starship, the command-line tools, Keychain secrets, git, SSH, the GitHub CLI, mise, WezTerm, the Nerd Font, AeroSpace, the Caps Lock mapping, macOS preferences, and the theme. Then, if you said yes, the daily tier: Emacs. [Tiers](tiers.md) explains the difference.
 
 A few steps stop and wait for you:
 

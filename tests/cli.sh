@@ -1276,14 +1276,24 @@ test_update_skips_a_daily_capability_never_installed_or_skipped() {
 }
 
 # lazyone is tier lazy (declared in setup()); its configure can start a VM,
-# so whole-machine update must never run it, installed or not.
-test_update_does_not_configure_a_lazy_capability() {
+# Update configures lazy capabilities if they are installed, but skips uninstalled ones.
+test_update_leaves_even_installed_lazy_capabilities_alone() {
   setup
   mock_update_world
+  # lazyone is installed, lazytwo is not (created in setup with tier lazy)
+  printf '#!/usr/bin/env bash\necho "configure:lazytwo"\n' > "$TEEUP_CAPS_DIR/lazytwo/configure"
+  chmod +x "$TEEUP_CAPS_DIR/lazytwo/configure"
+  printf 'lazytwo\n' > "$TEEUP_CAPS_DIR/lazytwo/provides"
+  printf 'lazy\n' > "$TEEUP_CAPS_DIR/lazytwo/tier"
+
+  # Even an installed lazy capability is left alone: configure can have side
+  # effects (colima's starts the VM), and theme/font hooks already keep the
+  # themed ones current.
   "$TEEUP" install lazyone >/dev/null
   local out
   out="$("$TEEUP" update 2>&1)"
-  assert_not_contains "$out" "configure:lazyone" "a lazy capability's configure can start a VM; update must never run it" || return 1
+  assert_not_contains "$out" "configure:lazyone" "update configured an installed lazy capability" || return 1
+  assert_not_contains "$out" "configure:lazytwo" "update configured a lazy capability that is not installed" || return 1
   cleanup_test_env
 }
 
@@ -2677,7 +2687,7 @@ run_test "update walks every step in order" test_update_walks_every_step_in_orde
 run_test "update skips core capabilities it never installed" test_update_skips_core_capabilities_it_never_installed
 run_test "update configures an installed daily capability after core" test_update_configures_an_installed_daily_capability_after_core
 run_test "update skips a daily capability never installed or skipped" test_update_skips_a_daily_capability_never_installed_or_skipped
-run_test "update does not configure a lazy capability" test_update_does_not_configure_a_lazy_capability
+run_test "update leaves even installed lazy capabilities alone" test_update_leaves_even_installed_lazy_capabilities_alone
 run_test "update refuses a dirty checkout" test_update_refuses_a_dirty_checkout
 run_test "update carries on when the pull fails" test_update_carries_on_when_the_pull_fails
 run_test "update refreshes the CA bundle before git pull" test_update_refreshes_the_ca_bundle_before_git_pull

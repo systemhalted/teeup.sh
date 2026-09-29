@@ -1,0 +1,9 @@
+summary="Ghostty terminal; teeup installs it, it does not theme it"
+group=apps
+tier=lazy
+requires="package-manager"
+provides=""
+packages=""
+casks="ghostty"
+apps="Ghostty"
+interactive=false

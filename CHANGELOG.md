@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.1-beta] - UNRELEASED
 
+### Added
+- Ghostty, Alacritty, and iTerm2 are now available as lazy capabilities (`ghostty`, `alacritty`, `iterm2`).
+
+### Changed
+- Zed, Obsidian, and Firefox Developer Edition are now lazy capabilities. They install the first time you use them, rather than as part of the daily bootstrap set. Emacs is now the only daily capability.
+
 ### Fixed
 - **starship:** Escaped bare `$` in the `stashed` format string to suppress an error parsing warning.
 

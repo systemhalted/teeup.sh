@@ -1,10 +1,10 @@
 # Other editors
 
-Emacs is the editor teeup configures for the shell and git (see [Emacs](emacs.md)). Four more are available. Zed comes with the daily tier; the rest are lazy and install when you first run them.
+Emacs is the editor teeup configures for the shell and git (see [Emacs](emacs.md)). Four more are available. All are lazy and install when you first run them.
 
 | Editor | Tier | How to get it | Capability |
 |---|---|---|---|
-| Zed | daily | Say yes to the daily set, or `teeup install zed` | `zed` |
+| Zed | lazy | Type `zed`, `teeup launch Zed`, or `teeup install zed` | `zed` |
 | Neovim | lazy | Type `nvim`, or `teeup install neovim` | `neovim` |
 | VS Code | lazy | Type `code`, `teeup launch Visual Studio Code`, or `teeup install vscode` | `vscode` |
 | Cursor | lazy | Type `cursor`, `teeup launch Cursor`, or `teeup install cursor` | `cursor` |

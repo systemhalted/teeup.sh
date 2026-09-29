@@ -286,6 +286,49 @@ test_theme_renders_the_zed_names() {
   cleanup_test_env
 }
 
+test_the_tier_is_lazy() {
+  setup || return 1
+  assert_contains "$("$TEEUP" list --tier lazy)" "zed" || return 1
+  ! grep -qx "zed" "$TEEUP_PATH/capabilities/daily.list" || { echo "zed is in daily.list"; return 1; }
+  cleanup_test_env
+}
+
+test_the_zed_command_gets_a_shim() {
+  setup || return 1
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null
+  local shim="$TEST_HOME/.local/state/teeup/shims/zed"
+  assert_file_exists "$shim" || return 1
+  assert_contains "$(cat "$shim")" 'lazy-run zed zed "$@"' || return 1
+  cleanup_test_env
+}
+
+test_an_installed_zed_follows_the_theme_through_update() {
+  setup || return 1
+  mock_command brew 0 ""
+  mock_command mise 0 ""
+  mock_command_script git <<'EOF2'
+case "$*" in
+  *status*) exit 0 ;;
+esac
+exit 0
+EOF2
+  mkdir -p "$TEST_HOME/.local/state/teeup/migrations"
+  for m in "$TEEUP_PATH"/migrations/*.sh; do
+    : > "$TEST_HOME/.local/state/teeup/migrations/$(basename "$m")"
+  done
+  mark_installed
+  DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
+  assert_file_exists "$SETTINGS" || return 1
+  assert_equals "Catppuccin Mocha" "$(read_setting .theme.dark)" || return 1
+  local out
+  out="$(DRY_RUN=false "$TEEUP" update 2>&1)"
+  # The theme hook keeps an installed Zed current; update does not run its
+  # configure (lazy capabilities are left alone).
+  assert_contains "$out" "Already current: $SETTINGS" || return 1
+  assert_not_contains "$out" "Starting: zed configure" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/zed"
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install never takes the MacPorts zed" test_install_never_takes_the_macports_zed
@@ -304,4 +347,8 @@ run_test "an extension id with a space is skipped, not split" test_an_extension_
 run_test "theme-apply continues past a symlinked settings file" test_theme_apply_continues_past_a_symlinked_settings_file
 run_test "hooks without jq warn and continue" test_hooks_without_jq_warn_and_continue
 run_test "theme renders the zed names" test_theme_renders_the_zed_names
+run_test "the tier is lazy" test_the_tier_is_lazy
+run_test "the zed command gets a shim" test_the_zed_command_gets_a_shim
+run_test "an installed zed follows the theme through update" test_an_installed_zed_follows_the_theme_through_update
+
 print_summary

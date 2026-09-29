@@ -5,8 +5,8 @@ Every capability belongs to one of three tiers. The tier decides when it gets in
 | Tier | Installed | Examples |
 |---|---|---|
 | core | Always, by `./bootstrap` | zsh, Starship, git, SSH, mise, WezTerm, the Nerd Font, AeroSpace, the theme |
-| daily | By `./bootstrap`, if you said yes to the daily set | Emacs, Zed, Firefox Developer Edition, Obsidian |
-| lazy | The first time you use it, or when you ask | Neovim, VS Code, Cursor, Chrome, Docker through Colima, tmux, Ollama, Herdr, the AI tools |
+| daily | By `./bootstrap`, if you said yes to the daily set | Emacs |
+| lazy | The first time you use it, or when you ask | Zed, Obsidian, Firefox Developer Edition, Neovim, VS Code, Cursor, Chrome, Docker through Colima, tmux, Ollama, Herdr, the AI tools |
 
 See the full list, with each capability's tier, with `teeup list`, or one tier at a time:
 
@@ -22,7 +22,7 @@ The core tier is what every terminal session needs. `capabilities/core.list` fix
 
 ## Daily
 
-The daily tier holds larger applications. The wizard asks, "Install the daily set too (Emacs, Zed, Firefox Developer Edition, Obsidian)?". It records the answer as `TEEUP_DAILY`. `./bootstrap --skip-daily` skips the tier for one run. If a daily capability fails, it prints a warning and the run continues.
+The daily tier holds larger applications. The wizard asks, "Install the daily set too (Emacs)?". It records the answer as `TEEUP_DAILY`. `./bootstrap --skip-daily` skips the tier for one run. If a daily capability fails, it prints a warning and the run continues.
 
 `teeup update` configures the core and daily tiers again. If you remove a core or daily capability with `teeup remove`, the next `./bootstrap` installs it again, unless your machine file lists it in `TEEUP_SKIP`:
 

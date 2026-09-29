@@ -73,10 +73,32 @@ test_configure_runs_no_command() {
   cleanup_test_env
 }
 
-test_the_tier_is_daily() {
+test_the_tier_is_lazy() {
   setup
-  assert_contains "$("$TEEUP" list --tier daily)" "obsidian" || return 1
-  grep -qx "obsidian" "$TEEUP_PATH/capabilities/daily.list" || { echo "obsidian is not in daily.list"; return 1; }
+  assert_contains "$("$TEEUP" list --tier lazy)" "obsidian" || return 1
+  grep -qx "obsidian" "$TEEUP_PATH/capabilities/daily.list" && { echo "obsidian must not be in daily.list"; return 1; }
+  cleanup_test_env
+}
+
+test_launch_installs_the_cask_then_opens() {
+  setup
+  mock_command open 0 ""
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-} ${3:-}" in
+  "list --cask obsidian") exit 1 ;;
+  "install --cask obsidian")
+    mkdir -p "$TEEUP_APPS_DIR/Obsidian.app"
+    echo "brew install --cask obsidian"
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local out
+  out="$(DRY_RUN=false "$TEEUP" launch obsidian)"
+  assert_contains "$out" "Obsidian is not installed; installing obsidian first." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew install --cask obsidian" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "open -a Obsidian" || return 1
   cleanup_test_env
 }
 
@@ -86,5 +108,29 @@ run_test "install skips an installed cask" test_install_skips_an_installed_cask
 run_test "install warns on macports" test_install_warns_on_macports
 run_test "configure reports the app" test_configure_reports_the_app
 run_test "configure runs no command" test_configure_runs_no_command
-run_test "the tier is daily" test_the_tier_is_daily
+run_test "the tier is lazy" test_the_tier_is_lazy
+run_test "launch installs the cask then opens" test_launch_installs_the_cask_then_opens
+
 print_summary
+
+test_launch_installs_the_cask_then_opens() {
+  setup
+  mock_command open 0 ""
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-} ${3:-}" in
+  "list --cask obsidian") exit 1 ;;
+  "install --cask obsidian")
+    mkdir -p "$TEEUP_APPS_DIR/Obsidian.app"
+    echo "brew install --cask obsidian"
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local out
+  out="$(DRY_RUN=false "$TEEUP" launch obsidian)"
+  assert_contains "$out" "Obsidian is not installed; installing obsidian first." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew install --cask obsidian" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "open -a Obsidian" || return 1
+  cleanup_test_env
+}

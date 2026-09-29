@@ -773,14 +773,13 @@ test_dry_run_walks_the_daily_tier() {
 
 test_dry_run_walks_the_daily_tier_in_order() {
   setup
-  local out e z f o
+  local out e
   out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
   e="$(printf '%s\n' "$out" | grep -n 'Completed: emacs configure' | head -1 | cut -d: -f1)"
-  z="$(printf '%s\n' "$out" | grep -n 'Completed: zed configure' | head -1 | cut -d: -f1)"
-  f="$(printf '%s\n' "$out" | grep -n 'Completed: firefox-developer-edition configure' | head -1 | cut -d: -f1)"
-  o="$(printf '%s\n' "$out" | grep -n 'Completed: obsidian configure' | head -1 | cut -d: -f1)"
-  [[ -n "$e" && -n "$z" && -n "$f" && -n "$o" ]] || { echo "a daily capability did not complete:"; printf '%s\n' "$out"; return 1; }
-  [[ "$e" -lt "$z" && "$z" -lt "$f" && "$f" -lt "$o" ]] || { echo "the daily tier ran out of order"; return 1; }
+  [[ -n "$e" ]] || { echo "a daily capability did not complete:"; printf '%s\n' "$out"; return 1; }
+  assert_not_contains "$out" "Starting: zed install" "zed is lazy" || return 1
+  assert_not_contains "$out" "Starting: obsidian install" "obsidian is lazy" || return 1
+  assert_not_contains "$out" "Starting: firefox-developer-edition install" "firefox is lazy" || return 1
   assert_not_contains "$out" "Starting: chrome install" "chrome is lazy" || return 1
   assert_not_contains "$out" "Starting: neovim install" "neovim is lazy" || return 1
   assert_not_contains "$out" "Starting: vscode install" "vscode is lazy" || return 1
