@@ -342,7 +342,7 @@ test_doctor_reports_certificates_changed() {
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "changed" || return 1
+  assert_contains "$out" "certificates changed since the command-line CA bundle was built" || return 1
   assert_contains "$(cat "$report")" "teeup configure ca-bundle" || return 1
   assert_equals "$bundle_bytes" "$(cat "$TEEUP_STATE_DIR/ca-bundle.pem")" "bundle was changed" || return 1
   cleanup_test_env
