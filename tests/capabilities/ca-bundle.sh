@@ -118,6 +118,15 @@ EOF_PLIST
         ;;
       *System.keychain*)
         case "$MOCK_SECURITY_MODE" in admin_find_failure) exit 1 ;; esac
+        # A keychain rewrite can list the same certificates in another order.
+        if [ "${MOCK_SECURITY_ORDER:-}" = reversed ]; then
+          printf '%s\n' \
+            'SHA-1 hash: FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' \
+            '-----BEGIN CERTIFICATE-----' 'TRUST_AS_ROOT_CERT' '-----END CERTIFICATE-----' \
+            'SHA-1 hash: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+            '-----BEGIN CERTIFICATE-----' 'TRUSTED_ADMIN_ROOT' '-----END CERTIFICATE-----'
+          exit 0
+        fi
         printf '%s\n' \
           'SHA-1 hash: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
           '-----BEGIN CERTIFICATE-----' 'TRUSTED_ADMIN_ROOT' '-----END CERTIFICATE-----' \
@@ -458,6 +467,23 @@ test_only_denied_admin_certificates_leave_no_bundle() {
   cleanup_test_env
 }
 
+# Codex review of #99: the same certificates listed in another order are not
+# a change.
+test_doctor_ignores_certificate_order() {
+  setup
+  export MOCK_SECURITY_MODE=mixed_trust
+  ca_bundle_rebuild 2>/dev/null || return 1
+  sleep 1
+  touch "$TEEUP_SYSTEM_KEYCHAIN"
+  export MOCK_SECURITY_ORDER=reversed
+  local rc=0 out
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_success "$rc" "$out" || return 1
+  assert_contains "$out" "present and current" || return 1
+  unset MOCK_SECURITY_ORDER
+  cleanup_test_env
+}
+
 run_test "no admin roots leave no bundle or environment" test_no_admin_roots_leave_no_bundle_or_environment
 run_test "bundle includes public and trusted admin roots only" test_bundle_contains_public_and_trusted_admin_roots_only
 run_test "unchanged content keeps mtimes" test_unchanged_content_keeps_bundle_and_curlrc_mtimes
@@ -478,4 +504,5 @@ run_test "doctor leaves no temp directory" test_doctor_leaves_no_temp_directory
 run_test "remove deletes bundle and curlrc" test_remove_deletes_bundle_and_curlrc
 run_test "bundle follows each certificate's trust result" test_bundle_follows_each_certificates_trust_result
 run_test "only denied admin certificates leave no bundle" test_only_denied_admin_certificates_leave_no_bundle
+run_test "doctor ignores certificate order" test_doctor_ignores_certificate_order
 print_summary

@@ -311,6 +311,17 @@ ca_bundle_rebuild() {
   ca_bundle_apply_env
 }
 
+# _ca_bundle_cert_set <pem file> -> each certificate on one line, sorted, so
+# two bundles compare equal when they hold the same certificates in any order
+# (a keychain rewrite can change the order security lists them in).
+_ca_bundle_cert_set() {
+  awk '
+    /^-----BEGIN CERTIFICATE-----$/ { cert = ""; in_cert = 1; next }
+    /^-----END CERTIFICATE-----$/ { if (in_cert) print cert; in_cert = 0; next }
+    in_cert { cert = cert $0 }
+  ' "$1" | LC_ALL=C sort
+}
+
 # ca_bundle_is_current -> prints current, missing, curlrc_stale, changed or
 # could_not_check; returns 0 only for current. Device-management software
 # rewrites System.keychain without changing its certificates (seen on a real
@@ -346,7 +357,8 @@ ca_bundle_is_current() {
     return 1
   fi
   _ca_bundle_stage "$work" 2>/dev/null || stage_rc=$?
-  if [[ "$stage_rc" -eq 0 ]] && cmp -s "$work/ca-bundle.pem" "$bundle"; then
+  if [[ "$stage_rc" -eq 0 ]] &&
+     [[ "$(_ca_bundle_cert_set "$work/ca-bundle.pem")" == "$(_ca_bundle_cert_set "$bundle")" ]]; then
     rm -rf "$work"
     { : > "$(ca_bundle_checked_path)"; } 2>/dev/null || true
     echo current
