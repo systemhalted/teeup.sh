@@ -153,9 +153,9 @@ cap_run() {
 # only adds a capability to CONFIGURED_THIS_RUN when it was not).
 cap_install_verbs() {
   local name="$1" na=false
-  cap_run "$name" install || return 1
+  cap_run "$name" install || { local rc=$?; [[ $rc -eq 130 ]] && return 130 || return 1; }
   [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
-  cap_run "$name" configure || return 1
+  cap_run "$name" configure || { local rc=$?; [[ $rc -eq 130 ]] && return 130 || return 1; }
   [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
   if [[ "$na" == "true" ]]; then
     state_done clear "cap-$name" || true

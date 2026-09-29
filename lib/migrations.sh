@@ -133,6 +133,7 @@ migration_refresh() {
   export TEEUP_REFRESH="$cap"
   cap_run "$cap" configure || rc=$?
   unset TEEUP_REFRESH
+  ui_rc_or_exit $rc
   return $rc
 }
 
