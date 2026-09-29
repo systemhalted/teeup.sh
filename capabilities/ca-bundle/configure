@@ -1,2 +1,5 @@
 #!/usr/bin/env bash
-ca_bundle_rebuild
+# ca-bundle is core, so a failure here would stop ./bootstrap. The bundle
+# only matters behind a proxy that re-signs HTTPS; rebuilding keeps any
+# existing bundle when it fails, so warn and let the rest of teeup install.
+ca_bundle_rebuild || warn "The CA bundle was not rebuilt; the rest of teeup carries on. See: teeup doctor ca-bundle"
