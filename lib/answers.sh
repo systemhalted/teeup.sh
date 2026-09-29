@@ -104,6 +104,8 @@ _machine_work_check() {
 # (an empty answer, a filesystem path typed into the field, a name with no
 # domain), not to validate every edge case. The bootstrap wizard and the
 # machine-file check share it so the two cannot drift apart.
+# The messages never repeat the answer: on 2026-09-28 a password landed in the
+# email prompt, and printing it back put it on the screen.
 email_valid() {
   local v="$1"
   if [[ -z "$v" ]]; then
@@ -111,14 +113,14 @@ email_valid() {
     return 1
   fi
   case "$v" in
-    *[[:space:]]*) warn "'$v' contains a space; expected something@something.tld"; return 1 ;;
+    *[[:space:]]*) warn "That contains a space; expected something@something.tld"; return 1 ;;
     # The regex below's final group matches an internal dot too, so
     # "ada@example.com." would otherwise pass with the trailing dot folded
     # into the "tld" group.
-    *.) warn "'$v' ends with a dot; expected something@something.tld"; return 1 ;;
+    *.) warn "That ends with a dot; expected something@something.tld"; return 1 ;;
   esac
   if ! [[ "$v" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
-    warn "'$v' does not look like an email address; expected something@something.tld"
+    warn "That does not look like an email address; expected something@something.tld"
     return 1
   fi
   printf '%s\n' "$v"

@@ -700,6 +700,19 @@ test_a_valid_work_machine_file_says_nothing() {
 }
 
 echo "lib/answers.sh"
+# A password typed into the email prompt by mistake (a company sudo plugin
+# printed "Missing password" over it) must not be printed back.
+test_email_valid_never_repeats_the_answer() {
+  setup
+  local bad err
+  for bad in 'hunter2Secret' 'hunter2 Secret' 'hunter2Secret.'; do
+    err="$(email_valid "$bad" 2>&1 >/dev/null)" && { echo "accepted: $bad"; return 1; }
+    assert_not_contains "$err" "hunter2" "email_valid repeated the answer" || return 1
+    assert_contains "$err" "expected something@something.tld" || return 1
+  done
+  cleanup_test_env
+}
+
 run_test "set then get" test_set_then_get
 run_test "set replaces existing key" test_set_replaces_existing_key
 run_test "get default when unset" test_get_default_when_unset
@@ -753,4 +766,5 @@ run_test "identity_key falls back when there is no ssh config" test_identity_key
 run_test "identity_key reuses the work alias separately" test_identity_key_reuses_the_work_alias_separately
 run_test "identity_key warns and falls back without ssh" test_identity_key_warns_and_falls_back_without_ssh
 run_test "identity_key warns and falls back when ssh cannot read the config" test_identity_key_warns_and_falls_back_when_ssh_cannot_read_the_config
+run_test "email_valid never repeats the answer" test_email_valid_never_repeats_the_answer
 print_summary
