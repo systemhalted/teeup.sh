@@ -9,7 +9,7 @@ teeup uninstall
 It asks three questions, in this order. Each one defaults to no, so pressing Enter keeps things.
 
 1. **Remove teeup from this Mac?** No stops here and changes nothing.
-2. **Also uninstall the packages and apps teeup installed?** teeup first lists the packages and apps it recorded. No keeps them all.
+2. **Also uninstall the packages and apps teeup installed?** teeup first lists the packages and apps its capabilities use. No keeps them all. The list is not a record of what teeup itself installed: if you installed one of them with `brew install` before teeup, it is listed too, and yes removes it. To keep it, answer no and remove the others with the commands the summary prints.
 3. **Also move aside your git identity files and remove teeup's git and ssh config?** No keeps your git identity and `~/.ssh/config`. SSH keys are never touched, whatever you answer.
 
 To see what it would do without changing anything, preview it first. The preview asks nothing:

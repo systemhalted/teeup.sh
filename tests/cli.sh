@@ -2854,7 +2854,7 @@ test_uninstall_on_a_terminal_asks_all_three_questions_in_order() {
   local out
   out="$(printf 'y\n\n\n' | TEEUP_TEST_TTY=yes "$TEEUP" uninstall 2>&1)"
   case "$out" in
-    *"Remove teeup from this Mac? [y/N]"*"Packages: ripgrep"*"Apps: wezterm"*"Also uninstall the packages and apps teeup installed? [y/N]"*"Also move aside your git identity files (~/.config/git/local) and remove teeup's git and ssh config? SSH keys are never touched. [y/N]"*) ;;
+    *"Remove teeup from this Mac? [y/N]"*"Packages: ripgrep"*"Apps: wezterm"*"a package you installed yourself before teeup can be here too"*"Also uninstall the packages and apps teeup installed? [y/N]"*"Also move aside your git identity files (~/.config/git/local) and remove teeup's git and ssh config? SSH keys are never touched. [y/N]"*) ;;
     *) echo "the three questions and package lists are out of order"; printf '%s\n' "$out"; return 1 ;;
   esac
   cleanup_test_env
