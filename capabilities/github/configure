@@ -100,12 +100,23 @@ _github_sync_git_signing() {
 # the account that was active before teeup ran.
 github_configure_identity() {
   local identity="$1" gh_host="$2" gh_account="$3"
-  local status_out pub body listed type title answer_key upload_answer upload_account needs_upload target_account ssh_out ssh_login
+  local status_out key pub body listed type title answer_key upload_answer upload_account needs_upload target_account ssh_host ssh_out ssh_login ssh_first_line
   local refresh_out refresh_status active_account
 
-  pub="$(identity_key "$identity").pub"
+  key="$(identity_key "$identity")"
+  pub="$key.pub"
   if [[ ! -f "$pub" ]]; then
     local early_account="$gh_account"; [[ -n "$early_account" ]] || early_account="active account"; warn "No ${pub%.pub} yet (for the $identity identity, $early_account on $gh_host). Run: teeup configure ssh"
+    return 0
+  fi
+
+  active_account="$(_gh_active_account "$gh_host")"
+  target_account="$gh_account"
+  [[ -n "$target_account" ]] || target_account="$active_account"
+  if [[ ! -f "$key" || ! -r "$key" ]]; then
+    local missing_key_account="$target_account"
+    [[ -n "$missing_key_account" ]] || missing_key_account="active account"
+    warn "The private key $key for the $identity identity ($missing_key_account on $gh_host) is missing or unreadable; not uploading."
     return 0
   fi
 
@@ -133,11 +144,6 @@ github_configure_identity() {
     _github_upload_declined "$answer_key"
     return 0
   fi
-
-  active_account="$(_gh_active_account "$gh_host")"
-  target_account="$gh_account"
-  [[ -n "$target_account" ]] || target_account="$active_account"
-
 
   if status_out="$(gh auth status --active -h "$gh_host" 2>&1)"; then
     ok "Already signed in to GitHub ($gh_host)."
@@ -193,13 +199,23 @@ github_configure_identity() {
   [[ -n "$target_account" ]] || target_account="$(_gh_active_account "$gh_host")"
 
   if [[ -n "$target_account" ]]; then
-    ssh_out="$(ssh -T -i "$(identity_key "$identity")" -o IdentitiesOnly=yes "git@$gh_host" 2>&1 || true)"
-    if [[ "$ssh_out" =~ Hi\ ([^!]+)!\ You\'ve\ successfully ]]; then
+    # Connect exactly where git does for this identity. The user's real config
+    # supplies HostName, Include, ProxyJump and the jump host's credentials;
+    # -i plus IdentitiesOnly pins authentication at the final GitHub host to
+    # this identity's key. BatchMode prevents a passphrase or host-key prompt.
+    ssh_host="$(identity_ssh_host "$identity")"
+    ssh_out="$(ssh -T -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes "git@$ssh_host" 2>&1 || true)"
+    if [[ "$ssh_out" =~ Hi\ ([^!]+)!\ You\'ve\ successfully\ authenticated ]]; then
       ssh_login="${BASH_REMATCH[1]}"
       if [[ "$ssh_login" != "$target_account" ]]; then
         warn "Refusing upload: the $identity key (${pub%.pub}) belongs to GitHub account '$ssh_login', but gh is targeting '$target_account' on $gh_host."
         return 0
       fi
+    elif [[ "$ssh_out" != *"Permission denied (publickey)"* ]]; then
+      ssh_first_line="${ssh_out%%$'\n'*}"
+      [[ -n "$ssh_first_line" ]] || ssh_first_line="ssh produced no output"
+      warn "For the $identity identity ($target_account on $gh_host): Could not verify which GitHub account owns $key ($ssh_first_line); not uploading. Check with: ssh -T git@$ssh_host, then re-run: teeup configure github"
+      return 0
     fi
   fi
 
