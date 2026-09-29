@@ -2698,6 +2698,10 @@ test_read_only_verbs_still_work_off_macos() {
     "$TEEUP" "$verb" >/dev/null 2>&1 || rc=$?
     assert_equals "0" "$rc" "teeup $verb" || return 1
   done
+  # dev with no subcommand prints its usage, not the Mac refusal.
+  local out
+  out="$("$TEEUP" dev 2>&1)" || true
+  assert_contains "$out" "Usage: teeup dev" || return 1
   cleanup_test_env
 }
 

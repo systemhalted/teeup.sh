@@ -1456,7 +1456,8 @@ verb="${1:-help}"
 # Linux machine replaced its real ~/.config/git/config. The test helper sets
 # TEEUP_ALLOW_NON_MACOS with every XDG directory inside its own home.
 case "$verb" in
-  version|help|-h|--help|commands|list|has) ;;
+  # dev works on this checkout (scaffolds, migrations, lint), not on a home.
+  version|help|-h|--help|commands|list|has|dev) ;;
   *)
     is_macos || [[ "${TEEUP_ALLOW_NON_MACOS:-}" == "1" ]] ||
       die "teeup $verb changes a Mac, and this is $(uname -s). To try a change, use the test helper: source tests/helper.sh, then setup_test_env."
