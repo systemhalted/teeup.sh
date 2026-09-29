@@ -21,7 +21,9 @@ if [[ " $* " == *" -T "* && " $* " == *" git@"* ]]; then
   fi
   exit 255
 fi
-real_ssh="$(which -a ssh | grep -v "mock_bin" | head -n 1)"
+# The first ssh on PATH that is not this mock (its directory is a temp dir,
+# not one named mock_bin, so match the path itself).
+real_ssh="$(which -a ssh | grep -vxF "$0" | grep -vxF "$(cd "$(dirname "$0")" && pwd)/ssh" | head -n 1)"
 exec "$real_ssh" "$@"
 EOF_SSH_MOCK
   # `--version` answers for real: an exit-0, silent brew reads as "cannot
@@ -1385,8 +1387,29 @@ test_owner_check_ignores_the_ssh_config() {
   out="$(TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_not_contains "$out" "Refusing upload" "a key GitHub does not know yet was refused" || return 1
+  # No ~/.ssh/config here, so no route: no empty argument may reach ssh.
+  assert_contains "$(cat "$MOCK_LOG")" "ssh -F /dev/null -T -i " "no route must add nothing between -F /dev/null and -T" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
   cleanup_test_env
 }
 run_test "the owner check ignores the ssh config" test_owner_check_ignores_the_ssh_config
+# A GitHub Enterprise-style route in ~/.ssh/config (Port, ProxyCommand) must
+# survive the owner check's -F /dev/null, or the check cannot connect and the
+# upload goes ahead unchecked.
+test_owner_check_keeps_the_ssh_route() {
+  setup
+  seed_keys
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
+  printf 'Host github.com\n  HostName ssh.github.com\n  Port 443\n  ProxyCommand nc %%h %%p\n' > "$TEST_HOME/.ssh/config"
+  local out calls
+  out="$(TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(grep '^ssh .* -T ' "$MOCK_LOG" || true)"
+  assert_contains "$calls" "-F /dev/null" "the owner check must not read the config's keys: $calls" || return 1
+  assert_contains "$calls" "-o hostname=ssh.github.com" "the route's HostName was dropped: $calls" || return 1
+  assert_contains "$calls" "-o port=443" "the route's Port was dropped: $calls" || return 1
+  assert_contains "$calls" "-o proxycommand=nc %h %p" "the route's ProxyCommand was dropped: $calls" || return 1
+  cleanup_test_env
+}
+run_test "the owner check keeps the ssh route" test_owner_check_keeps_the_ssh_route
 print_summary
