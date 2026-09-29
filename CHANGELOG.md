@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Configurable SSH host aliases:** Added `TEEUP_PERSONAL_SSH_HOST` and `TEEUP_WORK_SSH_HOST` to the machine file so identities can be tied to different SSH Host blocks.
 
 ### Changed
+- An app already in `/Applications` that Homebrew did not install (downloaded by hand, or pushed by your IT department) is now used as it is. `teeup install` no longer fails with "It seems there is already an App", and `teeup doctor` no longer reports its cask missing.
 - The `ca-bundle` capability's doctor check now compares certificate content instead of file modification dates, stopping false positives when device-management software touches the System keychain.
 - `teeup` refuses to change anything on a machine that is not a Mac. Read-only verbs (`version`, `help`, `list`, `has`, `commands`) and the contributor commands under `teeup dev` still work, and `./bootstrap` already refused.
 - `teeup update` now upgrades only the Homebrew packages and casks (or MacPorts ports) that teeup itself installed, leaving the rest to you (`brew upgrade`).
