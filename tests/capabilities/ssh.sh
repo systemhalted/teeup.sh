@@ -1189,7 +1189,6 @@ run_test "doctor reports a malformed public key" test_doctor_reports_a_malformed
 print_summary
 
 test_the_owners_setup() {
-set -x
   setup
   seed_answers
   seed_machine_work "work@corp.example" "github.com"
