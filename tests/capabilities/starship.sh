@@ -484,40 +484,81 @@ test_shipped_config_parses_cleanly() {
   cleanup_test_env
 }
 
+STASH_MIGRATION="$TEEUP_PATH/migrations/1790658641.sh"
+
+# run_stash_migration: the migration as teeup runs one, in a fresh bash -eu.
+run_stash_migration() {
+  DRY_RUN="${DRY_RUN:-false}" bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; source "$1"' bash "$STASH_MIGRATION"
+}
+
+# seed_old_starship: teeup's config as shipped before the fix, copied the way
+# configure copies it (so it has a stock record and reads as untouched).
+seed_old_starship() {
+  local cfg="$1"
+  mkdir -p "$(dirname "$cfg")"
+  sed -e 's/^stashed = '"'"'\\$ '"'"'$/stashed = "$ "/' "$TEEUP_PATH/capabilities/starship/config/starship.toml" > "$cfg"
+  grep -q '^stashed = "\$ "$' "$cfg" || { echo "seed did not produce the old line"; return 1; }
+  stock_record "$cfg" "$(file_sha "$cfg")"
+  DRY_RUN=false state_done mark cap-starship
+}
+
 test_migration_escapes_stashed_variable() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
-  local mig
-  mig="$(ls "$TEEUP_PATH"/migrations/179*.sh | head -n 1)"
-  # Wait, there are multiple migrations. Let's find the one for starship.
-  mig="$(grep -l 'cap_exists starship' "$TEEUP_PATH"/migrations/*.sh | head -n 1)"
-
-  local cfg
+  local cfg before_size after_size
   cfg="$(user_config_dir)/starship.toml"
-  mkdir -p "$(dirname "$cfg")"
-
-  # 1. original line fixed
-  cat "$TEEUP_PATH/capabilities/starship/config/starship.toml" | sed -e 's/stashed = '"'"'\\$ '"'"'/stashed = "$ "/' > "$cfg"
-  local original_size
-  original_size="$(wc -c < "$cfg" | tr -d " ")"
-
-  DRY_RUN=false bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; source "$1"' bash "$mig" >/dev/null 2>&1
+  seed_old_starship "$cfg" || return 1
+  before_size="$(wc -c < "$cfg" | tr -d " ")"
+  run_stash_migration >/dev/null 2>&1 || { echo "migration failed"; return 1; }
   assert_contains "$(cat "$cfg")" "stashed = '\\\$ '" || return 1
+  after_size="$(wc -c < "$cfg" | tr -d " ")"
+  # Only the one line changed: two quotes swapped and one backslash added.
+  assert_equals "$((before_size + 1))" "$after_size" || return 1
+  # Still teeup's untouched copy, so later shipped updates can reach it.
+  config_is_pristine "$cfg" || { echo "the patched file reads as edited"; return 1; }
+  # A second run changes nothing.
+  local sha; sha="$(file_sha "$cfg")"
+  run_stash_migration >/dev/null 2>&1 || return 1
+  assert_equals "$sha" "$(file_sha "$cfg")" || return 1
+  cleanup_test_env
+}
 
-  # rest of file identical? Size should be exactly original_size + 1 (added backslash)
-  local new_size
-  new_size="$(wc -c < "$cfg" | tr -d " ")"
-  assert_equals "$((original_size + 1))" "$new_size" || return 1
+test_migration_leaves_an_edited_stash_line_alone() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local cfg sha
+  cfg="$(user_config_dir)/starship.toml"
+  seed_old_starship "$cfg" || return 1
+  sed -i.bak -e 's/^stashed = "\$ "$/stashed = "! "/' "$cfg" && rm -f "$cfg.bak"
+  sha="$(file_sha "$cfg")"
+  run_stash_migration >/dev/null 2>&1 || return 1
+  assert_equals "$sha" "$(file_sha "$cfg")" "an edited line was changed" || return 1
+  cleanup_test_env
+}
 
-  # 2. edited line untouched
-  sed -i.bak -e 's/stashed = '"'"'\\$ '"'"'/stashed = "! "/' "$cfg" && rm -f "$cfg.bak"
-  DRY_RUN=false bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; source "$1"' bash "$mig" >/dev/null 2>&1
-  assert_contains "$(cat "$cfg")" 'stashed = "! "' || return 1
+test_migration_skips_a_starship_teeup_did_not_install() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local cfg sha
+  cfg="$(user_config_dir)/starship.toml"
+  seed_old_starship "$cfg" || return 1
+  DRY_RUN=false state_done clear cap-starship
+  state_done check cap-starship && { echo "could not clear the installed marker"; return 1; }
+  sha="$(file_sha "$cfg")"
+  run_stash_migration >/dev/null 2>&1 || return 1
+  assert_equals "$sha" "$(file_sha "$cfg")" "a config teeup does not own was changed" || return 1
+  cleanup_test_env
+}
 
-  # 3. second run changes nothing
-  DRY_RUN=false bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; source "$1"' bash "$mig" >/dev/null 2>&1
-  assert_contains "$(cat "$cfg")" 'stashed = "! "' || return 1
-
+test_migration_dry_run_changes_nothing() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  local cfg sha
+  cfg="$(user_config_dir)/starship.toml"
+  seed_old_starship "$cfg" || return 1
+  sha="$(file_sha "$cfg")"
+  DRY_RUN=true run_stash_migration >/dev/null 2>&1 || return 1
+  assert_equals "$sha" "$(file_sha "$cfg")" "a dry run changed the file" || return 1
   cleanup_test_env
 }
 run_test "install gets starship" test_install_gets_starship
@@ -545,4 +586,7 @@ run_test "doctor names the root palette selected" test_doctor_names_the_root_pal
 run_test "no doctor test depends on a host starship" test_no_doctor_test_depends_on_a_host_starship
 run_test "shipped config parses cleanly" test_shipped_config_parses_cleanly
 run_test "migration escapes stashed variable" test_migration_escapes_stashed_variable
+run_test "migration leaves an edited stash line alone" test_migration_leaves_an_edited_stash_line_alone
+run_test "migration skips a starship teeup did not install" test_migration_skips_a_starship_teeup_did_not_install
+run_test "migration dry run changes nothing" test_migration_dry_run_changes_nothing
 print_summary
