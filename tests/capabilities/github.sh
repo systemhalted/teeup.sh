@@ -5,6 +5,20 @@ source "$(dirname "$0")/../helper.sh"
 setup() {
   setup_test_env
   mock_macos_base
+  mock_command_script ssh <<'EOF_SSH_MOCK'
+if [[ " $* " == *" -T "* && " $* " == *" git@"* ]]; then
+  login="$(cat "$HOME/ssh-mock-login" 2>/dev/null || true)"
+  if [[ "$login" == "error" ]]; then
+    exit 255
+  elif [[ -n "$login" ]]; then
+    echo "Hi $login! You've successfully authenticated, but GitHub does not provide shell access." >&2
+    exit 1
+  fi
+  exit 255
+fi
+real_ssh="$(which -a ssh | grep -v "mock_bin" | head -n 1)"
+exec "$real_ssh" "$@"
+EOF_SSH_MOCK
   # `--version` answers for real: an exit-0, silent brew reads as "cannot
   # answer" (lib/doctor.sh's doctor_backend_can_answer), which used to switch
   # off every package check below in silence (NI2).
@@ -1260,3 +1274,42 @@ run_test "doctor reports a signing-only key as not ready for push" test_doctor_r
 run_test "doctor checks the active account's scopes, not an inactive one's" test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones
 run_test "doctor does not match the key body against the title" test_doctor_does_not_match_the_key_body_against_the_title
 print_summary
+
+test_configure_refuses_upload_when_ssh_login_differs() {
+  setup
+  seed_keys
+  printf 'otheruser\n' > "$HOME/ssh-mock-login"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Refusing upload: the personal key belongs to GitHub account 'otheruser', but gh is targeting 'testuser'" || return 1
+  assert_not_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must not be uploaded" || return 1
+  cleanup_test_env
+}
+
+test_configure_allows_upload_when_ssh_login_matches() {
+  setup
+  seed_keys
+  printf 'testuser\n' > "$HOME/ssh-mock-login"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$out" "Refusing upload" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must be uploaded" || return 1
+  cleanup_test_env
+}
+
+test_configure_allows_upload_when_ssh_cannot_tell() {
+  setup
+  seed_keys
+  printf 'error\n' > "$HOME/ssh-mock-login"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_not_contains "$out" "Refusing upload" || return 1
+  assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must be uploaded" || return 1
+  cleanup_test_env
+}
+run_test "configure refuses upload when ssh login differs" test_configure_refuses_upload_when_ssh_login_differs
+run_test "configure allows upload when ssh login matches" test_configure_allows_upload_when_ssh_login_matches
+run_test "configure allows upload when ssh cannot tell" test_configure_allows_upload_when_ssh_cannot_tell

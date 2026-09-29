@@ -1187,3 +1187,65 @@ run_test "doctor reports a zero-byte private key as no key pair" test_doctor_rep
 run_test "doctor reports a malformed private key" test_doctor_reports_a_malformed_private_key
 run_test "doctor reports a malformed public key" test_doctor_reports_a_malformed_public_key
 print_summary
+
+test_the_owners_setup() {
+set -x
+  setup
+  seed_answers
+  seed_machine_work "work@corp.example" "github.com"
+  cat >> "$TEEUP_MACHINES_DIR/testmac.conf" <<'MACH'
+TEEUP_PERSONAL_SSH_HOST="github-personal"
+TEEUP_WORK_SSH_HOST="github.com"
+MACH
+
+  mkdir -p "$TEST_HOME/.ssh"
+  chmod 700 "$TEST_HOME/.ssh"
+  cat > "$TEST_HOME/.ssh/config" <<'CFG'
+Include ~/.colima/ssh_config
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+Host github-personal
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_personal
+  IdentitiesOnly yes
+CFG
+  local before
+  before="$(cat "$TEST_HOME/.ssh/config")"
+
+  printf '-----BEGIN OPENSSH PRIVATE KEY-----\nMINE-PERSONAL\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf 'ssh-ed25519 PERSONAL comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  printf '-----BEGIN OPENSSH PRIVATE KEY-----\nMINE-WORK\n' > "$TEST_HOME/.ssh/id_ed25519"
+  printf 'ssh-ed25519 WORK comment\n' > "$TEST_HOME/.ssh/id_ed25519.pub"
+  chmod 600 "$TEST_HOME/.ssh/id_ed25519_personal" "$TEST_HOME/.ssh/id_ed25519"
+
+  # identity_key behaves as requested
+  source "$TEEUP_PATH/lib/all.sh"
+  assert_equals "$TEST_HOME/.ssh/id_ed25519_personal" "$(identity_key personal)" || return 1
+  assert_equals "$TEST_HOME/.ssh/id_ed25519" "$(identity_key work)" || return 1
+
+  # ssh configure leaves the file byte-identical and creates no new keys
+  local out
+  out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
+  assert_equals "$before" "$(cat "$TEST_HOME/.ssh/config")" "ssh configure must leave the config byte-identical" || return 1
+  [[ ! -e "$TEST_HOME/.ssh/id_ed25519_work" ]] || { echo "a work key was created"; return 1; }
+
+  # ssh doctor passes, asks for no id_ed25519_work or github.com-work, never contains 'teeup reset ssh'
+  local rc=0
+  out="$(DRY_RUN=false cap_run ssh doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_not_contains "$out" "id_ed25519_work" || return 1
+  assert_not_contains "$out" "github.com-work" || return 1
+  assert_not_contains "$out" "teeup reset ssh" || return 1
+
+  # git configure sets signingkey to id_ed25519_personal.pub
+  DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
+  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "signingkey = $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
+
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+run_test "the owners setup" test_the_owners_setup
