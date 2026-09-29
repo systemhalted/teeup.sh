@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ghostty, Alacritty, and iTerm2 are now available as lazy capabilities (`ghostty`, `alacritty`, `iterm2`).
 
 ### Changed
+- `teeup update` now upgrades only the Homebrew packages and casks (or MacPorts ports) that teeup itself installed, leaving the rest to you (`brew upgrade`).
 - Zed, Obsidian, and Firefox Developer Edition are now lazy capabilities. They install the first time you use them, rather than as part of the daily bootstrap set. Emacs is now the only daily capability.
 
 ### Fixed
