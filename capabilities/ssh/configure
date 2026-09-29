@@ -277,7 +277,7 @@ fi
 ssh_git_config="$(user_config_dir)/git/config"
 if [[ "$DRY_RUN" == "true" || -f "$ssh_git_config" ]]; then
   log "Re-running the git configuration now that the keys exist."
-  cap_run git configure || { local rc=$?; ui_rc_or_exit $rc; warn "Could not re-run the git configuration. Run: teeup configure git"; }
+  cap_run git configure || { rc=$?; ui_rc_or_exit $rc || true; warn "Could not re-run the git configuration. Run: teeup configure git"; }
 else
   log "No $ssh_git_config yet; commit signing turns on at: teeup configure git"
 fi

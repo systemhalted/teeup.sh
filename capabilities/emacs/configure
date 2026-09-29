@@ -449,7 +449,7 @@ fi
 if have emacsclient && ! cap_skipped git; then
   if [[ "$DRY_RUN" == "true" || "$git_wants_emacsclient" == "true" ]]; then
     log "Re-running the git configuration so git opens emacsclient."
-    cap_run git configure || { local rc=$?; ui_rc_or_exit $rc; warn "Could not re-run the git configuration. Run: teeup configure git"; }
+    cap_run git configure || { rc=$?; ui_rc_or_exit $rc || true; warn "Could not re-run the git configuration. Run: teeup configure git"; }
   else
     log "No $git_generated to update, or it already opens emacsclient."
   fi
