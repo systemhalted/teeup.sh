@@ -37,7 +37,7 @@ The configuration file defines two modes: main and service. The main keys use Op
 |---|---|
 | `alt-slash` | Tiles layout |
 | `alt-comma` | Accordion layout |
-| `alt-backslash` | Tiling floating |
+| `alt-backslash` | Switch the window between floating and tiled |
 | `alt-f` | Full screen |
 | `alt-enter` | Open a new WezTerm window |
 
@@ -69,7 +69,7 @@ Service mode bindings perform one job and return to main mode.
 
 ## Configuration
 
-Edit `~/.config/aerospace/aerospace.toml`. teeup copies this file once, and after that it is yours to modify. Reload it with `esc` in service mode, or run `aerospace reload-config`.
+Edit `~/.config/aerospace/aerospace.toml`. teeup copies this file once, and after that it is yours to modify. If you already have `~/.aerospace.toml`, teeup keeps it and does not install its own, because AeroSpace refuses to run with two. Reload it with `esc` in service mode, or run `aerospace reload-config`.
 
 For multiple displays, you can assign workspaces to specific monitors in the config. See [AeroSpace's guide](https://nikitabobko.github.io/AeroSpace/guide) for anything beyond the teeup configuration.
 
