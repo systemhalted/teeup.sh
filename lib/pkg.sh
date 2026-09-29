@@ -274,8 +274,9 @@ pkg_update() {
 # TEEUP_COLLECTED_PKGS and TEEUP_COLLECTED_CASKS, under the names the package
 # manager knows them by.
 pkg_collect_installed_items() {
-  local name="$1" pkg candidate cask
-  for pkg in $(cap_meta_get "$name" packages); do
+  local name="$1" pkgs pkg candidate cask
+  pkgs="$(cap_meta_get "$name" packages) ${TEEUP_COLLECT_EXTRA:-}"
+  for pkg in $pkgs; do
     for candidate in $(package_candidates "$pkg"); do
       if pkg_installed "$candidate" >/dev/null 2>&1; then
         case " $TEEUP_COLLECTED_PKGS " in
@@ -306,8 +307,15 @@ pkg_upgrade_all() {
   TEEUP_COLLECTED_CASKS=""
 
   # reuse uninstall_caps logic
+  # teeup's own tools: teeup-runtime installs gum and jq but does not declare
+  # them, because a declared package is one `teeup remove` may uninstall and
+  # teeup needs these to run. Only the upgrade adds them.
   for name in $(uninstall_caps); do
-    pkg_collect_installed_items "$name"
+    if [[ "$name" == "teeup-runtime" ]]; then
+      TEEUP_COLLECT_EXTRA="gum jq" pkg_collect_installed_items "$name"
+    else
+      pkg_collect_installed_items "$name"
+    fi
   done
 
   case "$TEEUP_PKG_BACKEND" in
