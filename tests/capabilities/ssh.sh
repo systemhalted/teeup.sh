@@ -1215,9 +1215,11 @@ CFG
   local before
   before="$(cat "$TEST_HOME/.ssh/config")"
 
-  printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nMINE-PERSONAL\n' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf '%s\n' '-----BEGIN OPENSSH PRIVATE KEY-----' > "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf '%s\n' 'MINE-PERSONAL' >> "$TEST_HOME/.ssh/id_ed25519_personal"
   printf 'ssh-ed25519 PERSONAL comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
-  printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nMINE-WORK\n' > "$TEST_HOME/.ssh/id_ed25519"
+  printf '%s\n' '-----BEGIN OPENSSH PRIVATE KEY-----' > "$TEST_HOME/.ssh/id_ed25519"
+  printf '%s\n' 'MINE-WORK' >> "$TEST_HOME/.ssh/id_ed25519"
   printf 'ssh-ed25519 WORK comment\n' > "$TEST_HOME/.ssh/id_ed25519.pub"
   chmod 600 "$TEST_HOME/.ssh/id_ed25519_personal" "$TEST_HOME/.ssh/id_ed25519"
 
