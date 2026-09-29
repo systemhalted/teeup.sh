@@ -499,14 +499,14 @@ test_migration_escapes_stashed_variable() {
   # 1. original line fixed
   cat "$TEEUP_PATH/capabilities/starship/config/starship.toml" | sed -e 's/stashed = '"'"'\\$ '"'"'/stashed = "$ "/' > "$cfg"
   local original_size
-  original_size="$(wc -c < "$cfg")"
+  original_size="$(wc -c < "$cfg" | tr -d " ")"
 
   DRY_RUN=false bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; source "$1"' bash "$mig" >/dev/null 2>&1
   assert_contains "$(cat "$cfg")" "stashed = '\\\$ '" || return 1
 
   # rest of file identical? Size should be exactly original_size + 1 (added backslash)
   local new_size
-  new_size="$(wc -c < "$cfg")"
+  new_size="$(wc -c < "$cfg" | tr -d " ")"
   assert_equals "$((original_size + 1))" "$new_size" || return 1
 
   # 2. edited line untouched
