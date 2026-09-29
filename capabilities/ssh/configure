@@ -180,20 +180,18 @@ for identity in $(identity_list); do
   run_cmd ssh-add "$ssh_keychain_flag" "$key" || warn "ssh-add failed for $key."
 done
 
-# ssh_work_alias_block: the Host block teeup's own config uses for the work
-# identity, printed only when there is a work identity to name. The alias is
-# local (github.com-work), but HostName is the identity's real host, so a work
-# identity on a GitHub Enterprise instance is reachable through the same alias
-# as a second github.com account.
-ssh_work_alias_block() {
-  local alias host key display
-  alias="$(ssh_host_alias work)"
-  host="$(identity_gh_host work)"
-  key="$(identity_key work)"
+# ssh_alias_block: the Host block teeup's own config uses for the identity.
+ssh_alias_block() {
+  local identity="$1" alias host key display
+  alias="$(identity_ssh_host "$identity")"
+  host="$(identity_gh_host "$identity")"
+  key="$(identity_key "$identity")"
   display="$key"
   case "$key" in "$HOME"/*) display="~${key#"$HOME"}" ;; esac
-  printf '# Clone work repositories as git@%s:org/repo.git, which picks the\n' "$alias"
-  printf '# work key. git itself has one identity, whatever the directory.\n'
+  if [[ "$identity" == "work" ]]; then
+    printf '# Clone work repositories as git@%s:org/repo.git, which picks the\n' "$alias"
+    printf '# work key. git itself has one identity, whatever the directory.\n'
+  fi
   printf 'Host %s\n  HostName %s\n  User git\n  IdentityFile %s\n  IdentitiesOnly yes\n\n' \
     "$alias" "$host" "$display"
 }
@@ -215,14 +213,21 @@ else
   # block naming a key that does not exist, under IdentitiesOnly yes.
   ssh_rendered_config="$(mktemp)"
   ssh_work_alias_written=false
+  ssh_personal_alias_written=false
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
+      "#TEEUP_PERSONAL_ALIAS"*)
+        if [[ "$ssh_personal_alias_written" == "false" ]]; then
+          ssh_alias_block personal
+          ssh_personal_alias_written=true
+        fi
+        ;;
       "#TEEUP_WORK_ALIAS"*)
         # The marker's own lines never reach the installed file; the block
         # takes the place of the first of them, and only when this machine
         # has a work identity at all.
         if [[ "$ssh_work_alias_written" == "false" ]] && answers_has_work; then
-          ssh_work_alias_block
+          ssh_alias_block work
           ssh_work_alias_written=true
         fi
         ;;
@@ -252,9 +257,9 @@ if [[ "$ssh_config_is_foreign" == "true" ]]; then
     ssh_named_key="$(ssh_config_named_key "$identity" || true)"
     [[ "$ssh_named_key" == "$(identity_key "$identity")" ]] && continue
     warn "$ssh_dir/config is yours and has no Host block for the $identity key."
-    warn "git@$(ssh_host_alias "$identity"):org/repo.git will not resolve until you add this to $ssh_dir/config:"
+    warn "git@$(identity_ssh_host "$identity"):org/repo.git will not resolve until you add this to $ssh_dir/config:"
     printf '\n'
-    printf 'Host %s\n' "$(ssh_host_alias "$identity")"
+    printf 'Host %s\n' "$(identity_ssh_host "$identity")"
     printf '  HostName %s\n' "$(identity_gh_host "$identity")"
     printf '  User git\n'
     printf '  IdentityFile %s\n' "$(identity_key "$identity")"
