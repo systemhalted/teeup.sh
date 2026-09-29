@@ -1217,10 +1217,10 @@ CFG
 
   printf '%s\n' '-----BEGIN OPENSSH PRIVATE KEY-----' > "$TEST_HOME/.ssh/id_ed25519_personal"
   printf '%s\n' 'MINE-PERSONAL' >> "$TEST_HOME/.ssh/id_ed25519_personal"
-  printf 'ssh-ed25519 PERSONAL comment\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDRsRT+SScYXpp2FoOLOwP5x2bVjqqsSwLitVxbwufMT PERSONAL\n' > "$TEST_HOME/.ssh/id_ed25519_personal.pub"
   printf '%s\n' '-----BEGIN OPENSSH PRIVATE KEY-----' > "$TEST_HOME/.ssh/id_ed25519"
   printf '%s\n' 'MINE-WORK' >> "$TEST_HOME/.ssh/id_ed25519"
-  printf 'ssh-ed25519 WORK comment\n' > "$TEST_HOME/.ssh/id_ed25519.pub"
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOhb0yY7/9iXunApnMDyt2SXfzy+hY0p3CVHrRKzeCaa WORK\n' > "$TEST_HOME/.ssh/id_ed25519.pub"
   chmod 600 "$TEST_HOME/.ssh/id_ed25519_personal" "$TEST_HOME/.ssh/id_ed25519"
 
   # identity_key behaves as requested
