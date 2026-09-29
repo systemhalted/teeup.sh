@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.0-beta] - UNRELEASED
+## [0.1.0-beta] - 2026-09-28
 
 teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distribution that replaces the old installer. See the [manual](https://teeup.systemhalted.in) and [CONTRIBUTING.md](CONTRIBUTING.md) to learn how to use it or how it works.
 
@@ -24,9 +24,9 @@ teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distributi
 - **`teeup theme` and `launch`.** Change your system's colorscheme, and launch GUI applications from the terminal.
 - **`teeup secret` and `dev`.** Store and read secrets in the macOS Keychain with `secret`, and run the local development toolkit with `dev`.
 - **zsh and Starship.** The default shell environment is now zsh configured with the Starship prompt.
-- **git and ssh identity.** Version control with your identity, and an ed25519 SSH key.
+- **git and ssh identity.** Version control with your identity, and an ed25519 SSH key. teeup asks once before uploading the key to GitHub, and commit signing follows your answer. It never deletes an SSH key.
 - **WezTerm.** A terminal emulator with multiplexing built in.
-- **Emacs.** A daemonized setup with a starter config, plus Doom and Spacemacs flavors.
+- **Emacs.** A daemonized setup with a starter config, plus Doom and Spacemacs flavors. If Homebrew's terminal-only emacs formula is installed, teeup offers to swap it for the Emacs app.
 - **Zed, Neovim, VS Code and Cursor.** Text editors and IDEs.
 - **Firefox Developer Edition and Obsidian.** Applications for browsing and note-taking.
 - **AeroSpace and tmux.** Tiling window management for macOS and terminal multiplexing.
@@ -38,7 +38,7 @@ teeup.sh has been rebuilt from scratch as a macOS-only, Omarchy-style distributi
 - **`theme set --reload`.** Re-render the current theme.
 - **Fonts.** A selection of developer fonts for your terminal and editor.
 - **`teeup migrate legacy`.** Retire the old teeup and chezmoi wiring on this Mac.
-- **`teeup uninstall`.** Take teeup off a Mac.
+- **`teeup uninstall`.** Take teeup off a Mac. It asks what to remove: teeup itself, the packages and apps it installed, and its git and ssh config.
 - **Agent skill.** An agent skill for Claude Code, Codex, and Gemini CLI to understand and interact with the teeup ecosystem.
 
 ### Changed
