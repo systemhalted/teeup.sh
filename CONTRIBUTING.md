@@ -418,6 +418,24 @@ bash's own `%q` output, and note that the bash 3.2 variant was skipped. CI's
 macOS runners ship `/bin/bash` 3.2 natively, so this only matters when
 developing on Linux.
 
+### Running the suite under macOS's bash
+
+teeup targets `/bin/bash` 3.2.57, and bash 5 accepts things bash 3.2 does
+not. On Linux, run the whole suite under 3.2.57 with
+[shellenv](https://github.com/systemhalted/shellenv):
+
+```bash
+./tests/bash32.sh                  # all suites
+./tests/bash32.sh tests/cli.sh     # one suite
+```
+
+The first run builds bash 3.2.57 from source into `$SHELLENV_HOME` (about a
+minute; it needs `cc`, `make` and `tar`). The script also sets
+`TEEUP_TEST_BASH32`, so the byte-for-byte checks above run. shellenv moves
+`HOME` into `./.shellenv/bash32/home` (gitignored) for the run; a file that
+lands there is a test writing to HOME instead of `$TEST_HOME`, and the run
+fails and names it.
+
 ## The agent skill
 
 `share/agents/skills/teeup/SKILL.md` is the mental model an AI agent reads
