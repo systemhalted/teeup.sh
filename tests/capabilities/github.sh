@@ -2,28 +2,23 @@
 set -euo pipefail
 source "$(dirname "$0")/../helper.sh"
 
+REAL_SSH="$(command -v ssh || true)"
+
 setup() {
   setup_test_env
   mock_macos_base
   mock_command_script ssh <<'EOF_SSH_MOCK'
 if [[ " $* " == *" -T "* && " $* " == *" git@"* ]]; then
-  login="$(cat "$HOME/ssh-mock-login" 2>/dev/null || true)"
-  # Keep the -F file the check used, so a test can inspect it.
-  cfg=""; prev=""
-  for a in "$@"; do [[ "$prev" == "-F" ]] && cfg="$a"; prev="$a"; done
-  [[ -z "$cfg" || ! -f "$cfg" ]] || cp "$cfg" "$HOME/ssh-mock-F"
-  # Like the owner's ~/.ssh/config, whose Host github.com block names the work
-  # key (also in the agent): while the config ssh reads names a key, that key
-  # is offered first and GitHub answers for its account.
-  if [[ -f "$HOME/ssh-mock-config-login" ]] && { [[ -z "$cfg" ]] || grep -qi "identityfile" "$cfg" 2>/dev/null; }; then
-    login="$(cat "$HOME/ssh-mock-config-login")"
+  if [[ -f "$HOME/ssh-mock-output" ]]; then
+    cat "$HOME/ssh-mock-output" >&2
+    exit "$(cat "$HOME/ssh-mock-status" 2>/dev/null || echo 255)"
   fi
-  if [[ "$login" == "error" ]]; then
-    exit 255
-  elif [[ -n "$login" ]]; then
+  login="$(cat "$HOME/ssh-mock-login" 2>/dev/null || true)"
+  if [[ -n "$login" ]]; then
     echo "Hi $login! You've successfully authenticated, but GitHub does not provide shell access." >&2
     exit 1
   fi
+  echo "git@example: Permission denied (publickey)." >&2
   exit 255
 fi
 # The first ssh on PATH that is not this mock (its directory is a temp dir,
@@ -1311,20 +1306,54 @@ test_configure_allows_upload_when_ssh_login_matches() {
   cleanup_test_env
 }
 
-test_configure_allows_upload_when_ssh_cannot_tell() {
+test_configure_allows_upload_when_github_does_not_know_the_key() {
   setup
   seed_keys
-  printf 'error\n' > "$HOME/ssh-mock-login"
+  printf 'git@github.com: Permission denied (publickey).\n' > "$HOME/ssh-mock-output"
   local out calls
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
-  assert_not_contains "$out" "Refusing upload" || return 1
+  assert_not_contains "$out" "could not verify" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must be uploaded" || return 1
+  cleanup_test_env
+}
+
+test_configure_skips_upload_when_ssh_cannot_tell() {
+  setup
+  seed_keys
+  printf 'ssh: Could not resolve hostname github-personal: nodename nor servname provided\nsecond line\n' > "$HOME/ssh-mock-output"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "Could not verify which GitHub account owns $TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_contains "$out" "ssh: Could not resolve hostname github-personal: nodename nor servname provided" || return 1
+  assert_contains "$out" "Check with: ssh -T git@github.com, then re-run: teeup configure github" || return 1
+  assert_not_contains "$out" "second line" "the warning should quote only ssh's first line" || return 1
+  assert_not_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must not be uploaded" || return 1
+  cleanup_test_env
+}
+
+test_configure_skips_probe_and_upload_when_private_key_is_missing() {
+  setup
+  seed_keys
+  rm "$TEST_HOME/.ssh/id_ed25519_personal"
+  printf "'admin:public_key', 'admin:ssh_signing_key'\n" > "$TEST_HOME/gh-session"
+  local out calls
+  out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
+  calls="$(cat "$MOCK_LOG")"
+  assert_contains "$out" "personal identity" || return 1
+  assert_contains "$out" "$TEST_HOME/.ssh/id_ed25519_personal" || return 1
+  assert_contains "$out" "testuser on github.com" || return 1
+  assert_contains "$out" "not uploading" || return 1
+  assert_not_contains "$calls" "ssh -T" "ssh must not probe without a readable private key" || return 1
+  assert_not_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" "the key must not be uploaded" || return 1
   cleanup_test_env
 }
 run_test "configure refuses upload when ssh login differs" test_configure_refuses_upload_when_ssh_login_differs
 run_test "configure allows upload when ssh login matches" test_configure_allows_upload_when_ssh_login_matches
-run_test "configure allows upload when ssh cannot tell" test_configure_allows_upload_when_ssh_cannot_tell
+run_test "configure allows upload when GitHub does not know the key" test_configure_allows_upload_when_github_does_not_know_the_key
+run_test "configure skips upload when ssh cannot tell" test_configure_skips_upload_when_ssh_cannot_tell
+run_test "configure skips probe and upload when the private key is missing" test_configure_skips_probe_and_upload_when_private_key_is_missing
 test_configure_skips_refresh_if_answer_is_no() {
   setup
   seed_keys
@@ -1376,56 +1405,51 @@ run_test "configure skips refresh if answer is no" test_configure_skips_refresh_
 run_test "configure names identity in messages" test_configure_names_identity_in_messages
 run_test "configure recognises received credentials for other" test_configure_recognises_received_credentials_for_other
 
-# Seen on the owner's work Mac: the personal key was not on GitHub yet, and
-# the owner check read ~/.ssh/config, whose github.com block added the work
-# key, so GitHub answered for the work account and a correct upload was
-# refused. The check must test only the key being uploaded.
-test_owner_check_ignores_the_ssh_config() {
+# Seen on the owner's work Mac: github.com is the work alias and
+# github-personal is the personal alias. The owner check must connect through
+# the identity's alias, just as git does, while pinning the identity's key.
+test_owner_check_uses_the_identity_ssh_alias() {
   setup
   seed_keys
-  mkdir -p "$TEST_HOME/.config/teeup"
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEST_HOME/.config/teeup" "$TEEUP_MACHINES_DIR"
   printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
-  # The personal key itself is unknown to GitHub; the config would fall back
-  # to the work account.
-  printf 'palakm_tmcc\n' > "$TEST_HOME/ssh-mock-config-login"
-  printf 'Host github.com\n  IdentityFile ~/.ssh/id_ed25519\n  IdentitiesOnly yes\n' > "$TEST_HOME/.ssh/config"
+  printf 'TEEUP_PERSONAL_SSH_HOST="github-personal"\n' > "$TEEUP_MACHINES_DIR/testmac.conf"
+  printf '%s\n' 'Host github.com' '  IdentityFile ~/.ssh/id_ed25519' \
+    'Host github-personal' '  HostName github.com' '  IdentityFile ~/.ssh/id_ed25519_personal' \
+    > "$TEST_HOME/.ssh/config"
   local out calls
   out="$(TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
-  assert_not_contains "$out" "Refusing upload" "a key GitHub does not know yet was refused" || return 1
-  assert_not_contains "$(cat "$TEST_HOME/ssh-mock-F")" "IdentityFile" "the check's config still names a key" || return 1
+  assert_contains "$calls" "ssh -T -i $TEST_HOME/.ssh/id_ed25519_personal -o IdentitiesOnly=yes -o BatchMode=yes git@github-personal" || return 1
+  assert_not_contains "$calls" "ssh -F" "the check must use the user's real ssh config" || return 1
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub" || return 1
   cleanup_test_env
 }
-run_test "the owner check ignores the ssh config" test_owner_check_ignores_the_ssh_config
-# A GitHub Enterprise-style route in ~/.ssh/config (Port, ProxyCommand) must
-# survive the owner check's -F /dev/null, or the check cannot connect and the
-# upload goes ahead unchecked.
-test_owner_check_keeps_the_ssh_route() {
+run_test "the owner check uses the identity's ssh alias" test_owner_check_uses_the_identity_ssh_alias
+
+# The owner's layout names the work key on github.com and the personal key on
+# github-personal. Ask OpenSSH itself to resolve that fixture: the command used
+# by the owner check must leave only the personal key eligible at the alias.
+test_real_ssh_limits_the_alias_to_the_pinned_identity() {
   setup
-  seed_keys
-  mkdir -p "$TEST_HOME/.config/teeup"
-  printf 'TEEUP_GITHUB_UPLOAD_PERSONAL="yes"\n' >> "$TEST_HOME/.config/teeup/answers"
-  # A route through a jump host with its own Host block, plus key lines in
-  # both blocks (one spelled in capitals: ssh keywords are case-blind).
-  printf '%s\n' 'Host github.com' '  HostName ssh.github.com' '  Port 443' '  ProxyJump bastion' \
-    '  IdentityFile ~/.ssh/id_ed25519' '  IdentitiesOnly yes' '  AddKeysToAgent yes' \
-    'Host bastion' '  HostName jump.example.com' '  Port 2222' '  User me' '  IDENTITYFILE ~/.ssh/jump_key' \
+  if [[ -z "$REAL_SSH" || ! -x "$REAL_SSH" ]]; then
+    echo "ssh is not installed"
+    cleanup_test_env
+    return "$TEST_SKIPPED"
+  fi
+  local personal="$TEST_HOME/.ssh/id_ed25519_personal"
+  local work="$TEST_HOME/.ssh/id_ed25519"
+  mkdir -p "$TEST_HOME/.ssh"
+  : > "$personal"
+  : > "$work"
+  printf '%s\n' 'Host github.com' "  IdentityFile $work" \
+    'Host github-personal' '  HostName github.com' "  IdentityFile $personal" \
     > "$TEST_HOME/.ssh/config"
-  TEEUP_TEST_TTY=no DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
-  local used
-  used="$(cat "$TEST_HOME/ssh-mock-F" 2>/dev/null)"
-  local want
-  for want in "HostName ssh.github.com" "Port 443" "ProxyJump bastion" "Host bastion" "HostName jump.example.com" "Port 2222" "User me"; do
-    assert_contains "$used" "$want" "the check's config lost '$want'" || return 1
-  done
-  assert_not_contains "$used" "IdentityFile" || return 1
-  assert_not_contains "$used" "IDENTITYFILE" || return 1
-  assert_not_contains "$used" "IdentitiesOnly" || return 1
-  assert_not_contains "$used" "AddKeysToAgent" || return 1
-  # The user's own config is untouched.
-  assert_contains "$(cat "$TEST_HOME/.ssh/config")" "IdentityFile ~/.ssh/id_ed25519" || return 1
+  local identity_files
+  identity_files="$("$REAL_SSH" -G -F "$TEST_HOME/.ssh/config" -i "$personal" -o IdentitiesOnly=yes github-personal 2>/dev/null | awk '$1 == "identityfile" { print $2 }' | sort -u)"
+  assert_equals "$personal" "$identity_files" "ssh made a key other than the personal key eligible" || return 1
   cleanup_test_env
 }
-run_test "the owner check keeps the ssh route" test_owner_check_keeps_the_ssh_route
+run_test "real ssh limits the alias to the pinned identity" test_real_ssh_limits_the_alias_to_the_pinned_identity
 print_summary
