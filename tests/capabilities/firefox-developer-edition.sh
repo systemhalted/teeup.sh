@@ -72,10 +72,32 @@ test_configure_runs_no_command() {
   cleanup_test_env
 }
 
-test_the_tier_is_daily() {
+test_the_tier_is_lazy() {
   setup
-  assert_contains "$("$TEEUP" list --tier daily)" "firefox-developer-edition" || return 1
-  grep -qx "firefox-developer-edition" "$TEEUP_PATH/capabilities/daily.list" || { echo "firefox-developer-edition is not in daily.list"; return 1; }
+  assert_contains "$("$TEEUP" list --tier lazy)" "firefox-developer-edition" || return 1
+  ! grep -qx "firefox-developer-edition" "$TEEUP_PATH/capabilities/daily.list" || { echo "firefox-developer-edition is in daily.list"; return 1; }
+  cleanup_test_env
+}
+
+test_launch_installs_the_cask_then_opens() {
+  setup
+  mock_command open 0 ""
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-} ${3:-}" in
+  "list --cask firefox@developer-edition") exit 1 ;;
+  "install --cask firefox@developer-edition")
+    mkdir -p "$TEEUP_APPS_DIR/Firefox Developer Edition.app"
+    echo "brew install --cask firefox@developer-edition"
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local out
+  out="$(DRY_RUN=false "$TEEUP" launch firefox-developer-edition)"
+  assert_contains "$out" "Firefox Developer Edition is not installed; installing firefox-developer-edition first." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew install --cask firefox@developer-edition" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "open -a Firefox Developer Edition" || return 1
   cleanup_test_env
 }
 
@@ -85,5 +107,7 @@ run_test "install skips an installed cask" test_install_skips_an_installed_cask
 run_test "install warns on macports" test_install_warns_on_macports
 run_test "configure reports the app" test_configure_reports_the_app
 run_test "configure runs no command" test_configure_runs_no_command
-run_test "the tier is daily" test_the_tier_is_daily
+run_test "the tier is lazy" test_the_tier_is_lazy
+run_test "launch installs the cask then opens" test_launch_installs_the_cask_then_opens
+
 print_summary

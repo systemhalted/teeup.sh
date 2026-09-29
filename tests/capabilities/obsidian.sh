@@ -80,6 +80,28 @@ test_the_tier_is_lazy() {
   cleanup_test_env
 }
 
+test_launch_installs_the_cask_then_opens() {
+  setup
+  mock_command open 0 ""
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-} ${3:-}" in
+  "list --cask obsidian") exit 1 ;;
+  "install --cask obsidian")
+    mkdir -p "$TEEUP_APPS_DIR/Obsidian.app"
+    echo "brew install --cask obsidian"
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local out
+  out="$(DRY_RUN=false "$TEEUP" launch obsidian)"
+  assert_contains "$out" "Obsidian is not installed; installing obsidian first." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew install --cask obsidian" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "open -a Obsidian" || return 1
+  cleanup_test_env
+}
+
 echo "capabilities/obsidian"
 run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install skips an installed cask" test_install_skips_an_installed_cask
@@ -87,4 +109,28 @@ run_test "install warns on macports" test_install_warns_on_macports
 run_test "configure reports the app" test_configure_reports_the_app
 run_test "configure runs no command" test_configure_runs_no_command
 run_test "the tier is lazy" test_the_tier_is_lazy
+run_test "launch installs the cask then opens" test_launch_installs_the_cask_then_opens
+
 print_summary
+
+test_launch_installs_the_cask_then_opens() {
+  setup
+  mock_command open 0 ""
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-} ${3:-}" in
+  "list --cask obsidian") exit 1 ;;
+  "install --cask obsidian")
+    mkdir -p "$TEEUP_APPS_DIR/Obsidian.app"
+    echo "brew install --cask obsidian"
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+EOF2
+  local out
+  out="$(DRY_RUN=false "$TEEUP" launch obsidian)"
+  assert_contains "$out" "Obsidian is not installed; installing obsidian first." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew install --cask obsidian" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "open -a Obsidian" || return 1
+  cleanup_test_env
+}
