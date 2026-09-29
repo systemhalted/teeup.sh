@@ -106,7 +106,7 @@ cmd_install() {
     # used to abort the process would otherwise let the loop carry on and mark
     # the target installed (I3). Returning here keeps both entry points on the
     # same rule -- a dependency that fails stops the install.
-    cap_install_verbs "$c" || return 1
+    cap_install_verbs "$c" || { ui_rc_or_exit $?; return 1; }
   done
 }
 
@@ -117,7 +117,7 @@ cmd_configure() {
   if cap_skipped "$target"; then
     die "$target is skipped on this machine (TEEUP_SKIP)"
   fi
-  cap_run "$target" configure
+  cap_run "$target" configure || ui_rc_or_exit $?
 }
 
 # Every file a capability installs with copy_config_once goes back to what
@@ -145,6 +145,7 @@ cmd_reset() {
   export TEEUP_RESET="$target"
   cap_run "$target" configure || rc=$?
   unset TEEUP_RESET
+  ui_rc_or_exit $rc || true
   if [[ $rc -ne 0 ]]; then
     die "Resetting $target failed; the backups made so far are next to their files."
   fi
@@ -194,6 +195,7 @@ cmd_remove() {
     die "$target is required by:$dependents. Remove those first, then $target."
   fi
   cap_remove "$target" true || rc=$?
+  ui_rc_or_exit $rc || true
   case "$rc" in
     2) die "$target ships no remove script and installs no packages or casks that teeup tracks, so teeup remove cannot undo it; $target is still marked installed." ;;
     3) die "$target's remove script failed; nothing was uninstalled." ;;
@@ -284,7 +286,10 @@ EOF
   fi
 
   if [[ "$_UNINSTALL_ASK" == "true" ]]; then
-    if ! ui_confirm "Remove teeup from this Mac?" no; then
+    if ui_confirm "Remove teeup from this Mac?" no; then
+      :
+    else
+      ui_rc_or_exit $? || true
       log "Nothing was changed."
       return 0
     fi
@@ -420,6 +425,7 @@ _update_configure_tier() {
       fi
       if [[ "$name" == "theme" && "$TEEUP_CAP_NA" != "true" ]]; then theme_done=true; fi
     else
+      ui_rc_or_exit $? || true
       warn "$name configure failed; continuing."
       failed=1
     fi
@@ -456,7 +462,7 @@ cmd_update() {
     # names are left alone; `configure` runs either way, because the point of
     # both paths is a capability that works after a new version lands.
     if [[ -f "$(cap_dir "$target")/update" ]]; then
-      cap_run "$target" update || { warn "$target's update script failed."; failed=1; }
+      cap_run "$target" update || { local rc=$?; ui_rc_or_exit $rc || true; warn "$target's update script failed."; failed=1; }
     else
       for cask in $(cap_meta_get "$target" casks); do
         cask_upgrade "$cask" || failed=1
@@ -469,6 +475,7 @@ cmd_update() {
     if cap_run "$target" configure; then
       [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
     else
+      ui_rc_or_exit $? || true
       warn "$target configure failed."
       failed=1
     fi
@@ -700,7 +707,10 @@ cmd_lazy_run() {
     err "$command is not installed. It is provided by capability $cap; run: teeup install $cap"
     exit 127
   fi
-  if ! ui_confirm "$command is provided by capability $cap. Install now?" yes; then
+  if ui_confirm "$command is provided by capability $cap. Install now?" yes; then
+    :
+  else
+    ui_rc_or_exit $? || true
     err "Not installed. When you want it: teeup install $cap"
     exit 127
   fi
@@ -1317,7 +1327,7 @@ cmd_secret() {
       local was_x=0 quoted_name quoted_value store_rc
       case $- in *x*) was_x=1;; esac
       set +x 2>/dev/null
-      value="$(ui_secret "Value for $name")"
+      value="$(ui_secret "Value for $name")" || ui_rc_or_exit $?
       [[ -n "$value" ]] || die "Refusing to store an empty value for '$name'."
       # macOS does not hide other users' argv from ps, so the value must never
       # be a command-line argument (that would defeat the one command whose

@@ -153,9 +153,9 @@ cap_run() {
 # only adds a capability to CONFIGURED_THIS_RUN when it was not).
 cap_install_verbs() {
   local name="$1" na=false
-  cap_run "$name" install || return 1
+  cap_run "$name" install || { local rc=$?; [[ $rc -eq 130 ]] && return 130 || return 1; }
   [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
-  cap_run "$name" configure || return 1
+  cap_run "$name" configure || { local rc=$?; [[ $rc -eq 130 ]] && return 130 || return 1; }
   [[ "$TEEUP_CAP_NA" == "true" ]] && na=true
   if [[ "$na" == "true" ]]; then
     state_done clear "cap-$name" || true
@@ -286,7 +286,7 @@ cap_run_optional() {
   local name="$1" verb="$2"
   if cap_skipped "$name"; then return 0; fi
   [[ -f "$(cap_dir "$name")/$verb" ]] || return 0
-  cap_run "$name" "$verb" || warn "$name $verb failed; continuing."
+  cap_run "$name" "$verb" || { local rc=$?; ui_rc_or_exit $rc || true; warn "$name $verb failed; continuing."; }
   return 0
 }
 
@@ -355,7 +355,9 @@ cap_remove() {
   if [[ "$has_remove" == "true" ]]; then
     export TEEUP_REMOVE_PACKAGES="$with_packages"
     if ! cap_run "$target" remove; then
+      local rc=$?
       unset TEEUP_REMOVE_PACKAGES
+      ui_rc_or_exit $rc
       return 3
     fi
     unset TEEUP_REMOVE_PACKAGES

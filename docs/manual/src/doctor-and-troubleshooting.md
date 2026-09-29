@@ -89,6 +89,20 @@ If Emacs.app is gone, put it back with `teeup install emacs`.
 
 It needs Accessibility access, once per Mac: System Settings, Privacy & Security, Accessibility, then turn AeroSpace on.
 
+### Stray characters such as `[?2026` appear in a prompt
+
+They are part of a reply from your terminal, not something you typed. teeup's prompts are drawn by gum, which asks the terminal a question when a prompt opens; when the reply arrives late, gum reads part of it as typing. Delete the characters before you type your answer. If an answer was already saved with them, change it with `teeup config set`, for example `teeup config set TEEUP_EMAIL you@example.com`.
+
+To avoid gum altogether, run with plain prompts:
+
+```sh
+TEEUP_NO_GUM=1 ./bootstrap
+```
+
+### Ctrl-C at a prompt
+
+Ctrl-C stops the run, at a prompt too. Answers you already gave are saved, and `./bootstrap` starts again where you left off.
+
 ### `teeup update` will not pull
 
 The teeup checkout has uncommitted changes. Commit, stash or discard them in `~/.local/share/teeup`, then run it again.

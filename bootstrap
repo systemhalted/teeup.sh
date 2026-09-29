@@ -71,7 +71,7 @@ run_capability() {
   # capability did not really configure anything, so it is left out of
   # CONFIGURED_THIS_RUN.
   local name="$1"
-  cap_install_verbs "$name" || return 1
+  cap_install_verbs "$name" || { local rc=$?; [[ $rc -eq 130 ]] && return 130 || return 1; }
   [[ "$TEEUP_CAP_NA" == "true" ]] || CONFIGURED_THIS_RUN="$CONFIGURED_THIS_RUN$name "
 }
 
@@ -87,7 +87,10 @@ run_tier() {
       warn "Skipping $name (TEEUP_SKIP)"
       continue
     fi
-    if ! run_capability "$name"; then
+    if run_capability "$name"; then
+      :
+    else
+      ui_rc_or_exit $? || true
       if [[ "$tier" == "core" ]]; then
         die "Core capability $name failed. See ${TEEUP_LOG_FILE:-the output above}, fix the cause, and re-run ./bootstrap."
       fi
@@ -112,7 +115,7 @@ WIZARD_MAX_TRIES=3
 wizard_ask() {
   local prompt="$1" default="$2" validator="$3" answer validated try
   for ((try = 1; try <= WIZARD_MAX_TRIES; try++)); do
-    answer="$(ui_input "$prompt" "$default")"
+    answer="$(ui_input "$prompt" "$default")" || ui_rc_or_exit $?
     # Validators print the value they accepted (trimmed, normalised), so the
     # caller records what was validated rather than what was typed. Capturing
     # it here also keeps a validator's own output from leaking into this
@@ -182,11 +185,12 @@ wizard() {
     themes="$(theme_list)"
     themes="${themes:-catppuccin}"
     # shellcheck disable=SC2086  # one option per word is exactly what ui_choose wants
-    theme="$(ui_choose "Theme" $themes)"
+    theme="$(ui_choose "Theme" $themes)" || ui_rc_or_exit $?
   fi
   if ui_confirm "Install the daily set too (Emacs, Zed, Firefox Developer Edition, Obsidian)?" yes; then
     daily=yes
   else
+    ui_rc_or_exit $? || true
     daily=no
   fi
   # The Emacs flavor only matters when the daily tier (where emacs lives) is
@@ -207,7 +211,7 @@ wizard() {
         [[ "$other_flavor" == "$current_flavor" ]] || flavors="$flavors $other_flavor"
       done
       # shellcheck disable=SC2086  # one option per word is exactly what ui_choose wants
-      flavor="$(ui_choose "Emacs flavor (starter is teeup's config; none leaves ~/.config/emacs alone)" $flavors)"
+      flavor="$(ui_choose "Emacs flavor (starter is teeup's config; none leaves ~/.config/emacs alone)" $flavors)" || ui_rc_or_exit $?
     fi
   fi
   answers_set TEEUP_NAME "$name"
@@ -247,7 +251,7 @@ ask_package_manager() {
   detected="$(pkg_backend)"
   if [[ "$detected" == "homebrew" ]]; then other=macports; else other=homebrew; fi
   echo ""
-  choice="$(ui_choose "Package manager" "$detected" "$other")"
+  choice="$(ui_choose "Package manager" "$detected" "$other")" || ui_rc_or_exit $?
   answers_set TEEUP_PACKAGE_MANAGER "$choice"
   # pkg_backend ran in a command substitution, so it cached nothing here; an
   # earlier call in this shell could have. Drop the cache so the answer just
@@ -256,7 +260,7 @@ ask_package_manager() {
 }
 
 # --- 1. Xcode Command Line Tools, Rosetta ------------------------------------
-cap_run xcode-clt install || die "Xcode Command Line Tools are required. Complete the installer and re-run ./bootstrap."
+cap_run xcode-clt install || { rc=$?; ui_rc_or_exit $rc || true; die "Xcode Command Line Tools are required. Complete the installer and re-run ./bootstrap."; }
 
 # --- 2. package manager -------------------------------------------------------
 answers_load
@@ -264,11 +268,11 @@ if [[ "$RECONFIGURE" == "true" || -z "$(answers_get TEEUP_PACKAGE_MANAGER)" ]]; 
   ask_package_manager
 fi
 ca_bundle_rebuild || true  # warns itself; only matters behind a re-signing proxy
-run_capability package-manager || die "Core capability package-manager failed. Fix the cause and re-run ./bootstrap."
+run_capability package-manager || { rc=$?; ui_rc_or_exit $rc || true; die "Core capability package-manager failed. Fix the cause and re-run ./bootstrap."; }
 pkg_backend_path
 
 # --- 3. teeup runtime (env file, command link, gum, jq) -----------------------
-run_capability teeup-runtime || die "Core capability teeup-runtime failed. Fix the cause and re-run ./bootstrap."
+run_capability teeup-runtime || { rc=$?; ui_rc_or_exit $rc || true; die "Core capability teeup-runtime failed. Fix the cause and re-run ./bootstrap."; }
 
 # --- 4. answers ---------------------------------------------------------------
 if answers_exist && [[ "$RECONFIGURE" != "true" ]]; then
@@ -294,7 +298,7 @@ fi
 if cap_exists theme && ! cap_skipped theme; then
   case "$CONFIGURED_THIS_RUN" in
     *" theme "*) ;;
-    *) cap_run theme configure || warn "Theme configuration failed; run: teeup theme set $(answers_get TEEUP_THEME)" ;;
+    *) cap_run theme configure || { rc=$?; ui_rc_or_exit $rc || true; warn "Theme configuration failed; run: teeup theme set $(answers_get TEEUP_THEME)"; } ;;
   esac
 fi
 if ! state_done check bootstrap; then

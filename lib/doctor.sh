@@ -438,6 +438,8 @@ doctor_run_one() {
   if [[ -f "$script" ]]; then
     before="$(_doctor_report_lines)"
     if ! cap_run "$cap" doctor; then
+      local rc=$?
+      ui_rc_or_exit $rc || true
       if [[ "$(_doctor_report_lines)" -eq "$before" ]]; then
         _doctor_report_failure "$cap" "its doctor script exited non-zero without saying why." "teeup configure $cap"
       fi

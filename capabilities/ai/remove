@@ -5,6 +5,7 @@
 failed=""
 for child in ai-claude ai-codex ai-gemini ai-copilot ai-opencode; do
   if ! cap_run "$child" remove; then
+    rc=$?; ui_rc_or_exit $rc || true
     failed="$failed $child"
     continue
   fi
