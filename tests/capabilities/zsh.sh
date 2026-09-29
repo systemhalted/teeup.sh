@@ -110,6 +110,25 @@ test_configure_bakes_the_absolute_local_zsh_path_for_a_custom_xdg_config_home() 
   cleanup_test_env
 }
 
+# zsh picks vi key bindings when $VISUAL or $EDITOR contains "vi", and teeup
+# sets EDITOR=nvim when emacsclient is missing, so Ctrl-A and Ctrl-E stopped
+# working (seen 2026-09-28). The layer asks for emacs bindings itself;
+# local.zsh, read later, can still choose vi. Each zsh runs in its own process
+# group: zsh with zle loaded signalled its whole group and killed the shell
+# that started the suite (2026-09-28).
+test_the_shell_uses_emacs_key_bindings_whatever_the_editor() {
+  setup
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null 2>&1
+  DRY_RUN=false "$TEEUP" configure zsh >/dev/null 2>&1
+  local out
+  out="$(EDITOR=nvim VISUAL=nvim perl -e 'setpgrp 0,0; exec @ARGV' zsh -f -c "zmodload zsh/zle; source '$TEST_HOME/.zshrc'; bindkey -lL main" 2>/dev/null)"
+  assert_contains "$out" "emacs" "main keymap with EDITOR=nvim: $out" || return 1
+  printf 'bindkey -v\n' >> "$TEST_HOME/.config/zsh/local.zsh"
+  out="$(EDITOR=nvim VISUAL=nvim perl -e 'setpgrp 0,0; exec @ARGV' zsh -f -c "zmodload zsh/zle; source '$TEST_HOME/.zshrc'; bindkey -lL main" 2>/dev/null)"
+  assert_contains "$out" "viins" "local.zsh must be able to choose vi: $out" || return 1
+  cleanup_test_env
+}
+
 test_configure_quotes_a_path_with_shell_metacharacters() {
   setup
   require_zsh || return 1
@@ -1112,4 +1131,5 @@ INNER
 }
 run_test "hook guard removes hooks when binaries are deleted" test_hook_guard_removes_hooks_when_binaries_are_deleted
 run_test "hook guard keeps hooks when binaries exist" test_hook_guard_keeps_hooks_when_binaries_exist
+run_test "the shell uses emacs key bindings whatever the editor" test_the_shell_uses_emacs_key_bindings_whatever_the_editor
 print_summary

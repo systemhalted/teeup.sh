@@ -41,6 +41,12 @@ setopt AUTO_CD EXTENDED_GLOB INTERACTIVE_COMMENTS NO_BEEP
 # pattern pass through unchanged instead of erroring, which keeps both.
 setopt NO_NOMATCH
 
+# --- key bindings ------------------------------------------------------------
+# Emacs bindings (Ctrl-A, Ctrl-E, ...), said explicitly: zsh otherwise picks vi
+# bindings whenever $VISUAL or $EDITOR contains "vi", and EDITOR is nvim on a
+# Mac without emacsclient. For vi bindings, put `bindkey -v` in local.zsh.
+bindkey -e
+
 # --- completion --------------------------------------------------------------
 # Site functions from whichever package manager is installed.
 for _dir in /opt/local/share/zsh/site-functions /opt/local/share/zsh-completions \
