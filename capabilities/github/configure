@@ -138,9 +138,6 @@ github_configure_identity() {
   target_account="$gh_account"
   [[ -n "$target_account" ]] || target_account="$active_account"
 
-  # Need to check ssh login early if we can, to refuse before login?
-  # The brief doesn't specify doing it before login, but doing it early is safe.
-  # Let's just do it after login, once we are sure `target_account` is accurate.
 
   if status_out="$(gh auth status --active -h "$gh_host" 2>&1)"; then
     ok "Already signed in to GitHub ($gh_host)."

@@ -296,7 +296,7 @@ Host github.com
 CFG
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ssh 2>&1)"
-  assert_contains "$out" "Using the personal key already named in $TEST_HOME/.ssh/config for active account on github.com for active account on github.com: $TEST_HOME/.ssh/id_rsa_legacy" || return 1
+  assert_contains "$out" "Using the personal key already named in $TEST_HOME/.ssh/config for active account on github.com: $TEST_HOME/.ssh/id_rsa_legacy" || return 1
   assert_contains "$out" "Already present: $TEST_HOME/.ssh/id_rsa_legacy (for the personal identity, active account on github.com)" || return 1
   [[ ! -e "$TEST_HOME/.ssh/id_ed25519_personal" ]] || { echo "teeup generated a second personal key"; return 1; }
   assert_not_contains "$(cat "$MOCK_LOG")" "ssh-keygen -t ed25519" || return 1
@@ -1186,7 +1186,6 @@ run_test "doctor reports a host block naming a missing key via IdentityFile=" te
 run_test "doctor reports a zero-byte private key as no key pair" test_doctor_reports_a_zero_byte_private_key_as_no_key_pair
 run_test "doctor reports a malformed private key" test_doctor_reports_a_malformed_private_key
 run_test "doctor reports a malformed public key" test_doctor_reports_a_malformed_public_key
-print_summary
 
 test_the_owners_setup() {
   setup
@@ -1246,3 +1245,4 @@ CFG
   cleanup_test_env
 }
 run_test "the owners setup" test_the_owners_setup
+print_summary

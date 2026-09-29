@@ -301,11 +301,10 @@ identity_gh_account() {
 # identity_ssh_host <identity> -> the SSH host alias (the Host block in ssh config)
 # for this identity. Read from machines/<hostname>.conf, defaulting to
 # github.com and github.com-work.
-#
-#
+
 identity_ssh_host() {
   case "$1" in
-    personal) work_get TEEUP_PERSONAL_SSH_HOST github.com ;;
+    personal) { machine_get TEEUP_PERSONAL_SSH_HOST || printf 'github.com\n'; } ;;
     work) work_get TEEUP_WORK_SSH_HOST github.com-work ;;
     *) die "identity_ssh_host: unknown identity '$1' (expected personal or work)" ;;
   esac

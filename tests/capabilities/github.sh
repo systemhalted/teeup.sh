@@ -259,7 +259,6 @@ test_configure_logs_in_with_the_two_scopes() {
   setup
   seed_keys
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$(cat "$MOCK_LOG")" "auth login --hostname github.com --web --git-protocol ssh --skip-ssh-key --scopes admin:public_key,admin:ssh_signing_key" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "config set git_protocol ssh --host github.com" || return 1
@@ -358,7 +357,6 @@ test_configure_skips_a_key_github_already_has() {
   printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   printf 'laptop (signing)\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:34Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already uploaded" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "ssh-key add" || return 1
@@ -375,7 +373,6 @@ test_configure_recognises_the_real_five_column_row() {
   printf 'testmac personal\tssh-ed25519 AAAAPERSONALKEY\t2021-10-16T21:11:41Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   printf 'testmac personal (signing)\tssh-ed25519 AAAAPERSONALKEY\t2021-10-16T21:11:42Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already uploaded (authentication)" || return 1
   assert_contains "$out" "Already uploaded (signing)" || return 1
@@ -394,7 +391,6 @@ test_configure_lets_the_active_account_decide_the_scopes() {
   printf "'admin:public_key'" > "$TEST_HOME/gh-session"
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-inactive-scopes"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_contains "$(cat "$MOCK_LOG")" "auth status --active -h github.com" || return 1
@@ -410,7 +406,6 @@ test_configure_ignores_an_inactive_accounts_missing_scopes() {
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   printf "'admin:public_key'" > "$TEST_HOME/gh-inactive-scopes"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "auth refresh" || return 1
@@ -423,7 +418,6 @@ test_configure_refreshes_scopes_when_the_signing_scope_is_missing() {
   seed_keys
   printf "'admin:public_key'" > "$TEST_HOME/gh-session"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_contains "$(cat "$MOCK_LOG")" "auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key" || return 1
@@ -441,7 +435,6 @@ test_configure_lets_github_com_scopes_decide_over_another_host() {
   printf "'admin:public_key'" > "$TEST_HOME/gh-session"
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session-github.enterprise.example.com"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_contains "$(cat "$MOCK_LOG")" "auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key" || return 1
@@ -454,7 +447,6 @@ test_configure_retries_the_signing_upload_when_only_authentication_is_present() 
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   local calls
   calls="$(cat "$MOCK_LOG")"
@@ -468,7 +460,6 @@ test_configure_skips_the_login_when_already_signed_in() {
   seed_keys
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "auth login" || return 1
@@ -479,7 +470,6 @@ test_configure_skips_the_login_when_already_signed_in() {
 test_configure_warns_when_the_key_is_missing() {
   setup
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "teeup configure ssh" || return 1
   cleanup_test_env
@@ -506,7 +496,6 @@ test_configure_does_not_let_a_signing_titled_authentication_key_suppress_signing
   # and TYPE columns count, never the title.
   printf 'laptop signing key\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   local calls
   calls="$(cat "$MOCK_LOG")"
@@ -525,7 +514,6 @@ test_configure_does_not_let_a_key_titled_exactly_signing_suppress_signing() {
   # key, skipped the signing upload and retried the authentication one.
   printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   local out calls
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_contains "$out" "Already uploaded (authentication)" || return 1
@@ -545,7 +533,6 @@ test_configure_reads_the_type_from_the_last_column_whatever_the_title() {
   printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   printf 'authentication\tssh-ed25519 SOMEONEELSE\t2026-09-11T09:12:34Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
   local out calls
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_contains "$out" "Already uploaded (authentication)" || return 1
@@ -563,7 +550,6 @@ test_configure_never_matches_the_key_body_against_the_title() {
   # KEY column must stop before field 1, or this row suppresses our upload.
   printf 'someone AAAAPERSONALKEY\tssh-ed25519 SOMEONEELSE\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_not_contains "$out" "Already uploaded" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
@@ -579,7 +565,6 @@ test_configure_compares_the_key_body_exactly() {
   printf 'other laptop\tssh-ed25519 AAAAPERSONALKEYEXTRA\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   printf 'other laptop (signing)\tssh-ed25519 XAAAAPERSONALKEY\t2026-09-11T09:12:34Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
   local out calls
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_not_contains "$out" "Already uploaded" || return 1
@@ -606,7 +591,6 @@ test_configure_twice_uploads_nothing_new() {
   : > "$marker"
   : > "$MOCK_LOG"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   assert_contains "$out" "Already uploaded" || return 1
@@ -630,7 +614,6 @@ test_configure_refuses_the_work_upload_with_no_account_named() {
   seed_work_key
   seed_machine_work "ada@corp.example"
   local out calls
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_contains "$calls" "ssh-key add $TEST_HOME/.ssh/id_ed25519_personal.pub --type authentication" || return 1
@@ -690,7 +673,6 @@ test_configure_uploads_the_work_key_to_a_github_enterprise_host() {
   # so only it goes through `auth login`.
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already signed in to GitHub (github.com)." || return 1
   local calls
@@ -719,7 +701,6 @@ test_configure_signs_in_to_each_host_independently() {
   # go through `auth login`.
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   local calls
   calls="$(cat "$MOCK_LOG")"
@@ -739,7 +720,6 @@ test_configure_skips_a_key_already_uploaded_to_the_enterprise_host() {
   printf 'testmac work\tssh-ed25519 AAAAWORKKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys-github.enterprise.example.com"
   printf 'testmac work (signing)\tssh-ed25519 AAAAWORKKEY\t2026-09-11T09:12:34Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys-github.enterprise.example.com"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   local calls
   calls="$(cat "$MOCK_LOG")"
@@ -778,7 +758,6 @@ test_configure_twice_with_a_work_identity_uploads_nothing_new() {
   DRY_RUN=false "$TEEUP" configure github >/dev/null 2>&1
   : > "$MOCK_LOG"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   local calls
   calls="$(cat "$MOCK_LOG")"
@@ -816,7 +795,6 @@ test_configure_reads_only_the_first_line_of_a_public_key() {
   printf 'testmac personal\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095771\tauthentication\n' > "$TEST_HOME/gh-keys"
   printf 'testmac personal (signing)\tssh-ed25519 AAAAPERSONALKEY\t2026-09-11T09:12:33Z\t58095772\tsigning\n' >> "$TEST_HOME/gh-keys"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "Already uploaded (authentication)" || return 1
   assert_contains "$out" "Already uploaded (signing)" || return 1
@@ -837,7 +815,6 @@ test_configure_warns_when_the_login_lands_on_another_account() {
   # auth login, which the mock completes as "testuser".
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_contains "$out" "ada-corp" || return 1
   assert_contains "$out" "testuser" || return 1
@@ -853,7 +830,6 @@ test_configure_says_nothing_when_the_login_lands_on_the_named_account() {
   seed_machine_work "ada@corp.example" "github.enterprise.example.com" "testuser"
   printf "'admin:public_key', 'admin:ssh_signing_key'" > "$TEST_HOME/gh-session"
   local out
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   assert_not_contains "$out" "not the testuser" || return 1
   assert_not_contains "$out" "named in" || return 1
@@ -1298,14 +1274,12 @@ run_test "doctor reports it could not list keys" test_doctor_reports_it_could_no
 run_test "doctor reports a signing-only key as not ready for push" test_doctor_reports_a_signing_only_key_as_not_ready_for_push
 run_test "doctor checks the active account's scopes, not an inactive one's" test_doctor_checks_the_active_accounts_scopes_not_an_inactive_ones
 run_test "doctor does not match the key body against the title" test_doctor_does_not_match_the_key_body_against_the_title
-print_summary
 
 test_configure_refuses_upload_when_ssh_login_differs() {
   setup
   seed_keys
   printf 'otheruser\n' > "$HOME/ssh-mock-login"
   local out calls
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_contains "$out" "Refusing upload: the personal key ($TEST_HOME/.ssh/id_ed25519_personal) belongs to GitHub account 'otheruser', but gh is targeting 'testuser' on github.com" || return 1
@@ -1318,7 +1292,6 @@ test_configure_allows_upload_when_ssh_login_matches() {
   seed_keys
   printf 'testuser\n' > "$HOME/ssh-mock-login"
   local out calls
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_not_contains "$out" "Refusing upload" || return 1
@@ -1331,7 +1304,6 @@ test_configure_allows_upload_when_ssh_cannot_tell() {
   seed_keys
   printf 'error\n' > "$HOME/ssh-mock-login"
   local out calls
-  set -x
   out="$(DRY_RUN=false "$TEEUP" configure github 2>&1)"
   calls="$(cat "$MOCK_LOG")"
   assert_not_contains "$out" "Refusing upload" || return 1
@@ -1378,3 +1350,8 @@ test_configure_recognises_received_credentials_for_other() {
   assert_contains "$out" "Sign in as systemhalted in the browser (or sign out of palakm_tmcc), then re-run: teeup configure github" || return 1
   cleanup_test_env
 }
+run_test "configure skips refresh if answer is no" test_configure_skips_refresh_if_answer_is_no
+run_test "configure names identity in messages" test_configure_names_identity_in_messages
+run_test "configure recognises received credentials for other" test_configure_recognises_received_credentials_for_other
+
+print_summary

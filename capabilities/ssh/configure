@@ -189,9 +189,6 @@ ssh_alias_block() {
   alias="$(identity_ssh_host "$identity")"
   host="$(identity_gh_host "$identity")"
   key="$(identity_key "$identity")"
-  gh_host="$(identity_gh_host "$identity")"
-  gh_account="$(identity_gh_account "$identity")"
-  [[ -n "$gh_account" ]] || gh_account="active account"
   display="$key"
   case "$key" in "$HOME"/*) display="~${key#"$HOME"}" ;; esac
   if [[ "$identity" == "work" ]]; then

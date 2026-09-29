@@ -61,11 +61,18 @@ A Mac you also use for work can have a second SSH key. Set it in the machine fil
 | `TEEUP_WORK_EMAIL` | Turns the work identity on. Required for the other two. |
 | `TEEUP_WORK_GH_HOST` | The GitHub host for work, such as a GitHub Enterprise server. Defaults to `github.com`. |
 | `TEEUP_WORK_GH_ACCOUNT` | The work GitHub login, when work is a second account on the same host as personal. |
-| `TEEUP_PERSONAL_SSH_HOST` | The SSH host alias for the personal identity. Defaults to `github.com`. |
-| `TEEUP_WORK_SSH_HOST` | The SSH host alias for the work identity. Defaults to `github.com-work`. |
 
 With `TEEUP_WORK_EMAIL` set, teeup creates `~/.ssh/id_ed25519_work`, adds the work SSH host alias to a new `~/.ssh/config`, and uploads the work key to the work host. Clone work repositories using the alias, such as `git@github.com-work:org/repo.git` to use it.
 
 When work and personal share `github.com`, `gh` can only act as one account per host. teeup switches to `TEEUP_WORK_GH_ACCOUNT` for the upload and back afterwards; both accounts must already be signed in with `gh auth login --skip-ssh-key`. Without that key it refuses to upload the work key, rather than put it on your personal account.
 
 git itself still has one identity. The work key changes which key SSH offers, not the email on your commits.
+
+## SSH host aliases
+
+By default, teeup uses `github.com` as the SSH host alias for the personal identity and `github.com-work` for the work identity. You can change these by setting them in your machine file (`~/.config/teeup/machines/<hostname>.conf`):
+
+| Key | Meaning |
+|---|---|
+| `TEEUP_PERSONAL_SSH_HOST` | The SSH host alias for the personal identity. Defaults to `github.com`. Applies to any Mac. |
+| `TEEUP_WORK_SSH_HOST` | The SSH host alias for the work identity. Defaults to `github.com-work`. |
