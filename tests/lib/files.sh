@@ -428,7 +428,7 @@ test_write_config_region_warns_when_the_record_cannot_be_written() {
   chmod 0644 "$record"
   assert_success "$rc" "the file was written, so the caller is told so" || return 1
   assert_contains "$out" "Could not record the shipped checksum" || return 1
-  if printf '%s\n' "$out" | grep -qi 'permission denied'; then
+  if grep -qi 'permission denied' <<<"$out"; then
     echo "a raw shell error reached the user"
     return 1
   fi
@@ -515,7 +515,7 @@ test_backup_copy_reports_a_copy_it_could_not_make() {
   chmod 0755 "$dir"
   assert_failure "$rc" || return 1
   assert_contains "$out" "Could not copy" || return 1
-  if printf '%s\n' "$out" | grep -q '✅'; then
+  if grep -q '✅' <<<"$out"; then
     echo "claimed a backup that did not happen"
     return 1
   fi
@@ -583,10 +583,10 @@ test_block_opener_ere_matches_what_migrate_keeps() {
   local ere l
   ere="$(block_opener_ere)"
   for l in 'if true; then' 'for x in a b; do' 'case $x in' 'f() {' 'x=(' 'a \' '[[ -f x ]] &&' 'false ||'; do
-    printf '%s\n' "$l" | grep -qE "$ere" || { echo "not an opener: $l"; return 1; }
+    grep -qE "$ere" <<<"$l" || { echo "not an opener: $l"; return 1; }
   done
   for l in 'source x # plugin' 'echo within' 'export DOIN=1' 'echo done'; do
-    printf '%s\n' "$l" | grep -qE "$ere" && { echo "wrongly an opener: $l"; return 1; }
+    grep -qE "$ere" <<<"$l" && { echo "wrongly an opener: $l"; return 1; }
   done
   cleanup_test_env
 }
@@ -790,7 +790,7 @@ test_refresh_if_pristine_separates_an_edit_from_a_failure() {
   chmod 0644 "$DEST"
   assert_equals "2" "$rc" "a write teeup could not do reports 2" || return 1
   assert_contains "$out" "was not refreshed" || return 1
-  if printf '%s\n' "$out" | grep -q 'Refreshed'; then
+  if grep -q 'Refreshed' <<<"$out"; then
     echo "claimed a refresh that did not happen"
     return 1
   fi
@@ -817,7 +817,7 @@ test_refresh_config_will_not_reset_what_it_cannot_back_up() {
   assert_contains "$out" "cannot be backed up and was not reset" || return 1
   # No success marker at all: the refusal names the shipped file ("Reset it by
   # hand: ..."), so matching on the word would match the refusal itself.
-  if printf '%s\n' "$out" | grep -q '✅'; then
+  if grep -q '✅' <<<"$out"; then
     echo "claimed a backup or a reset that did not happen"
     return 1
   fi

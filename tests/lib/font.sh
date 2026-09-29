@@ -172,7 +172,7 @@ EOF2
   assert_contains "$out" "the editors were not told about it" || return 1
   # The recorded family is untouched and no hook ran with the new one.
   assert_equals "MesloLGS Nerd Font" "$(cat "$state")" || return 1
-  if printf '%s\n' "$out" | grep -q 'font-applied:'; then
+  if grep -q 'font-applied:' <<<"$out"; then
     echo "a font-apply hook ran even though the family was not recorded"
     return 1
   fi

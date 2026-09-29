@@ -466,13 +466,13 @@ test_every_palette_names_themes_the_tools_ship() {
     for mode in dark light; do
       file="$THEMES_UNDER_TEST/$name/$mode.toml"
       value="$(palette_value "$file" bat_theme)"
-      printf '%s\n' "$BAT_BUILTIN_THEMES" | grep -qxF "$value" ||
+      grep -qxF "$value" <<<"$BAT_BUILTIN_THEMES" ||
         { echo "themes/$name/$mode.toml: bat has no built-in theme named '$value'"; return 1; }
       value="$(palette_value "$file" emacs_theme)"
-      printf '%s\n' "$EMACS_BUILTIN_THEMES" | grep -qxF "$value" ||
+      grep -qxF "$value" <<<"$EMACS_BUILTIN_THEMES" ||
         { echo "themes/$name/$mode.toml: '$value' is not a theme built into Emacs"; return 1; }
       value="$(palette_value "$file" doom_theme)"
-      printf '%s\n' "$DOOM_BUILTIN_THEMES" | grep -qxF "$value" ||
+      grep -qxF "$value" <<<"$DOOM_BUILTIN_THEMES" ||
         { echo "themes/$name/$mode.toml: '$value' is not a theme built into doom-themes"; return 1; }
       # teeup's Neovim layer picks the plugin by the colorscheme's first word.
       value="$(palette_value "$file" neovim_colorscheme)"
@@ -495,7 +495,7 @@ test_every_editor_theme_has_its_extension() {
       zed_theme="$(palette_value "$file" zed_theme)"
       zed_ext="$(palette_value "$file" zed_extension)"
       vscode_ext="$(palette_value "$file" vscode_extension)"
-      if printf '%s\n' "$ZED_BUILTIN_THEMES" | grep -qxF "$zed_theme"; then
+      if grep -qxF "$zed_theme" <<<"$ZED_BUILTIN_THEMES"; then
         assert_equals "none" "$zed_ext" "themes/$name/$mode.toml: $zed_theme is built into Zed" || return 1
       else
         [[ "$zed_ext" =~ $zed_id_re ]] ||

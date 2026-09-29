@@ -51,7 +51,7 @@ test_done_clear_reports_a_marker_it_cannot_remove() {
   chmod 0755 "$TEEUP_STATE_DIR/done"
   assert_failure "$rc" || return 1
   assert_contains "$out" "teeup still has it on record" || return 1
-  if printf '%s\n' "$out" | grep -qi 'permission denied'; then
+  if grep -qi 'permission denied' <<<"$out"; then
     echo "a raw shell error reached the user"
     return 1
   fi

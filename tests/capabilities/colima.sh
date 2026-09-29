@@ -72,7 +72,7 @@ test_install_on_macports_gets_the_compose_plugin_port() {
   # The docker-compose port is the retired Python 1.x tool; the plugin port
   # is Compose v2.
   assert_contains "$out" "Would execute: sudo port install docker-compose-plugin" || return 1
-  if printf '%s\n' "$out" | grep -q 'port install docker-compose$'; then
+  if grep -q 'port install docker-compose$' <<<"$out"; then
     echo "the Python docker-compose port must not be installed"; return 1
   fi
   cleanup_test_env
@@ -260,7 +260,7 @@ EOF2
   out="$(DRY_RUN=false cap_run colima remove 2>&1)" || rc=$?
   assert_failure "$rc" "a failed stop must fail the removal" || return 1
   assert_contains "$out" "colima was not removed" || return 1
-  if printf '%s\n' "$out" | grep -q 'Removed'; then
+  if grep -q 'Removed' <<<"$out"; then
     echo "claimed a removal after the stop failed"
     return 1
   fi

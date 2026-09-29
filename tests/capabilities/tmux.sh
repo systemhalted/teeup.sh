@@ -115,7 +115,7 @@ test_the_reload_key_follows_xdg_config_home() {
   local reload
   reload="$(grep -n 'bind r' "$conf")"
   assert_contains "$reload" 'XDG_CONFIG_HOME' || return 1
-  if printf '%s\n' "$reload" | grep -q 'source-file ~/.config'; then
+  if grep -q 'source-file ~/.config' <<<"$reload"; then
     echo "the reload key still names a literal ~/.config path"
     return 1
   fi
