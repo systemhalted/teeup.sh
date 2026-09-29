@@ -311,18 +311,85 @@ test_doctor_reports_missing_bundle_with_fix() {
   cleanup_test_env
 }
 
-test_doctor_reports_bundle_older_than_system_keychain() {
+test_doctor_is_satisfied_when_keychain_is_newer_but_certificates_match() {
   setup
   ca_bundle_rebuild || return 1
+  local marker="$TEEUP_STATE_DIR/ca-bundle.checked"
+  local before_mtime
+  before_mtime="$(file_mtime "$marker")"
   sleep 1
   touch "$TEEUP_SYSTEM_KEYCHAIN"
   local rc=0 out report="$TEST_HOME/doctor-report"
   : > "$report"
   export TEEUP_DOCTOR_REPORT="$report"
   out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "present and current" || return 1
+  [[ "$before_mtime" != "$(file_mtime "$marker")" ]] || { echo "marker was not refreshed"; return 1; }
+  cleanup_test_env
+}
+
+test_doctor_reports_certificates_changed() {
+  setup
+  ca_bundle_rebuild || return 1
+  local bundle_bytes
+  bundle_bytes="$(cat "$TEEUP_STATE_DIR/ca-bundle.pem")"
+  sleep 1
+  touch "$TEEUP_SYSTEM_KEYCHAIN"
+  export MOCK_SECURITY_MODE=mixed_trust
+  local rc=0 out report="$TEST_HOME/doctor-report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "older" || return 1
+  assert_contains "$out" "changed" || return 1
   assert_contains "$(cat "$report")" "teeup configure ca-bundle" || return 1
+  assert_equals "$bundle_bytes" "$(cat "$TEEUP_STATE_DIR/ca-bundle.pem")" "bundle was changed" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_curlrc_stale() {
+  setup
+  ca_bundle_rebuild || return 1
+  echo "wrong" > "$TEEUP_STATE_DIR/ca-bundle.curlrc"
+  local rc=0 out report="$TEST_HOME/doctor-report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Homebrew's curl configuration does not point at the command-line CA bundle" || return 1
+  assert_contains "$(cat "$report")" "teeup configure ca-bundle" || return 1
+  cleanup_test_env
+}
+
+test_doctor_reports_unknown_if_export_fails() {
+  setup
+  ca_bundle_rebuild || return 1
+  local bundle_bytes
+  bundle_bytes="$(cat "$TEEUP_STATE_DIR/ca-bundle.pem")"
+  sleep 1
+  touch "$TEEUP_SYSTEM_KEYCHAIN"
+  export MOCK_SECURITY_MODE=export_failure
+  local rc=0 out report="$TEST_HOME/doctor-report"
+  : > "$report"
+  export TEEUP_DOCTOR_REPORT="$report"
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Could not compare" || return 1
+  assert_equals "$bundle_bytes" "$(cat "$TEEUP_STATE_DIR/ca-bundle.pem")" "bundle was changed" || return 1
+  cleanup_test_env
+}
+
+test_doctor_leaves_no_temp_directory() {
+  setup
+  ca_bundle_rebuild || return 1
+  sleep 1
+  touch "$TEEUP_SYSTEM_KEYCHAIN"
+  local dirs_before dirs_after
+  dirs_before="$(ls -1 "$TEEUP_STATE_DIR" | wc -l)"
+  cap_run ca-bundle doctor >/dev/null 2>&1 || true
+  dirs_after="$(ls -1 "$TEEUP_STATE_DIR" | wc -l)"
+  assert_equals "$dirs_before" "$dirs_after" "doctor left a temporary directory" || return 1
   cleanup_test_env
 }
 
@@ -403,7 +470,11 @@ run_test "no-trust-settings exit means no admin roots" test_no_trust_settings_ex
 run_test "configure warns but does not fail bootstrap" test_configure_warns_but_does_not_fail_bootstrap
 run_test "doctor reports present and current" test_doctor_reports_present_and_current
 run_test "doctor reports missing bundle with fix" test_doctor_reports_missing_bundle_with_fix
-run_test "doctor reports an older bundle" test_doctor_reports_bundle_older_than_system_keychain
+run_test "doctor is satisfied when keychain is newer but certificates match" test_doctor_is_satisfied_when_keychain_is_newer_but_certificates_match
+run_test "doctor reports certificates changed" test_doctor_reports_certificates_changed
+run_test "doctor reports curlrc stale" test_doctor_reports_curlrc_stale
+run_test "doctor reports unknown if export fails" test_doctor_reports_unknown_if_export_fails
+run_test "doctor leaves no temp directory" test_doctor_leaves_no_temp_directory
 run_test "remove deletes bundle and curlrc" test_remove_deletes_bundle_and_curlrc
 run_test "bundle follows each certificate's trust result" test_bundle_follows_each_certificates_trust_result
 run_test "only denied admin certificates leave no bundle" test_only_denied_admin_certificates_leave_no_bundle

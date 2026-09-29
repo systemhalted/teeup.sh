@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Configurable SSH host aliases:** Added `TEEUP_PERSONAL_SSH_HOST` and `TEEUP_WORK_SSH_HOST` to the machine file so identities can be tied to different SSH Host blocks.
 
 ### Changed
+- The `ca-bundle` capability's doctor check now compares certificate content instead of file modification dates, stopping false positives when device-management software touches the System keychain.
 - `teeup update` now upgrades only the Homebrew packages and casks (or MacPorts ports) that teeup itself installed, leaving the rest to you (`brew upgrade`).
 - Zed, Obsidian, and Firefox Developer Edition are now lazy capabilities. They install the first time you use them, rather than as part of the daily bootstrap set. Emacs is now the only daily capability.
 
