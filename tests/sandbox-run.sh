@@ -5,6 +5,22 @@
 # shellenv before 0.3 left XDG_STATE_HOME at the real ~/.local/state
 # (shellenv#10). Whatever the version, no XDG directory may point outside
 # the sandbox home.
+real_home="${SHELLENV_OLD_HOME:-${TEEUP_REAL_HOME:-}}"
+if [[ -n "$real_home" && "$real_home" != "/" ]]; then
+  for var in $(compgen -e); do
+    case "$var" in
+      PATH|PWD|OLDPWD|SHELLENV_*) continue ;;
+    esac
+    value="${!var}"
+    case "$value" in
+      "$HOME"|"$HOME"/*) continue ;;
+    esac
+    case "$value" in
+      "$real_home"|*"$real_home/"*) unset "$var" ;;
+    esac
+  done
+fi
+
 for var in XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME XDG_STATE_HOME; do
   case "${!var:-}" in
     "$HOME"/*) ;;

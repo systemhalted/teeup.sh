@@ -120,8 +120,9 @@ dev_shell_files() {
   for f in "$TEEUP_SKELETON_DIR/install" "$TEEUP_SKELETON_DIR/configure" "$TEEUP_SKELETON_DIR/test.sh"; do
     if [[ -f "$f" ]]; then printf '%s\n' "$f"; fi
   done
-  for f in "$TEEUP_TESTS_DIR"/helper.sh "$TEEUP_TESTS_DIR"/run.sh "$TEEUP_TESTS_DIR"/cli.sh \
-           "$TEEUP_TESTS_DIR"/bootstrap.sh "$TEEUP_TESTS_DIR"/docs.sh \
+  for f in "$TEEUP_TESTS_DIR"/helper.sh "$TEEUP_TESTS_DIR"/run.sh \
+           "$TEEUP_TESTS_DIR"/sandbox.sh "$TEEUP_TESTS_DIR"/sandbox-run.sh \
+           "$TEEUP_TESTS_DIR"/cli.sh "$TEEUP_TESTS_DIR"/bootstrap.sh "$TEEUP_TESTS_DIR"/docs.sh \
            "$TEEUP_TESTS_DIR"/lib/*.sh "$TEEUP_TESTS_DIR"/capabilities/*.sh; do
     if [[ -f "$f" ]]; then printf '%s\n' "$f"; fi
   done

@@ -37,7 +37,9 @@ teeup_enter_sandbox() {
     shellenv create --name teeup --shell bash@5.2 >/dev/null || exit 2
   # TMPDIR goes back to /tmp because cleanup_test_env deletes only temp
   # directories there. --ephemeral gives every run its own home, so two runs
-  # at once do not share one.
+  # at once do not share one. shellenv does not expose the home it replaced,
+  # so pass it to sandbox-run.sh for inherited-path scrubbing.
   exec shellenv exec teeup --strict-shell --ephemeral -- \
-    env TMPDIR=/tmp bash "$root/tests/sandbox-run.sh" "$script" "$@"
+    env TEEUP_REAL_HOME="$HOME" TMPDIR=/tmp \
+      bash "$root/tests/sandbox-run.sh" "$script" "$@"
 }

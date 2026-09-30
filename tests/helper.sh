@@ -23,6 +23,21 @@ source "$TESTS_DIR/sandbox.sh"
 teeup_enter_sandbox "$0" "$@"
 
 setup_test_env() {
+  # Test-owned values are set below or by each suite after setup. Drop
+  # inherited file and directory overrides first, so CI (which skips the
+  # outer shellenv sandbox) cannot steer teeup or a tool it invokes back into
+  # the runner's home.
+  unset TMPDIR
+  unset DOCKER_CONFIG ZDOTDIR GNUPGHOME HISTFILE DOOMDIR GIT_CONFIG_GLOBAL
+  unset CARGO_HOME RUSTUP_HOME GOPATH GEM_HOME GEM_PATH JAVA_HOME XDG_RUNTIME_DIR
+  unset FPATH SSH_AUTH_SOCK
+  unset MISE_CONFIG_DIR MISE_DATA_DIR MISE_GLOBAL_CONFIG_FILE
+  unset TEEUP_CONFIG_DIR TEEUP_STATE_DIR TEEUP_ANSWERS_FILE TEEUP_LOG_FILE
+  unset TEEUP_MACHINES_DIR TEEUP_CAPS_DIR TEEUP_CAP_DIR TEEUP_CAP_NA_MARKER
+  unset TEEUP_MIGRATIONS_DIR
+  unset TEEUP_MENU_FILE TEEUP_SKELETON_DIR TEEUP_TESTS_DIR TEEUP_THEMES_DIR
+  unset TEEUP_THEME_DIR TEEUP_PLUTIL TEEUP_SYSTEM_ROOT_KEYCHAIN
+  unset TEEUP_SYSTEM_KEYCHAIN
   TEST_HOME="$(mktemp -d)"
   export TEST_HOME
   export HOME="$TEST_HOME"
@@ -45,7 +60,6 @@ setup_test_env() {
   export DRY_RUN="${DRY_RUN:-false}"
   # Keeps tests away from the real /opt/homebrew on macOS CI runners.
   export TEEUP_PKG_PREFIX="$TEST_HOME/pkgprefix"
-  unset TEEUP_CONFIG_DIR TEEUP_STATE_DIR TEEUP_ANSWERS_FILE TEEUP_LOG_FILE TEEUP_MACHINES_DIR
   # The macOS CI runners export HOMEBREW_PREFIX, which pkg_prefix obeys: left
   # in place it sends a test that never mentions Homebrew at the runner's own
   # /opt/homebrew, past the TEEUP_PKG_PREFIX sandbox above. A test that wants
@@ -55,7 +69,7 @@ setup_test_env() {
   # when they are unset, so on a Mac running teeup they arrive already set
   # to the user's values and a test of that layer sees those instead of the
   # defaults it checks (GOPATH on a real Mac, 2026-09-26).
-  unset GOPATH VISUAL SUDO_EDITOR BAT_THEME LESS SDKMAN_EL_DIR TRUSTRAIL_EL_DIR WORDWISE_EL_DIR
+  unset VISUAL SUDO_EDITOR BAT_THEME LESS SDKMAN_EL_DIR TRUSTRAIL_EL_DIR WORDWISE_EL_DIR
   unset SSL_CERT_FILE GIT_SSL_CAINFO CURL_CA_BUNDLE REQUESTS_CA_BUNDLE NODE_EXTRA_CA_CERTS HOMEBREW_CURLRC
   # app_installed and emacs configure fall back to the real /Applications when
   # TEEUP_APPS_DIR is unset, and a Mac running teeup has Emacs.app there,
