@@ -182,7 +182,7 @@ test_the_scaffolded_capability_passes_its_own_generated_suite() {
   cp -Rp "$TEEUP_PATH/lib" "$copy/lib"
   cp -Rp "$TEEUP_PATH/share" "$copy/share"
   cp -Rp "$TEEUP_PATH/capabilities" "$copy/capabilities"
-  cp -p "$TEEUP_PATH/tests/helper.sh" "$copy/tests/helper.sh"
+  cp -p "$TEEUP_PATH/tests/helper.sh" "$TEEUP_PATH/tests/sandbox.sh" "$copy/tests/"
   cp -p "$TEEUP_PATH/version" "$copy/version"
   local name=teeup-scaffold-probe
   local before after out="" rc=0 lint_rc=0

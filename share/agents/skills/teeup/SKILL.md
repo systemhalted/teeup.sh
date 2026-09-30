@@ -158,6 +158,10 @@ bash tests/capabilities/zed.sh    # one suite
 shellcheck --severity=warning bin/teeup lib/*.sh
 ```
 
+Every run re-runs itself inside a throwaway shellenv home, so a test cannot
+write into the real one; shellenv must be on `PATH`. Never run `bin/teeup`,
+`./bootstrap` or a capability script outside the tests (see `AGENTS.md`).
+
 Every suite builds a throwaway `$HOME` and a mock `bin` directory that is
 first on a narrowed `PATH` (`$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin`), so no
 test touches the real machine and no test may depend on Homebrew. Two rules
