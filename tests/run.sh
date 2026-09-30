@@ -14,6 +14,12 @@ fi
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Outside shellenv, re-run the whole suite inside a throwaway sandbox home;
+# every suite it starts then finds itself already inside.
+# shellcheck source=tests/sandbox.sh
+source "$TESTS_DIR/sandbox.sh"
+teeup_enter_sandbox "${BASH_SOURCE[0]}" "$@"
+
 detect_jobs() {
   local n=""
   if [[ -n "${TEEUP_TEST_JOBS:-}" ]]; then

@@ -17,6 +17,11 @@ TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEEUP_PATH="$(dirname "$TESTS_DIR")"
 export TEEUP_PATH
 
+# Outside shellenv, re-run the calling suite inside a throwaway sandbox home.
+# shellcheck source=tests/sandbox.sh
+source "$TESTS_DIR/sandbox.sh"
+teeup_enter_sandbox "$0" "$@"
+
 setup_test_env() {
   TEST_HOME="$(mktemp -d)"
   export TEST_HOME

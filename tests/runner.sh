@@ -14,7 +14,7 @@ test_suite_timeouts_kill_the_suite_and_carry_on() {
 
   # Copy enough to make run.sh work
   cp -p "$TEEUP_PATH/tests/helper.sh" "$copy/tests/helper.sh"
-  cp -p "$TEEUP_PATH/tests/run.sh" "$copy/tests/run.sh"
+  cp -p "$TEEUP_PATH/tests/run.sh" "$TEEUP_PATH/tests/sandbox.sh" "$copy/tests/"
 
   # The runner will test these two files
   printf '#!/usr/bin/env bash\nsleep 10\n' > "$copy/tests/capabilities/sleeps.sh"
@@ -42,7 +42,7 @@ test_bootstrap_suite_gets_a_longer_timeout() {
   mkdir -p "$copy/tests"
 
   cp -p "$TEEUP_PATH/tests/helper.sh" "$copy/tests/helper.sh"
-  cp -p "$TEEUP_PATH/tests/run.sh" "$copy/tests/run.sh"
+  cp -p "$TEEUP_PATH/tests/run.sh" "$TEEUP_PATH/tests/sandbox.sh" "$copy/tests/"
 
   # bootstrap.sh spawns a real subprocess tree per test and is legitimately
   # slower than every other suite by design (tests/run.sh's own worker-pool

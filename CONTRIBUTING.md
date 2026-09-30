@@ -16,6 +16,16 @@ git checkout -b my-change
 ./bin/teeup commands --check
 ```
 
+The tests need [shellenv](https://github.com/systemhalted/shellenv) on
+`PATH`. `tests/run.sh` and every suite re-run themselves inside a throwaway
+shellenv home, so no test, and no mistake in one, can write into your real
+home: `HOME`, `TMPDIR` and every `XDG_*` directory point into
+`.shellenv/teeup/` (gitignored), which is deleted after the run. A file
+written there instead of a test's `$TEST_HOME` fails the run and is named.
+The first run builds bash 5.2 from source into `$SHELLENV_HOME` (about a
+minute; it needs `cc`, `make` and `tar`). GitHub Actions skips the sandbox,
+since its runners are thrown away after every job.
+
 You do not need a Mac to work on most of teeup: the suite mocks every
 external command and runs on Linux, which is what CI's `ubuntu-latest` job
 proves. You do need a Mac to know whether a capability actually works, which
