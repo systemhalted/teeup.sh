@@ -7,25 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.1-beta] - UNRELEASED
+## [0.2.0-beta] - 2026-09-30
+
+`teeup update` now upgrades only what teeup installed, leaving other Homebrew packages and casks under your control.
 
 ### Added
-- **Personal GitHub Account:** Added `TEEUP_PERSONAL_GH_ACCOUNT` to the machine file. When two identities share `github.com`, the personal identity can now switch accounts for its upload, exactly like the work identity does.
-- Ghostty, Alacritty, and iTerm2 are now available as lazy capabilities (`ghostty`, `alacritty`, `iterm2`).
-- **Configurable SSH host aliases:** Added `TEEUP_PERSONAL_SSH_HOST` and `TEEUP_WORK_SSH_HOST` to the machine file so identities can be tied to different SSH Host blocks.
+- **Identity routing.** Machine files can set `TEEUP_PERSONAL_SSH_HOST`, `TEEUP_WORK_SSH_HOST`, and `TEEUP_PERSONAL_GH_ACCOUNT`, so each identity can use its own SSH Host block and GitHub account.
+- **Lazy terminals.** Ghostty, Alacritty, and iTerm2 are available as lazy capabilities. teeup installs them on first use but does not manage their themes or fonts.
+- **Manual coverage.** The manual now has a complete AeroSpace page, a Starship overview, a Lazygit guide, and a reference for every shell alias teeup defines.
+- **Custom Emacs themes.** The manual shows how an existing Emacs configuration can load teeup's theme and font and follow later changes.
 
 ### Changed
-- Every test run (`tests/run.sh` or a single suite) now runs inside a throwaway [shellenv](https://github.com/systemhalted/shellenv) home, so no test can write into your real home. The tests need shellenv on `PATH`.
-- An app already in `/Applications` that Homebrew did not install (downloaded by hand, or pushed by your IT department) is now used as it is. `teeup install` no longer fails with "It seems there is already an App", and `teeup doctor` no longer reports its cask missing.
-- The `ca-bundle` capability's doctor check now compares certificate content instead of file modification dates, stopping false positives when device-management software touches the System keychain.
-- `teeup` refuses to change anything on a machine that is not a Mac. Read-only verbs (`version`, `help`, `list`, `has`, `commands`) and the contributor commands under `teeup dev` still work, and `./bootstrap` already refused.
-- `teeup update` now upgrades only the Homebrew packages and casks (or MacPorts ports) that teeup itself installed, leaving the rest to you (`brew upgrade`).
-- Zed, Obsidian, and Firefox Developer Edition are now lazy capabilities. They install the first time you use them, rather than as part of the daily bootstrap set. Emacs is now the only daily capability.
+- **Scoped updates.** `teeup update` names the Homebrew formulae, casks, or MacPorts ports used by installed teeup capabilities instead of upgrading everything managed by the package manager. A package counts even if you installed it before teeup; failed upgrades remain warnings so the rest of the update can continue.
+- **Fewer apps at bootstrap.** Zed, Obsidian, and Firefox Developer Edition are now lazy capabilities that install when launched or first used. Emacs is the only daily capability.
+- **Existing applications.** If every app supplied by a Homebrew cask is already installed in `/Applications` or `~/Applications`, teeup uses it instead of asking Homebrew to install the cask, and `teeup doctor` accepts it.
+- **macOS guard.** Mutating `teeup` commands now refuse to run outside macOS. `version`, `help`, `list`, `has`, `commands`, and `teeup dev` remain available.
+- **Safer bootstrap prompts.** Bootstrap no longer refreshes sudo in the background, and rejected wizard answers are not shown again as defaults or repeated in email validation errors.
+- **Safer uninstall choice.** Before the package question, `teeup uninstall` warns that its list comes from capability metadata and can include software you installed yourself.
+- **Updated manual and logo.** The manual now leads uninstall instructions with its three questions, explains prompt problems and their fixes, and uses the current “Your Mac, ready to code.” logo.
 
 ### Fixed
-- **Safe SSH config:** `teeup doctor` no longer suggests replacing a user-owned `~/.ssh/config` when a host block is missing.
-- **GitHub upload safety:** `teeup configure github` verifies the SSH key's GitHub account before uploading to prevent pushing the key to the wrong account.
-- **starship:** Escaped bare `$` in the `stashed` format string to suppress an error parsing warning.
+- **GitHub upload safety.** `teeup configure github` checks a key through that identity's configured SSH alias and refuses the upload when the key belongs to another account or ownership cannot be verified. It also handles a named personal GitHub account without leaving `gh` switched to it.
+- **User-owned SSH config.** When an SSH Host block is missing from a config teeup does not own, `teeup doctor` prints the block to add instead of suggesting a reset.
+- **CA bundle checks.** A successful unchanged rebuild now records when it checked the keychains, and `teeup doctor` compares certificate content when a keychain is newer. Device-management software can rewrite a keychain without causing a false stale-bundle report.
+- **Prompt cancellation.** Ctrl-C in a gum prompt now stops the run with status 130 instead of being treated as an empty or negative answer.
+- **WezTerm appearance.** New workspace windows ask macOS for the current appearance before choosing a palette, so dark mode no longer opens with the light theme.
+- **Shell key bindings.** zsh now uses Emacs key bindings even when `$EDITOR` or `$VISUAL` contains `vi`; `bindkey -v` in `~/.config/zsh/local.zsh` still overrides it.
+- **Starship stash status.** The stash symbol is escaped correctly, and a migration repairs teeup's original config while preserving edited values.
+
+### Development
+- Tests now run inside a throwaway [shellenv](https://github.com/systemhalted/shellenv) home, and `tests/bash32.sh` runs them under macOS's bash 3.2. CI also covers macOS 26 on Apple silicon, and the shell suites avoid `grep -q` pipelines that could fail with SIGPIPE.
+- Contributor guidance now requires sandboxed test entry points and forbids running teeup against a real home or changing global git settings.
 
 ## [0.1.0-beta] - 2026-09-28
 
@@ -375,4 +387,3 @@ For users migrating from pyenv to UV:
 - `Removed` - Removed features
 - `Fixed` - Bug fixes
 - `Security` - Security fixes
-

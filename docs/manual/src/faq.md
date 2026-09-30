@@ -63,4 +63,4 @@ teeup collects no data and requires no account. It talks to the network to fetch
 
 ## Manual version
 
-teeup 0.1.0-beta. `teeup version` prints the version you have.
+teeup 0.2.0-beta. `teeup version` prints the version you have.
