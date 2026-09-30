@@ -31,7 +31,7 @@ teeup is for users who work in a terminal, want to rebuild a Mac from scratch in
 
 It is an opinionated setup. It picks zsh, WezTerm and mise for you, and it sets macOS preferences. If you already keep your dotfiles in chezmoi or an older teeup, `teeup migrate legacy` retires that wiring; [Migrating](migrating.md) covers it.
 
-This manual describes teeup 0.1.0-beta.
+This manual describes teeup 0.2.0-beta.
 
 ## Reading this manual
 
