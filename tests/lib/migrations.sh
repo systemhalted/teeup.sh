@@ -183,6 +183,7 @@ test_new_without_git_history_uses_the_clock_and_dry_run_writes_nothing() {
 
 AI_SPLIT_MIGRATION=1790403216.sh
 TERMINAL_APP_MIGRATION=1790470689.sh
+GITHUB_PACKAGE_MIGRATION=1790740492.sh
 
 copy_ai_split_migration() {
   cp "$TEEUP_PATH/migrations/$AI_SPLIT_MIGRATION" "$TEEUP_MIGRATIONS_DIR/$AI_SPLIT_MIGRATION"
@@ -190,6 +191,81 @@ copy_ai_split_migration() {
 
 copy_terminal_app_migration() {
   cp "$TEEUP_PATH/migrations/$TERMINAL_APP_MIGRATION" "$TEEUP_MIGRATIONS_DIR/$TERMINAL_APP_MIGRATION"
+}
+
+copy_github_package_migration() {
+  cp "$TEEUP_PATH/migrations/$GITHUB_PACKAGE_MIGRATION" "$TEEUP_MIGRATIONS_DIR/$GITHUB_PACKAGE_MIGRATION"
+}
+
+mock_github_package_manager() {
+  mock_command_script brew <<'EOF2'
+case "$1" in
+  --version) echo "Homebrew 4.3.9" ;;
+  list)
+    if [[ "${2:-}" == "--formula" && "${3:-}" == "gh" && -f "$HOME/gh-package-installed" ]]; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  install)
+    if [[ "${2:-}" == "gh" ]]; then
+      : > "$HOME/gh-package-installed"
+      exit 0
+    fi
+    exit 1
+    ;;
+esac
+exit 0
+EOF2
+}
+
+test_github_package_migration_installs_gh_for_an_existing_capability() {
+  setup
+  copy_github_package_migration
+  mock_github_package_manager
+  state_done mark cap-github
+  migration_run "$GITHUB_PACKAGE_MIGRATION" >/dev/null
+  assert_file_exists "$TEST_HOME/gh-package-installed" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew install gh" || return 1
+  assert_file_exists "$MARKS/$GITHUB_PACKAGE_MIGRATION" || return 1
+  cleanup_test_env
+}
+
+test_github_package_migration_does_nothing_when_gh_is_installed() {
+  setup
+  copy_github_package_migration
+  mock_github_package_manager
+  state_done mark cap-github
+  : > "$TEST_HOME/gh-package-installed"
+  migration_run "$GITHUB_PACKAGE_MIGRATION" >/dev/null
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew install gh" || return 1
+  assert_file_exists "$MARKS/$GITHUB_PACKAGE_MIGRATION" || return 1
+  cleanup_test_env
+}
+
+test_github_package_migration_does_nothing_when_github_is_not_done() {
+  setup
+  copy_github_package_migration
+  mock_github_package_manager
+  migration_run "$GITHUB_PACKAGE_MIGRATION" >/dev/null
+  [[ ! -e "$TEST_HOME/gh-package-installed" ]] || { echo "gh was installed for a capability that was never completed"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew install gh" || return 1
+  assert_file_exists "$MARKS/$GITHUB_PACKAGE_MIGRATION" || return 1
+  cleanup_test_env
+}
+
+test_github_package_migration_dry_run_changes_nothing() {
+  setup
+  copy_github_package_migration
+  mock_github_package_manager
+  state_done mark cap-github
+  local out
+  out="$(DRY_RUN=true migration_run "$GITHUB_PACKAGE_MIGRATION" 2>&1)"
+  assert_contains "$out" "Would execute: brew install gh" || return 1
+  [[ ! -e "$TEST_HOME/gh-package-installed" ]] || { echo "dry run installed gh"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew install gh" || return 1
+  [[ ! -e "$MARKS/$GITHUB_PACKAGE_MIGRATION" ]] || { echo "dry run marked the migration"; return 1; }
+  cleanup_test_env
 }
 
 test_terminal_app_migration_stays_pending_until_theme_is_installed() {
@@ -422,6 +498,10 @@ run_test "ai split migration marks a working symlink leaf" test_ai_split_migrati
 run_test "ai split migration marks a dangling symlink leaf" test_ai_split_migration_marks_a_dangling_symlink_leaf
 run_test "terminal-app migration stays pending until theme is installed" test_terminal_app_migration_stays_pending_until_theme_is_installed
 run_test "terminal-app migration counts a skip as done" test_terminal_app_migration_counts_a_skip_as_done
+run_test "github package migration installs gh for an existing capability" test_github_package_migration_installs_gh_for_an_existing_capability
+run_test "github package migration does nothing when gh is installed" test_github_package_migration_does_nothing_when_gh_is_installed
+run_test "github package migration does nothing when github is not done" test_github_package_migration_does_nothing_when_github_is_not_done
+run_test "github package migration dry run changes nothing" test_github_package_migration_dry_run_changes_nothing
 run_test "a file that is not a migration name is skipped loudly" test_a_file_that_is_not_a_migration_name_is_skipped_loudly
 run_test "run_pending counts correctly with an odd name present" test_run_pending_counts_correctly_with_an_odd_name_present
 run_test "list is oldest first and ignores other files" test_list_is_oldest_first_and_ignores_other_files

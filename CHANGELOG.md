@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **GitHub CLI ownership.** The `github` capability now installs `gh` through Homebrew or MacPorts even when another `gh` is on `PATH`. Doctor reports a missing package and warns when mise shadows the package-manager copy; a migration repairs existing installations without changing mise configuration.
+
 ## [0.2.0-beta] - 2026-09-30
 
 `teeup update` now upgrades only what teeup installed, leaving other Homebrew packages and casks under your control.
