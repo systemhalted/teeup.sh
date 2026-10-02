@@ -36,7 +36,7 @@ If your own `~/.ssh/config` already names a key for GitHub, teeup uses that key 
 
 ## GitHub
 
-The `github` capability installs the GitHub CLI, `gh`, and then:
+The `github` capability installs the GitHub CLI, `gh`, through Homebrew or MacPorts. It does not use a `gh` installed through mise as a substitute. It then:
 
 1. signs you in with `gh auth login --web --skip-ssh-key`, which opens your browser without asking about an SSH key;
 2. asks once whether teeup may upload your public key, then uploads it as an authentication key and as a signing key;
@@ -51,6 +51,14 @@ teeup config set TEEUP_GITHUB_UPLOAD_PERSONAL yes && teeup configure github
 Use `TEEUP_GITHUB_UPLOAD_WORK` for the work identity. When teeup runs without a terminal and no answer is saved, it uploads the keys, matching the earlier behavior.
 
 If setup cannot finish, for example because you closed the browser, it says so and you can run `teeup configure github` again. Keys already on your account are not uploaded twice.
+
+If `teeup doctor github` says mise's `gh` is ahead of the package-manager copy on `PATH`, remove the global mise selection and install, then rebuild its shims:
+
+```sh
+mise unuse -g gh && mise uninstall gh --all && mise reshim
+```
+
+teeup prints this command but does not change your mise configuration itself.
 
 ## A work identity
 

@@ -15,6 +15,27 @@ if ! have gh; then
   exit
 fi
 
+# The package check in lib/doctor.sh establishes that Homebrew or MacPorts
+# owns a gh install. This check establishes which gh the shell will actually
+# run: mise puts both its shims and install directories before the package
+# manager in PATH, which can leave a healthy formula or port shadowed by a
+# broken mise install. Doctor only reports the repair; the user's mise config
+# is not teeup's to edit.
+gh_path="$(command -v gh)"
+package_gh="$(pkg_prefix)/bin/gh"
+# The same data root capabilities/zsh/default/env puts mise's shims under.
+mise_root="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
+if [[ "$gh_path" != "$package_gh" ]]; then
+  case "$gh_path" in
+    "$mise_root"/shims/gh|"$mise_root"/installs/gh/*|*/mise/shims/gh|*/mise/installs/gh/*/bin/gh)
+      doctor_warn "gh resolves to $gh_path instead of the $(pkg_backend_label) copy at $package_gh. Run: mise unuse -g gh && mise uninstall gh --all && mise reshim"
+      ;;
+    *)
+      doctor_warn "gh resolves to $gh_path instead of the $(pkg_backend_label) copy at $package_gh. Run: export PATH=\"$(pkg_prefix)/bin:\$PATH\""
+      ;;
+  esac
+fi
+
 # gh_key_listed <listed> <key-body> <type> -> exits 0 when `gh ssh-key
 # list`'s output (a tab-separated TITLE/KEY/ADDED/ID/TYPE, the real non-TTY
 # format gh 2.100.0 prints) already has a row for this key body AND this

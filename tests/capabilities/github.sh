@@ -271,9 +271,10 @@ seed_machine_work() {
   } > "$TEEUP_MACHINES_DIR/testmac.conf"
 }
 
-test_install_gets_gh() {
+test_install_gets_gh_even_when_another_gh_is_on_path() {
   setup
-  export TEEUP_TEST_MISSING="gh"
+  source "$TEEUP_PATH/lib/all.sh"
+  state_done mark cap-github
   local out
   out="$(DRY_RUN=true "$TEEUP" install github 2>&1)"
   assert_contains "$out" "Would execute: brew install gh" || return 1
@@ -860,6 +861,68 @@ test_doctor_passes_when_signed_in_with_the_keys_uploaded() {
   cleanup_test_env
 }
 
+test_doctor_fails_when_the_package_is_missing_even_if_gh_is_on_path() {
+  setup
+  seed_github_answers
+  seed_keys
+  printf 'admin:public_key,admin:ssh_signing_key,repo\n' > "$TEST_HOME/gh-session"
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026\t1\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" doctor github 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "package gh is not installed" || return 1
+  assert_contains "$out" "fix: teeup install github" || return 1
+  cleanup_test_env
+}
+
+test_doctor_warns_when_mise_gh_is_first_on_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'admin:public_key,admin:ssh_signing_key,repo\n' > "$TEST_HOME/gh-session"
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026\t1\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' >> "$TEST_HOME/gh-keys"
+  local mise_gh="$TEST_HOME/.local/share/mise/shims/gh" rc=0 out
+  mkdir -p "${mise_gh%/*}"
+  cp "$MOCK_BIN/gh" "$mise_gh"
+  chmod +x "$mise_gh"
+  PATH="${mise_gh%/*}:$PATH"
+  export PATH
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "$mise_gh" || return 1
+  assert_contains "$out" "mise unuse -g gh && mise uninstall gh --all && mise reshim" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise unuse" "doctor must only print the repair command" || return 1
+  cleanup_test_env
+}
+
+# Codex review of #106: a MISE_DATA_DIR not named mise is still mise.
+test_doctor_warns_when_a_custom_mise_data_dir_gh_is_first_on_path() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  seed_github_answers
+  seed_keys
+  printf 'admin:public_key,admin:ssh_signing_key,repo\n' > "$TEST_HOME/gh-session"
+  printf 'laptop\tssh-ed25519 AAAAPERSONALKEY\t2026\t1\tauthentication\n' > "$TEST_HOME/gh-keys"
+  printf 'signing\tssh-ed25519 AAAAPERSONALKEY\t2026\t2\tsigning\n' >> "$TEST_HOME/gh-keys"
+  export MISE_DATA_DIR="$TEST_HOME/tool-data"
+  local mise_gh="$MISE_DATA_DIR/shims/gh" rc=0 out
+  mkdir -p "${mise_gh%/*}"
+  cp "$MOCK_BIN/gh" "$mise_gh"
+  chmod +x "$mise_gh"
+  PATH="${mise_gh%/*}:$PATH"
+  export PATH
+  out="$(DRY_RUN=false cap_run github doctor 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "$mise_gh" || return 1
+  assert_contains "$out" "mise unuse -g gh && mise uninstall gh --all && mise reshim" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise unuse" "doctor must only print the repair command" || return 1
+  unset MISE_DATA_DIR
+  cleanup_test_env
+}
+
 test_doctor_reports_being_signed_out() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
@@ -1203,7 +1266,7 @@ test_doctor_will_not_check_a_key_against_an_account_it_cannot_name() {
   cleanup_test_env
 }
 
-run_test "install gets gh" test_install_gets_gh
+run_test "install gets gh even when another gh is on PATH" test_install_gets_gh_even_when_another_gh_is_on_path
 run_test "configure logs in with the two scopes" test_configure_logs_in_with_the_two_scopes
 run_test "configure uploads authentication and signing keys" test_configure_uploads_authentication_and_signing_keys
 run_test "configure declines both key uploads" test_configure_declines_both_uploads
@@ -1240,6 +1303,9 @@ run_test "configure skips a key already uploaded to the Enterprise host" test_co
 run_test "configure dry run uploads nothing for either identity" test_configure_dry_run_uploads_nothing_for_either_identity
 run_test "configure twice with a work identity uploads nothing new" test_configure_twice_with_a_work_identity_uploads_nothing_new
 run_test "doctor passes when signed in with keys uploaded" test_doctor_passes_when_signed_in_with_the_keys_uploaded
+run_test "doctor fails when the gh package is missing despite a gh on PATH" test_doctor_fails_when_the_package_is_missing_even_if_gh_is_on_path
+run_test "doctor warns when mise gh is first on PATH" test_doctor_warns_when_mise_gh_is_first_on_path
+run_test "doctor warns when a custom mise data dir gh is first on PATH" test_doctor_warns_when_a_custom_mise_data_dir_gh_is_first_on_path
 run_test "doctor reports being signed out" test_doctor_reports_being_signed_out
 run_test "doctor reports missing scopes and an unuploaded key" test_doctor_reports_missing_scopes_and_an_unuploaded_key
 run_test "doctor reports a second host that needs signing in" test_doctor_reports_a_second_host_that_needs_signing_in
