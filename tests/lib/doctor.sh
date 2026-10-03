@@ -218,6 +218,27 @@ EOF2
   cleanup_test_env
 }
 
+# Codex review of #110: when mise itself is the broken copy, the repair must
+# run the package manager's mise, not the broken one still first on PATH.
+test_metadata_check_repairs_a_broken_mise_with_the_package_managers_mise() {
+  setup
+  make_cap widget "mise" "" "" "" "mise:mise"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  export MISE_DATA_DIR="$TEST_HOME/mise data"
+  local shim="$MISE_DATA_DIR/shims/mise"
+  mkdir -p "${shim%/*}"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$shim"
+  chmod +x "$shim"
+  PATH="${shim%/*}:$PATH"
+  local out pm="$TEEUP_PKG_PREFIX/bin/mise"
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$(cat "$REPORT")" "teeup install widget && $pm unuse -g mise && $pm uninstall mise --all && $pm reshim" || return 1
+  unset MISE_DATA_DIR
+  cleanup_test_env
+}
+
 test_metadata_check_reinstalls_a_missing_package_behind_a_broken_command() {
   setup
   make_cap widget "jq" "" "" "" "jq:jq"
@@ -799,6 +820,7 @@ run_test "metadata check accepts a package the system already provides" test_met
 run_test "metadata check repairs PATH for an installed package shadowed by a broken command" test_metadata_check_repairs_path_when_an_installed_package_is_shadowed
 run_test "metadata check repairs the declared mise tool for an installed package shadowed by a broken shim" test_metadata_check_repairs_the_declared_mise_tool_when_an_installed_package_is_shadowed
 run_test "metadata check installs then repairs mise when a missing package is shadowed" test_metadata_check_installs_then_repairs_mise_when_a_missing_package_is_shadowed
+run_test "metadata check repairs a broken mise with the package manager's mise" test_metadata_check_repairs_a_broken_mise_with_the_package_managers_mise
 run_test "metadata check reinstalls a missing package behind a broken command" test_metadata_check_reinstalls_a_missing_package_behind_a_broken_command
 run_test "metadata check still fails when neither the backend nor PATH has it" test_metadata_check_still_fails_when_neither_the_backend_nor_path_has_it
 run_test "metadata check uses the declared command not the package name" test_metadata_check_uses_the_declared_command_not_the_package_name

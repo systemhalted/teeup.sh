@@ -312,8 +312,21 @@ command_mise_tool() {
   return 1
 }
 
+# mise_repair_command <tool> [mise-binary]
+# When the broken command is mise itself, an unqualified `mise` would run the
+# broken copy again, so callers pass the package manager's binary.
 mise_repair_command() {
-  printf 'mise unuse -g %s && mise uninstall %s --all && mise reshim\n' "$1" "$1"
+  local tool="$1" mise_bin="${2:-mise}"
+  printf '%s unuse -g %s && %s uninstall %s --all && %s reshim\n' "$mise_bin" "$tool" "$mise_bin" "$tool" "$mise_bin"
+}
+
+# _mise_repair_binary <command> -> the mise to run for a repair of <command>.
+_mise_repair_binary() {
+  if [[ "$1" == "mise" ]]; then
+    printf '%s/bin/mise\n' "$(pkg_prefix)"
+  else
+    printf 'mise\n'
+  fi
 }
 
 # pkg_install <pkg> [command]
@@ -331,7 +344,7 @@ pkg_install() {
     command_path="$(command -v "$command_name" 2>/dev/null || true)"
     warn "$command_name resolves to $command_path but does not run; installing $pkg."
     if mise_tool="$(command_mise_tool "$command_name" "$command_path" "$pkg")"; then
-      warn "$command_name is managed by mise. Repair it with: $(mise_repair_command "$mise_tool")"
+      warn "$command_name is managed by mise. Repair it with: $(mise_repair_command "$mise_tool" "$(_mise_repair_binary "$command_name")")"
     fi
   fi
   for candidate in $(package_candidates "$pkg"); do

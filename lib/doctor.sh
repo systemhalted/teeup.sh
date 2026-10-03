@@ -244,7 +244,7 @@ doctor_metadata_check() {
         # installed, so the fix always clears it; a missing package is
         # installed first.
         if mise_tool="$(command_mise_tool "$command_name" "$command_path" "$item")"; then
-          fix="$(mise_repair_command "$mise_tool")"
+          fix="$(mise_repair_command "$mise_tool" "$(_mise_repair_binary "$command_name")")"
           detail="This is a mise-managed copy; repair it with: $fix"
         else
           fix="export PATH=\"$(pkg_prefix)/bin:\$PATH\""
