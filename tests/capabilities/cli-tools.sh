@@ -65,6 +65,29 @@ EOF2
   cleanup_test_env
 }
 
+test_doctor_reports_one_broken_tool_end_to_end() {
+  setup
+  source "$TEEUP_PATH/lib/all.sh"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
+case "$1" in list) exit 1 ;; *) exit 0 ;; esac
+EOF2
+  unset TEEUP_TEST_MISSING
+  local cmd
+  for cmd in rg fzf bat eza zoxide jq yq btop tree wget curl gpg tldr dust; do
+    mock_command "$cmd" 0 ""
+  done
+  mock_command fd 1 "broken fd"
+  state_done mark cap-cli-tools
+  local rc=0 out
+  out="$(DRY_RUN=false "$TEEUP" doctor cli-tools 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "fd resolves to $MOCK_BIN/fd but does not run" || return 1
+  assert_contains "$out" "fix: teeup install cli-tools" || return 1
+  assert_contains "$out" "rg is on PATH, so ripgrep is provided" || return 1
+  cleanup_test_env
+}
+
 # The pairs have one home. They used to be written out twice -- once in the
 # install script's loop, once nowhere -- which is how the doctor came to
 # disagree with install about what counts as installed. install reads them
@@ -147,6 +170,7 @@ test_configure_is_idempotent() {
 echo "capabilities/cli-tools"
 run_test "doctor accepts tools the system already provides" test_doctor_accepts_tools_the_system_already_provides
 run_test "doctor still reports a tool that is missing everywhere" test_doctor_still_reports_a_tool_that_is_missing_everywhere
+run_test "doctor reports one broken tool end to end" test_doctor_reports_one_broken_tool_end_to_end
 run_test "install reads its pairs from the metadata" test_install_reads_its_pairs_from_the_metadata
 run_test "install uses package and command pairs" test_install_uses_package_and_command_pairs
 run_test "install skips tools already on PATH" test_install_skips_tools_already_on_path

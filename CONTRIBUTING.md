@@ -85,11 +85,12 @@ user files source thick default files.
    `ai-*` capabilities do. The manual states the rule for users in
    [Runtimes](docs/manual/src/runtimes.md#homebrew-or-mise).
    `package_commands="<package>:<command>"` lets doctor accept a copy of the
-   command already on `PATH` in place of the package. Install accepts it only
-   when the install script passes the same command, `pkg_install <package>
-   <command>`, so keep the two in step. Leave both out when a stray copy would
-   break the capability: `github` does, because git uses `gh` to sign in and a
-   broken mise shim once stood in for it.
+   command already on `PATH` in place of the package when its version command
+   actually runs. Install applies the same check only when the install script
+   passes that command, `pkg_install <package> <command>`, so keep the two in
+   step. Leave both out when a stray copy would break the capability: `github`
+   does, because git uses `gh` to sign in and a broken mise shim once stood in
+   for it.
 7. Add the name to `capabilities/core.list` or `daily.list` if it is not lazy.
 8. Add `tests/capabilities/<name>.sh` using the mock harness; run
    `./bin/teeup commands --check && ./tests/run.sh` before committing.
