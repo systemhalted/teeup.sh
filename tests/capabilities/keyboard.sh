@@ -97,7 +97,7 @@ test_remove_dry_run_does_not_claim_the_mapping_was_cleared() {
 
 test_remove_goes_through_lib_macos() {
   setup
-  # CONTRIBUTING item 13: LaunchAgents are managed through lib/macos.sh, and
+  # CONTRIBUTING item 14: LaunchAgents are managed through lib/macos.sh, and
   # this script is the one the next LaunchAgent capability will copy.
   if grep -n 'launchctl' "$TEEUP_PATH/capabilities/keyboard/remove"; then
     echo "keyboard/remove calls launchctl directly; use launchagent_remove"

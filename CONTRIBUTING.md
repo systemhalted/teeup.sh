@@ -62,7 +62,7 @@ user files source thick default files.
 ## Adding a capability
 
 1. Create `capabilities/<name>/` with `capability`, `install` and `configure`,
-   or let `./bin/teeup dev new-capability <name>` do it (item 29).
+   or let `./bin/teeup dev new-capability <name>` do it (item 30).
 2. `capability` is a sourced `KEY=value` file with no logic: `summary`,
    `group`, `tier` (`core|daily|lazy`), `requires`, `provides`, `packages`,
    `casks`, `apps`, `interactive`.
@@ -78,18 +78,28 @@ user files source thick default files.
    do not wrap those in `run_cmd`.
 5. `provides` must not list a command macOS already ships (`python3`, `ruby`,
    `java`, `git`, `perl`).
-6. Add the name to `capabilities/core.list` or `daily.list` if it is not lazy.
-7. Add `tests/capabilities/<name>.sh` using the mock harness; run
+6. Homebrew or mise: put a tool in `packages` (Homebrew, or MacPorts) when one
+   current version for the whole Mac is right, which is almost everything.
+   Use mise only for a tool people need several versions of, as `dev-env`
+   does for language runtimes, or one mise fetches on first call, as the
+   `ai-*` capabilities do. The manual states the rule for users in
+   [Runtimes](docs/manual/src/runtimes.md#homebrew-or-mise).
+   `package_commands="<package>:<command>"` lets install and doctor accept a
+   copy of the command already on `PATH` in place of the package. Leave it
+   out when a stray copy would break the capability: `github` does, because
+   git uses `gh` to sign in and a broken mise shim once stood in for it.
+7. Add the name to `capabilities/core.list` or `daily.list` if it is not lazy.
+8. Add `tests/capabilities/<name>.sh` using the mock harness; run
    `./bin/teeup commands --check && ./tests/run.sh` before committing.
-8. Shipped files live in one of three directories, by owner:
+9. Shipped files live in one of three directories, by owner:
    `config/` is copied once into `~/.config` and belongs to the user after
    that; `home/` is copied once into `$HOME` under its literal dotfile name
    (`home/.zshrc` becomes `~/.zshrc`); `default/` stays teeup's and is read at
    runtime through `$TEEUP_PATH`, so upgrades improve it without touching
    anything the user edited. Thin user files source thick default files.
-9. Files under `default/` and `home/` are zsh or Lua, not bash: shellcheck
+10. Files under `default/` and `home/` are zsh or Lua, not bash: shellcheck
    does not run on them, so keep them simple and guard every optional tool.
-10. Per-machine overrides go in `<config>/teeup/machines/<hostname>.conf`,
+11. Per-machine overrides go in `<config>/teeup/machines/<hostname>.conf`,
     which is the user's own file and survives a `git pull`; the checkout's
     `machines/<hostname>.conf` is the fallback, for anyone keeping a fork.
     Either is sourced last, so it wins over the answers file. It is also the
@@ -98,7 +108,7 @@ user files source thick default files.
     `TEEUP_WORK_GH_ACCOUNT` for a second account on github.com): git has one
     identity everywhere, and the wizard never asks about work. See
     `machines/example.conf.sample`.
-11. If the tool has colours, add `capabilities/<name>/themed/<file>.tpl`.
+12. If the tool has colours, add `capabilities/<name>/themed/<file>.tpl`.
     `teeup theme set` renders every template once per mode with `{{ key }}`,
     `{{ key_strip }}` (no leading `#`) and `{{ key_rgb }}` (`r,g,b`) replaced
     from `themes/<theme>/{dark,light}.toml`, and stages the results in
@@ -106,7 +116,7 @@ user files source thick default files.
     same basename in `~/.config/teeup/themed/` wins. Basenames share one
     namespace, so no two capabilities may ship the same one
     (`teeup commands --check` fails on a duplicate).
-12. If the tool needs to be told about a new theme or font, add an executable
+13. If the tool needs to be told about a new theme or font, add an executable
     `capabilities/<name>/theme-apply` or `capabilities/<name>/font-apply`. Both
     run exactly like `install` and `configure` (`bash -eu`, `lib/all.sh`
     loaded, answers sourced, `TEEUP_CAP` and `TEEUP_CAP_DIR` exported).
@@ -115,12 +125,12 @@ user files source thick default files.
     `font-apply` gets `TEEUP_FONT_FAMILY`. Both are optional, and a failure
     warns without aborting the switch, so keep them to "tell the app to
     reload" rather than real work.
-13. Native macOS settings go through `lib/macos.sh`: `defaults_write` (which
+14. Native macOS settings go through `lib/macos.sh`: `defaults_write` (which
     records the prior value so `remove` can call `defaults_restore`),
     `launchagent_install <label>` with the plist on stdin, and
     `launchagent_remove <label>` in `remove`. Never call `defaults write` or
     `launchctl` directly.
-14. A machine that cannot have the capability at all — not "this step
+15. A machine that cannot have the capability at all — not "this step
     failed", but "this tool does not run here" — is a third outcome install
     and configure must be able to report, distinct from both success and
     failure. Call `not_applicable "<message>"` (`lib/capability.sh`) instead
@@ -138,7 +148,7 @@ user files source thick default files.
     Never call it to swallow a real error — a genuine failure must still
     `warn`/`die` or exit non-zero, or bootstrap's core-tier gate would wave
     it through unnoticed.
-15. An editor whose settings are JSON (Zed, VS Code) never gets a shipped
+16. An editor whose settings are JSON (Zed, VS Code) never gets a shipped
     `settings.json`: its hooks set only the keys teeup owns, with
     `json_set_key <file> <key> <json-value>` or
     `json_merge_key <file> <key> <json-object>` from `lib/files.sh`. The key is
@@ -147,7 +157,7 @@ user files source thick default files.
     and trailing commas are read, the write goes through
     `write_managed_file` (so `DRY_RUN` previews it), and a symlink or a file
     jq cannot edit is left alone with a warning.
-16. A `theme-apply` or `font-apply` belonging to a capability that may not be
+17. A `theme-apply` or `font-apply` belonging to a capability that may not be
     installed -- every editor, and anything outside the core tier -- starts
     with `if ! state_done check "cap-$TEEUP_CAP"; then exit 0; fi`: `teeup
     theme set` runs every capability's hooks, including on machines where that
@@ -167,7 +177,7 @@ user files source thick default files.
     `vscode_extension`; an extension of `none` installs nothing), so every
     theme, a user theme included, must define each of them in both modes or
     `teeup theme set` refuses to render.
-17. A `tier=lazy` capability is reached on first use, never at bootstrap.
+18. A `tier=lazy` capability is reached on first use, never at bootstrap.
     `provides` lists the commands it makes available: `teeup configure
     teeup-runtime` (`shims_generate` in `lib/lazy.sh`) writes one shim per
     command into `~/.local/state/teeup/shims`, last on `PATH`, and each shim
@@ -179,13 +189,13 @@ user files source thick default files.
     (`lib/core.sh`) never counts a shim as an installed command, so
     `pkg_install <pkg> <command>` still installs the package represented by
     the shim.
-18. `apps` names the application bundles `teeup launch` opens, separated by
+19. `apps` names the application bundles `teeup launch` opens, separated by
     `;` because names contain spaces (`apps="Visual Studio Code"`). Use the
     `app` artifact name from the cask, without `.app`. The first entry is what
     `launch` opens with `open -a`; when that bundle is missing from
     `/Applications` and `~/Applications`, the capability is installed first.
     Tests point `TEEUP_APPS_DIR` at an empty directory.
-19. mise-managed tools go through `lib/mise.sh`. `mise_ensure_global <tool>
+20. mise-managed tools go through `lib/mise.sh`. `mise_ensure_global <tool>
     [version]` adds a tool to the global config without rewriting a version
     the user pinned; `mise_wrapper_write <owner> <display-name> <command>
     <tool> [runtime...]` writes an install-on-first-call wrapper into
@@ -200,7 +210,7 @@ user files source thick default files.
     `$TEEUP_STATE_DIR/logs/lazy.log`, and remain retryable after interruption.
     Language runtimes use `teeup install dev-env <lang>` (`dev_env_install`),
     never a capability or a shim.
-20. Two test hooks join `TEEUP_TEST_MISSING`: `TEEUP_TEST_TTY=yes|no`
+21. Two test hooks join `TEEUP_TEST_MISSING`: `TEEUP_TEST_TTY=yes|no`
     overrides the terminal check in `teeup lazy-run`, so a piped `y` can
     answer its question, and `hide_host_commands <name...>`
     (`tests/helper.sh`) adds every copy of a command on the host's `PATH` to
@@ -208,7 +218,7 @@ user files source thick default files.
     a runner that has `docker` in `/usr/bin` while still finding the copy made
     by the mocked install. `tests/capabilities/colima.sh` is the reference
     round trip.
-21. `configure` is re-run by `teeup update` on every machine, so it must be
+22. `configure` is re-run by `teeup update` on every machine, so it must be
     quiet and cheap when nothing has changed: report "Already ..." instead of
     rewriting, and never restart an application or print a multi-line manual
     step unconditionally. `defaults_write` leaves a key that already holds
@@ -217,7 +227,7 @@ user files source thick default files.
     `if defaults_changed com.apple.dock; then run_cmd killall Dock || true; fi`.
     A one-time notice uses `state_done ensure <name>`, which succeeds only the
     first time.
-22. `teeup reset <cap>` and a migration's `migration_refresh <cap>` both
+23. `teeup reset <cap>` and a migration's `migration_refresh <cap>` both
     re-run your `configure` with `TEEUP_RESET` or `TEEUP_REFRESH` set to the
     capability's name, which turns each `copy_config_once` in it into
     `refresh_config` or `refresh_if_pristine`. Install every user-facing file
@@ -227,13 +237,13 @@ user files source thick default files.
     rather than the temp file — see `capabilities/zsh/configure`) and both
     verbs work for free; a `cp` of your own is invisible to them. A capability
     with no `config/` or `home/` directory is not resettable, and says so.
-23. `teeup remove <cap>` uninstalls the `casks` and `packages` your metadata
+24. `teeup remove <cap>` uninstalls the `casks` and `packages` your metadata
     names and clears the done marker. Add a `remove` script only for machine
     state teeup created that a package manager cannot undo: a LaunchAgent
     (`launchagent_remove <label>`), recorded `defaults` (`defaults_restore`),
     a `hidutil` mapping. It runs before the uninstall, while the tool is
     still there, and never deletes the user's configuration files.
-24. A file teeup owns but the user may edit carries a stock record
+25. A file teeup owns but the user may edit carries a stock record
     (`stock_record`, written by `copy_config_once`). `config_is_pristine
     <file>` asks whether it still matches; `write_config_region <file>
     <label>` rewrites a managed region and keeps a pristine file reading as
@@ -244,27 +254,27 @@ user files source thick default files.
     `theme-set` (`TEEUP_HOOK_EVENTS` in `lib/hooks.sh`); adding one means a
     new `.sample` under `capabilities/teeup-runtime/default/hooks/` and a
     `hook_run <event> [args]` call where it fires.
-25. Nothing in `teeup migrate legacy` deletes a path it was given. Every
+26. Nothing in `teeup migrate legacy` deletes a path it was given. Every
     removal names a KEY, and `migrate_target` is the closed list of five that
     maps keys to paths -- so no caller anywhere can point a deletion at
     `~/Work/environment/dotfiles`. Adding a key means adding it there, and
     adding a refusal test with it.
-26. `chezmoi` is only ever run through `chezmoi_ro`, which accepts `managed`,
+27. `chezmoi` is only ever run through `chezmoi_ro`, which accepts `managed`,
     `source-path` and `--version` and dies on anything else. `chezmoi purge`
     removes the source directory, so it must stay unreachable; a test in
     `tests/lib/migrate.sh` greps `bin/`, `lib/` and `capabilities/` for a
     second call site and fails the build if one appears.
-27. A test in this area may never name a path outside `$TEST_HOME`. The
+28. A test in this area may never name a path outside `$TEST_HOME`. The
     stand-in for the sibling chezmoi checkout is created under `$TEST_HOME`
     with the same shape, so nothing can reach the real one even if a gate
     were broken. A test that only passes on a developer's machine is a defect.
-28. Use `disable_matching_lines` rather than editing a shell file by hand. It
+29. Use `disable_matching_lines` rather than editing a shell file by hand. It
     backs the file up first (and refuses to touch it when that backup could
     not be written), refuses a file it cannot write, leaves a symlink alone,
     and neutralises a matching line with `: #` rather than `#` -- an `if`
     whose whole body is commented out is a syntax error, and a line that
     opens a block is reported rather than broken.
-29. Start a capability with `teeup dev new-capability <name>`, which writes
+30. Start a capability with `teeup dev new-capability <name>`, which writes
     `capabilities/<name>/{capability,install,configure}` and
     `tests/capabilities/<name>.sh` from `share/teeup/skeleton/`. The scaffold
     is `tier=lazy` on purpose: a `core` or `daily` capability that is not in
@@ -280,7 +290,7 @@ user files source thick default files.
     "everything passed", because a check that could not run is not a pass.
     It refuses to run under `DRY_RUN=true`, exiting 1: it runs the real test
     suites, and a dry run of those would not prove anything.
-30. A capability may ship an executable `doctor` beside its `install` and
+31. A capability may ship an executable `doctor` beside its `install` and
     `configure`. It runs exactly like them (`bash -eu`, `lib/all.sh` loaded,
     answers sourced, `TEEUP_CAP` and `TEEUP_CAP_DIR` exported) and reports
     through `doctor_ok <message>`, `doctor_warn <message>`, `doctor_fail
@@ -297,7 +307,7 @@ user files source thick default files.
     capability by itself. Write one for the invariants metadata cannot
     express -- a config in two places at once, a key with the wrong mode, a
     generated file that is stale.
-31. Adding a row to `share/teeup/menu.json` is step 5 of adding a tool. Ids
+32. Adding a row to `share/teeup/menu.json` is step 5 of adding a tool. Ids
     are dotted and the tree is in them, so `install.editors.zed` needs
     `install.editors` and `install` to exist as rows too. Every row needs a
     `label`; a row is a leaf when it has an `action` and a submenu when it has
@@ -309,7 +319,7 @@ user files source thick default files.
     before 15 ships no jq and the harness's narrowed `PATH` hides Homebrew's
     too, so values are one-line strings and the only escapes are `\"`, `\\`
     and `\/`.
-32. Anything that draws a full-screen picker -- `gum choose`, `fzf` -- is
+33. Anything that draws a full-screen picker -- `gum choose`, `fzf` -- is
     behind `menu_pick`, and `TEEUP_NO_GUM` turns off both, because both paint
     on `/dev/tty`. **Every test that drives a prompt or a menu must
     `export TEEUP_NO_GUM=1`**: the harness narrows `PATH` but `/usr/bin/gum`
@@ -317,7 +327,7 @@ user files source thick default files.
     widget. A test that wants the fzf branch specifically sets
     `TEEUP_MENU_PICKER=fzf` and mocks `fzf`; no test may need either program
     installed.
-33. `teeup uninstall` finds what to remove from teeup's own records, not
+34. `teeup uninstall` finds what to remove from teeup's own records, not
     from a list in `lib/uninstall.sh`: installed capabilities from the done
     markers, config files from the stock records, LaunchAgents by the
     `sh.teeup.` label prefix. A new capability is covered by following the

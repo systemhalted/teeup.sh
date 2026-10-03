@@ -90,6 +90,7 @@ tier=daily              # core | daily | lazy
 requires="package-manager git"   # capabilities that run first
 provides="nvim"         # commands that get a lazy shim when tier=lazy
 packages="neovim"       # pkg_install candidates; drive the generic update and remove
+package_commands="neovim:nvim"  # accept this command already on PATH instead (omit to always install)
 casks=""                # cask candidates, skipped with a note on MacPorts
 apps=""                 # .app bundle names for teeup launch, separated by ;
 interactive=false       # true keeps stdin on the TTY (gh auth login, ssh-keygen)
