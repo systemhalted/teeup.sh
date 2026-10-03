@@ -212,7 +212,7 @@ _doctor_package_command() {
 }
 
 doctor_metadata_check() {
-  local cap="$1" item candidate found app command_name command_path mise_tool fix
+  local cap="$1" item candidate found app command_name command_path mise_tool fix detail
   # Without the backend's own command there is no way to ask whether anything
   # is installed, and "not installed" would be teeup asserting something it
   # never checked. Say what is actually true: the check could not run.
@@ -240,16 +240,21 @@ doctor_metadata_check() {
       command_name="$(_doctor_package_command "$cap" "$item")"
       if [[ -n "$command_name" ]] && have "$command_name" && ! command_runs "$command_name"; then
         command_path="$(command -v "$command_name" 2>/dev/null || true)"
-        fix="teeup install $cap"
-        if [[ "$found" == "true" ]] && mise_tool="$(command_mise_tool "$command_name" "$command_path" "$item")"; then
-          fix="$(mise_repair_command "$mise_tool")"
-          _doctor_report_failure "$cap" "$command_name resolves to $command_path but does not run, so $item is not usable. This is a mise-managed copy; repair it with: $fix" "$fix"
-        elif [[ "$found" == "true" ]]; then
-          fix="export PATH=\"$(pkg_prefix)/bin:\$PATH\""
-          _doctor_report_failure "$cap" "$command_name resolves to $command_path but does not run, so $item is not usable. Put the $(pkg_backend_label) copy first with: $fix" "$fix"
+        # The broken copy stays first on PATH whether or not the package is
+        # installed, so the fix always clears it; a missing package is
+        # installed first.
+        if mise_tool="$(command_mise_tool "$command_name" "$command_path" "$item")"; then
+          fix="$(mise_repair_command "$mise_tool" "$(_mise_repair_binary "$command_name")")"
+          detail="This is a mise-managed copy; repair it with: $fix"
         else
-          _doctor_report_failure "$cap" "$command_name resolves to $command_path but does not run, so $item is not usable." "$fix"
+          fix="export PATH=\"$(pkg_prefix)/bin:\$PATH\""
+          detail="Put the $(pkg_backend_label) copy first with: $fix"
         fi
+        if [[ "$found" != "true" ]]; then
+          fix="teeup install $cap && $fix"
+          detail="Install it, then clear the broken copy: $fix"
+        fi
+        _doctor_report_failure "$cap" "$command_name resolves to $command_path but does not run, so $item is not usable. $detail" "$fix"
         continue
       fi
       if [[ "$found" == "true" ]]; then
