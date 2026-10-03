@@ -212,7 +212,7 @@ _doctor_package_command() {
 }
 
 doctor_metadata_check() {
-  local cap="$1" item candidate found app command_name
+  local cap="$1" item candidate found app command_name command_path mise_tool
   # Without the backend's own command there is no way to ask whether anything
   # is installed, and "not installed" would be teeup asserting something it
   # never checked. Say what is actually true: the check could not run.
@@ -237,6 +237,16 @@ doctor_metadata_check() {
           break
         fi
       done
+      command_name="$(_doctor_package_command "$cap" "$item")"
+      if [[ -n "$command_name" ]] && have "$command_name" && ! command_runs "$command_name"; then
+        command_path="$(command -v "$command_name" 2>/dev/null || true)"
+        if mise_tool="$(command_mise_tool "$command_name" "$command_path")"; then
+          _doctor_report_failure "$cap" "$command_name resolves to $command_path but does not run, so $item is not usable. This is a mise-managed copy; repair it with: $(mise_repair_command "$mise_tool")" "teeup install $cap"
+        else
+          _doctor_report_failure "$cap" "$command_name resolves to $command_path but does not run, so $item is not usable." "teeup install $cap"
+        fi
+        continue
+      fi
       if [[ "$found" == "true" ]]; then
         doctor_ok "package $item is installed."
         continue
@@ -252,8 +262,7 @@ doctor_metadata_check() {
       # package name (git-delta provides delta), which is why it is declared
       # rather than guessed, and a package with no entry keeps the stricter
       # answer: the fallback exists only where install really offers one.
-      command_name="$(_doctor_package_command "$cap" "$item")"
-      if [[ -n "$command_name" ]] && have "$command_name"; then
+      if [[ -n "$command_name" ]] && command_runs "$command_name"; then
         doctor_ok "$command_name is on PATH, so $item is provided (not by $(pkg_backend_label))."
       else
         _doctor_report_failure "$cap" "package $item is not installed." "teeup install $cap"

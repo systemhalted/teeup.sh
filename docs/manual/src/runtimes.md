@@ -28,7 +28,7 @@ mise installs:
 
 Homebrew or MacPorts installs everything else: the command-line tools (ripgrep, fd, bat, jq and the rest), git, delta, lazygit, the GitHub CLI, tmux, Neovim, Starship, mise itself, and the apps, which come from Homebrew casks. MacPorts has no casks: there, WezTerm and Emacs come from ports, and teeup tells you to download other apps yourself. `teeup update` upgrades the packages teeup installed and runs `mise upgrade` for the tools in your global mise configuration.
 
-Most capabilities accept a copy of their command that you installed another way, such as a ripgrep you already had. The GitHub CLI is the exception: teeup always installs its own `gh`, because git uses it to sign in, and `teeup doctor github` warns when another `gh` comes first on `PATH`. A tool you add to mise yourself with `mise use -g` is yours to manage.
+Most capabilities accept a copy of their command that you installed another way, such as a ripgrep you already had, when its version command actually runs. A broken command or stale shim on `PATH` does not stand in for the package. The GitHub CLI is the exception: teeup always installs its own `gh`, because git uses it to sign in, and `teeup doctor github` warns when another `gh` comes first on `PATH`. A tool you add to mise yourself with `mise use -g` is yours to manage.
 
 ## Where the versions live
 

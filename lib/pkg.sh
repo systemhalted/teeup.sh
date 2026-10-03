@@ -211,15 +211,108 @@ _pkg_install_candidate() {
   esac
 }
 
+# _command_version_probe <resolved-path> <command-name>
+# Runs the cheapest upstream-documented version invocation for a command.
+# Most of package_commands supports --version; keep the exceptions here so
+# every caller asks the command the same valid question.
+_command_version_probe() {
+  local command_path="$1" command_name="$2"
+  case "$command_name" in
+    colima|docker-compose|git-lfs) "$command_path" version ;;
+    tmux) "$command_path" -V ;;
+    *) "$command_path" --version ;;
+  esac
+}
+
+# command_runs <command>
+# True only when <command> resolves to a non-teeup shim and its version probe
+# exits zero promptly. The watchdog uses only bash jobs, sleep and kill:
+# macOS does not ship timeout(1). stdin is closed and all output is discarded
+# so a broken or unexpectedly interactive command cannot stall an install.
+command_runs() {
+  local command_name="$1" command_path probe_pid timer_pid rc=1
+  have "$command_name" || return 1
+  command_path="$(command -v "$command_name" 2>/dev/null)" || return 1
+
+  _command_version_probe "$command_path" "$command_name" </dev/null >/dev/null 2>&1 &
+  probe_pid=$!
+  (
+    timer_sleep_pid=""
+    stop_timer() {
+      if [[ -n "$timer_sleep_pid" ]]; then
+        kill "$timer_sleep_pid" >/dev/null 2>&1 || true
+        wait "$timer_sleep_pid" 2>/dev/null || true
+      fi
+      exit 0
+    }
+    trap stop_timer TERM HUP INT
+    sleep "${TEEUP_COMMAND_RUN_TIMEOUT:-2}" &
+    timer_sleep_pid=$!
+    if wait "$timer_sleep_pid" 2>/dev/null; then
+      kill "$probe_pid" >/dev/null 2>&1 || true
+    fi
+  ) </dev/null >/dev/null 2>&1 &
+  timer_pid=$!
+
+  if wait "$probe_pid" 2>/dev/null; then
+    rc=0
+  else
+    rc=$?
+  fi
+  kill "$timer_pid" >/dev/null 2>&1 || true
+  wait "$timer_pid" 2>/dev/null || true
+  return "$rc"
+}
+
+# command_mise_tool <command> [resolved-path]
+# Prints the mise tool name when the command is the shim or an installed copy
+# under mise's resolved data root. An install's directory name is the repair
+# target; it may differ from the executable (neovim/nvim, for example).
+command_mise_tool() {
+  local command_name="$1" command_path="${2:-}" mise_root prefix relative tool
+  if [[ -z "$command_path" ]]; then
+    command_path="$(command -v "$command_name" 2>/dev/null)" || return 1
+  fi
+  mise_root="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
+  case "$command_path" in
+    "$mise_root/shims/$command_name") printf '%s\n' "$command_name"; return 0 ;;
+    "$mise_root"/installs/*)
+      case "$command_path" in
+        */"$command_name") ;;
+        *) return 1 ;;
+      esac
+      prefix="$mise_root/installs/"
+      relative="${command_path#"$prefix"}"
+      tool="${relative%%/*}"
+      [[ -n "$tool" ]] || return 1
+      printf '%s\n' "$tool"
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+mise_repair_command() {
+  printf 'mise unuse -g %s && mise uninstall %s --all && mise reshim\n' "$1" "$1"
+}
+
 # pkg_install <pkg> [command]
-# Skips when <command> is already on PATH or any candidate is installed.
+# Skips when <command> is already on PATH and its version probe runs, or any
+# candidate is installed.
 # Tries each candidate in order; warns and returns 1 when none installs.
 pkg_install() {
   _pkg_backend_resolve
-  local pkg="$1" command_name="${2:-}" candidate
+  local pkg="$1" command_name="${2:-}" candidate command_path mise_tool
   if [[ -n "$command_name" ]] && have "$command_name"; then
-    log "Already available on PATH: $command_name (skipping install for $pkg)"
-    return 0
+    if command_runs "$command_name"; then
+      log "Already available on PATH: $command_name (skipping install for $pkg)"
+      return 0
+    fi
+    command_path="$(command -v "$command_name" 2>/dev/null || true)"
+    warn "$command_name resolves to $command_path but does not run; installing $pkg."
+    if mise_tool="$(command_mise_tool "$command_name" "$command_path")"; then
+      warn "$command_name is managed by mise. Repair it with: $(mise_repair_command "$mise_tool")"
+    fi
   fi
   for candidate in $(package_candidates "$pkg"); do
     if pkg_installed "$candidate"; then

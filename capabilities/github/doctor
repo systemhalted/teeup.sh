@@ -23,17 +23,12 @@ fi
 # is not teeup's to edit.
 gh_path="$(command -v gh)"
 package_gh="$(pkg_prefix)/bin/gh"
-# The same data root capabilities/zsh/default/env puts mise's shims under.
-mise_root="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
 if [[ "$gh_path" != "$package_gh" ]]; then
-  case "$gh_path" in
-    "$mise_root"/shims/gh|"$mise_root"/installs/gh/*|*/mise/shims/gh|*/mise/installs/gh/*/bin/gh)
-      doctor_warn "gh resolves to $gh_path instead of the $(pkg_backend_label) copy at $package_gh. Run: mise unuse -g gh && mise uninstall gh --all && mise reshim"
-      ;;
-    *)
-      doctor_warn "gh resolves to $gh_path instead of the $(pkg_backend_label) copy at $package_gh. Run: export PATH=\"$(pkg_prefix)/bin:\$PATH\""
-      ;;
-  esac
+  if mise_tool="$(command_mise_tool gh "$gh_path")"; then
+    doctor_warn "gh resolves to $gh_path instead of the $(pkg_backend_label) copy at $package_gh. Run: $(mise_repair_command "$mise_tool")"
+  else
+    doctor_warn "gh resolves to $gh_path instead of the $(pkg_backend_label) copy at $package_gh. Run: export PATH=\"$(pkg_prefix)/bin:\$PATH\""
+  fi
 fi
 
 # gh_key_listed <listed> <key-body> <type> -> exits 0 when `gh ssh-key
