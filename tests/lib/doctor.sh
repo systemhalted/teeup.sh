@@ -231,8 +231,29 @@ EOF2
   local out
   out="$(doctor_metadata_check widget 2>&1)"
   assert_contains "$out" "jq resolves to $MOCK_BIN/jq but does not run" || return 1
-  assert_contains "$(cat "$REPORT")" "teeup install widget" || return 1
-  assert_not_contains "$(cat "$REPORT")" "export PATH=" "there is no package-manager command to put first yet" || return 1
+  # Codex review of #109: installing leaves the broken jq first on PATH, so
+  # the fix has to clear it too.
+  assert_contains "$(cat "$REPORT")" "teeup install widget && export PATH=\"$TEEUP_PKG_PREFIX/bin:\$PATH\"" || return 1
+  cleanup_test_env
+}
+
+test_metadata_check_installs_then_repairs_mise_when_a_missing_package_is_shadowed() {
+  setup
+  make_cap widget "neovim" "" "" "" "neovim:nvim"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
+EOF2
+  export MISE_DATA_DIR="$TEST_HOME/mise data"
+  local shim="$MISE_DATA_DIR/shims/nvim"
+  mkdir -p "${shim%/*}"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$shim"
+  chmod +x "$shim"
+  PATH="${shim%/*}:$PATH"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "$shim" || return 1
+  assert_contains "$(cat "$REPORT")" "teeup install widget && mise unuse -g neovim && mise uninstall neovim --all && mise reshim" || return 1
+  unset MISE_DATA_DIR
   cleanup_test_env
 }
 
@@ -777,6 +798,7 @@ run_test "metadata check requires an app with no cask behind it" test_metadata_c
 run_test "metadata check accepts a package the system already provides" test_metadata_check_accepts_a_package_the_system_already_provides
 run_test "metadata check repairs PATH for an installed package shadowed by a broken command" test_metadata_check_repairs_path_when_an_installed_package_is_shadowed
 run_test "metadata check repairs the declared mise tool for an installed package shadowed by a broken shim" test_metadata_check_repairs_the_declared_mise_tool_when_an_installed_package_is_shadowed
+run_test "metadata check installs then repairs mise when a missing package is shadowed" test_metadata_check_installs_then_repairs_mise_when_a_missing_package_is_shadowed
 run_test "metadata check reinstalls a missing package behind a broken command" test_metadata_check_reinstalls_a_missing_package_behind_a_broken_command
 run_test "metadata check still fails when neither the backend nor PATH has it" test_metadata_check_still_fails_when_neither_the_backend_nor_path_has_it
 run_test "metadata check uses the declared command not the package name" test_metadata_check_uses_the_declared_command_not_the_package_name
