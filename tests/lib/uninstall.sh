@@ -1249,7 +1249,7 @@ test_teardown_removes_a_defaults_directory_macos_defaults_leaves_behind() {
 
 # Final review I5: capabilities/terminal-app/theme-apply writes the exported
 # .terminal files under $TEEUP_STATE_DIR/terminal-app, a top-level entry
-# CONTRIBUTING item 33 requires in _UNINSTALL_STATE_ENTRIES. Missing from
+# CONTRIBUTING item 34 requires in _UNINSTALL_STATE_ENTRIES. Missing from
 # teeup's own list, a dry run left it behind and reported the state dir as
 # holding files teeup did not write, and a real run left the directory (and
 # the whole state dir) un-removable whenever it existed without an install

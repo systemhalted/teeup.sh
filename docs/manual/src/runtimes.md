@@ -17,6 +17,19 @@ teeup install dev-env python
 
 One language per command. `teeup status` lists the ones you have under "Dev envs", and the menu offers them under Install, then Language runtimes.
 
+## Homebrew or mise?
+
+teeup installs a tool with mise when you need more than one version of it, and with Homebrew (or MacPorts) when one current version for the whole Mac is right.
+
+mise installs:
+
+- language runtimes. Projects pin their own versions in `mise.toml`, and `mise activate` switches between them as you change directories. Homebrew keeps one version of each formula.
+- the AI command-line tools: Claude Code, Codex, Gemini CLI, Copilot CLI and OpenCode. mise downloads each one the first time you call it.
+
+Homebrew or MacPorts installs everything else: the command-line tools (ripgrep, fd, bat, jq and the rest), git, delta, lazygit, the GitHub CLI, tmux, Neovim, Starship, mise itself, and the apps, which come from Homebrew casks. MacPorts has no casks: there, WezTerm and Emacs come from ports, and teeup tells you to download other apps yourself. `teeup update` upgrades the packages teeup installed and runs `mise upgrade` for the tools in your global mise configuration.
+
+Most capabilities accept a copy of their command that you installed another way, such as a ripgrep you already had. The GitHub CLI is the exception: teeup always installs its own `gh`, because git uses it to sign in, and `teeup doctor github` warns when another `gh` comes first on `PATH`. A tool you add to mise yourself with `mise use -g` is yours to manage.
+
 ## Where the versions live
 
 Each runtime goes into your global mise configuration, `~/.config/mise/config.toml`. teeup runs mise from `/` for this, so a `mise.toml` in the current project cannot redirect the install. If you already pinned a version there, teeup keeps it rather than replacing it with the latest.
