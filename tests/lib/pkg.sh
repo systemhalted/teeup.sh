@@ -116,6 +116,35 @@ EOF2
   cleanup_test_env
 }
 
+test_command_runs_kills_a_probe_tree_that_ignores_term() {
+  setup
+  mock_command_script jq <<'EOF2'
+trap '' TERM
+sleep 4 &
+child_pid=$!
+printf '%s\n' "$child_pid" > "$TEST_HOME/probe-child-pid"
+wait "$child_pid"
+EOF2
+  local elapsed child_pid
+  SECONDS=0
+  TEEUP_COMMAND_RUN_TIMEOUT=0.1 TEEUP_COMMAND_KILL_GRACE=0.1 command_runs jq && {
+    echo "a probe killed after its deadline must not succeed"
+    return 1
+  }
+  elapsed=$SECONDS
+  child_pid="$(cat "$TEST_HOME/probe-child-pid")"
+  if (( elapsed >= 3 )); then
+    echo "command_runs took ${elapsed}s to stop a probe that ignored TERM"
+    return 1
+  fi
+  if kill -0 "$child_pid" 2>/dev/null; then
+    echo "command_runs left probe child PID $child_pid running"
+    ps -o pid=,ppid=,pgid=,stat=,command= -p "$child_pid" 2>/dev/null || true
+    return 1
+  fi
+  cleanup_test_env
+}
+
 test_pkg_install_installs_when_the_command_on_path_does_not_run() {
   setup
   mock_command jq 1 "mise ERROR No version is set for shim: jq"
@@ -129,6 +158,27 @@ EOF2
   out="$(pkg_install jq jq 2>&1)"
   assert_contains "$out" "jq resolves to $MOCK_BIN/jq but does not run" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew install jq" || return 1
+  cleanup_test_env
+}
+
+test_pkg_install_names_the_declared_mise_tool_for_an_aliased_shim() {
+  setup
+  export MISE_DATA_DIR="$TEST_HOME/mise data"
+  local shim="$MISE_DATA_DIR/shims/nvim"
+  mkdir -p "${shim%/*}"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$shim"
+  chmod +x "$shim"
+  PATH="${shim%/*}:$PATH"
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-} ${3:-}" in
+  "list --formula neovim") exit 0 ;;
+  *) exit 1 ;;
+esac
+EOF2
+  local out
+  out="$(pkg_install neovim nvim 2>&1)"
+  assert_contains "$out" "mise unuse -g neovim && mise uninstall neovim --all && mise reshim" || return 1
+  assert_not_contains "$out" "mise unuse -g nvim" "the executable name is not the mise tool name" || return 1
   cleanup_test_env
 }
 
@@ -608,7 +658,9 @@ run_test "macports_apps_dir reads macports.conf" test_macports_apps_dir_reads_ma
 run_test "pkg_install skips when command on PATH" test_pkg_install_skips_when_command_on_path
 run_test "command_runs uses supported version invocations" test_command_runs_uses_the_supported_version_invocation
 run_test "command_runs stops its watchdog when the probe finishes" test_command_runs_stops_its_watchdog_when_probe_finishes
+run_test "command_runs kills a probe tree that ignores TERM" test_command_runs_kills_a_probe_tree_that_ignores_term
 run_test "pkg_install installs when command on PATH does not run" test_pkg_install_installs_when_the_command_on_path_does_not_run
+run_test "pkg_install names the declared mise tool for an aliased shim" test_pkg_install_names_the_declared_mise_tool_for_an_aliased_shim
 run_test "pkg_install installs when command on PATH hangs" test_pkg_install_installs_when_the_command_on_path_hangs
 run_test "pkg_install calls brew when missing" test_pkg_install_calls_brew_when_missing
 run_test "pkg_install real-run wording is unchanged" test_pkg_install_real_run_wording_is_unchanged
