@@ -1,15 +1,15 @@
 # Dotfiles
 
-teeup splits tool configuration into user files and system files. Updates modify the system files.
+teeup splits the tool configuration into user files and system files. Updates modify the system files.
 
 | Kind | Where | Owner |
 |---|---|---|
-| Copied once | `~/.config/<tool>/...`, and `~/.zshrc`, `~/.zshenv`, `~/.zprofile` | You, from the moment they land |
-| Local override | A `local.*` file next to them | You, always |
-| Generated | A few files teeup rewrites, marked "Your edits here are overwritten" | teeup |
-| Layer | `capabilities/<name>/default/` in the checkout | teeup, upgraded by `teeup update` |
+| Copied once | `~/.config/<tool>/...`, and `~/.zshrc`, `~/.zshenv`, `~/.zprofile` | You, after teeup copies them |
+| Local override | A `local.*` file next to the copied files | You, always |
+| Generated | teeup rewrites these files. The files contain the mark "Your edits here are overwritten". | teeup |
+| Layer | `capabilities/<name>/default/` in the checkout | teeup. `teeup update` upgrades these files. |
 
-Most copied files load the teeup layer from the checkout, then your local file. Your settings override teeup's.
+Most copied files load the teeup layer from the checkout. Then the copied files load your local file. Your settings override the settings from teeup.
 
 ## The files teeup copies
 
@@ -17,41 +17,41 @@ Most copied files load the teeup layer from the checkout, then your local file. 
 |---|---|
 | `zsh` | `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.config/zsh/local.zsh` |
 | `git` | `~/.config/git/config` |
-| `ssh` | `~/.ssh/config`, only when you have none |
+| `ssh` | `~/.ssh/config`, only if you do not have one |
 | `starship` | `~/.config/starship.toml` |
 | `wezterm` | `~/.config/wezterm/wezterm.lua`, `~/.config/wezterm/local.lua` |
 | `emacs` | `~/.config/emacs/init.el`, `~/.config/emacs/local.el`, for the starter flavor |
-| `neovim` | `~/.config/nvim/init.lua`, `stylua.toml`, and the files under `lua/` |
+| `neovim` | `~/.config/nvim/init.lua`, `stylua.toml`, and the files in the `lua/` directory |
 | `cli-tools` | `~/.config/bat/config` |
 | `mise` | `~/.config/mise/config.toml` |
-| `tmux` | `~/.config/tmux/tmux.conf`, unless you have a `~/.tmux.conf` |
-| `aerospace` | `~/.config/aerospace/aerospace.toml`, unless you have a `~/.aerospace.toml` |
+| `tmux` | `~/.config/tmux/tmux.conf`, if you do not have a `~/.tmux.conf` |
+| `aerospace` | `~/.config/aerospace/aerospace.toml`, if you do not have a `~/.aerospace.toml` |
 
 ## The copy-once rule
 
-When teeup installs one of these files it records a checksum of what it wrote, under `~/.local/state/teeup/stock/`. Every later `configure` compares the file against that record:
+When teeup installs a file, teeup records a checksum of the file in `~/.local/state/teeup/stock/`. Every time that you run `configure`, teeup compares the file against that record:
 
 | The file is | teeup does | and says |
 |---|---|---|
-| Missing | Copies it and records the checksum | "Installed ..." |
-| Unchanged since teeup wrote it | Nothing | "Already installed: ..." |
-| Edited by you | Nothing | "Keeping your edited ... (run teeup reset to restore the shipped file)" |
-| Someone else's, such as a file from another dotfiles tool | Moves it aside, installs its own, and prints the lines that differ | "Installed ... (your previous file is at ...)" |
+| Missing | Copies the file and records the checksum | "Installed ..." |
+| Without changes after teeup wrote the file | Nothing | "Already installed: ..." |
+| A file that you changed | Nothing | "Keeping your edited ... (run teeup reset to restore the shipped file)" |
+| From a different tool | Changes the file name, installs a new file, and prints the different lines | "Installed ... (your previous file is at ...)" |
 
-A file teeup moves aside keeps its name with `.teeup_backup_<timestamp>` added, in the same directory. teeup never deletes it. A symlink counts as someone else's file: teeup does not write through it.
+When teeup changes a file name, teeup adds `.teeup_backup_<timestamp>` to the file name. The file stays in the same directory. teeup does not delete the file. teeup identifies a symlink as a file from a different tool. teeup does not modify the target of a symlink.
 
-When a teeup update includes a new default, a migration replaces unchanged files. Your edited files remain.
+If a teeup update includes a new default, a migration replaces unchanged files. The migration does not replace your edited files.
 
 ## Local files
 
-Write your settings in the `local.*` files. teeup ships them commented out and does not overwrite them during `teeup reset`.
+Write your settings in the `local.*` files. teeup installs these files with all lines as comments. When you run `teeup reset`, teeup does not overwrite these files.
 
 | File | Loaded by |
 |---|---|
 | `~/.config/zsh/local.zsh` | `~/.zshrc`, last |
 | `~/.config/wezterm/local.lua` | `~/.config/wezterm/wezterm.lua` |
 | `~/.config/emacs/local.el` | `~/.config/emacs/init.el`, last |
-| `~/.config/git/local` | `~/.config/git/config`, last. teeup does not create it; make it yourself. |
+| `~/.config/git/local` | `~/.config/git/config`, last. teeup does not create this file. You must create this file. |
 
 ## teeup reset
 
@@ -60,13 +60,13 @@ teeup reset starship
 DRY_RUN=true teeup reset zsh
 ```
 
-`teeup reset <capability>` puts that capability's copied files back to the version teeup ships. For each file it:
+Run `teeup reset <capability>` to restore the copied files of the capability to the default version from teeup. For each file, the command does these operations:
 
-1. makes a backup next to it, `<name>.teeup_backup_<timestamp>`;
-2. writes the shipped version, rendered for this Mac where the capability renders it (the zsh home files, the git config);
-3. prints what changed;
-4. deletes the backup again if the file was already the shipped version.
+1. The command makes a backup file named `<name>.teeup_backup_<timestamp>` in the same directory.
+2. The command writes the default version. The command configures the file for this Mac (the zsh home files, the git config).
+3. The command prints the changes.
+4. If the previous file was the default version, the command deletes the backup file.
 
-Then it applies the current theme and font again, so a reset `starship.toml` has your palette. It keeps the `local.*` files. It refuses a file that is a symlink or not writable, and it never overwrites a file whose backup failed.
+Then the command applies the current theme and the current font again. A reset `starship.toml` file contains your palette. The command keeps the `local.*` files. If a file is a symlink or is not writable, the command refuses the file. If the backup operation fails, the command does not overwrite the file.
 
-Only a capability with copied files can be reset. For others, teeup says the capability "ships no config files to reset".
+If a capability has copied files, you can reset the capability. If a capability does not have copied files, teeup prints that the capability "ships no config files to reset".

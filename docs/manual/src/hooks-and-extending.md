@@ -4,15 +4,15 @@ teeup supports custom additions through hooks, menu rows, and capabilities.
 
 ## Hooks
 
-A hook is a script of yours that teeup runs after an event. Hooks live in `~/.config/teeup/hooks/<event>.d/`.
+A hook is a script that teeup runs after an event. Hooks are in the `~/.config/teeup/hooks/<event>.d/` directory.
 
 | Event | Runs after | Arguments |
 |---|---|---|
-| `post-bootstrap` | `./bootstrap` | none |
-| `post-update` | `teeup update` | none after a full update; the capability name after `teeup update <capability>` |
-| `theme-set` | `teeup theme set` | the theme name |
+| `post-bootstrap` | `./bootstrap` | teeup provides no arguments. |
+| `post-update` | `teeup update` | teeup provides no arguments after a full update. teeup provides the capability name after `teeup update <capability>`. |
+| `theme-set` | `teeup theme set` | teeup provides the theme name. |
 
-Every file in the directory runs with `bash`, in name order, so number them to set the order:
+teeup runs every file in the directory with `bash` in name order. Number the files to set the run order:
 
 ```sh
 # ~/.config/teeup/hooks/post-update.d/10-brew-cleanup.sh
@@ -21,23 +21,23 @@ if [ -z "${1:-}" ] && command -v brew >/dev/null 2>&1; then
 fi
 ```
 
-A hook gets `TEEUP_PATH`, `TEEUP_CONFIG_DIR`, `TEEUP_STATE_DIR` and `TEEUP_HOOK_EVENT` in its environment. Its standard input is empty, so it cannot ask questions. A hook that fails prints a warning, and teeup carries on.
+teeup adds `TEEUP_PATH`, `TEEUP_CONFIG_DIR`, `TEEUP_STATE_DIR` and `TEEUP_HOOK_EVENT` to the environment of a hook. The standard input of a hook is empty. A hook cannot ask questions. If a hook fails, teeup prints a warning and continues.
 
-Each directory has an `example.sample` that documents its event. Files ending in `.sample` never run, and teeup rewrites the sample when its copy changes. The rest of the directory is yours. With `DRY_RUN=true`, teeup lists the hooks it would run instead of running them.
+Each directory has an `example.sample` file. This file documents the event of the directory. teeup does not run files that end in `.sample`. teeup rewrites the sample when the teeup copy changes. You can use the rest of the directory. If you set `DRY_RUN=true`, teeup lists the hooks, but teeup does not run the hooks.
 
 ## Menu rows
 
-The menu (see [The menu](the-menu.md)) is `share/teeup/menu.json` in the checkout. To change it, write `~/.config/teeup/menu.json` in the same format: one JSON object whose keys are dotted ids. `install.editors.zed` is a row under `install.editors`.
+The menu is `share/teeup/menu.json` in the checkout. See [The menu](the-menu.md). Write `~/.config/teeup/menu.json` in the same format to change the menu. The format is one JSON object. The keys of the JSON object are dotted ids. For example, `install.editors.zed` is a row under `install.editors`.
 
 | Field | Meaning |
 |---|---|
-| `label` | Required. What the row shows. |
-| `icon` | Optional. Printed before the label. |
-| `action` | A shell command line. A row with one runs it; a row without one is a submenu. |
-| `when` | A shell condition. The row is hidden when it exits non-zero. |
-| `title` | The header shown when the submenu is open. Defaults to the label. |
+| `label` | This field is required. The row shows this text. |
+| `icon` | This field is optional. teeup prints the icon before the label. |
+| `action` | This field contains a shell command line. A row with an action runs the command. A row without an action is a submenu. |
+| `when` | This field contains a shell condition. If the condition exits with a non-zero status, teeup hides the row. |
+| `title` | This field contains the header. teeup shows this header when you open the submenu. The default value is the label. |
 
-A row whose id is also in the shipped file replaces that row whole, in the same position. A new id is added at the end of its submenu. To hide a shipped row, give it `"when": "false"`.
+If a row has the same id as a row in the shipped file, the new row replaces the shipped row. teeup keeps the replaced row in the same position. teeup adds a new id at the end of the submenu. To hide a shipped row, add `"when": "false"` to the row.
 
 ```json
 {
@@ -47,32 +47,32 @@ A row whose id is also in the shipped file replaces that row whole, in the same 
 }
 ```
 
-Conditions and actions run with the checkout's `bin/` first on `PATH`, so `teeup` always means the teeup you are running. `teeup dev check` lints the menu.
+teeup runs conditions and actions with the `bin/` directory of the checkout first on the `PATH`. Thus, `teeup` always means the teeup program that you run. Run `teeup dev check` to lint the menu.
 
 ## Your own capability
 
-A capability is a directory under `capabilities/` in the checkout. Start one from the skeleton:
+A capability is a directory under `capabilities/` in the checkout. Run this command to start a capability from the skeleton:
 
 ```sh
 teeup dev new-capability mytool
 ```
 
-That writes `capabilities/mytool/` with its `capability` metadata file, `install` and `configure` scripts, and a test. The new capability is lazy. It does not change what `./bootstrap` installs until you move it to another tier.
+The command writes the `capabilities/mytool/` directory. The directory contains the `capability` metadata file, the `install` script, the `configure` script, and a test. The new capability is lazy. The capability does not change what `./bootstrap` installs. If you move the capability to another tier, `./bootstrap` installs the capability.
 
 | File | Holds |
 |---|---|
-| `capability` | `summary`, `group`, `tier`, `requires`, `provides`, `packages`, `casks`, `apps`, `interactive` |
-| `install` | Installs packages, and nothing else |
-| `configure` | Writes configuration, and nothing else |
-| `remove`, `doctor` | Optional. Undo what teeup cannot undo from the metadata; check the capability's health |
-| `config/`, `home/`, `default/` | Files copied once to `~/.config`, files copied once to `$HOME`, and teeup's own layer |
+| `capability` | This file contains `summary`, `group`, `tier`, `requires`, `provides`, `packages`, `casks`, `apps`, and `interactive`. |
+| `install` | The script installs packages. The script does not do other tasks. |
+| `configure` | The script writes configuration. The script does not do other tasks. |
+| `remove`, `doctor` | These files are optional. The remove script removes items that teeup cannot remove from the metadata. The doctor script checks the health of the capability. |
+| `config/`, `home/`, `default/` | teeup copies `config/` files to `~/.config` once. teeup copies `home/` files to `$HOME` once. The `default/` directory contains the layer of teeup. |
 
-Then check it:
+Run this command to check the capability:
 
 ```sh
 teeup dev check mytool
 ```
 
-`CONTRIBUTING.md` in the checkout has the details, under "Adding a capability": how to report that a capability does not apply to a Mac, how to add a themed template, how to write macOS preferences so `teeup remove` can restore them, and how lazy commands and apps are registered.
+The "Adding a capability" section in the `CONTRIBUTING.md` file of the checkout contains more information. The section shows how to report that a capability does not apply to a Mac. The section shows how to add a themed template. The section shows how to write macOS preferences so that `teeup remove` can restore the preferences. The section also shows how to register lazy commands and apps.
 
-A capability you add lives in your checkout of teeup. `teeup update` stops while the checkout has uncommitted changes, and once you commit, `git pull --ff-only` can no longer fast-forward, so the update warns and carries on with your checkout as it is. Keep it on a branch you merge yourself, or send it upstream.
+A capability that you add lives in your checkout of teeup. If the checkout has uncommitted changes, the `teeup update` command stops. When you commit the changes, `git pull --ff-only` cannot fast-forward. Thus, the update prints a warning and continues with the current state of your checkout. Keep the capability on a branch that you merge yourself. You can also send the capability upstream.
