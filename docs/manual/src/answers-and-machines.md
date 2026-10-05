@@ -5,7 +5,7 @@
 | File | Written by | Holds |
 |---|---|---|
 | `~/.config/teeup/answers` | The wizard and `teeup config` | Your name and email, the theme, the daily set, the Emacs flavor, the package manager |
-| `~/.config/teeup/machines/<hostname>.conf` | You | The pinned settings for this Mac and the work identity configuration |
+| `~/.config/teeup/machines/<hostname>.conf` | You | The pinned settings for this Mac. It is the only file where you configure a work identity. |
 
 The `<hostname>` is the short name that `hostname -s` prints.
 
@@ -38,11 +38,11 @@ teeup config set TEEUP_EMACS_FLAVOR doom
 🔹 Run: teeup configure emacs -- that is what reads TEEUP_EMACS_FLAVOR (teeup update now covers it too).
 ```
 
-The `teeup config edit` command opens `$VISUAL`, then `$EDITOR`, then `vi`. If you install Emacs, the `teeup` shell configures `EDITOR` and `VISUAL` to `emacsclient -t`. When you close the editor, `teeup` checks that every line has the `KEY="value"` format. If a line does not have this format, `teeup` restores the previous file and prints the broken line. Because `teeup` reads the answers file at the start of every command, a broken line breaks `teeup config edit`.
+The `teeup config edit` command opens `$VISUAL`, then `$EDITOR`, then `vi`. If Emacs is installed, the `teeup` shell sets `EDITOR` and `VISUAL` to `emacsclient -t`. When you close the editor, `teeup` checks that every line has the `KEY="value"` format. If a line does not have this format, `teeup` restores the previous file and prints the broken line. Because `teeup` reads the answers file at the start of every command, a broken line breaks `teeup config edit`.
 
 The `teeup config set` command does not accept two keys:
 
-- `TEEUP_PACKAGE_MANAGER` after you install a package manager. `teeup` does not support a package manager change after a Mac installation.
+- `TEEUP_PACKAGE_MANAGER`, after `teeup` installs the package manager. `teeup` does not support a change of the package manager after it installs a Mac.
 - `TEEUP_WORK_EMAIL` and the other `TEEUP_WORK_*` keys. `teeup` reads these keys only from the machine file (see [Identity](identity.md)).
 
 ## The machine file

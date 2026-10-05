@@ -29,7 +29,7 @@ Homebrew or MacPorts installs the other tools. These tools include the command-l
 
 The `teeup update` command upgrades the packages that teeup installed. This command also runs `mise upgrade` for the tools in your global mise configuration.
 
-Most capabilities accept a copy of a command that you installed a different way. For example, you can use a ripgrep installation that you already have. The command must run correctly when you run its version command. A broken command or a stale shim on `PATH` does not replace the package.
+Most capabilities accept a copy of a command that you installed a different way. For example, you can use a ripgrep installation that you already have. teeup accepts the command only if its version command runs. A broken command or a stale shim on `PATH` does not replace the package.
 
 The GitHub CLI is an exception. teeup always installs its own `gh`. git uses `gh` to sign in. The `teeup doctor github` command warns when a different `gh` comes first on `PATH`. When you add a tool to mise with `mise use -g`, you must control the tool yourself.
 

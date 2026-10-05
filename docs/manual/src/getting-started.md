@@ -31,11 +31,11 @@ If macOS offers to install the Command Line Tools when you run `git`, accept the
 |---|---|
 | `--dry-run` | Print every command. Do not run the commands. |
 | `--reconfigure` | Ask the setup questions again. The script asks even if the answers exist. |
-| `--skip-daily` | Install only the core tier. |
+| `--skip-daily` | Install only the core tier on this run. |
 
 ## The questions
 
-The first prompt asks which package manager to use. The prompt occurs after the installation of the Command Line Tools. teeup offers the package manager that it finds first. Then, teeup installs the teeup runtime. After the installation, teeup asks the remaining questions:
+The first prompt asks which package manager to use. teeup asks this question after it installs the Command Line Tools. teeup offers the package manager that it finds first. Then, teeup installs the teeup runtime. After the installation, teeup asks the remaining questions:
 
 | Question | Default | Saved as |
 |---|---|---|
@@ -46,7 +46,7 @@ The first prompt asks which package manager to use. The prompt occurs after the 
 | Install the daily set too (Emacs)? | Yes. | `TEEUP_DAILY` |
 | Emacs flavor: `starter`, `doom`, `spacemacs` or `none` | `starter` | `TEEUP_EMACS_FLAVOR` |
 
-If you answer yes to the daily set, the Emacs question shows. If you enter an empty name or an invalid email, teeup asks the question again. You have three attempts. If you pin a package manager, theme, or Emacs flavor in your machine file, teeup does not ask the question. See [Answers and machines](answers-and-machines.md). teeup reports the pinned status and continues.
+teeup asks the Emacs question only if you answer yes to the daily set. If you enter an empty name or an invalid email, teeup asks the question again. You have three attempts in total. If your machine file pins a package manager, theme, or Emacs flavor, teeup does not ask that question. teeup shows that the value is pinned and continues. See [Answers and machines](answers-and-machines.md).
 
 teeup saves the answers to `~/.config/teeup/answers`. A second `./bootstrap` run uses the answers again. The script does not ask the questions. If you want to change the answers, run `./bootstrap --reconfigure` or use `teeup config`.
 
@@ -54,15 +54,36 @@ teeup saves the answers to `~/.config/teeup/answers`. A second `./bootstrap` run
 
 ## What it installs
 
-teeup installs the core tier first. It installs the Xcode Command Line Tools, the package manager, the teeup runtime, `~/Work`, zsh, and Starship. Then, it installs the command-line tools, Keychain secrets, git, SSH, the GitHub CLI, mise, and WezTerm. Next, it installs the Nerd Font, AeroSpace, the Caps Lock mapping, macOS preferences, and the theme. If you answer yes, teeup installs the daily tier: Emacs. The [Tiers](tiers.md) document explains the differences.
+teeup installs the core tier first, in this order:
+
+1. The Xcode Command Line Tools
+2. The package manager
+3. The teeup runtime
+4. `~/Work`
+5. zsh
+6. Starship
+7. The command-line tools
+8. Keychain secrets
+9. git
+10. SSH
+11. The GitHub CLI
+12. mise
+13. WezTerm
+14. The Nerd Font
+15. AeroSpace
+16. The Caps Lock mapping
+17. macOS preferences
+18. The theme
+
+After the core tier, if you answered yes, teeup installs the daily tier: Emacs. [Tiers](tiers.md) explains the difference.
 
 A few steps stop and wait for your input:
 
 - The step to change your login shell to `/bin/zsh` asks for your password.
-- `ssh-keygen` asks for a passphrase for the new key. macOS saves the key in your Keychain.
+- `ssh-keygen` asks for a passphrase for the new key. macOS saves the passphrase in your Keychain.
 - The GitHub CLI opens your browser. You sign in, and the CLI uploads the key.
 
-If a core step fails, teeup stops the run. teeup shows the name of the failed step. If a daily step fails, teeup prints a warning. Then, the run continues. If you want to install a failed daily step later, run `teeup install <name>`. teeup writes all logs to `~/.local/state/teeup/logs/bootstrap.log`.
+If a core step fails, teeup stops the run. teeup shows the name of the failed step. If a daily step fails, teeup prints a warning. Then, the run continues. If you want to install a failed daily step later, run `teeup install <name>`. teeup writes a log of the full run to `~/.local/state/teeup/logs/bootstrap.log`.
 
 <!-- SCREENSHOT: The end of a real ./bootstrap run, showing "Bootstrap finished in ..." and the "Open a new terminal" hint. -->
 
@@ -76,4 +97,4 @@ Open a new terminal (the zsh capability puts ~/.local/bin on PATH) and try: teeu
 
 The shell where you ran `./bootstrap` started before teeup existed. This shell cannot find the `teeup` command yet. Open a new terminal. If you want to use the old terminal, run the command by its full path: `~/.local/bin/teeup status`.
 
-It is safe to run `./bootstrap` again later. Each step performs a check before it runs. A second run completes unfinished steps.
+You can run `./bootstrap` again later without risk. Each step checks the current state before it acts. A second run repairs unfinished steps.

@@ -7,9 +7,9 @@ The Starship configuration file is `~/.config/starship.toml`.
 
 ## How teeup manages it
 
-When teeup installs Starship, teeup copies the `starship.toml` file to this directory one time.
+When teeup installs Starship, teeup copies its own `starship.toml` file to this location one time.
 After this step, teeup does not change the file again.
-Because teeup uses a copy-once rule, the `teeup update` command does not replace your changes.
+Because teeup uses a copy-once rule, the `teeup update` command never replaces your changes.
 If you want the newest teeup version, run `teeup reset starship`.
 teeup makes a copy of your file first.
 
@@ -27,7 +27,7 @@ blue = "#89b4fa"
 ```
 
 Also, the root `palette = ...` setting controls the active palette.
-When you run `teeup theme set`, teeup updates the root `palette` setting.
+Each time you run `teeup theme set`, teeup updates the root `palette` setting.
 teeup also writes the lines between the markers again.
 These changes make sure that the prompt uses your current theme.
 

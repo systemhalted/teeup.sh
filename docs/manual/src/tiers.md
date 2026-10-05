@@ -5,8 +5,8 @@ Every capability belongs to one of three tiers. The tier decides when teeup inst
 | Tier | Installed | Examples |
 |---|---|---|
 | core | Always, by `./bootstrap` | zsh, Starship, git, SSH, mise, WezTerm, the Nerd Font, AeroSpace, the theme |
-| daily | By `./bootstrap`, if you select the daily set | Emacs |
-| lazy | The first time you use the capability, or when you run the command | Zed, Obsidian, Firefox Developer Edition, Neovim, VS Code, Cursor, Chrome, Docker through Colima, tmux, Ollama, Herdr, the AI tools |
+| daily | By `./bootstrap`, if you answer yes to the daily set | Emacs |
+| lazy | The first time you use the capability, or when you ask for it | Zed, Obsidian, Firefox Developer Edition, Neovim, VS Code, Cursor, Chrome, Docker through Colima, tmux, Ollama, Herdr, the AI tools |
 
 To view the full list with the tier of each capability, run `teeup list`. You can also view one tier at a time:
 
@@ -18,7 +18,7 @@ teeup list --tier lazy
 
 ## Core
 
-Every terminal session needs the core tier. `capabilities/core.list` sets the sequence. Each entry requires only the capabilities before it. If a core capability fails, `./bootstrap` stops, because the subsequent capabilities depend on the failed capability.
+Every terminal session needs the core tier. `capabilities/core.list` sets the sequence. Each entry needs only the entries that come before it. If a core capability fails, `./bootstrap` stops, because the entries after it depend on it.
 
 ## Daily
 
@@ -43,7 +43,7 @@ teeup installs a lazy capability when you use the capability. There are three pr
 
 ### What a shim does
 
-For every command that a lazy capability provides, teeup writes a shim into `~/.local/state/teeup/shims`. A shim is a small script. That directory is the last entry on your `PATH`. A shim runs only when no other application provides the command.
+For every command that a lazy capability provides, teeup writes a shim into `~/.local/state/teeup/shims`. A shim is a small script. That directory is the last entry on your `PATH`. A shim runs only when no other program on the machine provides the command.
 
 When you run the command in a terminal for the first time, the shim asks:
 
@@ -51,7 +51,7 @@ When you run the command in a terminal for the first time, the shim asks:
 docker is provided by capability colima. Install now?
 ```
 
-The default selection is yes. teeup installs the capability and the requirements of the capability. teeup then runs `docker` with your arguments. On future runs, the system finds the real command first. The shim does not run again. teeup writes the install output to `~/.local/state/teeup/logs/lazy.log`.
+The default selection is yes. teeup installs the capability and the requirements of the capability. teeup then runs `docker` with your arguments. On future runs, your shell finds the real command first. The shim does not run again. teeup writes the install output to `~/.local/state/teeup/logs/lazy.log`.
 
 <!-- SCREENSHOT: Typing `docker ps` on a fresh Mac, showing the "docker is provided by capability colima. Install now?" prompt in gum. -->
 
@@ -67,6 +67,6 @@ The AI tools have a second step. The shim for `claude` installs the `ai-claude` 
 
 ### Lazy capabilities and the rest of teeup
 
-- `teeup update` does not configure lazy capabilities. If you configure a lazy capability, it can start a virtual machine. For example, Colima starts a virtual machine.
+- `teeup update` does not configure lazy capabilities, because the configuration of a lazy capability can start a virtual machine. Colima is an example.
 - `teeup remove` removes a lazy capability, but it keeps the shim. If you run the command again, the shim offers to install the capability.
 - `teeup status` lists the shims under "Lazy shims".

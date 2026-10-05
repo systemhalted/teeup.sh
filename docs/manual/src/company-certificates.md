@@ -19,9 +19,9 @@ teeup configures the tools. teeup sets these environment variables:
 - `NODE_EXTRA_CA_CERTS`
 - `HOMEBREW_CURLRC`
 
-## Override the bundle
+## Overriding the bundle
 
-teeup only sets a variable if the variable has no value. To use a different file for one tool, set the variable for that tool in `~/.config/zsh/local.zsh`. This file loads after the teeup settings:
+teeup sets a variable only if the variable is not set. To use a different file for one tool, set the variable for that tool in `~/.config/zsh/local.zsh`. This file loads after the teeup settings:
 
 ```zsh
 export GIT_SSL_CAINFO="$HOME/certs/other.pem"
@@ -29,7 +29,7 @@ export GIT_SSL_CAINFO="$HOME/certs/other.pem"
 
 To remove the bundle entirely, run `teeup remove ca-bundle`.
 
-## Troubleshoot
+## Troubleshooting
 
 The `teeup doctor ca-bundle` command shows if this Mac needs a bundle. The command also shows if the bundle is available and current.
 

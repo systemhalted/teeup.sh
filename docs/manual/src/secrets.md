@@ -1,6 +1,6 @@
 # Secrets
 
-API tokens and passwords belong in the macOS Keychain. The `teeup secret` command stores the secrets in the macOS Keychain. The `teeup-env` command exports a secret to a shell.
+API tokens and passwords belong in the macOS Keychain. The `teeup secret` command stores the secrets in the macOS Keychain. The `teeup-env` command exports a secret to a shell when you need it.
 
 | Command | What it does |
 |---|---|
@@ -8,7 +8,7 @@ API tokens and passwords belong in the macOS Keychain. The `teeup secret` comman
 | `teeup secret get <name>` | This command shows the value. |
 | `teeup secret rm <name>` | This command deletes the secret. |
 | `teeup-env <name>` | This command exports the secret to the current shell only. |
-| `teeup-env <name> <VARIABLE>` | This command exports the secret to the variable name that you select. |
+| `teeup-env <name> <VARIABLE>` | This command does the same, but uses the variable name that you select. |
 
 ```sh
 teeup secret set openai-api-key
@@ -34,7 +34,7 @@ If you do not specify a variable name, the `teeup-env` command makes a variable 
 
 ## Using a secret
 
-The `teeup-env` command is a shell function. As a result, the command changes only the shell where you run the command. The command also changes the programs that you start in that shell. New terminals do not have the variable. The secret value never shows in your shell history.
+The `teeup-env` command is a shell function. As a result, the command changes only the shell where you run the command. The command also changes the programs that you start in that shell. New terminals do not have the variable. Your shell history never records the secret value.
 
 If you want to use a secret in only one command, read the secret inline:
 
@@ -44,4 +44,4 @@ GITHUB_TOKEN="$(teeup secret get github-token)" some-command
 
 ## Previewing
 
-The `DRY_RUN=true teeup secret set <name>` command prints the `security` command that it runs. The output shows `<value>`, not the secret. The command does not ask you for input.
+The `DRY_RUN=true teeup secret set <name>` command prints the `security` command, but does not run it. The output shows `<value>`, not the secret. The command does not ask you for input.

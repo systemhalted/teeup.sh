@@ -2,13 +2,13 @@
 
 [AeroSpace](https://nikitabobko.github.io/AeroSpace) puts your windows in tiles or accordion layouts. It uses an i3 style. It controls workspaces.
 
-AeroSpace needs Accessibility access. Open System Settings. Select Privacy & Security. Select Accessibility. Enable AeroSpace.
+When AeroSpace runs for the first time, it needs Accessibility access. Open System Settings. Select Privacy & Security. Select Accessibility. Enable AeroSpace.
 
 Run `open -a AeroSpace`. AeroSpace starts automatically when you sign in.
 
 ## Keys
 
-The configuration file has two modes. The modes are the main mode and the service mode. The main keys use the Option (`alt`) key. Some keyboard shortcuts have Emacs-style aliases.
+The configuration file has two modes. The modes are the main mode and the service mode. The main keys use the Option (`alt`) key. Some keyboard shortcuts also have Emacs-style aliases in addition to the standard keys.
 
 ### Main mode: Focus
 
@@ -71,15 +71,15 @@ Service mode keys do one task. AeroSpace then returns to the main mode.
 
 ## Configuration
 
-Edit `~/.config/aerospace/aerospace.toml`. teeup copies this file one time. You can change this file. If you have `~/.aerospace.toml`, teeup keeps the file. teeup does not install a new file. AeroSpace runs with only one configuration file.
+Edit `~/.config/aerospace/aerospace.toml`. teeup copies this file one time. You can change this file. If you have `~/.aerospace.toml`, teeup keeps the file. teeup does not install a new file. AeroSpace does not run if it finds two configuration files.
 
 To reload the configuration, press `esc` in the service mode. You can also run `aerospace reload-config`.
 
-If you have more than one display, you can configure workspaces for specific monitors in the configuration file. Read the [AeroSpace's guide](https://nikitabobko.github.io/AeroSpace/guide) for more information.
+If you have more than one display, you can assign workspaces to specific monitors in the configuration file. For more than the teeup configuration, read [AeroSpace's guide](https://nikitabobko.github.io/AeroSpace/guide).
 
 ## Troubleshooting
 
-Run `teeup doctor` to make sure that AeroSpace operates correctly. Read the [doctor page](doctor-and-troubleshooting.md) for more information.
+Run `teeup doctor` to check that AeroSpace runs and has a correct configuration. Read the [doctor page](doctor-and-troubleshooting.md) for more information.
 
 ## Removing it
 

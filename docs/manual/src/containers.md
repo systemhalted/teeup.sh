@@ -5,13 +5,13 @@ teeup runs containers with [Colima](https://github.com/abiosoft/colima) and the 
 
 | Command | What it does |
 |---|---|
-| `docker ...` | The first time, it shows a prompt to install Colima. Then it runs your command. |
-| `teeup install colima` | It installs Colima immediately. |
+| `docker ...` | The first time, teeup asks you to install Colima. Then teeup runs your command. |
+| `teeup install colima` | Installs Colima immediately. |
 | `colima-start`, `colima-stop` | Starts or stops the virtual machine. These aliases are available when you install Colima. |
 | `colima status` | Shows the status of the virtual machine. |
-| `teeup remove colima` | It stops the virtual machine. Then it uninstalls Colima, Docker, and Compose. |
+| `teeup remove colima` | Stops the virtual machine. Then teeup uninstalls Colima, Docker, and Compose. |
 
-## Installed packages
+## What gets installed
 
 | Package | Homebrew | MacPorts |
 |---|---|---|
@@ -20,12 +20,12 @@ teeup runs containers with [Colima](https://github.com/abiosoft/colima) and the 
 | Compose | `docker-compose` | `docker-compose-plugin` |
 
 On Homebrew, teeup links the Compose plugin into `~/.docker/cli-plugins`.
-`docker compose` runs as a subcommand.
-If you set `DOCKER_CONFIG`, teeup puts the link in that directory.
+As a result, `docker compose` runs as a subcommand.
+If you set `DOCKER_CONFIG`, teeup puts the link under that directory instead.
 
 ## The first run
 
-When you configure Colima, it starts its virtual machine.
+When teeup configures Colima, teeup starts the virtual machine.
 The first `docker ps` requires time.
 It installs the packages, starts the virtual machine, and lists the containers.
 Colima sets itself as the default Docker context.
@@ -48,16 +48,16 @@ colima start
 
 If the virtual machine does not run, `teeup configure colima` starts it.
 `teeup update` does not configure lazy capabilities.
-Also, it does not start the virtual machine.
+`teeup update` also does not start the virtual machine.
 
-## Removal
+## Removing it
 
 `teeup remove colima` stops an active virtual machine first.
 If `colima stop` fails, teeup stops.
 
-If the virtual machine runs, do not uninstall Colima.
-The virtual machine continues to run.
-Stop the virtual machine.
-Then remove Colima again.
+Do not uninstall Colima while the virtual machine runs.
+The virtual machine continues to run, and Colima cannot stop it.
+Stop the virtual machine manually.
+Then run `teeup remove colima` again.
 
-On Homebrew, teeup also removes the Compose plugin link.
+On Homebrew, teeup also removes the Compose plugin link that teeup made.

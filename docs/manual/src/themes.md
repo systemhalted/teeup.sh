@@ -37,8 +37,8 @@ When you set a theme, teeup creates a profile in Terminal.app. The name of the p
 
 ## Custom themes
 
-You can write a custom theme. A custom theme replaces a default theme that has the same name.
+You can write a custom theme. A custom theme replaces the teeup theme that has the same name.
 
-Put your custom theme in the `~/.config/teeup/themes/<name>/` directory as `dark.toml` and `light.toml`. The format of a custom theme is the same as the format of a default theme. Copy a default theme. Change the values.
+Put your custom theme in the `~/.config/teeup/themes/<name>/` directory as `dark.toml` and `light.toml`. The format of a custom theme is the same as the format of a teeup theme. Copy a teeup theme. Change the values.
 
-You must keep all the keys. Each value must be a hex color (`#rrggbb`) or a simple name. A simple name contains letters, digits, spaces, and the characters `. _ ( ) + -`. A simple name must start with a letter or a digit (for example, `Catppuccin Mocha`). You must also include `mode = "dark"` in `dark.toml`. You must also include `mode = "light"` in `light.toml`.
+You must keep all the keys. Each value must be a hex color (`#rrggbb`) or a simple name. A simple name contains only letters, digits, spaces, and the characters `. _ ( ) + -`. A simple name must start with a letter or a digit (for example, `Catppuccin Mocha`). You must also include `mode = "dark"` in `dark.toml`. You must also include `mode = "light"` in `light.toml`.

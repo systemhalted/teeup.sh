@@ -19,13 +19,13 @@ teeup menu
 | Setup | This section contains commands to show or edit the answers. It also contains commands to preview or run the retirement of the old teeup and chezmoi wiring. |
 | Update | This section runs `teeup update`. |
 
-The lists change for each machine. An Install row does not show when teeup installs that capability. A Launch row shows only when teeup installs its capability. Each row uses `teeup has` to make a decision.
+The lists change for each machine. An Install row does not show after that capability is installed. A Launch row shows only after its capability is installed. Each row uses `teeup has` to make a decision.
 
-Select an action to run the action. The menu closes. Run `teeup menu` again to select the next action.
+When you select an action, the menu runs it and closes. Run `teeup menu` again to select the next action.
 
 ## Moving around
 
-The teeup tool draws the menu with the best picker that it finds. It uses [gum](https://github.com/charmbracelet/gum), which the runtime of teeup installs. If it does not find gum, it uses fzf. If it does not find fzf, it uses a plain numbered list. The numbered list works anywhere. This includes over ssh and inside a script.
+teeup draws the menu with the best picker that it finds. It uses [gum](https://github.com/charmbracelet/gum), which the runtime of teeup installs. If it does not find gum, it uses fzf. If it does not find fzf, it uses a plain numbered list. The numbered list works anywhere. This includes over ssh and inside a script.
 
 | Picker | Choose | Go back one level |
 |---|---|---|
@@ -75,4 +75,4 @@ The `share/teeup/menu.json` file in the checkout defines the menu. Write `~/.con
 - Change a row.
 - Hide a row.
 
-A row in this file with the same id replaces the shipped row. The [Hooks and extending](hooks-and-extending.md) file contains information about the format.
+A row in this file with the same id replaces the shipped row. The [Hooks and extending](hooks-and-extending.md) page gives the format.

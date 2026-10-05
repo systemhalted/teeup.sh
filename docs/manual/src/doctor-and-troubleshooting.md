@@ -10,9 +10,9 @@ teeup doctor git       # one capability
 
 ## What doctor checks
 
-The doctor command prints a heading `== git: ... ==` for each capability that you install.
-The doctor command checks that the packages, casks, and apps from the metadata exist.
-The doctor command checks the items from the doctor script of the capability.
+The doctor command prints a heading `== git: ... ==` for each installed capability.
+The doctor command checks that the packages, casks, and apps that the metadata names are installed.
+It also checks what the doctor script of the capability checks.
 Eleven capabilities have a doctor script.
 These include `ssh` (key pairs, file modes, the `Host` blocks), `git`, `github`, `zsh`, `mise`, `starship`, and `aerospace`.
 
@@ -47,11 +47,11 @@ The teeup command keeps the logs in `~/.local/state/teeup/logs/`.
 | Log | Written by |
 |---|---|
 | `bootstrap.log` | `./bootstrap` writes the start, the end, and the output of each step. |
-| `lazy.log` | A lazy shim writes the installs. AI tools write the first downloads. |
+| `lazy.log` | The installs that a lazy shim starts, and the first downloads of the AI tools. |
 
 The log does not capture the steps that need your terminal.
 For example, it does not capture the SSH passphrase and the GitHub sign-in.
-The log writes a message in their place.
+The log has a message in their place.
 Other commands print to the terminal only.
 
 ## Common problems
@@ -67,8 +67,8 @@ Or, run `~/.local/bin/teeup`.
 The `ls` command is `eza` with icons that need a Nerd Font in the terminal.
 The WezTerm app has a Nerd Font.
 In Terminal.app, select Settings, Profiles, Text, Font, and "JetBrainsMono Nerd Font".
-Some icons show without a Nerd Font because macOS uses a font fallback.
-But, most folder and file icons do not show.
+The macOS font fallback draws some icons without a Nerd Font.
+It does not draw most folder and file icons.
 
 ### WezTerm does not open in a virtual machine
 
@@ -94,18 +94,18 @@ launchctl kickstart -k gui/$(id -u)/sh.teeup.emacs
 
 ### `brew uninstall emacs` removed Emacs.app
 
-When you install the terminal-only `emacs` formula from Homebrew, the teeup command warns you.
-This formula stops the `emacs-app` cask.
-The `emacs-app` cask cannot link `emacs` and `emacsclient`.
-The teeup command suggests `brew uninstall emacs` for the formula.
-If you do not install the `emacs` formula, Homebrew applies the command to the `emacs-app` cask and removes Emacs.app.
-Check the packages first:
+If the terminal-only `emacs` formula from Homebrew is installed, teeup shows a warning.
+This formula stops the `emacs-app` cask from linking `emacs` and `emacsclient`.
+teeup suggests `brew uninstall emacs` to remove the formula.
+If the `emacs` formula is not installed, Homebrew applies that command to the `emacs-app` cask instead.
+Then Homebrew removes Emacs.app.
+Check first:
 
 ```sh
 brew list --formula emacs    # only uninstall if this lists it
 ```
 
-If Homebrew removes Emacs.app, run `teeup install emacs`.
+If Emacs.app is gone, run `teeup install emacs` to install it again.
 
 ### AeroSpace does not move any windows
 
@@ -123,8 +123,7 @@ Delete the characters before you type your answer.
 If teeup saved an answer with the characters, change it with `teeup config set`.
 For example, run `teeup config set TEEUP_EMAIL you@example.com`.
 
-Do not use the `gum` command.
-Run `./bootstrap` with plain prompts:
+If you do not want to use `gum`, run `./bootstrap` with plain prompts:
 
 ```sh
 TEEUP_NO_GUM=1 ./bootstrap
@@ -134,7 +133,7 @@ TEEUP_NO_GUM=1 ./bootstrap
 
 The Ctrl-C key stops the run, even at a prompt.
 The teeup command saves the answers that you gave.
-`./bootstrap` starts again from the last step.
+`./bootstrap` continues from the point where it stopped.
 
 ### `teeup update` will not pull
 
@@ -145,13 +144,13 @@ Run `teeup update` again.
 ### A script fails with exit status 127 and "is provided by capability"
 
 A command called a lazy shim without a terminal.
-The lazy shim could not ask questions.
+The lazy shim could not ask you.
 The lazy shim did not install anything.
 Run the printed `teeup install` command one time in a terminal.
 
 ### Commits are not signed
 
-When your SSH key exists, the teeup command enables commit signing.
+teeup enables commit signing only when your SSH key exists.
 Run `teeup configure git`.
 
 ## Still stuck
@@ -159,4 +158,5 @@ Run `teeup configure git`.
 Run `teeup doctor` and `teeup status`.
 Look at the end of `~/.local/state/teeup/logs/bootstrap.log`.
 Every teeup command that changes an item has a preview.
-Put `DRY_RUN=true` in front of the command to see the commands that it runs.
+Put `DRY_RUN=true` in front of the command.
+teeup then shows the commands but does not run them.

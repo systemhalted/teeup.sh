@@ -23,7 +23,7 @@ fi
 
 teeup adds `TEEUP_PATH`, `TEEUP_CONFIG_DIR`, `TEEUP_STATE_DIR` and `TEEUP_HOOK_EVENT` to the environment of a hook. The standard input of a hook is empty. A hook cannot ask questions. If a hook fails, teeup prints a warning and continues.
 
-Each directory has an `example.sample` file. This file documents the event of the directory. teeup does not run files that end in `.sample`. teeup rewrites the sample when the teeup copy changes. You can use the rest of the directory. If you set `DRY_RUN=true`, teeup lists the hooks, but teeup does not run the hooks.
+Each directory has an `example.sample` file. This file documents the event of the directory. teeup does not run files that end in `.sample`. teeup rewrites the sample when the teeup copy changes. teeup does not change the other files in the directory. If you set `DRY_RUN=true`, teeup lists the hooks, but teeup does not run the hooks.
 
 ## Menu rows
 
@@ -37,7 +37,7 @@ The menu is `share/teeup/menu.json` in the checkout. See [The menu](the-menu.md)
 | `when` | This field contains a shell condition. If the condition exits with a non-zero status, teeup hides the row. |
 | `title` | This field contains the header. teeup shows this header when you open the submenu. The default value is the label. |
 
-If a row has the same id as a row in the shipped file, the new row replaces the shipped row. teeup keeps the replaced row in the same position. teeup adds a new id at the end of the submenu. To hide a shipped row, add `"when": "false"` to the row.
+If a row has the same id as a row in the shipped file, the new row replaces all of the shipped row. teeup keeps the new row in the same position. teeup adds a new id at the end of the submenu. To hide a shipped row, add `"when": "false"` to the row.
 
 ```json
 {
@@ -57,7 +57,7 @@ A capability is a directory under `capabilities/` in the checkout. Run this comm
 teeup dev new-capability mytool
 ```
 
-The command writes the `capabilities/mytool/` directory. The directory contains the `capability` metadata file, the `install` script, the `configure` script, and a test. The new capability is lazy. The capability does not change what `./bootstrap` installs. If you move the capability to another tier, `./bootstrap` installs the capability.
+The command writes the `capabilities/mytool/` directory. The directory contains the `capability` metadata file, the `install` script, the `configure` script, and a test. The new capability is lazy. The capability does not change what `./bootstrap` installs until you move the capability to a different tier.
 
 | File | Holds |
 |---|---|

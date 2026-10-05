@@ -23,11 +23,11 @@ The `local.lua` file understands four entries:
 | Entry | Example | Effect |
 |---|---|---|
 | `font_size` | `font_size = 13.0` | This entry sets the font size. The `teeup install font` command configures the font family. |
-| `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | This entry configures a workspace. Press the leader key to open this workspace. |
+| `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | This entry configures a workspace. Press the leader key and then the `key` to open this workspace. |
 | `hyperlink_rules` | A `regex` and `format` pair | This entry configures extra Cmd+Click link patterns. |
 | `config` | `config = { check_for_updates = false }` | This entry contains raw WezTerm settings. This configuration overrides the defaults of teeup. |
 
-If you edit a file, press Cmd+Shift+R to reload the configuration.
+If you edit one of these two files, press Cmd+Shift+R to reload the configuration.
 
 ## Keys
 
@@ -42,15 +42,15 @@ Press the next key within one second.
 | Cmd+Shift+R | Reload the configuration |
 | Cmd+K | Clear the scrollback and the screen |
 | Leader 3 / Leader 2 | Split side by side / split top and bottom |
-| Leader o, or Leader and an arrow | Move to the next pane or the adjacent pane |
+| Leader o, or Leader and an arrow | Move to the next pane, or to the pane in that direction |
 | Leader 1 | Zoom or unzoom the current pane |
 | Leader 0 | Close the current pane |
-| Leader c / Leader k | Open a new tab / close a tab |
+| Leader c / Leader k | Open a new tab / close the current tab |
 | Leader f / Leader b | Go to the next tab / go to the previous tab |
 | Leader w | Name a new workspace and open it |
-| Leader s | Select a workspace from a list |
+| Leader s | Select a workspace from a fuzzy list |
 | Leader d | Return to the default workspace |
-| Leader r | Start resize mode |
+| Leader r | Start resize mode. The arrows resize the pane. Escape or Return stops resize mode. |
 | Leader v | Start copy mode |
 | Leader q | Start quick select |
 
@@ -77,7 +77,7 @@ Read the [Prompt](prompt.md) page for more details.
 ## WezTerm in a virtual machine
 
 In a macOS virtual machine, WezTerm can fail to open a window.
-An error shows "failed to create NSOpenGLPixelFormat".
+The error message is "failed to create NSOpenGLPixelFormat".
 teeup configures WezTerm to use the WebGpu renderer inside a macOS virtual machine.
 You can change this setting in `~/.config/wezterm/local.lua`:
 
@@ -94,18 +94,18 @@ WezTerm does not read a `front_end` key at the top level of the table.
 
 ## Terminal.app
 
-You must use Terminal.app at least one time to run `./bootstrap`.
+You will use Terminal.app at least one time to run `./bootstrap`.
 The shell layer of teeup also operates in Terminal.app.
 But teeup does not configure the font of Terminal.app.
 
 The `ls` command uses a Nerd Font to draw file icons.
-In Terminal.app, most folder and file icons are boxes.
-You must manually configure the font of the profile.
+Until you configure the font of the profile, Terminal.app shows most folder and file icons as boxes.
+You must configure this font manually.
 Click Settings, Profiles, Text, Font, and select "JetBrainsMono Nerd Font".
 Read [Fonts](fonts.md).
 
-On MacPorts, there is no cask.
-Because of this condition, teeup installs WezTerm from the `wezterm` port.
+MacPorts has no cask.
+For this reason, on MacPorts, teeup installs WezTerm from the `wezterm` port.
 The application is in the applications folder of MacPorts, not in `/Applications`.
 teeup shows the `open -a` command that starts WezTerm.
 

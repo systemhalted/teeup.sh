@@ -10,7 +10,7 @@ Save the screenshots in the `docs/manual/src/images/` directory.
 Use short descriptive names for the images.
 Replace the HTML comment with the image and its alt text.
 Select the check box for the entry in this document.
-Because this file is outside the `src/` directory, the system does not publish the file.
+mdBook does not publish this file, because it is outside the `src/` directory.
 
 ## Part 1: The Basics
 

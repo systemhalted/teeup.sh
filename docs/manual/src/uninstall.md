@@ -6,54 +6,54 @@
 teeup uninstall
 ```
 
-`teeup uninstall` asks three questions in this sequence. The default answer for each question is no. Press the Enter key to keep the items.
+`teeup uninstall` asks three questions in this order. The default answer to each question is no. If you press Enter, teeup keeps the items.
 
-1. **Remove teeup from this Mac?** If you answer no, teeup stops.
-2. **Also uninstall the packages and apps teeup installed?** teeup lists the packages and apps. If you answer no, teeup keeps them. If you answer yes, teeup removes them. This includes packages you installed before teeup. To keep a package, answer no.
-3. **Also move aside your git identity files and remove teeup's git and ssh config?** If you answer no, teeup keeps your config. teeup never modifies SSH keys.
+1. **Remove teeup from this Mac?** If you answer no, teeup stops and changes nothing.
+2. **Also uninstall the packages and apps teeup installed?** teeup first lists the packages and apps that its capabilities use. If you answer no, teeup keeps all of them. The list is not a record of what teeup itself installed. If you installed one of them with `brew install` before teeup, the list includes it, and a yes answer removes it. To keep it, answer no and remove the others with the commands that the summary shows.
+3. **Also move aside your git identity files and remove teeup's git and ssh config?** If you answer no, teeup keeps your git identity and `~/.ssh/config`. teeup never touches SSH keys, for any answer.
 
-If you want to see what teeup does without changes, preview the command first. The preview asks no questions:
+To see what teeup will do without changes, preview the command first. The preview asks no questions:
 
 ```sh
 DRY_RUN=true teeup uninstall
 ```
 
-Before the package question, teeup lists the installed packages and apps that it recorded. If teeup has no state directory or capability records, teeup cannot identify the software that it installed. teeup removes nothing. It shows the package-manager commands that you can run manually.
+Before the package question, teeup lists the installed packages and apps that it recorded. If teeup has no state directory or capability records, teeup cannot identify which matching software it installed. teeup removes nothing and shows the package-manager commands that you can run manually.
 
 <!-- SCREENSHOT: The end of `DRY_RUN=true teeup uninstall`, showing the "teeup uninstall summary" with its "Would remove" and "Kept" sections and the "Run it for real with:" line. -->
 
-## What teeup does in sequence
+## What it does, in order
 
 | Step | What comes off |
 |---|---|
-| 1. Shell files | teeup removes its lines in `~/.zshrc`, `~/.zshenv` and `~/.zprofile` first. This prevents new shells from calling a removed tool. An unedited `~/.zshrc` becomes your short file. teeup deletes unedited `~/.zshenv` and `~/.zprofile` files. If you edited a file, teeup disables only the teeup lines. teeup puts a copy of the original file next to it. |
-| 2. Capabilities | teeup removes every installed capability. It removes dependent capabilities first. It uses the same removal process as `teeup remove`. If you answered yes, teeup removes packages and apps. |
-| 3. LaunchAgents | teeup removes loaded teeup LaunchAgents. Examples include the Emacs daemon and the Caps Lock mapping. |
-| 4. Agent skills | teeup removes the teeup symlinks in `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`, and `~/.gemini/skills`. |
+| 1. Shell files | teeup removes its lines in `~/.zshrc`, `~/.zshenv` and `~/.zprofile` first. Then no new shell calls a tool that a later step removes. teeup replaces an unedited `~/.zshrc` with a short `~/.zshrc` that is your own. teeup deletes an unedited `~/.zshenv` and `~/.zprofile`. In an edited file, teeup disables only its own lines and puts a copy of the original next to the file. |
+| 2. Capabilities | teeup removes every installed capability. It removes dependent capabilities first. It uses the same removal process as `teeup remove`. teeup removes packages and apps only if you answered yes to them. |
+| 3. LaunchAgents | teeup removes each of its LaunchAgents that is still loaded, for example the Emacs daemon and the Caps Lock mapping. |
+| 4. Agent skills | teeup removes the "teeup" symlinks that it put in `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`, and `~/.gemini/skills`. |
 | 5. Config files | teeup removes every file that it copied and you did not edit. If teeup replaced your file during install and the `.teeup_backup_*` copy remains, teeup offers to restore that copy. |
-| 6. Identity | If you answered yes to the third question, teeup removes the generated git identity file. teeup moves `~/.config/git/local` because teeup did not write it. If teeup installed `~/.ssh/config` and `~/.config/git/config` and you did not edit them, teeup removes them. |
-| 7. teeup itself | If no previous step failed or was refused, teeup removes `~/.local/bin/teeup`. It removes the files that teeup wrote in `~/.config/teeup` and `~/.local/state/teeup`. If you have a machine file, hook, or theme, teeup keeps `~/.config/teeup` and names the file. |
+| 6. Identity | teeup does this step only if you answered yes to the third question. teeup removes the git identity file that it generated. teeup moves `~/.config/git/local` aside, because teeup never wrote it. teeup removes `~/.ssh/config` and `~/.config/git/config` only if teeup put them there and you never edited them. |
+| 7. teeup itself | teeup does this step last, and only if no step above was refused or failed. teeup removes `~/.local/bin/teeup` and the files that teeup wrote in `~/.config/teeup` and `~/.local/state/teeup`. If you have a machine file, hook, or theme of your own, teeup keeps `~/.config/teeup` and names it. |
 
-## What teeup keeps
+## What it keeps
 
 | Kept | Why, and how to remove it yourself |
 |---|---|
-| Your SSH keys | teeup always keeps SSH keys. teeup never deletes an SSH key. If you answered yes to the third question, the summary shows the commands to remove the passphrases from the Keychain. The commands also move the keys. The public keys stay on GitHub. Delete them at github.com/settings/keys. |
-| Packages and apps | If you answered no, teeup keeps packages and apps. The summary shows the `brew uninstall` or `port uninstall` command for each package. |
-| Homebrew or MacPorts | teeup always keeps Homebrew or MacPorts. The summary gives the name of the package manager uninstaller. |
+| Your SSH keys | teeup always keeps SSH keys. teeup never deletes an SSH key. If you answered yes to the third question, the summary shows commands for each key. These commands remove the passphrase of that key from the Keychain and move the key aside. The public keys stay on GitHub. Delete them at github.com/settings/keys. |
+| Packages and apps | If you did not answer yes to them, teeup keeps them. The summary shows the `brew uninstall` or `port uninstall` command for them. |
+| Homebrew or MacPorts | teeup always keeps Homebrew or MacPorts. The summary gives the name of the uninstaller that the package manager supplies. |
 | The Xcode Command Line Tools | teeup always keeps the Xcode Command Line Tools. They belong to macOS. |
 | Config files you edited | teeup always keeps the config files that you edited. The summary lists them. |
 | Your secrets | teeup always keeps your secrets. The summary lists them with the `security delete-generic-password` command for each secret. |
 | `~/Work` | teeup always keeps `~/Work`. Your projects are in this directory. |
 | The checkout | teeup always keeps the checkout. The last lines show `rm -rf ~/.local/share/teeup`. Run this command when you do not want the checkout. |
 
-teeup also leaves the items that the tools made for themselves. These items include the runtimes that mise installed, and a Doom or Spacemacs checkout. The items also include the theme and font keys in the Zed and VS Code settings.
+teeup also leaves the items that the tools made for themselves. These items include the runtimes that mise installed and a Doom or Spacemacs checkout. The items also include the theme and font keys in the Zed and VS Code settings.
 
-teeup refuses to remove items outside your home directory. teeup refuses to remove items inside a git checkout. teeup refuses to write through a symlink. teeup does not uninstall the zsh that your login shell runs. To switch to `/bin/zsh`, run `chsh -s /bin/zsh` first.
+teeup refuses to change anything outside your home directory or inside a git checkout. teeup refuses to write through a symlink. teeup does not uninstall the zsh that your login shell runs. To change back to `/bin/zsh`, run `chsh -s /bin/zsh` first.
 
 ## Keeping Homebrew and mise on PATH
 
-The teeup shell layer added Homebrew, MacPorts, mise, and `~/.local/bin` to your `PATH`. When teeup removes its lines, a new shell cannot find these tools. The summary shows the command to add the line for each tool that stays. On Apple Silicon with Homebrew, the commands are:
+The teeup shell layer added Homebrew or MacPorts, mise, and `~/.local/bin` to your `PATH`. When teeup removes its lines, a new shell cannot find these tools. The summary shows the command to add the line for each tool that stays. On Apple Silicon with Homebrew, the commands are:
 
 ```sh
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
@@ -69,9 +69,7 @@ If `~/.config/git/config` remains but the uninstall removed delta, git-lfs, or t
 
 ## When something is refused
 
-The summary lists removed, kept, refused, and failed items. If a failure or refusal occurs, teeup keeps its command, config, and state. teeup exits with a non-zero code.
-
-teeup shows the command to run again after you fix the problem. The command includes your answers as flags. You can paste the command directly. A second run on a clean Mac changes nothing.
+The summary lists the items that teeup removed, kept and refused, and the items that failed. After a refusal or a failure, teeup keeps its own command, config, and state. teeup exits with a non-zero code and shows the command to run again after you fix the cause. The command includes your answers as flags, so you can paste it without changes. A second run on a clean Mac changes nothing.
 
 ## Afterwards
 
@@ -85,6 +83,6 @@ The `--yes` flag confirms the teeup removal without questions. Use the `--yes` f
 |---|---|
 | `--packages` | Yes to the packages and apps question. |
 | `--identity` | Yes to the git identity and config question. |
-| `--yes` | Yes to the teeup removal, and no to every optional question without a flag. |
+| `--yes` | Yes to the teeup removal, and no to every optional question that no other flag answers. |
 
 For example, `teeup uninstall --yes --packages` removes teeup and its packages. It keeps your git identity.

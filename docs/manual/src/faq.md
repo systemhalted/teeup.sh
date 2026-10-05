@@ -10,7 +10,7 @@ teeup supports Apple Silicon and Intel. If you use Apple Silicon, teeup installs
 
 ## Package managers
 
-Homebrew is the default package manager on macOS 13 and newer versions. MacPorts is the default package manager on macOS 12 and older versions. You select the package manager during the first run. MacPorts has no casks.
+Homebrew is the default package manager on macOS 13 and newer versions. MacPorts is the default package manager on macOS 12 and older versions. The first question of the first run lets you select the package manager. MacPorts has no casks.
 
 If you use MacPorts, teeup marks the GUI applications that only exist as casks as "not applicable". These GUI applications include Zed, VS Code, Cursor, and the browsers. teeup lists the download pages for these applications. See [Getting started](getting-started.md).
 
@@ -25,7 +25,7 @@ The `./bootstrap` command asks for your password for `sudo`. The package manager
 | `~/.local/share/teeup` | The checkout: the teeup code, the layers, and the themes |
 | `~/.local/bin/teeup` | A link to the `teeup` command in the checkout |
 | `~/.config/teeup/` | Your answers, the machine file, the hooks, and the menu additions |
-| `~/.local/state/teeup/` | The markers, the shims, the rendered theme, the checksums of the copied files, and the logs |
+| `~/.local/state/teeup/` | A record of what teeup did: the markers, the shims, the rendered theme, the checksums of the copied files, and the logs |
 
 ## Dotfiles
 
@@ -33,11 +33,11 @@ teeup does not overwrite the dotfiles that you edit. If teeup must replace your 
 
 ## Migrating from older tools
 
-The `teeup migrate legacy` command removes the configuration from chezmoi or the old teeup on this Mac. Run the command with `DRY_RUN=true` first to preview the changes. The [Migrating](migrating.md) document lists the items that teeup moves and the items that teeup keeps.
+The `teeup migrate legacy` command removes the configuration from chezmoi or the old teeup on this Mac. Run the command with `DRY_RUN=true` first to preview the changes. The [Migrating](migrating.md) page lists the items that teeup moves and the items that teeup keeps.
 
 ## Skipping capabilities
 
-Answer no to the daily set in the wizard, or run `./bootstrap --skip-daily`. If you do not want a capability on a Mac, list the capability in `TEEUP_SKIP` in the machine file. See [Answers and machines](answers-and-machines.md).
+Answer no to the daily set in the wizard, or run `./bootstrap --skip-daily`. If you never want a capability on a Mac, list the capability in `TEEUP_SKIP` in the machine file. See [Answers and machines](answers-and-machines.md).
 
 ## Adding new tools
 

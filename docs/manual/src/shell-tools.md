@@ -2,19 +2,19 @@
 
 ## zsh, without a framework
 
-teeup configures `/bin/zsh` as your login shell. teeup configures `/bin/zsh` with plain scripts. The layers load in this order:
+teeup sets `/bin/zsh` as your login shell. teeup configures `/bin/zsh` with plain scripts. The layers load in this order:
 
 | File | Owner | What it does |
 |---|---|---|
 | `~/.zshenv`, `~/.zprofile`, `~/.zshrc` | You | teeup copies these files one time. These files load the layer of teeup from the checkout. |
-| `capabilities/zsh/default/` | teeup | This configures `PATH`, the editor, history, completion, aliases, functions, and tools. |
+| `capabilities/zsh/default/` | teeup | This layer configures `PATH`, the editor, history, completion, aliases, functions, and tools. |
 | `~/.config/zsh/local.zsh` | You | This file loads last. The settings in this file override other settings. Put your aliases, exports, and `PATH` entries here. |
 
 The layer adds [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions), [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting), and zsh-completions. The layer keeps 50,000 lines of shared history. The layer starts mise, Starship, zoxide, and fzf. Starship reads `~/.config/starship.toml`. teeup copies `~/.config/starship.toml` one time (read [Dotfiles](dotfiles.md)).
 
 ## Commands teeup replaces
 
-teeup replaces `ls` and `cd` with aliases and a function. This document shows other shortcuts in the [Aliases](#aliases) section.
+teeup replaces `ls` and `cd` with aliases and a function. The [Aliases](#aliases) section shows other shortcuts.
 
 ### ls
 
@@ -33,7 +33,7 @@ If the system does not have `eza`, `ll` runs `ls -lah` and `la` runs `ls -lAh`.
 
 The `zd` function replaces the `cd` command. The `zd` function wraps `zoxide`.
 
-A real directory path operates like the standard `cd` command. Other inputs start a `zoxide` jump. `zoxide` records the directories that you open. For example, `cd proj` jumps to the highest-ranked directory that matches "proj" after you visit that directory.
+If you give a real directory path, `cd` operates like the standard `cd` command. Any other input starts a `zoxide` jump. `zoxide` records the directories that you go into with `cd`. For example, `cd proj` jumps to the highest-ranked directory that matches "proj" after you visit that directory.
 
 You can select a directory interactively:
 - `zi` opens an interactive picker with `fzf`.
@@ -49,7 +49,7 @@ You can ignore aliases or functions to use the original commands:
 
 ## Aliases
 
-teeup defines aliases in `~/.local/share/teeup/capabilities/zsh/default/aliases`. teeup replaces these aliases when you run `teeup update`. teeup only defines an alias when the tool for that alias is installed. Oh My Zsh `plugins=(...)` lines have no effect with teeup. The `zsh-autosuggestions` tool and the `zsh-syntax-highlighting` tool load automatically.
+teeup defines aliases in `~/.local/share/teeup/capabilities/zsh/default/aliases`. teeup replaces these aliases when you run `teeup update`. teeup defines an alias only when the tool for that alias is installed. Oh My Zsh `plugins=(...)` lines have no effect with teeup. But teeup already loads `zsh-autosuggestions` and `zsh-syntax-highlighting`.
 
 Type `alias name` (for example, `alias grv`) to view the command of an alias. To change or remove an alias, edit `~/.config/zsh/local.zsh`. This file loads after the aliases of teeup. Use `unalias name` to remove the alias. You can also define a new alias to override the old alias.
 
@@ -91,7 +91,7 @@ Type `alias name` (for example, `alias grv`) to view the command of an alias. To
 
 ## Tools installed alongside
 
-teeup installs these tools with the built-in commands. These tools do not replace existing commands.
+teeup installs these tools in addition to the built-in commands. These tools do not replace existing commands.
 
 - `rg pattern`: Search file contents with ripgrep.
 - `fd name`: Find files by name.
@@ -110,7 +110,7 @@ The cli-tools capability also installs `tree`, `wget`, `curl`, and `gnupg`. The 
 
 Lazygit is a terminal user interface for git. Type `lg` or `lazygit` in a git repository to open Lazygit.
 
-teeup installs Lazygit. teeup does not install a custom configuration or a custom theme for Lazygit.
+teeup installs Lazygit. teeup does not supply a custom configuration or a custom theme for Lazygit.
 
 ### Basic Keybindings
 
@@ -128,4 +128,4 @@ For the full list of shortcuts and documentation, read the [Lazygit documentatio
 
 ## tmux
 
-The system installs tmux when you type `tmux`. teeup copies the configuration file, `~/.config/tmux/tmux.conf`, one time. This configuration sets the prefix to Ctrl+A. The configuration enables the mouse. The configuration binds `|` and `-` to split the window. If you already have a `~/.tmux.conf` file, teeup does not change the file.
+teeup installs tmux when you type `tmux`. teeup copies the configuration file, `~/.config/tmux/tmux.conf`, one time. This configuration sets the prefix to Ctrl+A. The configuration enables the mouse. The configuration binds `|` and `-` to split the window. If you already have a `~/.tmux.conf` file, teeup does not change the file.

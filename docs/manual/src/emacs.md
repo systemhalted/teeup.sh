@@ -10,12 +10,12 @@ The wizard asks which configuration to install. The answer is `TEEUP_EMACS_FLAVO
 
 | Flavor | What teeup does |
 |---|---|
-| `starter` | This flavor is the default. teeup creates a thin `~/.config/emacs/init.el` file. This file loads the small, built-in teeup layer from the checkout. teeup also creates `~/.config/emacs/local.el` for your personal settings. |
+| `starter` | This flavor is the default. teeup creates a thin `~/.config/emacs/init.el` file. This file loads the small teeup layer from the checkout. The layer uses only the packages built into Emacs. teeup also creates `~/.config/emacs/local.el` for your personal settings. |
 | `doom` | teeup clones [Doom Emacs](https://github.com/doomemacs/core) into `~/.config/emacs`. teeup runs `doom install --no-env`. Your private configuration is in `~/.config/doom`. |
 | `spacemacs` | teeup clones Spacemacs into `~/.emacs.d`. Spacemacs completes its own configuration on the first start. Spacemacs writes the `~/.spacemacs` file. |
 | `none` | teeup does not change your Emacs configuration. The daemon continues to run. See [Your own configuration and teeup's theme](#your-own-configuration-and-teeups-theme). |
 
-If a directory uses the installation path, teeup does not delete the directory. For example, you can have a starter configuration in the Doom installation path. teeup renames the directory to `<name>.teeup_backup_<timestamp>`. Emacs reads `~/.emacs.el`, `~/.emacs`, and `~/.emacs.d` before `~/.config/emacs`. If one of these paths exists, teeup shows a warning that Emacs reads this path instead. teeup does not change the existing path.
+If a directory is at the installation path, teeup renames it to `<name>.teeup_backup_<timestamp>` and does not delete it. For example, a starter configuration can be at the Doom installation path. Emacs reads `~/.emacs.el`, `~/.emacs`, and `~/.emacs.d` before `~/.config/emacs`. If one of these paths exists, teeup shows a warning that Emacs reads this path instead. teeup does not change the existing path.
 
 ## Your own configuration and teeup's theme
 
@@ -55,7 +55,7 @@ The LaunchAgent `sh.teeup.emacs` starts `Emacs --fg-daemon` at login. `launchd` 
 | `et <file>` | This command opens a frame in the current terminal (`emacsclient -t`). |
 | `$EDITOR` and `$VISUAL` | These variables use `emacsclient -t`. Git, `teeup config edit`, and other tools open in the terminal. |
 
-If the daemon is not running, `emacsclient` starts a new daemon from the shell. The teeup shell sets an empty `ALTERNATE_EDITOR` variable to enable this function.
+If the daemon is not running, an `emacsclient` command from the shell starts a new daemon. The teeup shell sets an empty `ALTERNATE_EDITOR` variable to enable this function.
 
 The daemon keeps the configuration that it reads when it starts. If you change the flavor or edit your configuration files, you must restart the daemon. Run this command to restart the daemon:
 

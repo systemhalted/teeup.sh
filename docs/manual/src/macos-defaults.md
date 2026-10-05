@@ -3,7 +3,7 @@
 Two core capabilities change macOS.
 The `macos-defaults` capability configures a list of preferences for development.
 The `keyboard` capability changes Caps Lock to Control.
-To stop both capabilities, run the `teeup remove` command.
+You can undo the changes of each capability with `teeup remove`.
 
 ## The preferences
 
@@ -23,14 +23,14 @@ To stop both capabilities, run the `teeup remove` command.
 | Trackpad | Tap to click | on for the built-in trackpad |
 | Screenshots | Save location | `~/Screenshots`. teeup creates this directory if it is missing |
 
-When teeup changes a setting for Finder or the Dock, teeup restarts the applications.
+teeup restarts Finder or the Dock only when it changed one of the settings of that application.
 To apply the two key-repeat settings, log out.
 Then, log in again.
 
-If a value is correct, `teeup configure macos-defaults` does not change the value again.
-The command does not restart Finder or the Dock.
+If you run `teeup configure macos-defaults` again, it does not change a value that is already correct.
+If no value changes, the command restarts nothing.
 
-## Restore the preferences
+## Putting them back
 
 When teeup writes a preference for the first time, teeup records the previous value.
 The `teeup remove macos-defaults` command restores each recorded value.
@@ -67,13 +67,13 @@ teeup remove keyboard
 The command unloads the LaunchAgent and removes the configuration immediately.
 Caps Lock operates as Caps Lock again.
 
-## Change a preference
+## Changing a preference yourself
 
 You can change a preference in System Settings.
-teeup writes a preference when you configure `macos-defaults`.
-This configuration occurs at bootstrap and during each `teeup update`.
+teeup writes a preference each time it configures `macos-defaults`.
+teeup configures `macos-defaults` at bootstrap and during each `teeup update`.
 teeup only records the previous value the first time.
 
 If you manually change a value, the value resets on the next update.
-If you want to keep your own values, skip the capability in the machine file.
+If you want to keep your own values, skip the capability with `TEEUP_SKIP`, as above.
 You can also remove the capability.
