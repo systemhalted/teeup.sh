@@ -131,9 +131,9 @@ TEEUP_NO_GUM=1 ./bootstrap
 
 ### Ctrl-C at a prompt
 
-The Ctrl-C key stops the run, even at a prompt.
-The teeup command saves the answers that you gave.
-`./bootstrap` continues from the point where it stopped.
+Ctrl-C stops the run, also at a prompt.
+teeup keeps the answers that you gave.
+Run `./bootstrap` again to continue from the point where it stopped.
 
 ### `teeup update` will not pull
 

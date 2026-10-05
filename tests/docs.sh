@@ -617,7 +617,7 @@ _manual_ste_violations() {
         gsub(/e\.g\./, "e_g_", text);
         gsub(/i\.e\./, "i_e_", text);
 
-        n = split(text, sentences, /[.?!]( +|$)/);
+        n = split(text, sentences, /[.?!][*_")]*( +|$)/);
         s_count = 0;
         for (i = 1; i <= n; i++) {
           s = sentences[i];
@@ -733,6 +733,8 @@ One two three four five six seven eight nine ten eleven twelve thirteen fourteen
 | `col` | One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six. |
 
 One. Two. Three. Four. Five. Six. Seven.
+
+**One?** Two. Three. Four. Five. Six. Seven.
 DOC
 
   found="$(_manual_ste_violations "$dir")"
@@ -743,6 +745,7 @@ DOC
   assert_not_contains "$found" "page.md:5:" || return 1
   assert_not_contains "$found" "page.md:9:" || return 1
   assert_contains "$found" "page.md:11: paragraph has 7 sentences" || return 1
+  assert_contains "$found" "page.md:13: paragraph has 7 sentences" || return 1
 }
 
 run_test "manual keeps STE sentence limits" test_manual_keeps_ste_sentence_limits
