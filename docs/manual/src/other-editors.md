@@ -1,6 +1,6 @@
 # Other editors
 
-Emacs is the editor teeup configures for the shell and git (see [Emacs](emacs.md)). Four more are available. All are lazy and install when you first run them.
+teeup configures Emacs for the shell and git. See [Emacs](emacs.md). Four more editors are available. When you run these four editors for the first time, teeup installs them.
 
 | Editor | Tier | How to get it | Capability |
 |---|---|---|---|
@@ -9,37 +9,37 @@ Emacs is the editor teeup configures for the shell and git (see [Emacs](emacs.md
 | VS Code | lazy | Type `code`, `teeup launch Visual Studio Code`, or `teeup install vscode` | `vscode` |
 | Cursor | lazy | Type `cursor`, `teeup launch Cursor`, or `teeup install cursor` | `cursor` |
 
-Zed, VS Code and Cursor are Homebrew casks. On a MacPorts machine teeup cannot install them and points you at the vendor's download page instead.
+Zed, VS Code and Cursor are Homebrew casks. On a MacPorts machine, teeup cannot install them. teeup shows the download page of the vendor.
 
 ## Zed
 
-teeup does not ship a `settings.json` for Zed. It edits the one Zed already uses, `~/.config/zed/settings.json`, and sets only the keys for the theme and the font. teeup does not modify the rest of the file. Comments inside the settings object do not survive that edit, so teeup backs up a file that has them first, and it never writes a settings file that is a symlink.
+teeup does not supply a `settings.json` file for Zed. teeup edits the `~/.config/zed/settings.json` file that Zed uses. teeup changes only the keys for the theme and the font. The edit removes comments inside the settings object. Before the edit, teeup makes a copy of the file. teeup never writes a settings file that is a symlink.
 
 ## VS Code
 
-VS Code works the same way. teeup sets the theme, font and theme-extension keys in `~/Library/Application Support/Code/User/settings.json`, and installs the theme's extension with the `code` command the cask provides.
+VS Code operates in the same way. teeup sets the theme, the font and the theme-extension keys in the `~/Library/Application Support/Code/User/settings.json` file. teeup installs the extension of the theme with the `code` command that the cask supplies.
 
 ## Neovim
 
-The first install copies the [LazyVim](https://www.lazyvim.org) starter layout into `~/.config/nvim`: `init.lua`, `stylua.toml`, and the files under `lua/config` and `lua/plugins`. teeup does not modify these files after the first copy. teeup's own layer, which follows the teeup theme, stays in the checkout.
+The first installation copies the [LazyVim](https://www.lazyvim.org) starter layout into `~/.config/nvim`. The layout includes `init.lua`, `stylua.toml`, and the files in `lua/config` and `lua/plugins`. teeup does not change these files after the first copy. The layer of teeup follows the teeup theme. This layer stays in the checkout.
 
-Neovim downloads its plugins on the first start. Run `nvim`, then `:LazyHealth`. LazyVim needs Neovim 0.11.2 or later, and teeup warns you when the `nvim` on your `PATH` is older.
+Neovim downloads the plugins on the first start. Run `nvim`. Then, run `:LazyHealth`. LazyVim needs Neovim 0.11.2 or a newer version. teeup warns you when the `nvim` program on your `PATH` is older.
 
-teeup's shell adds one shortcut for it:
+The shell of teeup adds one shortcut for Neovim.
 
 | Command | What it does |
 |---|---|
 | `n` | Open Neovim on the current directory |
 | `n <file>` | Open Neovim on a file |
 
-If you have an `init.vim` next to the new `init.lua`, Neovim ignores it and teeup tells you so; move what you need into `lua/config/options.lua`.
+If you have an `init.vim` file and the new `init.lua` file, Neovim ignores the `init.vim` file. teeup tells you this. Move the configuration that you need into `lua/config/options.lua`.
 
 ## Cursor
 
-Cursor needs macOS 12 or newer. teeup installs the cask and nothing else: it does not change Cursor's settings or theme. Open it with `teeup launch Cursor`, or run `cursor` in a project directory.
+Cursor needs macOS 12 or a newer version. teeup installs only the cask. teeup does not change the settings or the theme of Cursor. Run `teeup launch Cursor` to open Cursor. You can also run `cursor` in a project directory.
 
 ## Theme and font
 
-`teeup theme set` and `teeup install font` reach Zed, VS Code and Neovim when they are installed, and tell a running copy to pick up the change. Cursor is not themed. [The teeup command](the-teeup-command.md) lists both commands.
+The `teeup theme set` and `teeup install font` commands apply to Zed, VS Code and Neovim when you install them. The commands tell a running copy to apply the change. Cursor does not have themes. [The teeup command](the-teeup-command.md) shows both commands.
 
 <!-- SCREENSHOT: Zed and VS Code side by side after `teeup theme set`, both showing the same palette. -->

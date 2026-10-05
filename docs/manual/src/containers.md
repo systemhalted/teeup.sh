@@ -1,16 +1,17 @@
 # Containers
 
-teeup runs containers with [Colima](https://github.com/abiosoft/colima) and the Docker command-line client. `colima` is a lazy capability.
+teeup runs containers with [Colima](https://github.com/abiosoft/colima) and the Docker command-line client.
+`colima` is a lazy capability.
 
 | Command | What it does |
 |---|---|
-| `docker ...` | The first time, offers to install Colima, then runs your command. |
-| `teeup install colima` | Installs it straight away. |
-| `colima-start`, `colima-stop` | Start or stop the virtual machine. These aliases exist once Colima is installed. |
-| `colima status` | Whether the virtual machine is running. |
-| `teeup remove colima` | Stops the virtual machine, then uninstalls Colima, Docker and Compose. |
+| `docker ...` | The first time, it shows a prompt to install Colima. Then it runs your command. |
+| `teeup install colima` | It installs Colima immediately. |
+| `colima-start`, `colima-stop` | Starts or stops the virtual machine. These aliases are available when you install Colima. |
+| `colima status` | Shows the status of the virtual machine. |
+| `teeup remove colima` | It stops the virtual machine. Then it uninstalls Colima, Docker, and Compose. |
 
-## What gets installed
+## Installed packages
 
 | Package | Homebrew | MacPorts |
 |---|---|---|
@@ -18,11 +19,16 @@ teeup runs containers with [Colima](https://github.com/abiosoft/colima) and the 
 | Docker CLI | `docker` | `docker` |
 | Compose | `docker-compose` | `docker-compose-plugin` |
 
-On Homebrew, teeup links the Compose plugin into `~/.docker/cli-plugins`, so `docker compose` works as a subcommand. If you set `DOCKER_CONFIG`, the link goes under that directory instead.
+On Homebrew, teeup links the Compose plugin into `~/.docker/cli-plugins`.
+`docker compose` runs as a subcommand.
+If you set `DOCKER_CONFIG`, teeup puts the link in that directory.
 
 ## The first run
 
-Configuring Colima starts its virtual machine. The first `docker ps` takes time to install the packages, start the virtual machine, and list containers. Colima sets itself as the default Docker context.
+When you configure Colima, it starts its virtual machine.
+The first `docker ps` requires time.
+It installs the packages, starts the virtual machine, and lists the containers.
+Colima sets itself as the default Docker context.
 
 ```sh
 docker ps          # installs, starts Colima, then lists containers
@@ -33,14 +39,25 @@ docker run --rm hello-world
 
 ## After a restart
 
-The virtual machine does not start at login. After a reboot, start it before using Docker:
+The virtual machine does not start at login.
+After a restart, start the virtual machine before you use Docker:
 
 ```sh
 colima start
 ```
 
-`teeup configure colima` starts the virtual machine if it is stopped. `teeup update` does not configure lazy capabilities and does not start the virtual machine.
+If the virtual machine does not run, `teeup configure colima` starts it.
+`teeup update` does not configure lazy capabilities.
+Also, it does not start the virtual machine.
 
-## Removing it
+## Removal
 
-`teeup remove colima` stops a running virtual machine first. If `colima stop` fails, teeup stops. Uninstalling Colima with a running machine leaves it orphaned. Stop it by hand, then run the removal again. On Homebrew it also removes the Compose plugin link it made.
+`teeup remove colima` stops an active virtual machine first.
+If `colima stop` fails, teeup stops.
+
+If the virtual machine runs, do not uninstall Colima.
+The virtual machine continues to run.
+Stop the virtual machine.
+Then remove Colima again.
+
+On Homebrew, teeup also removes the Compose plugin link.

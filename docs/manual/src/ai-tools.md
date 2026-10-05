@@ -1,6 +1,9 @@
 # AI tools
 
-teeup includes five AI coding tools. `./bootstrap` does not install them. Each is a lazy capability. Typing its command installs it.
+teeup has five AI tools.
+`./bootstrap` does not install these tools.
+Each tool is a lazy capability.
+If you run the command for a tool, teeup installs the tool.
 
 | Command | Tool | Capability | Installed through mise as |
 |---|---|---|---|
@@ -16,42 +19,75 @@ teeup includes five AI coding tools. `./bootstrap` does not install them. Each i
 teeup install ai
 ```
 
-The menu has the same choices under Install, then AI.
+The teeup menu shows the same choices.
+Select Install in the teeup menu.
+Select AI.
 
 ## What happens on the first call
 
-For example, running `claude` on a Mac that has never run it:
+When you run `claude` for the first time, these events occur:
 
-1. The lazy shim asks "claude is provided by capability ai-claude. Install now?". Say yes. (See [Tiers](tiers.md) for how shims work.)
-2. The `ai-claude` capability writes a small wrapper script, `~/.local/bin/claude`. It downloads nothing yet.
-3. The wrapper runs. It sees Claude Code is missing and prints `Installing Claude Code through mise (first run, can take a minute)...`, then installs it with mise.
-4. The wrapper runs `claude` with the arguments you typed.
+1. The lazy shim shows the prompt "claude is provided by capability ai-claude. Install now?".
+2. Type yes.
+3. The `ai-claude` capability writes the `~/.local/bin/claude` wrapper script.
+4. The capability does not download the tool.
+5. The wrapper script runs.
+6. The wrapper script does not find Claude Code.
+7. The wrapper script shows `Installing Claude Code through mise (first run, can take a minute)...`.
+8. The wrapper script installs the tool with mise.
+9. The wrapper script runs `claude` with your arguments.
 
-From then on `~/.local/bin/claude` is found first on your `PATH` and runs the tool through `mise x`. `teeup install ai-claude` does the first two steps without asking; the download still waits for the first call.
+Read [Tiers](tiers.md) for information about shims.
+
+When you run the command again, your system finds `~/.local/bin/claude` first on your `PATH`.
+The wrapper script runs the tool through `mise x`.
+
+If you run `teeup install ai-claude`, teeup writes the wrapper script.
+teeup does not show the installation prompt.
+The download waits until you run the command for the first time.
 
 <!-- SCREENSHOT: WezTerm after typing `claude` on a fresh Mac, showing the "Install now?" prompt and then the "Installing Claude Code through mise (first run, can take a minute)..." line. -->
 
 ## The log
 
-Every first-run download is written to `~/.local/state/teeup/logs/lazy.log`, with a timestamp and whether it finished. If a download is interrupted, call the command again to retry it.
+teeup writes information about every first-run download to `~/.local/state/teeup/logs/lazy.log`.
+The log includes a timestamp.
+The log records if the download is complete.
+If a download stops early, run the command again to start the download again.
 
 ## Updates
 
-The tools live in your global mise configuration, `~/.config/mise/config.toml`. `teeup update` upgrades them with everything else mise manages (see [Updates](updates.md)).
+The tools are in your global mise configuration file, `~/.config/mise/config.toml`.
+`teeup update` upgrades the tools and all other mise components.
+Read [Updates](updates.md) for more information.
 
-## Removing a tool
+## Remove a tool
 
 ```sh
 teeup remove ai-codex
 teeup remove ai    # all five
 ```
 
-Removing a tool deletes the wrapper teeup wrote and drops the tool from the global mise configuration. A file at `~/.local/bin/<command>` that teeup did not write, such as Claude Code's own native launcher, is left alone, with a warning. Removing `ai-gemini` drops `gemini-cli` and leaves Node in the mise configuration.
+When you remove a tool, teeup deletes the wrapper script.
+teeup removes the tool from the global mise configuration.
+When you remove `ai-gemini`, teeup removes `gemini-cli`.
+teeup leaves Node in the mise configuration.
 
-If you installed the `ai` bundle, the five leaves are its requirements. `teeup remove ai-codex` refuses with "ai-codex is required by: ai". Remove `ai` to remove them all.
+If you have a file at `~/.local/bin/<command>` that teeup did not write, teeup does not delete the file.
+Claude Code has a native launcher that teeup does not delete.
+teeup shows a warning for these files.
 
-The shim stays after a removal. Typing the command later offers to install it again.
+If you install the `ai` bundle, the bundle requires the five tools.
+If you run `teeup remove ai-codex`, teeup does not accept the command.
+teeup shows the message "ai-codex is required by: ai".
+To remove all tools, run `teeup remove ai`.
+
+The shim remains after a removal.
+If you run the command again, the shim shows the installation prompt.
 
 ## Ollama and Herdr
 
-Two AI capabilities are in the menu. Ollama runs models locally and Herdr is a terminal agent multiplexer. Both are covered in [Apps](apps.md).
+The menu has two other AI capabilities.
+Ollama runs models on your local system.
+Herdr is a terminal agent multiplexer.
+Read [Apps](apps.md) for information about Ollama and Herdr.
