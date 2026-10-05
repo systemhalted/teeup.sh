@@ -1,16 +1,16 @@
 # Company certificates
 
-When your Mac connects to a network that inspects traffic, a proxy signs every secure connection with a private certificate. A company office or a VPN is an example of this network. Your administrator installs that certificate in the macOS System keychain. Browsers then trust the certificate.
+When your Mac connects to a network that inspects traffic, a proxy signs every secure connection with a private certificate. A company office or a VPN is an example of this network. Your administrator installs that certificate in the macOS System keychain, so browsers trust it.
 
-Command-line tools such as git, Homebrew's curl, mise, and Python's requests do not trust the certificate. These tools read their own lists of trusted certificates. They fail with errors such as "self signed certificate in certificate chain".
+Command-line tools such as git, Homebrew's curl, mise, and Python's requests do not trust the certificate, because they read their own lists of trusted certificates. They fail with errors such as "self signed certificate in certificate chain".
 
-If the Mac has root certificates that an administrator trusts, teeup makes a certificate bundle. This bundle is a PEM file. teeup makes the bundle from Apple's public roots and the company certificates. teeup does not use a certificate if it has a Never Trust mark. teeup then configures your shell and teeup's commands to use the bundle. If a Mac does not have company certificates, teeup does nothing.
+If the Mac has certificates that an administrator trusts as roots, teeup makes a PEM certificate bundle from Apple's public roots and these certificates. teeup does not use a certificate that has a Never Trust mark. teeup then configures your shell and teeup's commands to use the bundle. If a Mac does not have company certificates, teeup does nothing.
 
 ## How it works
 
-You do not need to do anything. teeup makes the bundle during `./bootstrap`. teeup makes the bundle again at the start of every `teeup update`. teeup does this before it connects to the network. teeup puts the bundle in `~/.local/state/teeup/ca-bundle.pem`. The bundle works on every network because it has the public roots and the company certificates.
+You do not need to do anything. teeup makes the bundle during `./bootstrap`, and makes it again at the start of every `teeup update`, before it connects to the network. teeup puts the bundle in `~/.local/state/teeup/ca-bundle.pem`. The bundle works on every network because it has the public roots and the company certificates.
 
-teeup configures the tools. teeup sets these environment variables:
+teeup sets these environment variables to configure the tools:
 
 - `SSL_CERT_FILE`
 - `GIT_SSL_CAINFO`
