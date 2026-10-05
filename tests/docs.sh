@@ -680,11 +680,13 @@ _manual_ste_violations() {
         next;
       }
 
-      /^[ \t]*[-*+]/ || /^[ \t]*[0-9]+\./ {
+      /^[ \t]*([-*+]|[0-9]+\.)[ \t]/ {
         check_p();
         p_lines = 1;
         p_start = NR;
+        # The marker is not a word, and a "1." must not end a sentence.
         p_text = $0;
+        sub(/^[ \t]*([-*+]|[0-9]+\.)[ \t]+/, "", p_text);
         next;
       }
 
@@ -735,6 +737,10 @@ One two three four five six seven eight nine ten eleven twelve thirteen fourteen
 One. Two. Three. Four. Five. Six. Seven.
 
 **One?** Two. Three. Four. Five. Six. Seven.
+
+- One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five.
+1. One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five.
+2. One. Two. Three. Four. Five. Six.
 DOC
 
   found="$(_manual_ste_violations "$dir")"
@@ -746,6 +752,9 @@ DOC
   assert_not_contains "$found" "page.md:9:" || return 1
   assert_contains "$found" "page.md:11: paragraph has 7 sentences" || return 1
   assert_contains "$found" "page.md:13: paragraph has 7 sentences" || return 1
+  assert_not_contains "$found" "page.md:15:" || return 1
+  assert_not_contains "$found" "page.md:16:" || return 1
+  assert_not_contains "$found" "page.md:17:" || return 1
 }
 
 run_test "manual keeps STE sentence limits" test_manual_keeps_ste_sentence_limits
