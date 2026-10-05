@@ -2,44 +2,45 @@
 
 <p align="center"><img src="images/teeup_logo.png" alt="The teeup.sh logo: a golf ball on a tee over a terminal prompt" width="520"></p>
 
-**Your Mac, ready to code.** teeup is an opinionated, reproducible macOS environment for developers. The `./bootstrap` command installs a set of developer tools, configures them, and sets one colour [theme](themes.md) and one [font](fonts.md). The `teeup` command manages changes after installation.
+**Your Mac, ready to code.** teeup is an opinionated, reproducible macOS environment for developers. The `./bootstrap` command installs a set of developer tools. It configures them. It sets one colour [theme](themes.md) and one [font](fonts.md). The `teeup` command manages changes after the installation.
 
-The idea comes from [Omarchy](https://omarchy.org), DHH's setup for Arch Linux and Hyprland. Omarchy demonstrated that a personal setup can be distributed with defaults, a discovery menu, lazy installs, and a manual. teeup brings this model to macOS. It runs on macOS only; `./bootstrap` exits on other systems.
+The idea comes from [Omarchy](https://omarchy.org). Omarchy is the environment of DHH for Arch Linux and Hyprland. Omarchy shows that a developer can distribute a personal environment with the defaults, a discovery menu, the lazy installations, and a manual. teeup brings this model to macOS. It runs on macOS only. If you run `./bootstrap` on other systems, the command stops.
 
 ## What you get
 
-After the first run you have:
+After you run the command for the first time, you get these items:
 
-- a zsh login shell with teeup's own configuration, the [Starship prompt](prompt.md), and a modern command-line set (ripgrep, fd, fzf, bat, eza, zoxide and more);
-- git with your identity, an ed25519 SSH key, and the GitHub CLI signed in;
-- mise for language runtimes, WezTerm as the terminal, the JetBrainsMono Nerd Font, AeroSpace for tiling windows, Caps Lock as Control, and a set of macOS preferences for development;
-- if you say yes to it, Emacs.
+- A zsh login shell with the configuration of teeup, the [Starship prompt](prompt.md), and modern tools (ripgrep, fd, fzf, bat, eza, zoxide, and more).
+- `git` with your identity, an ed25519 SSH key, and the signed-in GitHub CLI.
+- `mise` for the language runtimes, WezTerm as the terminal, and the JetBrainsMono Nerd Font.
+- AeroSpace to tile the windows, the Caps Lock key as the Control key, and the macOS preferences for development.
+- If you agree to the installation, you receive Emacs.
 
-Everything else, such as Zed, Obsidian, Firefox Developer Edition, Neovim, VS Code, Cursor, Docker through Colima, and the AI coding tools, waits until you ask for it. Typing `docker` or `claude` for the first time offers to install it.
+All other tools wait until you request them. These tools include Zed, Obsidian, Firefox Developer Edition, Neovim, VS Code, Cursor, Docker through Colima, and the AI coding tools. If you type `docker` or `claude` for the first time, the command line asks you to install the tool.
 
 <!-- SCREENSHOT: A WezTerm window on a freshly bootstrapped Mac, showing the Starship prompt and the output of `teeup status`. -->
 
 ## How it is built
 
-Each piece of teeup is a *capability*: a directory with a metadata file, an `install` script, and a `configure` script. `git`, `wezterm`, and `emacs` are capabilities; so are `keyboard` and `macos-defaults`. The `teeup` command installs, configures, updates, resets, and removes them one at a time. `teeup list` shows every capability.
+Each piece of teeup is a *capability*. A capability is a directory with a metadata file, an `install` script, and a `configure` script. For example, `git`, `wezterm`, `emacs`, `keyboard`, and `macos-defaults` are capabilities. The `teeup` command installs, configures, updates, resets, and removes the capabilities one at a time. The `teeup list` command shows every capability.
 
-Most configuration files are copied once and remain yours. teeup keeps its defaults in its checkout. Updates improve defaults without overwriting your changes. Running `./bootstrap` again is safe. Every step checks before acting. A second run repairs a partial first run.
+teeup copies most configuration files once. These files belong to you. teeup keeps its defaults in its checkout directory. Updates improve the defaults, and they do not overwrite your changes. It is safe to run `./bootstrap` again because every step does a check before it runs. A second execution repairs an incomplete first execution.
 
 ## Who it is for
 
-teeup is for users who work in a terminal, want to rebuild a Mac from scratch in one sitting, and prefer reading what a tool does before running it. Every modifying command has a dry run that prints the actions instead of running them.
+teeup is for the users who work in a terminal. It is for the users who want to rebuild a Mac completely in one session. These users prefer to read about a tool before they run it. Every command that modifies the system has a dry run mode. This mode prints the actions, but it does not run them.
 
-It is an opinionated setup. It picks zsh, WezTerm and mise for you, and it sets macOS preferences. If you already keep your dotfiles in chezmoi or an older teeup, `teeup migrate legacy` retires that wiring; [Migrating](migrating.md) covers it.
+teeup is an opinionated configuration. It selects zsh, WezTerm, and `mise` for you. It sets the macOS preferences. If you already keep your dotfiles in `chezmoi` or an older teeup, the `teeup migrate legacy` command removes that configuration. The [Migrating](migrating.md) page explains this procedure.
 
 This manual describes teeup 0.2.0-beta.
 
 ## Reading this manual
 
-The pages are short and each covers one topic. Part 1, The Basics, gets you from a new Mac to a working setup:
+The pages are short. Each page covers one topic. Part 1, The Basics, helps you convert a new Mac into a functional environment. It contains these pages:
 
-- [Getting started](getting-started.md): requirements, the first run, and the setup questions.
-- [The teeup command](the-teeup-command.md): every verb in one table.
-- [The menu](the-menu.md): the same actions behind one keyboard-driven list.
-- [Tiers](tiers.md): what installs now, and what waits for you.
+- [Getting started](getting-started.md): This page describes the requirements, the first execution, and the configuration questions.
+- [The teeup command](the-teeup-command.md): This page shows every verb in one table.
+- [The menu](the-menu.md): This page shows the same actions in one keyboard-driven list.
+- [Tiers](tiers.md): This page shows the items that install now, and the items that wait for you.
 
-The later parts cover the applications, configuration, moving in and out, and troubleshooting.
+The later parts describe the applications, the configuration, how to migrate to and from the environment, and how to troubleshoot.

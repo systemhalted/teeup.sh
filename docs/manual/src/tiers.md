@@ -1,14 +1,14 @@
 # Tiers
 
-Every capability belongs to one of three tiers. The tier decides when it gets installed.
+Every capability belongs to one of three tiers. The tier decides when teeup installs the capability.
 
 | Tier | Installed | Examples |
 |---|---|---|
 | core | Always, by `./bootstrap` | zsh, Starship, git, SSH, mise, WezTerm, the Nerd Font, AeroSpace, the theme |
-| daily | By `./bootstrap`, if you said yes to the daily set | Emacs |
-| lazy | The first time you use it, or when you ask | Zed, Obsidian, Firefox Developer Edition, Neovim, VS Code, Cursor, Chrome, Docker through Colima, tmux, Ollama, Herdr, the AI tools |
+| daily | By `./bootstrap`, if you select the daily set | Emacs |
+| lazy | The first time you use the capability, or when you run the command | Zed, Obsidian, Firefox Developer Edition, Neovim, VS Code, Cursor, Chrome, Docker through Colima, tmux, Ollama, Herdr, the AI tools |
 
-See the full list, with each capability's tier, with `teeup list`, or one tier at a time:
+To view the full list with the tier of each capability, run `teeup list`. You can also view one tier at a time:
 
 ```sh
 teeup list --tier lazy
@@ -18,13 +18,13 @@ teeup list --tier lazy
 
 ## Core
 
-The core tier is what every terminal session needs. `capabilities/core.list` fixes the order, and each entry only needs what comes before it. A core capability that fails stops `./bootstrap`, because what follows depends on it.
+Every terminal session needs the core tier. `capabilities/core.list` sets the sequence. Each entry requires only the capabilities before it. If a core capability fails, `./bootstrap` stops, because the subsequent capabilities depend on the failed capability.
 
 ## Daily
 
-The daily tier holds larger applications. The wizard asks, "Install the daily set too (Emacs)?". It records the answer as `TEEUP_DAILY`. `./bootstrap --skip-daily` skips the tier for one run. If a daily capability fails, it prints a warning and the run continues.
+The daily tier contains larger applications. The wizard asks: "Install the daily set too (Emacs)?". teeup records the answer as `TEEUP_DAILY`. `./bootstrap --skip-daily` skips the daily tier for one run. If a daily capability fails, teeup prints a warning. The run continues.
 
-`teeup update` configures the core and daily tiers again. If you remove a core or daily capability with `teeup remove`, the next `./bootstrap` installs it again, unless your machine file lists it in `TEEUP_SKIP`:
+`teeup update` configures the core tier and the daily tier again. If you remove a core capability or a daily capability with `teeup remove`, the next `./bootstrap` installs the capability again. If you do not want to install the capability again, add the capability to `TEEUP_SKIP` in your machine file:
 
 ```sh
 # ~/.config/teeup/machines/<hostname>.conf
@@ -33,40 +33,40 @@ TEEUP_SKIP="aerospace"
 
 ## Lazy
 
-A lazy capability installs when you use it. There are three ways to install one.
+teeup installs a lazy capability when you use the capability. There are three procedures to install a lazy capability.
 
 | You do this | teeup does this |
 |---|---|
-| Type its command, such as `docker`, `nvim`, `tmux` or `claude` | A shim asks whether to install it, then runs your command. |
-| `teeup launch Cursor` | Installs the app if it is missing, then opens it. |
-| `teeup install colima` | Installs it straight away. |
+| Run the command of the capability, for example, `docker`, `nvim`, `tmux` or `claude` | A shim asks to install the capability. Then teeup runs your command. |
+| `teeup launch Cursor` | If the application is missing, teeup installs the application. Then teeup opens the application. |
+| `teeup install colima` | teeup installs the capability immediately. |
 
 ### What a shim does
 
-For every command a lazy capability provides, teeup writes a small script, a *shim*, into `~/.local/state/teeup/shims`. That directory is the last entry on your `PATH`, so a shim only runs when nothing else on the machine provides the command.
+For every command that a lazy capability provides, teeup writes a shim into `~/.local/state/teeup/shims`. A shim is a small script. That directory is the last entry on your `PATH`. A shim runs only when no other application provides the command.
 
-The first time you type the command at a terminal, the shim asks:
+When you run the command in a terminal for the first time, the shim asks:
 
 ```text
 docker is provided by capability colima. Install now?
 ```
 
-The default answer is yes. teeup installs the capability and its requirements. It then runs `docker` with your arguments. The real command is found first on future runs. The shim does not run again. The install output is written to `~/.local/state/teeup/logs/lazy.log`.
+The default selection is yes. teeup installs the capability and the requirements of the capability. teeup then runs `docker` with your arguments. On future runs, the system finds the real command first. The shim does not run again. teeup writes the install output to `~/.local/state/teeup/logs/lazy.log`.
 
 <!-- SCREENSHOT: Typing `docker ps` on a fresh Mac, showing the "docker is provided by capability colima. Install now?" prompt in gum. -->
 
-If you say no, nothing is installed and teeup tells you the command for later:
+If you answer no, teeup does not install the capability. teeup shows the command for future use:
 
 ```text
 Not installed. When you want it: teeup install colima
 ```
 
-A shim does not wait for an answer without a terminal. Called from a script or an editor, it prints the `teeup install` command and exits with status 127.
+If there is no terminal, a shim does not wait for an answer. If a script or an editor runs the shim, the shim prints the `teeup install` command. The shim then exits with status 127.
 
-The AI tools add a second step. The shim for `claude` installs the `ai-claude` capability; the tool itself is then downloaded through mise the first time it runs. [AI tools](ai-tools.md) covers them.
+The AI tools have a second step. The shim for `claude` installs the `ai-claude` capability. When the tool runs for the first time, mise downloads the tool. For more information, see [AI tools](ai-tools.md).
 
 ### Lazy capabilities and the rest of teeup
 
-- `teeup update` leaves lazy capabilities alone. Configuring one can start a virtual machine, as Colima does.
-- `teeup remove` of a lazy capability keeps its shim, so typing the command offers to install it again.
+- `teeup update` does not configure lazy capabilities. If you configure a lazy capability, it can start a virtual machine. For example, Colima starts a virtual machine.
+- `teeup remove` removes a lazy capability, but it keeps the shim. If you run the command again, the shim offers to install the capability.
 - `teeup status` lists the shims under "Lazy shims".
