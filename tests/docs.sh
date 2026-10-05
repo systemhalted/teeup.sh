@@ -599,14 +599,14 @@ _manual_ste_violations() {
       }
       function check_p() {
         if (p_lines == 0) return;
-        
+
         text = p_text;
-        
+
         while (match(text, /`[^`]*`/)) {
           text = substr(text, 1, RSTART - 1) substr(text, RSTART + RLENGTH);
         }
-        
-        while (match(text, /\[[^\]]*\]\([^)]*\)/)) {
+
+        while (match(text, /\[[^]]*\]\([^)]*\)/)) {
           m_start = RSTART; m_len = RLENGTH;
           m_str = substr(text, m_start, m_len);
           split_idx = index(m_str, "](");
@@ -616,7 +616,7 @@ _manual_ste_violations() {
 
         gsub(/e\.g\./, "e_g_", text);
         gsub(/i\.e\./, "i_e_", text);
-        
+
         n = split(text, sentences, /[.?!]( +|$)/);
         s_count = 0;
         for (i = 1; i <= n; i++) {
@@ -625,29 +625,29 @@ _manual_ste_violations() {
           sub(/[ \t]+$/, "", s);
           if (s != "") {
             s_count++;
-            
+
             w_count = split(s, words, /[ \t]+/);
             if (w_count > 25) {
               print file ":" p_start ": sentence has " w_count " words (max 25)";
             }
           }
         }
-        
+
         if (s_count > 6) {
           print file ":" p_start ": paragraph has " s_count " sentences (max 6)";
         }
-        
+
         p_lines = 0;
         p_text = "";
       }
-      
+
       /^```/ {
         check_p();
         in_fence = !in_fence;
         next;
       }
       in_fence { next; }
-      
+
       /<!--/ {
         check_p();
         if (! /-->/) {
@@ -664,22 +664,22 @@ _manual_ste_violations() {
         in_html = 0;
         next;
       }
-      
+
       /^\|/ {
         check_p();
         next;
       }
-      
+
       /^#/ {
         check_p();
         next;
       }
-      
+
       /^[ \t]*$/ {
         check_p();
         next;
       }
-      
+
       /^[ \t]*[-*+]/ || /^[ \t]*[0-9]+\./ {
         check_p();
         p_lines = 1;
@@ -687,7 +687,7 @@ _manual_ste_violations() {
         p_text = $0;
         next;
       }
-      
+
       {
         if (p_lines == 0) {
           p_lines = 1;
@@ -698,7 +698,7 @@ _manual_ste_violations() {
           p_text = p_text " " $0;
         }
       }
-      
+
       END {
         check_p();
       }
@@ -720,7 +720,7 @@ test_manual_keeps_ste_sentence_limits() {
 test_manual_ste_check_catches_violations() {
   local dir found
   dir="$(mktemp -d)"
-  
+
   cat << 'DOC' > "$dir/page.md"
 One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six.
 
@@ -737,7 +737,7 @@ DOC
 
   found="$(_manual_ste_violations "$dir")"
   rm -rf "$dir"
-  
+
   assert_contains "$found" "page.md:1: sentence has 26 words" || return 1
   assert_not_contains "$found" "page.md:3:" || return 1
   assert_not_contains "$found" "page.md:5:" || return 1
