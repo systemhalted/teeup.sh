@@ -15,7 +15,7 @@ The wizard asks which configuration to install, and keeps the answer in `TEEUP_E
 | `spacemacs` | teeup clones Spacemacs into `~/.emacs.d`. On the first start, Spacemacs completes its own configuration and writes `~/.spacemacs`. |
 | `none` | teeup does not change your Emacs configuration, but the daemon still runs. See [Your own configuration and teeup's theme](#your-own-configuration-and-teeups-theme). |
 
-If a directory is in the way (for example, a starter configuration where Doom must go), teeup renames it to `<name>.teeup_backup_<timestamp>` and does not delete it. Emacs reads `~/.emacs.el`, `~/.emacs`, and `~/.emacs.d` before `~/.config/emacs`. If one of these paths exists, teeup warns you that Emacs reads it instead, and does not change it.
+If a directory blocks the install (for example, a starter configuration where Doom must go), teeup renames it to `<name>.teeup_backup_<timestamp>` and does not delete it. Emacs reads `~/.emacs.el`, `~/.emacs`, and `~/.emacs.d` before `~/.config/emacs`. If one of these paths exists, teeup warns that Emacs reads it instead, and does not change it.
 
 ## Your own configuration and teeup's theme
 

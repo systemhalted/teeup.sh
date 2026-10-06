@@ -57,7 +57,7 @@ teeup remove ai    # all five
 When you remove a tool, teeup deletes the wrapper script that it wrote and removes the tool from the global mise configuration.
 When you remove `ai-gemini`, teeup removes `gemini-cli` but leaves Node in the mise configuration.
 
-If teeup did not write the file at `~/.local/bin/<command>` (for example, the native launcher of Claude Code), teeup does not change it and shows a warning.
+If teeup did not write `~/.local/bin/<command>` (for example, the native launcher of Claude Code), teeup does not change it and shows a warning.
 
 If you installed the `ai` bundle, the bundle requires the five tools, so `teeup remove ai-codex` stops with the message "ai-codex is required by: ai".
 To remove all tools, run `teeup remove ai`.

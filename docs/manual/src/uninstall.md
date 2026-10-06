@@ -55,7 +55,7 @@ teeup refuses to change anything outside your home directory or inside a git che
 
 ## Keeping Homebrew and mise on PATH
 
-The teeup shell layer added Homebrew or MacPorts, mise, and `~/.local/bin` to your `PATH`, so after teeup removes its lines, a new shell cannot find them. The summary shows the command to add the line for each tool that stays. On Apple Silicon with Homebrew, the commands are:
+The teeup shell layer added Homebrew or MacPorts, mise, and `~/.local/bin` to your `PATH`. After teeup removes its lines, a new shell cannot find them. The summary shows the command to add the line for each tool that stays. On Apple Silicon with Homebrew, the commands are:
 
 ```sh
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile

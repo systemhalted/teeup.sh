@@ -24,7 +24,7 @@ blue = "#89b4fa"
 ```
 
 The second is the root `palette = ...` setting, which controls the active palette.
-Each time you run `teeup theme set`, teeup updates the root `palette` setting and writes the lines between the markers again, so the prompt uses your current theme.
+Each time you run `teeup theme set`, teeup updates the root `palette` setting and rewrites the lines between the markers, so the prompt uses your theme.
 
 To configure your prompt, change the other settings in the file.
 Put your changes outside the markers, and do not change the root `palette` setting.
