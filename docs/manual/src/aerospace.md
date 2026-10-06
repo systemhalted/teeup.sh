@@ -1,14 +1,18 @@
 # AeroSpace
 
-[AeroSpace](https://nikitabobko.github.io/AeroSpace) puts your windows in tiles or accordion layouts. It uses an i3 style. It controls workspaces.
+[AeroSpace](https://nikitabobko.github.io/AeroSpace) controls workspaces and puts your windows in tile or accordion layouts, in the i3 style.
 
-When AeroSpace runs for the first time, it needs Accessibility access. Open System Settings. Select Privacy & Security. Select Accessibility. Enable AeroSpace.
+AeroSpace needs Accessibility access the first time it runs:
 
-Run `open -a AeroSpace`. AeroSpace starts automatically when you sign in.
+1. Open System Settings > Privacy & Security > Accessibility.
+2. Enable AeroSpace.
+3. Run `open -a AeroSpace`.
+
+After that, AeroSpace starts automatically when you sign in.
 
 ## Keys
 
-The configuration file has two modes. The modes are the main mode and the service mode. The main keys use the Option (`alt`) key. Some keyboard shortcuts also have Emacs-style aliases in addition to the standard keys.
+The configuration file has two modes: the main mode and the service mode. The main keys use Option (`alt`), and some shortcuts also have Emacs-style aliases.
 
 ### Main mode: Focus
 
@@ -58,7 +62,7 @@ The configuration file has two modes. The modes are the main mode and the servic
 
 ### Service mode
 
-Service mode keys do one task. AeroSpace then returns to the main mode.
+Each service mode key does one task, and then AeroSpace returns to the main mode.
 
 | Keys | Action |
 |---|---|
@@ -71,15 +75,13 @@ Service mode keys do one task. AeroSpace then returns to the main mode.
 
 ## Configuration
 
-Edit `~/.config/aerospace/aerospace.toml`. teeup copies this file one time. You can change this file. If you have `~/.aerospace.toml`, teeup keeps the file. teeup does not install a new file. AeroSpace does not run if it finds two configuration files.
-
-To reload the configuration, press `esc` in the service mode. You can also run `aerospace reload-config`.
+Edit `~/.config/aerospace/aerospace.toml`. teeup copies this file one time, and after that you can change it. If you have `~/.aerospace.toml`, teeup keeps it and does not install its own file, because AeroSpace does not run if it finds two configuration files. To reload the configuration, press `esc` in the service mode or run `aerospace reload-config`.
 
 If you have more than one display, you can assign workspaces to specific monitors in the configuration file. For more than the teeup configuration, read [AeroSpace's guide](https://nikitabobko.github.io/AeroSpace/guide).
 
 ## Troubleshooting
 
-Run `teeup doctor` to check that AeroSpace runs and has a correct configuration. Read the [doctor page](doctor-and-troubleshooting.md) for more information.
+Run `teeup doctor` to check that AeroSpace runs and its configuration is correct. Read the [doctor page](doctor-and-troubleshooting.md) for more information.
 
 ## Removing it
 

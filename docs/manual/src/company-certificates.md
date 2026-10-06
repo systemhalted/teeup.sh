@@ -1,10 +1,10 @@
 # Company certificates
 
-When your Mac connects to a network that inspects traffic, a proxy signs every secure connection with a private certificate. A company office or a VPN is an example of this network. Your administrator installs that certificate in the macOS System keychain, so browsers trust it.
+On a network that inspects traffic, such as a company office or a VPN, a proxy signs every secure connection with a private certificate. Your administrator installs that certificate in the macOS System keychain, so browsers trust it.
 
 Command-line tools such as git, Homebrew's curl, mise, and Python's requests do not trust the certificate, because they read their own lists of trusted certificates. They fail with errors such as "self signed certificate in certificate chain".
 
-If the Mac has certificates that an administrator trusts as roots, teeup makes a PEM certificate bundle from Apple's public roots and these certificates. teeup does not use a certificate that has a Never Trust mark. teeup then configures your shell and teeup's commands to use the bundle. If a Mac does not have company certificates, teeup does nothing.
+If the Mac has certificates that an administrator trusts as roots, teeup makes a PEM certificate bundle from Apple's public roots and these certificates. It does not use a certificate marked Never Trust. Then it configures your shell and its own commands to use the bundle. On a Mac without company certificates, teeup does nothing.
 
 ## How it works
 
@@ -21,7 +21,7 @@ teeup sets these environment variables to configure the tools:
 
 ## Overriding the bundle
 
-teeup sets a variable only if the variable is not set. To use a different file for one tool, set the variable for that tool in `~/.config/zsh/local.zsh`. This file loads after the teeup settings:
+teeup sets a variable only if it does not have a value. To use a different file for one tool, set its variable in `~/.config/zsh/local.zsh`, which loads after the teeup settings:
 
 ```zsh
 export GIT_SSL_CAINFO="$HOME/certs/other.pem"
@@ -31,9 +31,9 @@ To remove the bundle entirely, run `teeup remove ca-bundle`.
 
 ## Troubleshooting
 
-The `teeup doctor ca-bundle` command shows if this Mac needs a bundle. The command also shows if the bundle is available and current.
+`teeup doctor ca-bundle` shows if this Mac needs a bundle, and if the bundle is available and current.
 
-If your company replaces the company certificate and git fails again, run this command:
+If your company replaces its certificate and git fails again, make the bundle again:
 
 ```sh
 teeup configure ca-bundle

@@ -1,14 +1,14 @@
 # Secrets
 
-API tokens and passwords belong in the macOS Keychain. The `teeup secret` command stores the secrets in the macOS Keychain. The `teeup-env` command exports a secret to a shell when you need it.
+API tokens and passwords belong in the macOS Keychain. `teeup secret` stores them there, and `teeup-env` exports one to a shell when you need it.
 
 | Command | What it does |
 |---|---|
-| `teeup secret set <name>` | This command asks you to enter the value, but the command does not show the value. This command stores the value. |
-| `teeup secret get <name>` | This command shows the value. |
-| `teeup secret rm <name>` | This command deletes the secret. |
-| `teeup-env <name>` | This command exports the secret to the current shell only. |
-| `teeup-env <name> <VARIABLE>` | This command does the same, but uses the variable name that you select. |
+| `teeup secret set <name>` | Asks for the value, does not show it, and stores it. |
+| `teeup secret get <name>` | Shows the value. |
+| `teeup secret rm <name>` | Deletes the secret. |
+| `teeup-env <name>` | Exports the secret to the current shell only. |
+| `teeup-env <name> <VARIABLE>` | Does the same, with a variable name that you select. |
 
 ```sh
 teeup secret set openai-api-key
@@ -18,25 +18,25 @@ teeup-env openai-api-key MY_TOKEN  # exports MY_TOKEN
 
 ## Where they live
 
-Each secret is a generic password in your login Keychain. The service is `teeup`. The account is the name of the secret. The Keychain Access application shows the secrets under that name. The macOS `security` command reads the secrets:
+Each secret is a generic password in your login Keychain, with the service `teeup` and the account set to the name of the secret. Keychain Access shows the secrets under that name, and the macOS `security` command reads them:
 
 ```sh
 security find-generic-password -s teeup -a openai-api-key -w
 ```
 
-The secret value is not in the command line of another process. The `teeup` command gives the value to the `security` command on standard input. As a result, the value does not show in the `ps` command output.
+The secret value never goes through the command line of another process. teeup gives the value to `security` on standard input, so it does not show in `ps` output.
 
 ## Names
 
-The first character of a name is a letter or a digit. The other characters are letters, digits, dots, underscores, and dashes. The `teeup secret set` command does not accept an empty value.
+The first character of a name is a letter or a digit, and the other characters are letters, digits, dots, underscores, and dashes. `teeup secret set` does not accept an empty value.
 
-If you do not specify a variable name, the `teeup-env` command makes a variable name from the secret name. The command changes the name to uppercase letters. If a character is not a letter, digit, or underscore, the command changes the character to an underscore (`_`). If the first character is a digit, the command adds a leading underscore (`_`). For example, `my.api-key` becomes `MY_API_KEY`.
+If you do not specify a variable name, `teeup-env` makes one from the secret name. It changes the name to uppercase letters and changes each character that is not a letter, digit, or underscore to an underscore (`_`). If the first character is a digit, it adds a leading underscore. For example, `my.api-key` becomes `MY_API_KEY`.
 
 ## Using a secret
 
-The `teeup-env` command is a shell function. As a result, the command changes only the shell where you run the command. The command also changes the programs that you start in that shell. New terminals do not have the variable. Your shell history never records the secret value.
+`teeup-env` is a shell function, so it changes only the shell where you run it and the programs that you start in that shell. New terminals do not have the variable, and your shell history never records the secret value.
 
-If you want to use a secret in only one command, read the secret inline:
+To use a secret in only one command, read it inline:
 
 ```sh
 GITHUB_TOKEN="$(teeup secret get github-token)" some-command
@@ -44,4 +44,4 @@ GITHUB_TOKEN="$(teeup secret get github-token)" some-command
 
 ## Previewing
 
-The `DRY_RUN=true teeup secret set <name>` command prints the `security` command, but does not run it. The output shows `<value>`, not the secret. The command does not ask you for input.
+`DRY_RUN=true teeup secret set <name>` prints the `security` command, with `<value>` in place of the secret, but does not run it or ask you for input.

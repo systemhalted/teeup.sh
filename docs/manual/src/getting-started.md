@@ -4,17 +4,17 @@
 
 | Requirement | Detail |
 |---|---|
-| macOS | teeup does not set a minimum version. `./bootstrap` does not run on other systems. |
+| macOS | teeup does not set a minimum version. `./bootstrap` refuses to run on other systems. |
 | Apple Silicon or Intel | Both architectures work. If you use Apple Silicon, teeup also installs Rosetta 2 for Intel-only applications. |
-| Your own account | Run `./bootstrap` as your own user. Do not run it as root. The script asks for your password at the start for `sudo`. |
-| A package manager | teeup installs Homebrew on macOS 13 and newer. MacPorts is the default package manager on macOS 12 and older. If you use macOS 12 or older, install MacPorts from [macports.org](https://www.macports.org/install.php) first. |
-| A network connection | You need a network connection for Homebrew, the packages, and to sign in to GitHub. |
+| Your own account | Run `./bootstrap` as your own user, not as root. At the start, the script asks for your password for `sudo`. |
+| A package manager | teeup installs Homebrew on macOS 13 and newer. MacPorts is the default on macOS 12 and older, and you must install it first from [macports.org](https://www.macports.org/install.php). |
+| A network connection | You need a network connection for Homebrew, for the packages, and to sign in to GitHub. |
 
-Some applications need a minimum macOS version. AeroSpace and Google Chrome need macOS 13. Cursor needs macOS 12. If your Mac is older, teeup marks these applications as not applicable. Then, teeup continues.
+Some applications need a minimum macOS version: AeroSpace and Google Chrome need macOS 13, and Cursor needs macOS 12. On an older Mac, teeup marks these applications as not applicable and continues.
 
 ## The first run
 
-Clone teeup into `~/.local/share/teeup`. Run the bootstrap script:
+Clone teeup into `~/.local/share/teeup` and run the bootstrap script:
 
 ```sh
 git clone https://github.com/systemhalted/teeup.sh ~/.local/share/teeup
@@ -23,19 +23,19 @@ cd ~/.local/share/teeup
 ./bootstrap
 ```
 
-If macOS offers to install the Command Line Tools when you run `git`, accept the prompt. Then, run the `git clone` command again. teeup also needs these tools. If the tools are missing, teeup installs them.
+If macOS offers to install the Command Line Tools when you run `git`, accept the prompt. Then run the `git clone` command again. teeup also needs these tools, and installs them if they are missing.
 
 `./bootstrap` accepts three options:
 
 | Option | What it does |
 |---|---|
-| `--dry-run` | Print every command. Do not run the commands. |
-| `--reconfigure` | Ask the setup questions again. The script asks even if the answers exist. |
+| `--dry-run` | Print every command, but do not run it. |
+| `--reconfigure` | Ask the setup questions again, even if the answers exist. |
 | `--skip-daily` | Install only the core tier on this run. |
 
 ## The questions
 
-The first prompt asks which package manager to use. teeup asks this question after it installs the Command Line Tools. teeup offers the package manager that it finds first. Then, teeup installs the teeup runtime. After the installation, teeup asks the remaining questions:
+After teeup installs the Command Line Tools, the first prompt asks which package manager to use, and teeup offers the one that it finds first. teeup then installs its runtime and asks the remaining questions:
 
 | Question | Default | Saved as |
 |---|---|---|
@@ -46,9 +46,9 @@ The first prompt asks which package manager to use. teeup asks this question aft
 | Install the daily set too (Emacs)? | Yes. | `TEEUP_DAILY` |
 | Emacs flavor: `starter`, `doom`, `spacemacs` or `none` | `starter` | `TEEUP_EMACS_FLAVOR` |
 
-teeup asks the Emacs question only if you answer yes to the daily set. If you enter an empty name or an invalid email, teeup asks the question again. You have three attempts in total. If your machine file pins a package manager, theme, or Emacs flavor, teeup does not ask that question. teeup shows that the value is pinned and continues. See [Answers and machines](answers-and-machines.md).
+teeup asks the Emacs question only if you answer yes to the daily set. If you enter an empty name or an invalid email, teeup asks the question again, up to three attempts in total. If your machine file pins a package manager, theme, or Emacs flavor, teeup shows that the value is pinned and does not ask that question. See [Answers and machines](answers-and-machines.md).
 
-teeup saves the answers to `~/.config/teeup/answers`. A second `./bootstrap` run uses the answers again. The script does not ask the questions. If you want to change the answers, run `./bootstrap --reconfigure` or use `teeup config`.
+teeup saves the answers to `~/.config/teeup/answers`, and a second `./bootstrap` run uses them again without the questions. To change the answers, run `./bootstrap --reconfigure` or use `teeup config`.
 
 <!-- SCREENSHOT: The bootstrap wizard in Terminal.app with gum, showing the "Install the daily set too (Emacs)?" confirmation. -->
 
@@ -80,10 +80,10 @@ After the core tier, if you answered yes, teeup installs the daily tier: Emacs. 
 A few steps stop and wait for your input:
 
 - The step to change your login shell to `/bin/zsh` asks for your password.
-- `ssh-keygen` asks for a passphrase for the new key. macOS saves the passphrase in your Keychain.
-- The GitHub CLI opens your browser. You sign in, and the CLI uploads the key.
+- `ssh-keygen` asks for a passphrase for the new key, and macOS saves the passphrase in your Keychain.
+- The GitHub CLI opens your browser for you to sign in, and then uploads the key.
 
-If a core step fails, teeup stops the run. teeup shows the name of the failed step. If a daily step fails, teeup prints a warning. Then, the run continues. If you want to install a failed daily step later, run `teeup install <name>`. teeup writes a log of the full run to `~/.local/state/teeup/logs/bootstrap.log`.
+If a core step fails, teeup stops the run and shows the name of the failed step. If a daily step fails, teeup prints a warning and the run continues. To install a failed daily step later, run `teeup install <name>`. teeup writes a log of the full run to `~/.local/state/teeup/logs/bootstrap.log`.
 
 <!-- SCREENSHOT: The end of a real ./bootstrap run, showing "Bootstrap finished in ..." and the "Open a new terminal" hint. -->
 
@@ -95,6 +95,6 @@ The last lines of output tell you the next steps:
 Open a new terminal (the zsh capability puts ~/.local/bin on PATH) and try: teeup status
 ```
 
-The shell where you ran `./bootstrap` started before teeup existed. This shell cannot find the `teeup` command yet. Open a new terminal. If you want to use the old terminal, run the command by its full path: `~/.local/bin/teeup status`.
+The shell where you ran `./bootstrap` started before teeup existed, so it cannot find `teeup` yet. Open a new terminal. To use the old terminal, run the command by its full path: `~/.local/bin/teeup status`.
 
-You can run `./bootstrap` again later without risk. Each step checks the current state before it acts. A second run repairs unfinished steps.
+You can run `./bootstrap` again later without risk, because each step checks the current state before it acts. A second run repairs unfinished steps.

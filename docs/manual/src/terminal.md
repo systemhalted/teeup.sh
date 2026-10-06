@@ -1,11 +1,9 @@
 # Terminal
 
-The terminal of teeup is [WezTerm](https://wezfurlong.org/wezterm/).
-Every bootstrapped Mac has this core tier terminal.
-WezTerm follows the teeup [theme](themes.md) and [font](fonts.md).
-Open WezTerm from the Dock or Spotlight.
-You can also run `teeup launch WezTerm`.
-If you are in AeroSpace, press `alt-enter` to open WezTerm.
+The teeup terminal is [WezTerm](https://wezfurlong.org/wezterm/).
+It is in the core tier, so every bootstrapped Mac has it, and it follows the teeup [theme](themes.md) and [font](fonts.md).
+Open it from the Dock or Spotlight, or run `teeup launch WezTerm`.
+In AeroSpace, press `alt-enter` to open it.
 
 <!-- SCREENSHOT: A WezTerm window with two panes side by side (leader then 3) and the tab bar showing the workspace name and clock on the right. -->
 
@@ -13,28 +11,26 @@ If you are in AeroSpace, press `alt-enter` to open WezTerm.
 
 | File | Owner | What it holds |
 |---|---|---|
-| `~/.config/wezterm/wezterm.lua` | You | This file loads the layer of teeup. Add settings below the `local config = ...` line. |
-| `~/.config/wezterm/local.lua` | You | This file contains machine-specific settings. The file returns a table. All text is a comment at first. |
-| `capabilities/wezterm/default/teeup/wezterm.lua` | teeup | This file is the configuration in the checkout. The `teeup update` command changes this file. |
+| `~/.config/wezterm/wezterm.lua` | You | Loads the teeup layer. Add settings below its `local config = ...` line. |
+| `~/.config/wezterm/local.lua` | You | Machine-specific settings, which the file returns as a table. All of it is a comment at first. |
+| `capabilities/wezterm/default/teeup/wezterm.lua` | teeup | The configuration in the checkout. `teeup update` changes it. |
 
 teeup copies the two files in `~/.config/wezterm` one time.
-The `local.lua` file understands four entries:
+`local.lua` understands four entries:
 
 | Entry | Example | Effect |
 |---|---|---|
-| `font_size` | `font_size = 13.0` | This entry sets the font size. The `teeup install font` command configures the font family. |
-| `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | This entry configures a workspace. Press the leader key and then the `key` to open this workspace. |
-| `hyperlink_rules` | A `regex` and `format` pair | This entry configures extra Cmd+Click link patterns. |
-| `config` | `config = { check_for_updates = false }` | This entry contains raw WezTerm settings. This configuration overrides the defaults of teeup. |
+| `font_size` | `font_size = 13.0` | Sets the font size. `teeup install font` configures the font family. |
+| `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | Configures a workspace that opens when you press the leader key and then `key`. |
+| `hyperlink_rules` | A `regex` and `format` pair | Configures extra Cmd+Click link patterns. |
+| `config` | `config = { check_for_updates = false }` | Raw WezTerm settings, which override the teeup defaults. |
 
 If you edit one of these two files, press Cmd+Shift+R to reload the configuration.
 
 ## Keys
 
 The leader key is Ctrl+Space.
-Press this key.
-Release the key.
-Press the next key within one second.
+Press it and release it, then press the next key within one second.
 
 | Keys | Action |
 |---|---|
@@ -50,35 +46,28 @@ Press the next key within one second.
 | Leader w | Name a new workspace and open it |
 | Leader s | Select a workspace from a fuzzy list |
 | Leader d | Return to the default workspace |
-| Leader r | Start resize mode. The arrows resize the pane. Escape or Return stops resize mode. |
+| Leader r | Start resize mode, where the arrows resize the pane. Escape or Return stops it. |
 | Leader v | Start copy mode |
 | Leader q | Start quick select |
 
-The split and pane keys follow Emacs.
-Key 2 and key 3 split the pane.
-Key 0 closes the pane.
-Key 1 zooms the pane.
-Key o moves to the next pane.
+The split and pane keys follow Emacs: 2 and 3 split, 0 closes, 1 zooms, and o moves to the next pane.
 
 ## The prompt (Starship)
 
-The shell prompt uses Starship.
-The prompt shows the directory, git branch, git status, command duration, and a prompt character.
+The shell prompt uses Starship, and shows the directory, git branch, git status, command duration, and a prompt character.
 
 Starship requires a Nerd Font for its symbols.
-Read [Fonts](fonts.md) to configure a Nerd Font.
+Read [Fonts](fonts.md) to configure one.
 
-The configuration file is `~/.config/starship.toml`.
-teeup copies the configuration file there one time.
-The `teeup theme set` command changes the colours of the prompt.
+teeup copies the configuration file to `~/.config/starship.toml` one time.
+`teeup theme set` changes the colours of the prompt.
 
 Read the [Prompt](prompt.md) page for more details.
 
 ## WezTerm in a virtual machine
 
-In a macOS virtual machine, WezTerm can fail to open a window.
-The error message is "failed to create NSOpenGLPixelFormat".
-teeup configures WezTerm to use the WebGpu renderer inside a macOS virtual machine.
+In a macOS virtual machine, WezTerm can fail to open a window with the error "failed to create NSOpenGLPixelFormat".
+For this reason, teeup configures WezTerm to use the WebGpu renderer inside a macOS virtual machine.
 You can change this setting in `~/.config/wezterm/local.lua`:
 
 ```lua
@@ -89,33 +78,25 @@ return {
 }
 ```
 
-Raw WezTerm settings go inside `config`.
-WezTerm does not read a `front_end` key at the top level of the table.
+Raw WezTerm settings go inside `config`, because WezTerm does not read a `front_end` key at the top level of the table.
 
 ## Terminal.app
 
-You will use Terminal.app at least one time to run `./bootstrap`.
-The shell layer of teeup also operates in Terminal.app.
-But teeup does not configure the font of Terminal.app.
+You will use Terminal.app at least one time, to run `./bootstrap`.
+The teeup shell layer also works in Terminal.app, but teeup does not configure its font.
 
-The `ls` command uses a Nerd Font to draw file icons.
-Until you configure the font of the profile, Terminal.app shows most folder and file icons as boxes.
-You must configure this font manually.
-Click Settings, Profiles, Text, Font, and select "JetBrainsMono Nerd Font".
+`ls` uses a Nerd Font to draw file icons, so Terminal.app shows most icons as boxes until you configure the font of the profile.
+To configure it, click Settings, Profiles, Text, Font, and select "JetBrainsMono Nerd Font".
 Read [Fonts](fonts.md).
 
-MacPorts has no cask.
-For this reason, on MacPorts, teeup installs WezTerm from the `wezterm` port.
-The application is in the applications folder of MacPorts, not in `/Applications`.
-teeup shows the `open -a` command that starts WezTerm.
+MacPorts has no cask, so on MacPorts teeup installs WezTerm from the `wezterm` port.
+The application is then in the MacPorts applications folder, not in `/Applications`, and teeup shows the `open -a` command that starts it.
 
 ## Other terminals
 
 teeup also has three other terminal applications as lazy capabilities.
-teeup installs these terminals.
-But teeup does not apply themes to these terminals.
-teeup does not manage the fonts of these terminals.
-teeup installs a terminal when you use that terminal for the first time.
+teeup installs them, but it does not apply themes to them or manage their fonts.
+Each one installs the first time you use it.
 
 | Terminal | How to get it | Capability |
 |---|---|---|

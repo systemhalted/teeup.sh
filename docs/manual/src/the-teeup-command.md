@@ -1,8 +1,7 @@
 # The teeup command
 
-All teeup actions after the first run use one command, `teeup`.
-This command is in `bin/teeup`.
-The `./bootstrap` script links the command to `~/.local/bin/teeup`.
+All teeup actions after the first run use one command, `teeup`, which is in `bin/teeup`.
+The `./bootstrap` script links it to `~/.local/bin/teeup`.
 Most verbs need the name of a capability.
 Run `teeup list` to see all capabilities.
 
@@ -10,26 +9,24 @@ Run `teeup list` to see all capabilities.
 
 | Command | What it does |
 |---|---|
-| `teeup install <capability>` | Install and configure a capability and all required items. Run this command again to repair a capability that you broke manually. |
+| `teeup install <capability>` | Install and configure a capability and all the items that it requires. Run it again to repair a capability that you broke manually. |
 | `teeup install dev-env <lang>` | Install a language runtime with mise: `python`, `node`, `java`, `ruby`, `rust`, or `go`. |
 | `teeup install font <name>` | Install a Nerd Font and configure every tool to use it. Run `teeup install font list` to see the known font names. |
 | `teeup configure <capability>` | Configure the capability again. |
 | `teeup reset <capability>` | Restore the configuration files to the teeup version. teeup makes a backup of your files and prints the differences. |
-| `teeup update` | Update the machine. Pull the checkout, upgrade the packages, upgrade the mise tools, and run the migrations. Configure the core and daily tiers again, render the theme, and run your hooks. |
-| `teeup update <capability>` | Upgrade the packages for one capability. If the capability has its own update script, run that script instead. Then configure the capability again. |
-| `teeup remove <capability>` | Undo the capability installation. Your configuration files remain. See [Removing a capability](#removing-a-capability). |
-| `teeup uninstall` | Remove teeup from the Mac. teeup prompts for confirmation. Add `--packages` to uninstall the packages. Add `--identity` to remove your git identity. Add `--yes` to run without prompts. See [Uninstall](uninstall.md). |
+| `teeup update` | Update the machine: pull the checkout, upgrade the packages and the mise tools, and run the migrations. Then configure the core and daily tiers again, render the theme, and run your hooks. |
+| `teeup update <capability>` | Upgrade the packages for one capability, or run its own update script if it has one. Then configure the capability again. |
+| `teeup remove <capability>` | Undo what a capability installed. Your configuration files remain. See [Removing a capability](#removing-a-capability). |
+| `teeup uninstall` | Remove teeup from the Mac after you confirm. Add `--packages` to uninstall the packages. Add `--identity` to remove your git identity. Add `--yes` to run without prompts. See [Uninstall](uninstall.md). |
 | `teeup theme set <name>` | Apply a theme to all themed tools. If you do not give a name, teeup shows a picker. |
 | `teeup theme list` | List the themes. |
-| `teeup theme current` | Print the current theme. The `teeup theme` command does the same thing. |
-| `teeup launch <app or capability>` | Start a GUI app. If the app is missing, teeup installs the capability first. App names do not need quotes. |
+| `teeup theme current` | Print the current theme, as `teeup theme` with no verb also does. |
+| `teeup launch <app or capability>` | Start a GUI app, and install its capability first if the app is missing. App names do not need quotes. |
 
 ## Removing a capability
 
-- **`teeup remove <capability>`** runs the `remove` script of the capability, if it has one.
-  Next, the command uninstalls the casks and packages that the metadata of the capability lists.
-  Finally, teeup forgets the capability.
-  Your configuration files remain.
+- **`teeup remove <capability>`** runs the `remove` script of the capability, if it has one, and then uninstalls the casks and packages that its metadata lists.
+  Finally, teeup forgets the capability, but your configuration files remain.
 
   A `remove` script is optional, and thirteen capabilities ship one today:
 
@@ -42,11 +39,9 @@ Run `teeup list` to see all capabilities.
   - The `ca-bundle` script deletes its PEM bundle.
   - The `emacs` and `wezterm` scripts uninstall their MacPorts ports.
 
-  The command refuses to run if another installed capability requires the capability.
-  It also refuses to run if the capability does not have a `remove` script, packages, or casks.
+  The command refuses to run if another installed capability requires this one, or if the capability does not have a `remove` script, packages, or casks.
   Seven capabilities have nothing to undo: `dev-dirs`, `package-manager`, `secrets`, `ssh`, `teeup-runtime`, `theme`, and `xcode-clt`.
-  For these capabilities, `teeup remove secrets` and similar commands tell you that there is nothing to undo.
-  The capability stays marked as installed.
+  For these capabilities, `teeup remove secrets` and similar commands tell you so, and the capability stays marked as installed.
   If a `remove` script reports "not applicable on this machine", teeup reports that status, not a clean removal.
 
 ## Looking at the machine
@@ -56,18 +51,18 @@ Run `teeup list` to see all capabilities.
 | `teeup status` | Show the version, the package manager, the answers file, the installed capabilities, the lazy shims, and the language runtimes. |
 | `teeup list` | Show every capability with its tier and summary. |
 | `teeup list --tier core` | Show capabilities for one tier: `core`, `daily`, or `lazy`. |
-| `teeup doctor` | Check the installed items and show how to fix the problems. The command exits 0 when the machine is healthy. It exits 1 when it finds problems. It exits 2 when it cannot check an item. |
+| `teeup doctor` | Check the installed items and show how to fix the problems. The command exits 0 when the machine is healthy, 1 when it finds problems, and 2 when it cannot check an item. |
 | `teeup doctor <capability>` | Check one capability. |
-| `teeup has <capability>` | Exit 0 when the capability is installed. Use this command in scripts and menus. |
+| `teeup has <capability>` | Exit 0 when the capability is installed, for use in scripts and menus. |
 | `teeup version` | Print the teeup version. |
 
 ## Settings and secrets
 
 | Command | What it does |
 |---|---|
-| `teeup config get` | Show the answers file, the machine file (if there is one), and every answer. teeup marks the answers that the machine file pins. |
+| `teeup config get` | Show the answers file, the machine file (if there is one), and every answer, with a mark on the answers that the machine file pins. |
 | `teeup config get <KEY>` | Print one answer, for example `TEEUP_THEME`. |
-| `teeup config set <KEY> <value>` | Change one answer. teeup shows the name of the command that applies the answer. |
+| `teeup config set <KEY> <value>` | Change one answer, and show the command that applies it. |
 | `teeup config edit` | Open the answers file in `$VISUAL`, `$EDITOR`, or `vi`. If an edit breaks the file, teeup restores the previous file. |
 | `teeup secret set <name>` | Store a secret in the macOS Keychain. teeup asks for the value but does not echo it. |
 | `teeup secret get <name>` | Print a stored secret. |
@@ -83,8 +78,8 @@ Run `teeup list` to see all capabilities.
 | `teeup commands --check` | Lint the capability metadata. |
 | `teeup dev new-capability <name>` | Start a new capability and its test from a skeleton. |
 | `teeup dev add-migration` | Start a migration script for the machines that are already configured. |
-| `teeup dev check` | Run the metadata, the menu, the shellcheck, and the test checks. Add a capability name to check only that capability. |
-| `teeup lazy-run <capability> <command>` | The command that a lazy shim runs. You will rarely type this command. See [Tiers](tiers.md) for an explanation. |
+| `teeup dev check` | Run the metadata, the menu, the shellcheck, and the test checks. Add a capability name to check only that one. |
+| `teeup lazy-run <capability> <command>` | The command that a lazy shim runs. You will rarely type it, and [Tiers](tiers.md) explains it. |
 | `teeup help` | Show the short usage text. |
 
 The `dev` commands build teeup.
@@ -94,8 +89,7 @@ The `dev` commands build teeup.
 ## Previewing with DRY_RUN
 
 Put `DRY_RUN=true` before a command.
-teeup prints the commands but does not run them.
-teeup does not install, write, or delete anything.
+teeup then prints the commands but does not run them, so it does not install, write, or delete anything.
 
 ```sh
 DRY_RUN=true teeup update
@@ -111,5 +105,4 @@ teeup shows skipped commands in this format:
 
 The `./bootstrap` script uses a flag: `./bootstrap --dry-run`.
 
-Before you use a command that removes items, do a dry run.
-These commands include `teeup remove`, `teeup uninstall`, and `teeup migrate legacy`.
+Before you use a command that removes items, such as `teeup remove`, `teeup uninstall`, or `teeup migrate legacy`, do a dry run.
