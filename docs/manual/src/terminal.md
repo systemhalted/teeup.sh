@@ -21,7 +21,7 @@ teeup copies the two files in `~/.config/wezterm` one time.
 | Entry | Example | Effect |
 |---|---|---|
 | `font_size` | `font_size = 13.0` | Sets the font size. `teeup install font` configures the font family. |
-| `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | Configures a workspace that opens when you press the leader key and then `key`. |
+| `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | Configures a workspace that opens when you press the leader key and then the value of `key`, for example `e`. |
 | `hyperlink_rules` | A `regex` and `format` pair | Configures extra Cmd+Click link patterns. |
 | `config` | `config = { check_for_updates = false }` | Raw WezTerm settings, which override the teeup defaults. |
 
