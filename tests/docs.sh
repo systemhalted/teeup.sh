@@ -586,4 +586,189 @@ run_test "the skill marks the generated and borrowed trees read-only" test_the_s
 run_test "the parity checklist has a row for every legacy module" test_the_parity_checklist_has_a_row_for_every_legacy_module
 run_test "the parity checklist names only capabilities that exist" test_the_parity_checklist_names_only_capabilities_that_exist
 run_test "nothing tracked points at the deleted legacy tree" test_nothing_tracked_points_at_the_deleted_legacy_tree
+
+_manual_ste_violations() {
+  local dir="$1" f
+  for f in "$dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    [[ "${f##*/}" == "SUMMARY.md" ]] && continue
+    awk -v file="${f##*/}" '
+      BEGIN {
+        in_fence = 0; in_html = 0;
+        p_lines = 0; p_text = ""; p_start = 0;
+      }
+      function check_p() {
+        if (p_lines == 0) return;
+
+        text = p_text;
+
+        # STE counts a technical name as one word, so a code span is one
+        # word. The placeholder also hides the dots in paths like ~/.zshrc.
+        while (match(text, /`[^`]*`/)) {
+          text = substr(text, 1, RSTART - 1) "CODE" substr(text, RSTART + RLENGTH);
+        }
+
+        while (match(text, /\[[^]]*\]\([^)]*\)/)) {
+          m_start = RSTART; m_len = RLENGTH;
+          m_str = substr(text, m_start, m_len);
+          split_idx = index(m_str, "](");
+          link_text = substr(m_str, 2, split_idx - 2);
+          text = substr(text, 1, m_start - 1) link_text substr(text, m_start + m_len);
+        }
+
+        gsub(/e\.g\./, "e_g_", text);
+        gsub(/i\.e\./, "i_e_", text);
+
+        n = split(text, sentences, /[.?!][*_")]*( +|$)/);
+        s_count = 0;
+        for (i = 1; i <= n; i++) {
+          s = sentences[i];
+          sub(/^[ \t]+/, "", s);
+          sub(/[ \t]+$/, "", s);
+          if (s != "") {
+            s_count++;
+
+            # Only tokens with a letter or digit are words: a lone "-" or
+            # "|" is punctuation.
+            nw = split(s, words, /[ \t]+/);
+            w_count = 0;
+            for (j = 1; j <= nw; j++) if (words[j] ~ /[A-Za-z0-9]/) w_count++;
+            if (w_count > 25) {
+              print file ":" p_start ": sentence has " w_count " words (max 25)";
+            }
+          }
+        }
+
+        if (s_count > 6) {
+          print file ":" p_start ": paragraph has " s_count " sentences (max 6)";
+        }
+
+        p_lines = 0;
+        p_text = "";
+      }
+
+      /^```/ {
+        check_p();
+        in_fence = !in_fence;
+        next;
+      }
+      in_fence { next; }
+
+      /<!--/ {
+        check_p();
+        if (! /-->/) {
+          in_html = 1;
+        }
+        next;
+      }
+      in_html {
+        if (/-->/) in_html = 0;
+        next;
+      }
+      /-->/ {
+        check_p();
+        in_html = 0;
+        next;
+      }
+
+      /^\|/ {
+        check_p();
+        next;
+      }
+
+      /^#/ {
+        check_p();
+        next;
+      }
+
+      /^[ \t]*$/ {
+        check_p();
+        next;
+      }
+
+      /^[ \t]*([-*+]|[0-9]+\.)[ \t]/ {
+        check_p();
+        p_lines = 1;
+        p_start = NR;
+        # The marker is not a word, and a "1." must not end a sentence.
+        p_text = $0;
+        sub(/^[ \t]*([-*+]|[0-9]+\.)[ \t]+/, "", p_text);
+        next;
+      }
+
+      {
+        if (p_lines == 0) {
+          p_lines = 1;
+          p_start = NR;
+          p_text = $0;
+        } else {
+          p_lines++;
+          p_text = p_text " " $0;
+        }
+      }
+
+      END {
+        check_p();
+      }
+    ' "$f"
+  done
+}
+
+test_manual_keeps_ste_sentence_limits() {
+  local found
+  found="$(_manual_ste_violations "$REPO/docs/manual/src")"
+  if [[ -n "$found" ]]; then
+    echo "ASD-STE100 sentence/paragraph limits violated:"
+    printf '%s\n' "$found"
+    return 1
+  fi
+  return 0
+}
+
+test_manual_ste_check_catches_violations() {
+  local dir found
+  dir="$(mktemp -d)"
+
+  cat << 'DOC' > "$dir/page.md"
+One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six.
+
+One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five.
+
+```
+One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six twenty-seven.
+```
+
+| `col` | One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six. |
+
+One. Two. Three. Four. Five. Six. Seven.
+
+**One?** Two. Three. Four. Five. Six. Seven.
+
+- One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five.
+1. One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five.
+2. One. Two. Three. Four. Five. Six.
+
+One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four `twenty-five` `~/.twenty-six`.
+
+One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three - `four` |.
+DOC
+
+  found="$(_manual_ste_violations "$dir")"
+  rm -rf "$dir"
+
+  assert_contains "$found" "page.md:1: sentence has 26 words" || return 1
+  assert_not_contains "$found" "page.md:3:" || return 1
+  assert_not_contains "$found" "page.md:5:" || return 1
+  assert_not_contains "$found" "page.md:9:" || return 1
+  assert_contains "$found" "page.md:11: paragraph has 7 sentences" || return 1
+  assert_contains "$found" "page.md:13: paragraph has 7 sentences" || return 1
+  assert_not_contains "$found" "page.md:15:" || return 1
+  assert_not_contains "$found" "page.md:16:" || return 1
+  assert_not_contains "$found" "page.md:17:" || return 1
+  assert_contains "$found" "page.md:19: sentence has 26 words" || return 1
+  assert_not_contains "$found" "page.md:21:" || return 1
+}
+
+run_test "manual keeps STE sentence limits" test_manual_keeps_ste_sentence_limits
+run_test "manual STE check catches violations" test_manual_ste_check_catches_violations
 print_summary

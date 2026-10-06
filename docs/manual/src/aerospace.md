@@ -1,82 +1,88 @@
 # AeroSpace
 
-[AeroSpace](https://nikitabobko.github.io/AeroSpace) tiles your windows, i3 style. It manages workspaces, and arranges windows in tiles or accordion layouts.
+[AeroSpace](https://nikitabobko.github.io/AeroSpace) controls workspaces and puts your windows in tile or accordion layouts, in the i3 style.
 
-First run requires Accessibility access: go to System Settings > Privacy & Security > Accessibility and turn AeroSpace on. Then start it with `open -a AeroSpace`. It starts at login automatically.
+AeroSpace needs Accessibility access the first time it runs:
+
+1. Open System Settings > Privacy & Security > Accessibility.
+2. Enable AeroSpace.
+3. Run `open -a AeroSpace`.
+
+After that, AeroSpace starts automatically when you sign in.
 
 ## Keys
 
-The configuration file defines two modes: main and service. The main keys use Option (`alt`). Some bindings offer Emacs-style aliases alongside the standard keys.
+The configuration file has two modes: the main mode and the service mode. The main keys use Option (`alt`), and some shortcuts also have Emacs-style aliases.
 
 ### Main mode: Focus
 
 | Keys | Action |
 |---|---|
-| `alt-h`, `alt-j`, `alt-k`, `alt-l` | Focus left, down, up, right |
-| `alt-ctrl-b`, `alt-ctrl-n`, `alt-ctrl-p`, `alt-ctrl-f` | Focus left, down, up, right (Emacs style) |
+| `alt-h`, `alt-j`, `alt-k`, `alt-l` | Focus the left, down, up, or right window |
+| `alt-ctrl-b`, `alt-ctrl-n`, `alt-ctrl-p`, `alt-ctrl-f` | Focus the left, down, up, or right window (Emacs style) |
 
 ### Main mode: Move
 
 | Keys | Action |
 |---|---|
-| `alt-shift-h`, `alt-shift-j`, `alt-shift-k`, `alt-shift-l` | Move left, down, up, right |
-| `alt-ctrl-shift-b`, `alt-ctrl-shift-n`, `alt-ctrl-shift-p`, `alt-ctrl-shift-f` | Move left, down, up, right (Emacs style) |
+| `alt-shift-h`, `alt-shift-j`, `alt-shift-k`, `alt-shift-l` | Move the window left, down, up, or right |
+| `alt-ctrl-shift-b`, `alt-ctrl-shift-n`, `alt-ctrl-shift-p`, `alt-ctrl-shift-f` | Move the window left, down, up, or right (Emacs style) |
 
 ### Main mode: Workspaces
 
 | Keys | Action |
 |---|---|
-| `alt-1` to `alt-9` | Switch to workspace 1 to 9 |
-| `alt-shift-1` to `alt-shift-9` | Move window to workspace 1 to 9 |
-| `alt-tab` | Back to the previous workspace |
-| `alt-shift-tab` | Move workspace to the next monitor |
+| `alt-1` to `alt-9` | Go to workspace 1 to 9 |
+| `alt-shift-1` to `alt-shift-9` | Move the window to workspace 1 to 9 |
+| `alt-tab` | Return to the previous workspace |
+| `alt-shift-tab` | Move the workspace to the next monitor |
 
 ### Main mode: Layouts
 
 | Keys | Action |
 |---|---|
-| `alt-slash` | Tiles layout |
-| `alt-comma` | Accordion layout |
-| `alt-backslash` | Switch the window between floating and tiled |
-| `alt-f` | Full screen |
+| `alt-slash` | Use the tiled layout |
+| `alt-comma` | Use the accordion layout |
+| `alt-backslash` | Change the window to floating or tiled |
+| `alt-f` | Use the full screen |
 | `alt-enter` | Open a new WezTerm window |
 
 ### Main mode: Resize
 
 | Keys | Action |
 |---|---|
-| `alt-minus` | Shrink |
-| `alt-equal` | Grow |
+| `alt-minus` | Make the window smaller |
+| `alt-equal` | Make the window larger |
 
 ### Main mode: Service mode
 
 | Keys | Action |
 |---|---|
-| `alt-shift-semicolon` | Enter service mode |
+| `alt-shift-semicolon` | Enter the service mode |
 
 ### Service mode
 
-Service mode bindings perform one job and return to main mode.
+Each service mode key does one task, and then AeroSpace returns to the main mode.
 
 | Keys | Action |
 |---|---|
-| `esc` | Reload config |
-| `r` | Flatten workspace tree |
-| `f` | Toggle layout floating tiling |
-| `backspace` | Close all windows but current |
-| `alt-shift-h`, `alt-shift-j`, `alt-shift-k`, `alt-shift-l` | Join with left, down, up, right |
-| `alt-ctrl-shift-b`, `alt-ctrl-shift-n`, `alt-ctrl-shift-p`, `alt-ctrl-shift-f` | Join with left, down, up, right (Emacs style) |
+| `esc` | Reload the configuration |
+| `r` | Flatten the workspace tree |
+| `f` | Change the layout to floating or tiled |
+| `backspace` | Close all windows except the current window |
+| `alt-shift-h`, `alt-shift-j`, `alt-shift-k`, `alt-shift-l` | Join the left, down, up, or right window |
+| `alt-ctrl-shift-b`, `alt-ctrl-shift-n`, `alt-ctrl-shift-p`, `alt-ctrl-shift-f` | Join the left, down, up, or right window (Emacs style) |
 
 ## Configuration
 
-Edit `~/.config/aerospace/aerospace.toml`. teeup copies this file once, and after that it is yours to modify. If you already have `~/.aerospace.toml`, teeup keeps it and does not install its own, because AeroSpace refuses to run with two. Reload it with `esc` in service mode, or run `aerospace reload-config`.
+Edit `~/.config/aerospace/aerospace.toml`. teeup copies this file one time, and after that you can change it. If you have `~/.aerospace.toml`, teeup keeps it and does not install its own file, because AeroSpace does not run if it finds two configuration files. To reload the configuration, press `esc` in the service mode or run `aerospace reload-config`.
 
-For multiple displays, you can assign workspaces to specific monitors in the config. See [AeroSpace's guide](https://nikitabobko.github.io/AeroSpace/guide) for anything beyond the teeup configuration.
+If you have more than one display, you can assign workspaces to specific monitors in the configuration file. For more than the teeup configuration, read [AeroSpace's guide](https://nikitabobko.github.io/AeroSpace/guide).
 
 ## Troubleshooting
 
-Run `teeup doctor` to check if AeroSpace is running and configured correctly. See the [doctor page](doctor-and-troubleshooting.md) for details.
+Run `teeup doctor` to check that AeroSpace runs and its configuration is correct. Read the [doctor page](doctor-and-troubleshooting.md) for more information.
 
 ## Removing it
 
-Run `teeup remove aerospace`. To skip installing it entirely, use `TEEUP_SKIP=aerospace`.
+Run `teeup remove aerospace`. If you do not want to install AeroSpace, use `TEEUP_SKIP=aerospace`.

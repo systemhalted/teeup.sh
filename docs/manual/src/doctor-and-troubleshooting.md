@@ -1,6 +1,7 @@
 # Doctor and troubleshooting
 
-Run `teeup doctor` to check the system state. For every problem, it names the command to fix it.
+Run `teeup doctor` to check the system state.
+For every problem, it names the command that fixes it.
 
 ```sh
 teeup doctor           # every installed capability
@@ -9,12 +10,12 @@ teeup doctor git       # one capability
 
 ## What doctor checks
 
-For each installed capability, doctor prints a heading, `== git: ... ==`, and checks:
+For each installed capability, doctor prints a heading `== git: ... ==` and checks that the packages, casks, and apps that its metadata names are installed.
+It also runs the checks in the doctor script of the capability, if it has one.
+Eleven capabilities have a doctor script, including `ssh` (key pairs, file modes, the `Host` blocks), `git`, `github`, `zsh`, `mise`, `starship`, and `aerospace`.
 
-- that the packages, casks and apps its metadata names are installed;
-- whatever the capability's own doctor script checks. Eleven capabilities have one, including `ssh` (key pairs, file modes, the `Host` blocks), `git`, `github`, `zsh`, `mise`, `starship` and `aerospace`.
-
-A capability skipped with `TEEUP_SKIP` is excluded from a full run. Name it to check it. At the end, doctor lists every problem with its fix:
+If you skip a capability with `TEEUP_SKIP`, doctor excludes it from a full run, but you can name the capability to check it.
+At the end, doctor lists every problem with its fix:
 
 ```text
 ❌ teeup doctor found 1 problem(s):
@@ -28,11 +29,11 @@ The exit status has three values:
 
 | Exit | Meaning |
 |---|---|
-| 0 | Everything checked is healthy. |
+| 0 | Everything that doctor checks is healthy. |
 | 1 | Doctor found problems. |
-| 2 | Doctor could not check something, such as a GitHub host it could not reach or a package manager that did not answer. The Mac may or may not be healthy there. |
+| 2 | Doctor could not check an item, for example because it could not reach a GitHub host or a package manager did not answer. The Mac can be healthy or not healthy there. |
 
-Advisory notes, such as the AeroSpace Accessibility reminder, are printed as warnings and do not change the exit status.
+Doctor prints advisory notes, such as the AeroSpace Accessibility reminder, as warnings that do not change the exit status.
 
 ## The logs
 
@@ -40,24 +41,30 @@ teeup keeps its logs in `~/.local/state/teeup/logs/`.
 
 | Log | Written by |
 |---|---|
-| `bootstrap.log` | `./bootstrap`: each step's start and end, and its output |
-| `lazy.log` | Installs started by a lazy shim, and the AI tools' first downloads |
+| `bootstrap.log` | `./bootstrap` writes the start, the end, and the output of each step. |
+| `lazy.log` | The installs that a lazy shim starts, and the first downloads of the AI tools. |
 
-Steps that need your terminal, such as the SSH passphrase and the GitHub sign-in, are not captured; the log says so in their place. Other commands print to the terminal only.
+The log does not capture the steps that need your terminal, such as the SSH passphrase and the GitHub sign-in.
+In their place, the log has a message.
+Other commands print to the terminal only.
 
 ## Common problems
 
 ### `teeup: command not found` right after bootstrap
 
-The shell running `./bootstrap` started before teeup added `~/.local/bin` to your `PATH`. Open a new terminal or run `~/.local/bin/teeup`.
+The shell that ran `./bootstrap` started before teeup added `~/.local/bin` to your `PATH`.
+Open a new terminal, or run `~/.local/bin/teeup`.
 
 ### File icons in `ls` show as boxes
 
-`ls` is eza with icons, and the icons need a Nerd Font in the terminal. WezTerm has one. In Terminal.app, set it yourself: Settings, Profiles, Text, Font, then "JetBrainsMono Nerd Font". Some icons appear without it, through macOS's font fallback, but most folder and file icons do not.
+The `ls` command is `eza` with icons that need a Nerd Font in the terminal, and WezTerm has one.
+In Terminal.app, select Settings, Profiles, Text, Font, and "JetBrainsMono Nerd Font".
+Without a Nerd Font, the macOS font fallback draws some icons, but not most folder and file icons.
 
 ### WezTerm does not open in a virtual machine
 
-In a macOS VM, WezTerm can fail with "failed to create NSOpenGLPixelFormat". Put this in `~/.config/wezterm/local.lua`:
+WezTerm can fail with "failed to create NSOpenGLPixelFormat" in a macOS VM.
+Add this code to `~/.config/wezterm/local.lua`:
 
 ```lua
 return {
@@ -69,7 +76,8 @@ return {
 
 ### Emacs still runs the old configuration
 
-The Emacs daemon retains its initial configuration. After changing the flavor or your init files, restart it:
+The Emacs daemon keeps its initial configuration.
+When you change the flavor or your init files, restart it:
 
 ```sh
 launchctl kickstart -k gui/$(id -u)/sh.teeup.emacs
@@ -77,23 +85,33 @@ launchctl kickstart -k gui/$(id -u)/sh.teeup.emacs
 
 ### `brew uninstall emacs` removed Emacs.app
 
-teeup warns when Homebrew's terminal-only `emacs` formula is installed. It stops the `emacs-app` cask from linking `emacs` and `emacsclient`. teeup suggests `brew uninstall emacs` for the formula. When no `emacs` formula is installed, Homebrew applies it to the `emacs-app` cask instead and removes Emacs.app. Check first:
+If the terminal-only `emacs` formula from Homebrew is installed, teeup shows a warning, because this formula stops the `emacs-app` cask from linking `emacs` and `emacsclient`.
+teeup suggests `brew uninstall emacs` to remove the formula.
+If the `emacs` formula is not installed, Homebrew applies that command to the `emacs-app` cask instead and removes Emacs.app.
+Check first:
 
 ```sh
 brew list --formula emacs    # only uninstall if this lists it
 ```
 
-If Emacs.app is gone, put it back with `teeup install emacs`.
+If Emacs.app is gone, run `teeup install emacs` to install it again.
 
 ### AeroSpace does not move any windows
 
-It needs Accessibility access, once per Mac: System Settings, Privacy & Security, Accessibility, then turn AeroSpace on.
+AeroSpace needs Accessibility access one time for each Mac.
+Open System Settings.
+Select Privacy & Security, and then Accessibility.
+Enable AeroSpace.
 
 ### Stray characters such as `[?2026` appear in a prompt
 
-They are part of a reply from your terminal, not something you typed. teeup's prompts are drawn by gum, which asks the terminal a question when a prompt opens; when the reply arrives late, gum reads part of it as typing. Delete the characters before you type your answer. If an answer was already saved with them, change it with `teeup config set`, for example `teeup config set TEEUP_EMAIL you@example.com`.
+The characters are part of a reply from your terminal, not text that you typed.
+The teeup prompts come from `gum`, which asks the terminal a question when a prompt opens.
+If the reply arrives late, `gum` reads part of it as text that you type.
+Delete the characters before you type your answer.
+If teeup saved an answer with the characters, change it with `teeup config set`, for example `teeup config set TEEUP_EMAIL you@example.com`.
 
-To avoid gum altogether, run with plain prompts:
+If you do not want to use `gum`, run `./bootstrap` with plain prompts:
 
 ```sh
 TEEUP_NO_GUM=1 ./bootstrap
@@ -101,20 +119,28 @@ TEEUP_NO_GUM=1 ./bootstrap
 
 ### Ctrl-C at a prompt
 
-Ctrl-C stops the run, at a prompt too. Answers you already gave are saved, and `./bootstrap` starts again where you left off.
+Ctrl-C stops the run, also at a prompt, but teeup keeps the answers that you gave.
+Run `./bootstrap` again to continue from the point where it stopped.
 
 ### `teeup update` will not pull
 
-The teeup checkout has uncommitted changes. Commit, stash or discard them in `~/.local/share/teeup`, then run it again.
+The teeup checkout has uncommitted changes.
+Commit, stash, or discard the changes in `~/.local/share/teeup`.
+Run `teeup update` again.
 
 ### A script fails with exit status 127 and "is provided by capability"
 
-A lazy shim was called with no terminal to ask on, so it did not install anything. Run the `teeup install` command it printed, once, in a terminal.
+A command called a lazy shim without a terminal, so the shim could not ask you and did not install anything.
+Run the printed `teeup install` command one time in a terminal.
 
 ### Commits are not signed
 
-Signing turns on once your SSH key exists. Run `teeup configure git`.
+teeup enables commit signing only when your SSH key exists.
+Run `teeup configure git`.
 
 ## Still stuck
 
-Run `teeup doctor` and `teeup status`, and look at the end of `~/.local/state/teeup/logs/bootstrap.log`. Every teeup command that changes something also has a preview: put `DRY_RUN=true` in front of it to see the commands it would run.
+Run `teeup doctor` and `teeup status`.
+Look at the end of `~/.local/state/teeup/logs/bootstrap.log`.
+Every teeup command that changes an item has a preview.
+Put `DRY_RUN=true` in front of the command to see the commands that it would run.

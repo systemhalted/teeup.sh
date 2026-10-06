@@ -1,6 +1,8 @@
 # Migrating
 
-If this Mac was set up by the old, single-script teeup, or its dotfiles are managed by chezmoi, run `./bootstrap` first, then remove the old setup with one command. Preview it before you run it:
+If the old, single-script teeup configured this Mac, or if chezmoi manages its dotfiles, run `./bootstrap` first.
+Then remove the old configuration with one command.
+Preview the command before you run it:
 
 ```sh
 DRY_RUN=true teeup migrate legacy   # read what it would do
@@ -8,7 +10,8 @@ teeup migrate legacy
 teeup doctor                        # names anything still left over
 ```
 
-The dry run changes nothing and ends with "Dry run finished: nothing was changed." If it would refuse something on a real run, it says so, so read its warnings first.
+The dry run changes nothing, and ends with "Dry run finished: nothing was changed."
+If it finds a step that a real run will refuse, it tells you, so read its warnings first.
 
 <!-- SCREENSHOT: `DRY_RUN=true teeup migrate legacy` on a Mac with the old teeup and chezmoi, showing the "[DRY-RUN] Would ..." lines and the two lists of chezmoi files. -->
 
@@ -16,32 +19,59 @@ The dry run changes nothing and ends with "Dry run finished: nothing was changed
 
 | Step | What happens |
 |---|---|
-| 1. The old teeup | Deletes `~/.teeup.common`, `~/.config/mac-setup`, and the `~/.teeupshrc` and `~/.shellrc.common` symlinks the old script left. |
-| 2. Old shell lines | Disables the lines that loaded those files, and the Oh My Zsh, Powerlevel10k and Antigen lines that teeup's zsh layer and Starship replace. |
-| 3. Old runtime managers | Disables the SDKMAN, rbenv and pyenv lines that would put their versions ahead of mise's. |
-| 4. chezmoi | Moves the files chezmoi manages in your home directory aside, after asking, and installs teeup's own versions in their place. |
+| 1. The old teeup | teeup deletes `~/.teeup.common`, `~/.config/mac-setup`, and the `~/.teeupshrc` and `~/.shellrc.common` symlinks that the old script left. |
+| 2. Old shell lines | teeup disables the lines that loaded those files, and the Oh My Zsh, Powerlevel10k, and Antigen lines that the teeup zsh layer and Starship replace. |
+| 3. Old runtime managers | teeup disables the SDKMAN, rbenv, and pyenv lines, because they would put their versions before the mise versions. |
+| 4. chezmoi | After it asks you, teeup moves aside the files that chezmoi manages in your home directory, and installs its own versions in their place. |
 
-Steps 2 and 3 edit `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.bashrc`, `~/.bash_profile` and `~/.profile`. A file is copied to `<name>.teeup_backup_<timestamp>` before teeup edits it, and a disabled line stays in the file, prefixed with `: # Disabled by teeup (...)`, so you can see what changed. The toolchains in `~/.sdkman`, `~/.rbenv` and `~/.pyenv` stay on disk; teeup names them so you can delete them once a new shell works.
+Steps 2 and 3 edit `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.bashrc`, `~/.bash_profile`, and `~/.profile`.
+Before teeup edits a file, it copies the file to `<name>.teeup_backup_<timestamp>`.
+A disabled line stays in the file with the `: # Disabled by teeup (...)` prefix, so you can see what changed.
+The toolchains in `~/.sdkman`, `~/.rbenv`, and `~/.pyenv` stay on the disk.
+teeup gives their names, so you can delete them when a new shell works correctly.
 
 ## The chezmoi step
 
-teeup lists the files chezmoi manages in two groups: the ones teeup ships its own version of, and the ones it does not, which only the backup copy will hold. Then it asks once, "Move the files above aside so teeup can take over this home directory?". The default is no.
+teeup lists the files that chezmoi manages in two groups: the files that teeup has its own version of, and the other files.
+Only the backup copy will keep the files in the second group.
+Then teeup asks one time: "Move the files above aside so teeup can take over this home directory?".
+The default answer is no.
 
-When you say yes, each file is moved to `<name>.teeup_backup_<timestamp>` beside where it was, and teeup reinstalls its own version for every capability installed here. `~/.zshrc` and the other shell files are back before the command finishes, so the next terminal has teeup's layer. Copy anything personal out of the backups into your `local.*` files (see [Dotfiles](dotfiles.md)).
+If you answer yes, teeup moves each file to `<name>.teeup_backup_<timestamp>` in the same directory.
+teeup then installs its own version again for each capability that is installed on this Mac.
+Before the command finishes, `~/.zshrc` and the other shell files are in place again, so the next terminal has the teeup layer.
+Copy personal data from the backups into your `local.*` files (read [Dotfiles](dotfiles.md)).
 
-Without a terminal, teeup moves nothing: it prints what a run from a terminal would move and stops.
+If there is no terminal, teeup moves nothing, but shows what a run from a terminal will move and stops.
 
-Last, it offers to delete `~/.config/chezmoi`, the config that points chezmoi at its source. That is the only thing the chezmoi step can delete, and the default is no. If you keep it, a later `chezmoi apply` puts chezmoi's files back over teeup's.
+Last, teeup asks to delete `~/.config/chezmoi`, the configuration that points chezmoi to its source.
+This is the only item that the chezmoi step can delete, and the default answer is no.
+If you keep it, a later `chezmoi apply` replaces the teeup files with the chezmoi files.
 
 ## What it never does
 
-- Delete the chezmoi source directory, or anything in it. That checkout may still serve other machines.
-- Run `chezmoi purge`. teeup only ever asks chezmoi what it manages and where its source is.
-- Delete or move anything outside your home directory, or inside any git checkout in it. (It does edit your zsh files where `ZDOTDIR` puts them, backing each one up first, and it leaves a symlinked one alone.)
-- Move your shell files aside when teeup's zsh layer is not installed, which would leave you with no `~/.zshrc`. It says so and tells you to run `teeup install zsh` first.
+- teeup never deletes the chezmoi source directory or its contents, because that checkout can continue to serve other computers.
+- teeup never runs `chezmoi purge`. It only asks chezmoi what it manages and where its source is.
+- teeup never deletes or moves items outside your home directory, or inside a git checkout in your home directory. But it does edit your zsh files in the directory that `ZDOTDIR` gives, after it makes a backup of each file. It does not change a symlinked file.
+- teeup never moves your shell files aside if the teeup zsh layer is not installed, because that move would leave you without a `~/.zshrc` file. Instead, it tells you to run `teeup install zsh` first.
 
-Every step runs to the end even when an earlier one refused something, and the output names each thing it left alone. Read that output rather than relying on the exit status: a refused deletion or move makes it exit non-zero, but a zsh file it could not edit, or a chezmoi question you answered no to (or that could not be asked without a terminal), still ends with exit status 0. Run `teeup doctor` afterwards to see anything still left over.
+Every step runs to the end, also when an earlier step refused something, and the output names each item that teeup did not change.
+Read that output, and do not rely on the exit status.
+
+A refused deletion or a refused move makes teeup exit with a non-zero status.
+But the exit status is still 0 if teeup could not edit a zsh file, or if you answered no to a chezmoi question.
+It is also 0 if teeup could not ask a chezmoi question because there was no terminal.
+After the migration, run `teeup doctor` to see the items that are still left.
 
 ## After migrating
 
-Open a new terminal, then run `teeup update` and `teeup doctor`. Doctor names what is still left over, with the command that fixes each one: an Oh My Zsh directory, Powerlevel10k files, a shell file that still loads an old setup, chezmoi still pointing at a source directory, or a `~/.gitconfig.local` whose `[user]` block git still reads.
+Open a new terminal.
+Then run `teeup update` and `teeup doctor`.
+`teeup doctor` names each item that is still left, with the command that fixes it.
+These items can be:
+
+- an Oh My Zsh directory
+- Powerlevel10k files
+- a shell file that still loads an old configuration
+- chezmoi, if it still points to a source directory
+- a `~/.gitconfig.local` file with a `[user]` block that git still reads

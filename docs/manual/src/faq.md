@@ -2,52 +2,54 @@
 
 ## Linux support
 
-teeup is for macOS. `./bootstrap` stops on any other system. On Arch Linux, [Omarchy](https://omarchy.org), which inspired teeup, does the same job.
+teeup is for macOS, and `./bootstrap` stops on any other system. On Arch Linux, [Omarchy](https://omarchy.org), which inspired teeup, does the same job.
 
 ## Supported architectures
 
-teeup supports Apple Silicon and Intel. On Apple Silicon, teeup installs Rosetta 2. Intel-only apps run.
+teeup supports Apple Silicon and Intel. On Apple Silicon, teeup installs Rosetta 2 so that Intel-only applications run.
 
 ## Package managers
 
-Homebrew is the default on macOS 13 and newer, MacPorts on macOS 12 and older. The first question of the first run lets you choose. MacPorts has no casks. On a MacPorts Mac, the GUI apps that only exist as casks, such as Zed, VS Code, Cursor and the browsers, are marked "not applicable" and teeup lists their download pages. See [Getting started](getting-started.md).
+Homebrew is the default package manager on macOS 13 and newer, and MacPorts on macOS 12 and older. The first question of the first run lets you select the package manager.
+
+MacPorts has no casks. If you use MacPorts, teeup marks the GUI applications that only exist as casks as "not applicable" and lists their download pages. These applications include Zed, VS Code, Cursor, and the browsers. See [Getting started](getting-started.md).
 
 ## Password prompts
 
-`./bootstrap` asks for your password for `sudo`. The package manager and system settings require it. Changing your login shell to zsh asks once more.
+`./bootstrap` asks for your password for `sudo`, because the package manager and the system settings require it. If you change your login shell to zsh, the system asks for your password again.
 
 ## Storage locations
 
 | Path | What |
 |---|---|
-| `~/.local/share/teeup` | The checkout: teeup's code, its layers and its themes |
+| `~/.local/share/teeup` | The checkout: the teeup code, its layers, and its themes |
 | `~/.local/bin/teeup` | A link to the `teeup` command in the checkout |
-| `~/.config/teeup/` | Your answers, machine file, hooks and menu additions |
-| `~/.local/state/teeup/` | What teeup has done: markers, shims, the rendered theme, checksums of copied files, and logs |
+| `~/.config/teeup/` | Your answers, the machine file, the hooks, and the menu additions |
+| `~/.local/state/teeup/` | A record of what teeup did: the markers, the shims, the rendered theme, the checksums of the copied files, and the logs |
 
 ## Dotfiles
 
-teeup does not overwrite dotfiles you have edited. A file of yours that teeup needs to replace is moved aside as `<name>.teeup_backup_<timestamp>` first, and teeup prints the lines that differ. After that, every copied file is yours. See [Dotfiles](dotfiles.md).
+teeup does not overwrite the dotfiles that you edit. If teeup must replace one of your files, it first renames your file to `<name>.teeup_backup_<timestamp>` and prints the lines that differ. After that, you own every copied file. See [Dotfiles](dotfiles.md).
 
 ## Migrating from older tools
 
-`teeup migrate legacy` retires the wiring from chezmoi or the old teeup on this Mac. Run it with `DRY_RUN=true` first to preview the changes. [Migrating](migrating.md) lists what it moves aside and what it leaves alone.
+`teeup migrate legacy` retires the wiring from chezmoi or the old teeup on this Mac. Run it with `DRY_RUN=true` first to preview the changes. [Migrating](migrating.md) lists what it moves aside and what it keeps.
 
 ## Skipping capabilities
 
-Say no to the daily set in the wizard, or run `./bootstrap --skip-daily`. To keep any capability off one Mac for good, list it in `TEEUP_SKIP` in your machine file (see [Answers and machines](answers-and-machines.md)).
+Answer no to the daily set in the wizard, or run `./bootstrap --skip-daily`. If you never want a capability on a Mac, list it in `TEEUP_SKIP` in the machine file (see [Answers and machines](answers-and-machines.md)).
 
 ## Adding new tools
 
-Install it the usual way, with `brew install`. `teeup update` upgrades everything Homebrew manages, not only what teeup installed. To make it part of teeup, write a capability: see [Hooks and extending](hooks-and-extending.md).
+Install the new tool with `brew install`. `teeup update` upgrades all the packages that Homebrew manages, also the packages that teeup did not install. To make the tool part of teeup, write a capability (see [Hooks and extending](hooks-and-extending.md)).
 
 ## Removing capabilities
 
-`teeup remove <capability>`. It runs the capability's own removal steps, uninstalls its packages and casks, and keeps your config files. It refuses to run while another installed capability needs it, and it refuses a capability it has no way to undo. A removed core or daily capability comes back on the next `./bootstrap` unless you skip it.
+Run `teeup remove <capability>`. It runs the removal steps of the capability and uninstalls its packages and casks, but keeps your configuration files. It stops if another installed capability requires this capability, or if teeup cannot undo the capability. The next `./bootstrap` installs a removed core or daily capability again, unless you skip it.
 
 ## Uninstalling teeup
 
-`teeup uninstall`, after a preview with `DRY_RUN=true`. It keeps your packages, edited files, SSH keys and the checkout unless you say otherwise. See [Uninstall](uninstall.md).
+Run `teeup uninstall` after you preview the changes with `DRY_RUN=true`. It keeps your packages, the edited files, the SSH keys, and the checkout, unless you tell it to remove them. See [Uninstall](uninstall.md).
 
 ## SSH keys
 
@@ -55,12 +57,12 @@ teeup does not delete SSH keys. See [Identity](identity.md).
 
 ## Using bash
 
-teeup's shell layer is written for zsh, and the zsh capability makes `/bin/zsh` your login shell. You can run bash scripts as always, but teeup's aliases, `PATH` and tool setup live in zsh.
+The teeup shell layer uses zsh, and the zsh capability makes `/bin/zsh` your login shell. You can run bash scripts as usual, but the teeup aliases, `PATH`, and tool configuration are in zsh.
 
 ## Telemetry and network usage
 
-teeup collects no data and requires no account. It talks to the network to fetch packages, to pull its own checkout on `teeup update`, and to sign you in to GitHub and upload your public SSH key, which you approve in the browser.
+teeup does not collect data or require an account. It connects to the network to download packages, and to update its checkout during `teeup update`. It also connects to sign you in to GitHub and to upload your public SSH key, which you approve in the browser.
 
 ## Manual version
 
-teeup 0.2.0-beta. `teeup version` prints the version you have.
+This manual applies to teeup 0.2.0-beta. `teeup version` prints the version that you have.

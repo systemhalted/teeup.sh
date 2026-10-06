@@ -1,6 +1,7 @@
 # macOS defaults
 
-Two core capabilities change macOS: `macos-defaults` sets a list of preferences for development, and `keyboard` turns Caps Lock into Control. Both can be undone with `teeup remove`.
+Two core capabilities change macOS: `macos-defaults` configures a list of preferences for development, and `keyboard` changes Caps Lock to Control.
+You can undo the changes of each capability with `teeup remove`.
 
 ## The preferences
 
@@ -10,45 +11,54 @@ Two core capabilities change macOS: `macos-defaults` sets a list of preferences 
 | Finder | Show hidden files | on |
 | Finder | Path bar | on |
 | Finder | Default view | list |
-| Finder | Warn when changing an extension | off |
+| Finder | Warn when you change an extension | off |
 | Dialogs | Save and Print panels | expanded |
 | Keyboard | Key repeat rate | fastest (`KeyRepeat` 2) |
 | Keyboard | Delay until repeat | shortest (`InitialKeyRepeat` 15) |
 | Typing | Smart quotes, smart dashes | off |
 | Typing | Automatic capitalisation, spelling correction | off |
 | Dock | Automatically hide | on |
-| Trackpad | Tap to click | on, for the built-in trackpad |
-| Screenshots | Save location | `~/Screenshots`, created if missing |
+| Trackpad | Tap to click | on for the built-in trackpad |
+| Screenshots | Save location | `~/Screenshots`. teeup creates this directory if it is missing |
 
-teeup restarts Finder and the Dock when it changed one of their settings. The two key-repeat settings take effect after you log out and back in.
+teeup restarts Finder, the Dock or SystemUIServer only when it changed one of the settings of that application.
+The two key-repeat settings apply only after you log out and log in again.
 
-Running `teeup configure macos-defaults` again changes nothing that already has the right value, and restarts nothing.
+If you run `teeup configure macos-defaults` again, it does not change a value that is already correct, and if no value changes, it restarts nothing.
 
 ## Putting them back
 
-The first time teeup writes a preference, it records the value it replaced. `teeup remove macos-defaults` writes each recorded value back, or deletes the setting if it did not exist before, then restarts Finder and the Dock. `~/Screenshots` stays, with whatever is in it.
+When teeup writes a preference for the first time, it records the previous value.
+`teeup remove macos-defaults` restores each recorded value, or deletes the setting if it did not exist before, and then restarts Finder, the Dock and SystemUIServer.
+The `~/Screenshots` directory and its contents stay on your Mac.
 
-If a preference cannot be restored, teeup names it and keeps `macos-defaults` marked installed, so you can fix the cause and run the removal again.
+If teeup cannot restore a preference, it shows the name of the preference and keeps `macos-defaults` marked as installed.
+You can then correct the cause and run the removal command again.
 
-Because `macos-defaults` is in the core tier, the next `./bootstrap` sets the preferences again. To keep them off on one Mac, add it to `TEEUP_SKIP` in the machine file (see [Answers and machines](answers-and-machines.md)).
+Because the capability is in the core tier, the next `./bootstrap` configures the preferences again.
+To keep the preferences off on one Mac, add the capability to `TEEUP_SKIP` in the machine file (read [Answers and machines](answers-and-machines.md)).
 
 ## Caps Lock as Control
 
-The `keyboard` capability maps Caps Lock to Control with macOS's own `hidutil`. It maps it directly without an extra app or kernel extension.
+The `keyboard` capability changes Caps Lock to Control directly with the macOS `hidutil` tool, without an extra application or a kernel extension.
 
 | Piece | What it does |
 |---|---|
-| `hidutil property --set ...` | Applies the mapping now |
-| LaunchAgent `sh.teeup.keyboard` | Applies it again at every login |
+| `hidutil property --set ...` | Applies the configuration immediately |
+| LaunchAgent `sh.teeup.keyboard` | Applies the configuration again at every login |
 
-To undo it:
+To remove the capability, run this command:
 
 ```sh
 teeup remove keyboard
 ```
 
-That unloads the LaunchAgent and clears the mapping at once, and Caps Lock is Caps Lock again.
+This command unloads the LaunchAgent and removes the configuration immediately, so Caps Lock operates as Caps Lock again.
 
 ## Changing a preference yourself
 
-Change it in System Settings as usual. teeup writes a preference when `macos-defaults` is configured, which happens at bootstrap and on each `teeup update`, and it only records the value it replaced the first time. A value you change by hand resets on the next update. If you want to keep your own values, skip the capability as above, or remove it.
+You can change a preference in System Settings, but teeup writes each preference again when it configures `macos-defaults`, at bootstrap and during each `teeup update`.
+teeup records the previous value only the first time.
+
+If you change a value manually, the value resets on the next update.
+To keep your own values, skip the capability with `TEEUP_SKIP`, as above, or remove the capability.

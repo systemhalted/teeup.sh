@@ -1,16 +1,19 @@
 # Prompt
 
-teeup uses [Starship](https://starship.rs/) for the shell prompt. It shows the current directory, git status, command duration, and other context.
+teeup uses [Starship](https://starship.rs/) for the shell prompt, which shows the current directory, the git status, the command duration, and other context.
 
-Starship's configuration lives at `~/.config/starship.toml`.
+The Starship configuration file is `~/.config/starship.toml`.
 
 ## How teeup manages it
 
-When teeup installs Starship, it copies its own `starship.toml` there exactly once. After that, teeup does not modify it. Because of teeup's copy-once rules, `teeup update` will never overwrite your changes. If you want teeup's latest version back, you can run `teeup reset starship` to restore it (your copy will be backed up first).
+When teeup installs Starship, it copies its own `starship.toml` file there one time, and does not change the file after that.
+Because of this copy-once rule, `teeup update` never replaces your changes.
+To get the newest teeup version back, run `teeup reset starship`, which makes a copy of your file first.
 
 ## The theme palette
 
-There are two exceptions to the copy-once rule. `~/.config/starship.toml` contains a palette block surrounded by markers:
+There are two exceptions to the copy-once rule.
+The first is a palette block between these markers:
 
 ```toml
 # teeup:theme-palette:start
@@ -20,6 +23,9 @@ blue = "#89b4fa"
 # teeup:theme-palette:end
 ```
 
-Additionally, the root `palette = ...` setting determines which palette is active. Every time you run `teeup theme set`, it updates the root `palette` setting and rewrites the lines between the markers. This is how the prompt follows your current theme.
+The second is the root `palette = ...` setting, which controls the active palette.
+Each time you run `teeup theme set`, teeup updates the root `palette` setting and rewrites the lines between the markers, so the prompt uses your theme.
 
-To customise your prompt, change anything else in the file. Keep your changes outside the markers and away from the root `palette` setting, and teeup will leave them alone.
+To configure your prompt, change the other settings in the file.
+Put your changes outside the markers, and do not change the root `palette` setting.
+If you do this, teeup does not replace your settings.

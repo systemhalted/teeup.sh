@@ -1,14 +1,16 @@
 # Company certificates
 
-When your Mac is on a network that inspects traffic, such as a company office or VPN, a proxy signs every secure connection with a private certificate. Your administrator installs that certificate in the macOS System keychain, so browsers trust it. Command-line tools such as git, Homebrew's curl, mise and Python's requests do not, because they read their own lists of trusted certificates. They fail with errors such as "self signed certificate in certificate chain".
+On a network that inspects traffic, such as a company office or a VPN, a proxy signs every secure connection with a private certificate. Your administrator installs that certificate in the macOS System keychain, so browsers trust it.
 
-When the Mac has certificates an administrator trusts as a root, teeup builds a certificate bundle (a PEM file) from Apple's public roots and those certificates. A certificate marked Never Trust is left out. teeup then points your shell and teeup's own commands at the bundle. On a Mac without company certificates it does nothing.
+Command-line tools such as git, Homebrew's curl, mise, and Python's requests do not trust the certificate, because they read their own lists of trusted certificates. They fail with errors such as "self signed certificate in certificate chain".
+
+If the Mac has certificates that an administrator trusts as roots, teeup makes a PEM certificate bundle from Apple's public roots and these certificates. It does not use a certificate marked Never Trust. Then it configures your shell and its own commands to use the bundle. On a Mac without company certificates, teeup does nothing.
 
 ## How it works
 
-You do not need to do anything. teeup builds the bundle during `./bootstrap` and rebuilds it at the start of every `teeup update`, before it contacts the network. The bundle lives in `~/.local/state/teeup/ca-bundle.pem`. It works on every network, because it holds both the public roots and the company ones.
+You do not need to do anything. teeup makes the bundle during `./bootstrap`, and makes it again at the start of every `teeup update`, before it connects to the network. teeup puts the bundle in `~/.local/state/teeup/ca-bundle.pem`. The bundle works on every network because it has the public roots and the company certificates.
 
-It configures the tools by setting these environment variables:
+teeup sets these environment variables to configure the tools:
 
 - `SSL_CERT_FILE`
 - `GIT_SSL_CAINFO`
@@ -19,19 +21,19 @@ It configures the tools by setting these environment variables:
 
 ## Overriding the bundle
 
-teeup only sets a variable that is not already set. To point one tool at a different file, set its variable in `~/.config/zsh/local.zsh`, which loads after teeup's settings:
+teeup sets a variable only if it does not have a value. To use a different file for one tool, set its variable in `~/.config/zsh/local.zsh`, which loads after the teeup settings:
 
 ```zsh
 export GIT_SSL_CAINFO="$HOME/certs/other.pem"
 ```
 
-To turn the bundle off entirely, run `teeup remove ca-bundle`.
+To remove the bundle entirely, run `teeup remove ca-bundle`.
 
 ## Troubleshooting
 
-`teeup doctor ca-bundle` says whether this Mac needs a bundle, and whether the bundle is present and current.
+`teeup doctor ca-bundle` shows if this Mac needs a bundle, and if the bundle is available and current.
 
-If your company replaces its certificate and git starts failing again, rebuild the bundle:
+If your company replaces its certificate and git fails again, make the bundle again:
 
 ```sh
 teeup configure ca-bundle
