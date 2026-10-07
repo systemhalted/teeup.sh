@@ -24,7 +24,7 @@ tgit() {
 # fixture_commit <version>: one commit whose version file is <version>.
 fixture_commit() {
   printf '%s\n' "$1" > "$WORK/version"
-  tgit -C "$WORK" add version bootstrap
+  tgit -C "$WORK" add version bootstrap bin/teeup
   tgit -C "$WORK" commit -q -m "$1"
 }
 
@@ -47,6 +47,8 @@ make_fixture() {
 } > "$HOME/bootstrap.out"
 EOF2
   chmod +x "$WORK/bootstrap"
+  mkdir -p "$WORK/bin"
+  printf '#!/usr/bin/env bash\n' > "$WORK/bin/teeup"
   fixture_commit "2.0.0"
   tgit -C "$WORK" tag v2.0.0
   fixture_commit "0.1.0-beta"
@@ -132,6 +134,22 @@ test_an_existing_directory_that_is_not_a_checkout_is_refused() {
   assert_contains "$out" "$DEST exists and is not a git checkout" || return 1
   assert_file_exists "$DEST/notes.txt" "the directory is left alone" || return 1
   [[ ! -e "$HOME/bootstrap.out" ]] || { echo "bootstrap ran"; return 1; }
+  cleanup_test_env
+}
+
+# A different repository at the install path is refused, and its own
+# ./bootstrap never runs.
+test_an_unrelated_git_checkout_is_refused() {
+  setup
+  mkdir -p "$DEST"
+  tgit init -q "$DEST"
+  printf '#!/usr/bin/env bash\ntouch "$HOME/unrelated-ran"\n' > "$DEST/bootstrap"
+  chmod +x "$DEST/bootstrap"
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$DEST is a git checkout, but not of teeup" || return 1
+  [[ ! -e "$HOME/unrelated-ran" ]] || { echo "the unrelated bootstrap ran"; return 1; }
   cleanup_test_env
 }
 
@@ -255,6 +273,7 @@ run_test "piped install passes its arguments to bootstrap" test_piped_install_pa
 run_test "a partly downloaded script does nothing" test_a_partly_downloaded_script_does_nothing
 run_test "an existing checkout is not cloned again" test_an_existing_checkout_is_not_cloned_again
 run_test "an existing directory that is not a checkout is refused" test_an_existing_directory_that_is_not_a_checkout_is_refused
+run_test "an unrelated git checkout is refused" test_an_unrelated_git_checkout_is_refused
 run_test "root is refused" test_root_is_refused
 run_test "a Mac is required" test_a_mac_is_required
 run_test "missing CLT installs through softwareupdate" test_missing_clt_installs_through_softwareupdate

@@ -146,6 +146,21 @@ test_release_fetches_a_release_made_after_the_clone() {
   cleanup_test_env
 }
 
+# A release withdrawn by deleting its tag on origin must stop being chosen,
+# although the clone fetched the tag before it was deleted.
+test_a_withdrawn_release_tag_is_not_chosen() {
+  setup
+  make_fixture
+  git -C "$CLONE" checkout -q --detach v0.1.0
+  tgit -C "$WORK" push -q origin :refs/tags/v0.2.0
+  channel_sync "$CLONE" release >/dev/null 2>&1
+  head_is "$CLONE" v0.1.0 || { echo "HEAD moved to the withdrawn v0.2.0"; return 1; }
+  if git -C "$CLONE" rev-parse -q --verify refs/tags/v0.2.0 >/dev/null; then
+    echo "the local v0.2.0 tag was kept"; return 1
+  fi
+  cleanup_test_env
+}
+
 test_main_from_a_detached_tag_ends_on_branch_main() {
   setup
   make_fixture
@@ -235,6 +250,7 @@ EOF2
 }
 
 echo "lib/channel.sh"
+run_test "a withdrawn release tag is not chosen" test_a_withdrawn_release_tag_is_not_chosen
 run_test "channel_get defaults to release" test_channel_get_defaults_to_release
 run_test "channel_get treats an unknown value as release" test_channel_get_treats_an_unknown_value_as_release
 run_test "newest release skips an old unrelated tag" test_newest_release_skips_an_old_unrelated_tag

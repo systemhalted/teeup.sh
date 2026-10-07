@@ -101,6 +101,13 @@ clone_teeup() {
   say "Cloned teeup $tag into $dest."
 }
 
+# is_teeup_checkout <dir> -> true when <dir> is a git checkout that has
+# teeup's bootstrap and bin/teeup. Any other repository there is not ours to
+# run: its ./bootstrap could be anything.
+is_teeup_checkout() {
+  [ -e "$1/.git" ] && [ -f "$1/bootstrap" ] && [ -f "$1/bin/teeup" ]
+}
+
 # run_bootstrap <dest> [args...]: replace this script with the checkout's
 # ./bootstrap, its prompts reading from the terminal.
 run_bootstrap() {
@@ -123,9 +130,12 @@ main() {
   [ "$(uname -s)" = "Darwin" ] || die "teeup installs on macOS only; this system is $(uname -s)."
   [ "$(id -u)" -ne 0 ] || die "Run the installer as your own user, not as root."
 
-  if [ -e "$dest/.git" ]; then
+  if is_teeup_checkout "$dest"; then
     say "teeup is already installed at $dest. Running its ./bootstrap again, which repairs what is missing."
     run_bootstrap "$dest" "$@"
+  fi
+  if [ -e "$dest/.git" ]; then
+    die "$dest is a git checkout, but not of teeup. Move it aside, then run the installer again."
   fi
   if [ -e "$dest" ]; then
     die "$dest exists and is not a git checkout of teeup. Move it aside, then run the installer again."

@@ -71,7 +71,9 @@ channel_sync() {
     release|main) ;;
     *) err "channel_sync: unknown channel '$channel'"; return 2 ;;
   esac
-  _channel_run "git fetch" git -C "$dir" fetch --tags --force origin || return 1
+  # --prune-tags drops a local tag that origin no longer has, so a release
+  # withdrawn by deleting its tag stops being chosen.
+  _channel_run "git fetch" git -C "$dir" fetch --tags --force --prune --prune-tags origin || return 1
 
   if [[ "$channel" == "main" ]]; then
     branch="$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
