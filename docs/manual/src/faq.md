@@ -65,4 +65,4 @@ teeup does not collect data or require an account. It connects to the network to
 
 ## Manual version
 
-This manual applies to teeup 0.2.0-beta. `teeup version` prints the version that you have.
+This manual applies to teeup 0.2.1-beta. `teeup version` prints the version that you have.

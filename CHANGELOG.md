@@ -9,12 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1-beta] - 2026-10-07
+
+teeup now installs its own `gh` and accepts a command already on `PATH` only when it runs. The manual is rewritten in ASD-STE100 Simplified Technical English.
+
 ### Changed
 - **WezTerm workspace picker.** Leader s now lists the workspaces configured in `local.lua`, then every other open workspace. Choosing a configured workspace that is not open yet opens it in its `cwd`. Before, the picker listed only the workspaces that were already open.
+- **Manual in Simplified Technical English.** Every page of the manual follows the ASD-STE100 writing rules: approved words, short sentences, instructions in the imperative, one topic per paragraph. A review against the code also corrected several statements, for example that `teeup update <capability>` runs a capability's update script instead of the package upgrade, and that macOS defaults also restart SystemUIServer.
+- **Homebrew or mise.** The Runtimes page explains which tools teeup installs with mise (language runtimes and the AI CLIs) and which with Homebrew or MacPorts (everything else).
 
 ### Fixed
-- **Existing command checks.** Package installs and doctor now accept a command already on `PATH` only when its version probe exits successfully before a short timeout. Broken mise shims are reported with the repair command instead of standing in for a Homebrew or MacPorts package.
+- **Existing command checks.** Package installs and doctor now accept a command already on `PATH` only when its version probe exits successfully before a short timeout. Broken mise shims are reported with the repair command instead of standing in for a Homebrew or MacPorts package. When the package is also missing, doctor's fix installs it and then clears the broken copy.
 - **GitHub CLI ownership.** The `github` capability now installs `gh` through Homebrew or MacPorts even when another `gh` is on `PATH`. Doctor reports a missing package and warns when mise shadows the package-manager copy; a migration repairs existing installations without changing mise configuration.
+
+### Development
+- **STE check.** `tests/docs.sh` fails when a manual sentence has more than 25 words or a paragraph has more than six sentences. A code span counts as one word.
+- **Homebrew-or-mise rule for contributors.** CONTRIBUTING step 6 gives the same rule to capability authors and documents `package_commands`.
 
 ## [0.2.0-beta] - 2026-09-30
 
