@@ -78,7 +78,8 @@ install_clt() {
 # clone_teeup <repo> <dest> <dry-run:true|false>
 # Clones <repo>, then checks out the newest release: the nearest v<digit>
 # tag behind origin/main, the same rule lib/channel.sh uses for
-# `teeup update`. An older tag further back (v2.0.0) loses to a nearer one.
+# `teeup update`. An older tag further back loses to a nearer one, even
+# when its version number is higher.
 clone_teeup() {
   local repo="$1" dest="$2" dry="$3" tag
   if [ "$dry" = "true" ]; then

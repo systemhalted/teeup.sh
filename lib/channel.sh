@@ -29,7 +29,8 @@ channel_get() {
 # channel_newest_release <dir> -> the newest release tag on origin/main.
 # Releases are tagged on main, so the nearest v<digit> tag behind
 # origin/main is the newest one. An older tag that sits further back
-# (v2.0.0, from before the version numbers restarted) loses to a nearer one.
+# (such as a v2.0.0 left from before the version numbers restarted) loses
+# to a nearer one.
 # Prints nothing and returns non-zero when there is no such tag.
 channel_newest_release() {
   git -C "$1" describe --tags --abbrev=0 --match 'v[0-9]*' origin/main 2>/dev/null
