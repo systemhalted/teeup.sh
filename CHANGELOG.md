@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **WezTerm workspace picker.** Leader s now lists the workspaces configured in `local.lua`, then every other open workspace. Choosing a configured workspace that is not open yet opens it in its `cwd`. Before, the picker listed only the workspaces that were already open.
+
 ### Fixed
 - **Existing command checks.** Package installs and doctor now accept a command already on `PATH` only when its version probe exits successfully before a short timeout. Broken mise shims are reported with the repair command instead of standing in for a Homebrew or MacPorts package.
 - **GitHub CLI ownership.** The `github` capability now installs `gh` through Homebrew or MacPorts even when another `gh` is on `PATH`. Doctor reports a missing package and warns when mise shadows the package-manager copy; a migration repairs existing installations without changing mise configuration.
