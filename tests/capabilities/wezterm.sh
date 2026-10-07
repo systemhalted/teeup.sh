@@ -236,7 +236,22 @@ M.config_builder = function() return {} end
 M.font_with_fallback = function(specs) return specs end
 M.add_to_config_reload_watch_list = function() end
 M.default_hyperlink_rules = function() return {} end
-M.action = setmetatable({}, { __index = function() return function(...) return {} end end })
+M.action = setmetatable({}, {
+  __index = function(_, name)
+    return function(...)
+      local argv = { ... }
+      local action = { __wezterm_action = name, __args = argv }
+      if #argv == 1 and type(argv[1]) == "table" then
+        for k, v in pairs(argv[1]) do
+          action[k] = v
+        end
+      elseif #argv == 1 then
+        action.value = argv[1]
+      end
+      return action
+    end
+  end
+})
 M.run_child_process = function(args)
   if args and args[1] == "defaults" then
     if os.getenv("WEZTERM_TEST_DEFAULTS_ERRORS") then
@@ -286,6 +301,138 @@ _wezterm_config_keys() {
   rm -rf "$fake_dir"
   rm -f "$driver"
   printf '%s\n' "$out"
+}
+
+# Drive the custom Leader+s callback under plain Lua, capture the
+# InputSelector it opens, then invoke the selector's own callback once with a
+# choice and once as a cancel. This is the runtime path the config-building
+# tests above never touch.
+_wezterm_leader_s_output() {
+  local fake_dir driver out
+  fake_dir="$(mktemp -d)"
+  _wezterm_write_fake_module "$fake_dir"
+  driver="$(mktemp)"
+  cat > "$driver" <<DRIVER
+package.path = "$fake_dir/?.lua;$TEEUP_PATH/capabilities/wezterm/default/?.lua;" .. package.path
+local layer = require("teeup.wezterm")
+-- Open workspaces: "work" is also configured, "default" and "scratch" are not.
+require("wezterm").mux = { get_workspace_names = function() return { "default", "work", "scratch" } end }
+local keys = layer.keys({
+  workspaces = {
+    { key = "e", name = "work", cwd = "/Users/you/Work" },
+    { key = "p", name = "personal", cwd = "/Users/you/Personal" },
+  },
+})
+
+local leader_s
+for _, binding in ipairs(keys) do
+  if binding.key == "s" and binding.mods == "LEADER" then
+    leader_s = binding
+    break
+  end
+end
+if not leader_s then
+  print("LEADER_S_MISSING")
+  os.exit(1)
+end
+if type(leader_s.action) ~= "function" then
+  print("LEADER_S_ACTION_TYPE=" .. type(leader_s.action))
+  os.exit(1)
+end
+
+local function new_window()
+  local window = { actions = {} }
+  function window:perform_action(action, pane)
+    table.insert(self.actions, { action = action, pane = pane })
+  end
+  return window
+end
+
+local open_window = new_window()
+local open_pane = { id = "open-pane" }
+leader_s.action(open_window, open_pane)
+print("OPEN_ACTION_COUNT=" .. tostring(#open_window.actions))
+
+local selector_entry = open_window.actions[1]
+local selector = selector_entry and selector_entry.action or nil
+print("OPEN_ACTION_KIND=" .. tostring(selector and selector.__wezterm_action or nil))
+print("OPEN_ACTION_PANE_MATCH=" .. tostring(selector_entry and selector_entry.pane == open_pane or false))
+print("TITLE=" .. tostring(selector and selector.title or nil))
+print("FUZZY=" .. tostring(selector and selector.fuzzy or nil))
+print("FUZZY_DESCRIPTION=" .. tostring(selector and selector.fuzzy_description or nil))
+print("CHOICE_COUNT=" .. tostring(selector and selector.choices and #selector.choices or 0))
+for i, choice in ipairs(selector and selector.choices or {}) do
+  print(string.format("CHOICE_%d=%s|%s", i, tostring(choice.label), tostring(choice.id)))
+end
+
+if not selector or type(selector.action) ~= "function" then
+  print("SELECTOR_ACTION_MISSING")
+  os.exit(1)
+end
+
+local switch_window = new_window()
+local switch_pane = { id = "switch-pane" }
+selector.action(switch_window, switch_pane, "personal", "personal")
+print("SWITCH_ACTION_COUNT=" .. tostring(#switch_window.actions))
+
+local switch_entry = switch_window.actions[1]
+local switch = switch_entry and switch_entry.action or nil
+print("SWITCH_ACTION_KIND=" .. tostring(switch and switch.__wezterm_action or nil))
+print("SWITCH_PANE_MATCH=" .. tostring(switch_entry and switch_entry.pane == switch_pane or false))
+print("SWITCH_NAME=" .. tostring(switch and switch.name or nil))
+print("SWITCH_CWD=" .. tostring(switch and switch.spawn and switch.spawn.cwd or nil))
+
+local open_only_window = new_window()
+selector.action(open_only_window, switch_pane, "scratch", "scratch")
+local open_only = open_only_window.actions[1] and open_only_window.actions[1].action or nil
+print("OPEN_ONLY_NAME=" .. tostring(open_only and open_only.name or nil))
+print("OPEN_ONLY_SPAWN=" .. tostring(open_only and open_only.spawn or nil))
+
+local cancel_window = new_window()
+selector.action(cancel_window, switch_pane, nil, nil)
+print("CANCEL_ACTION_COUNT=" .. tostring(#cancel_window.actions))
+DRIVER
+  out="$("$WEZTERM_LUA" "$driver" 2>&1)"
+  rm -rf "$fake_dir"
+  rm -f "$driver"
+  printf '%s\n' "$out"
+}
+
+# The custom Leader+s binding no longer goes through ShowLauncherArgs; it
+# builds an InputSelector from local.lua's configured workspaces plus every
+# other open one, and turns the chosen entry back into SwitchToWorkspace
+# (with the configured cwd, when there is one). This exercises that
+# callback path directly, so a typo or a shape mismatch is caught here rather
+# than only by opening a real WezTerm window by hand.
+test_leader_s_offers_configured_and_open_workspaces() {
+  setup
+  if [[ -z "$WEZTERM_LUA" ]]; then
+    echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
+    cleanup_test_env
+    return "$(missing_tool_status)"
+  fi
+  local out
+  out="$(_wezterm_leader_s_output)"
+  assert_contains "$out" "OPEN_ACTION_COUNT=1" "Leader+s should open exactly one selector" || return 1
+  assert_contains "$out" "OPEN_ACTION_KIND=InputSelector" "Leader+s should open an InputSelector" || return 1
+  assert_contains "$out" "OPEN_ACTION_PANE_MATCH=true" "the selector should target the current pane" || return 1
+  assert_contains "$out" "TITLE=Choose Workspace" "the selector title should stay stable" || return 1
+  assert_contains "$out" "FUZZY=true" "the selector should open in fuzzy mode" || return 1
+  assert_contains "$out" "FUZZY_DESCRIPTION=Fuzzy find a workspace" "the selector should describe what it lists" || return 1
+  assert_contains "$out" "CHOICE_COUNT=4" "configured and open workspaces should each appear once" || return 1
+  assert_contains "$out" "CHOICE_1=work|work" "configured workspaces come first" || return 1
+  assert_contains "$out" "CHOICE_2=personal|personal" "a configured workspace that is not open should appear" || return 1
+  assert_contains "$out" "CHOICE_3=default|default" "an open workspace that is not configured should appear" || return 1
+  assert_contains "$out" "CHOICE_4=scratch|scratch" "a workspace made with Leader w should appear" || return 1
+  assert_contains "$out" "SWITCH_ACTION_COUNT=1" "choosing an item should issue exactly one switch action" || return 1
+  assert_contains "$out" "SWITCH_ACTION_KIND=SwitchToWorkspace" "a choice should switch workspaces" || return 1
+  assert_contains "$out" "SWITCH_PANE_MATCH=true" "the workspace switch should target the selector callback pane" || return 1
+  assert_contains "$out" "SWITCH_NAME=personal" "the selected workspace name should be the switch target" || return 1
+  assert_contains "$out" "SWITCH_CWD=/Users/you/Personal" "a configured workspace should spawn in its cwd" || return 1
+  assert_contains "$out" "OPEN_ONLY_NAME=scratch" "an open-only workspace switches by name" || return 1
+  assert_contains "$out" "OPEN_ONLY_SPAWN=nil" "an open-only workspace has no cwd to spawn in" || return 1
+  assert_contains "$out" "CANCEL_ACTION_COUNT=0" "cancelling the selector should do nothing" || return 1
+  cleanup_test_env
 }
 
 # The passthrough contract local.lua's `config = { ... }` table gives a
@@ -769,6 +916,7 @@ run_test "configure installs both user files" test_configure_installs_both_user_
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "font entry does not force a weight" test_font_entry_does_not_force_a_weight
+run_test "Leader+s offers configured and open workspaces" test_leader_s_offers_configured_and_open_workspaces
 run_test "local config passthrough overrides a teeup default" test_local_config_passthrough_overrides_a_teeup_default
 run_test "teeup defaults stand without a passthrough table" test_teeup_defaults_stand_without_a_passthrough_table
 run_test "VM detection sets WebGpu" test_vm_detection_sets_webgpu

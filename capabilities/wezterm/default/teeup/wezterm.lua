@@ -174,7 +174,43 @@ function M.keys(overrides)
         end
       end),
     }) },
-    { key = "s", mods = "LEADER", action = act.ShowLauncherArgs({ flags = "FUZZY|WORKSPACES" }) },
+
+    -- The configured workspaces first, opened in their cwd if they are not
+    -- open yet, then every other open workspace (one made with Leader w,
+    -- or "default").
+    { key = "s", mods = "LEADER", action = wezterm.action_callback(function(window, pane)
+      local choices, cwds, seen = {}, {}, {}
+      for _, ws in ipairs(overrides.workspaces or {}) do
+        if ws.name and not seen[ws.name] then
+          seen[ws.name] = true
+          cwds[ws.name] = ws.cwd
+          table.insert(choices, { id = ws.name, label = ws.name })
+        end
+      end
+      local ok, open = pcall(function() return wezterm.mux.get_workspace_names() end)
+      for _, name in ipairs(ok and open or {}) do
+        if not seen[name] then
+          seen[name] = true
+          table.insert(choices, { id = name, label = name })
+        end
+      end
+      window:perform_action(act.InputSelector({
+        title = "Choose Workspace",
+        choices = choices,
+        fuzzy = true,
+        fuzzy_description = "Fuzzy find a workspace",
+        action = wezterm.action_callback(function(inner_window, inner_pane, id)
+          if not id then
+            return
+          end
+          local switch = { name = id }
+          if cwds[id] then
+            switch.spawn = { cwd = cwds[id] }
+          end
+          inner_window:perform_action(act.SwitchToWorkspace(switch), inner_pane)
+        end),
+      }), pane)
+    end) },
     { key = "d", mods = "LEADER", action = act.SwitchToWorkspace({
       name = "default",
       spawn = { cwd = wezterm.home_dir },
