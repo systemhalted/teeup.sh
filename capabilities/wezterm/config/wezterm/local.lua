@@ -7,9 +7,9 @@ return {
   -- font_size = 13.0,
 
   -- Quick-switch workspaces: the leader key (CTRL+Space) plus the single
-  -- letter in `key` jumps straight there, and leader then `s` shows the same
-  -- list in a fuzzy picker. If a workspace is not open yet, WezTerm creates
-  -- it in `cwd`.
+  -- letter in `key` jumps straight there, and leader then `s` lists them in
+  -- a fuzzy picker, with every other open workspace after them. If a
+  -- workspace is not open yet, WezTerm creates it in `cwd`.
   -- workspaces = {
   --   { key = "e", name = "work", cwd = "/Users/you/Work" },
   --   { key = "p", name = "personal", cwd = "/Users/you/Personal" },

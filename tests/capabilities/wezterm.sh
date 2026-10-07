@@ -315,6 +315,8 @@ _wezterm_leader_s_output() {
   cat > "$driver" <<DRIVER
 package.path = "$fake_dir/?.lua;$TEEUP_PATH/capabilities/wezterm/default/?.lua;" .. package.path
 local layer = require("teeup.wezterm")
+-- Open workspaces: "work" is also configured, "default" and "scratch" are not.
+require("wezterm").mux = { get_workspace_names = function() return { "default", "work", "scratch" } end }
 local keys = layer.keys({
   workspaces = {
     { key = "e", name = "work", cwd = "/Users/you/Work" },
@@ -370,7 +372,7 @@ end
 
 local switch_window = new_window()
 local switch_pane = { id = "switch-pane" }
-selector.action(switch_window, switch_pane, "/Users/you/Personal", "personal")
+selector.action(switch_window, switch_pane, "personal", "personal")
 print("SWITCH_ACTION_COUNT=" .. tostring(#switch_window.actions))
 
 local switch_entry = switch_window.actions[1]
@@ -379,6 +381,12 @@ print("SWITCH_ACTION_KIND=" .. tostring(switch and switch.__wezterm_action or ni
 print("SWITCH_PANE_MATCH=" .. tostring(switch_entry and switch_entry.pane == switch_pane or false))
 print("SWITCH_NAME=" .. tostring(switch and switch.name or nil))
 print("SWITCH_CWD=" .. tostring(switch and switch.spawn and switch.spawn.cwd or nil))
+
+local open_only_window = new_window()
+selector.action(open_only_window, switch_pane, "scratch", "scratch")
+local open_only = open_only_window.actions[1] and open_only_window.actions[1].action or nil
+print("OPEN_ONLY_NAME=" .. tostring(open_only and open_only.name or nil))
+print("OPEN_ONLY_SPAWN=" .. tostring(open_only and open_only.spawn or nil))
 
 local cancel_window = new_window()
 selector.action(cancel_window, switch_pane, nil, nil)
@@ -391,11 +399,12 @@ DRIVER
 }
 
 # The custom Leader+s binding no longer goes through ShowLauncherArgs; it
-# builds an InputSelector from local.lua's configured workspaces and then
-# turns the chosen entry back into SwitchToWorkspace. This exercises that
+# builds an InputSelector from local.lua's configured workspaces plus every
+# other open one, and turns the chosen entry back into SwitchToWorkspace
+# (with the configured cwd, when there is one). This exercises that
 # callback path directly, so a typo or a shape mismatch is caught here rather
 # than only by opening a real WezTerm window by hand.
-test_leader_s_offers_configured_workspaces() {
+test_leader_s_offers_configured_and_open_workspaces() {
   setup
   if [[ -z "$WEZTERM_LUA" ]]; then
     echo "no lua interpreter installed: install lua5.4 (apt) or lua (brew) to run this test"
@@ -409,15 +418,19 @@ test_leader_s_offers_configured_workspaces() {
   assert_contains "$out" "OPEN_ACTION_PANE_MATCH=true" "the selector should target the current pane" || return 1
   assert_contains "$out" "TITLE=Choose Workspace" "the selector title should stay stable" || return 1
   assert_contains "$out" "FUZZY=true" "the selector should open in fuzzy mode" || return 1
-  assert_contains "$out" "FUZZY_DESCRIPTION=Fuzzy find a configured workspace" "the selector should describe the configured-workspace behavior" || return 1
-  assert_contains "$out" "CHOICE_COUNT=2" "every configured workspace should appear once" || return 1
-  assert_contains "$out" "CHOICE_1=work|/Users/you/Work" "the first configured workspace should appear with its cwd as the id" || return 1
-  assert_contains "$out" "CHOICE_2=personal|/Users/you/Personal" "the second configured workspace should appear with its cwd as the id" || return 1
+  assert_contains "$out" "FUZZY_DESCRIPTION=Fuzzy find a workspace" "the selector should describe what it lists" || return 1
+  assert_contains "$out" "CHOICE_COUNT=4" "configured and open workspaces should each appear once" || return 1
+  assert_contains "$out" "CHOICE_1=work|work" "configured workspaces come first" || return 1
+  assert_contains "$out" "CHOICE_2=personal|personal" "a configured workspace that is not open should appear" || return 1
+  assert_contains "$out" "CHOICE_3=default|default" "an open workspace that is not configured should appear" || return 1
+  assert_contains "$out" "CHOICE_4=scratch|scratch" "a workspace made with Leader w should appear" || return 1
   assert_contains "$out" "SWITCH_ACTION_COUNT=1" "choosing an item should issue exactly one switch action" || return 1
   assert_contains "$out" "SWITCH_ACTION_KIND=SwitchToWorkspace" "a choice should switch workspaces" || return 1
   assert_contains "$out" "SWITCH_PANE_MATCH=true" "the workspace switch should target the selector callback pane" || return 1
-  assert_contains "$out" "SWITCH_NAME=personal" "the selected label should become the workspace name" || return 1
-  assert_contains "$out" "SWITCH_CWD=/Users/you/Personal" "the selected id should become spawn.cwd" || return 1
+  assert_contains "$out" "SWITCH_NAME=personal" "the selected workspace name should be the switch target" || return 1
+  assert_contains "$out" "SWITCH_CWD=/Users/you/Personal" "a configured workspace should spawn in its cwd" || return 1
+  assert_contains "$out" "OPEN_ONLY_NAME=scratch" "an open-only workspace switches by name" || return 1
+  assert_contains "$out" "OPEN_ONLY_SPAWN=nil" "an open-only workspace has no cwd to spawn in" || return 1
   assert_contains "$out" "CANCEL_ACTION_COUNT=0" "cancelling the selector should do nothing" || return 1
   cleanup_test_env
 }
@@ -903,7 +916,7 @@ run_test "configure installs both user files" test_configure_installs_both_user_
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing
 run_test "font entry does not force a weight" test_font_entry_does_not_force_a_weight
-run_test "Leader+s offers configured workspaces" test_leader_s_offers_configured_workspaces
+run_test "Leader+s offers configured and open workspaces" test_leader_s_offers_configured_and_open_workspaces
 run_test "local config passthrough overrides a teeup default" test_local_config_passthrough_overrides_a_teeup_default
 run_test "teeup defaults stand without a passthrough table" test_teeup_defaults_stand_without_a_passthrough_table
 run_test "VM detection sets WebGpu" test_vm_detection_sets_webgpu
