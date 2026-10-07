@@ -19,7 +19,8 @@ teeup now installs its own `gh` and accepts a command already on `PATH` only whe
 - **Homebrew or mise.** The Runtimes page explains which tools teeup installs with mise (language runtimes and the AI CLIs) and which with Homebrew or MacPorts (everything else).
 
 ### Fixed
-- **Existing command checks.** Package installs and doctor now accept a command already on `PATH` only when its version probe exits successfully before a short timeout. Broken mise shims are reported with the repair command instead of standing in for a Homebrew or MacPorts package. When the package is also missing, doctor's fix installs it and then clears the broken copy.
+- **Existing command checks.** Package installs and doctor now accept a command already on `PATH` only when its version probe exits successfully before a short timeout. Broken mise shims are reported with the repair command instead of standing in for a Homebrew or MacPorts package.
+- **Doctor fix for a missing package behind a broken command.** When a package is missing and a broken command such as a stale mise shim shadows it, doctor's fix installs the package and then clears the broken copy, so the next doctor run passes.
 - **GitHub CLI ownership.** The `github` capability now installs `gh` through Homebrew or MacPorts even when another `gh` is on `PATH`. Doctor reports a missing package and warns when mise shadows the package-manager copy; a migration repairs existing installations without changing mise configuration.
 
 ### Development
