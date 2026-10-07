@@ -861,13 +861,18 @@ EOF2
   cleanup_test_env
 }
 
-# Everything `teeup update` reaches out to, mocked: the checkout is clean, the
+# Everything `teeup update` reaches out to, mocked: the checkout is clean and
+# one release (v9.9.9) behind origin/main's newest, with HEAD detached; the
 # package manager and mise do nothing, and the fixture core.list is alpha+beta.
+# lib/channel.sh's own suite runs the release rule against real git.
 mock_update_world() {
   mock_command_script git <<'EOF2'
-echo "git $*" >> "$MOCK_LOG"
 case "$*" in
   *status*) exit 0 ;;
+  *describe*) echo v9.9.9 ;;
+  *"rev-parse HEAD") echo 1111111 ;;
+  *rev-parse*) echo 9999999 ;;
+  *symbolic-ref*) exit 1 ;;
 esac
 exit 0
 EOF2
@@ -1215,7 +1220,10 @@ test_update_walks_every_step_in_order() {
   printf '#!/usr/bin/env bash\necho "migration ran"\n' > "$TEEUP_MIGRATIONS_DIR/1780000000.sh"
   local out
   out="$("$TEEUP" update 2>&1)"
-  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH pull --ff-only" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH fetch --tags --force origin" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH checkout --quiet --detach v9.9.9" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "pull --ff-only" "the release channel never pulls" || return 1
+  assert_contains "$out" "Updated teeup from $(cat "$TEEUP_PATH/version") to v9.9.9." || return 1
   assert_contains "$out" "migration ran" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" || return 1
@@ -1352,7 +1360,8 @@ EOF2
   out="$("$TEEUP" update 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "$TEEUP_PATH has uncommitted changes" || return 1
-  assert_not_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH pull" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH fetch" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH checkout" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "brew update" "nothing after the checkout runs" || return 1
   cleanup_test_env
 }
@@ -1363,7 +1372,7 @@ test_update_carries_on_when_the_pull_fails() {
 echo "git $*" >> "$MOCK_LOG"
 case "$*" in
   *status*) exit 0 ;;
-  *pull*) echo "fatal: unable to access github.com" >&2; exit 128 ;;
+  *fetch*) echo "fatal: unable to access github.com" >&2; exit 128 ;;
 esac
 exit 0
 EOF2
@@ -1373,7 +1382,7 @@ EOF2
   local rc=0 out
   out="$("$TEEUP" update 2>&1)" || rc=$?
   assert_failure "$rc" "an update with a failed step exits non-zero" || return 1
-  assert_contains "$out" "git pull --ff-only failed" || return 1
+  assert_contains "$out" "git fetch failed; continuing with the checkout as it is." || return 1
   assert_contains "$out" "configure:alpha" "the rest of the update still ran" || return 1
   assert_contains "$out" "teeup update finished, with the problems above." || return 1
   cleanup_test_env
@@ -1385,8 +1394,8 @@ test_update_refreshes_the_ca_bundle_before_git_pull() {
   mock_command_script git <<'EOF2'
 case "$*" in
   *status*) exit 0 ;;
-  *pull*)
-    [ -s "${SSL_CERT_FILE:-}" ] || { echo "pull ran without a CA bundle" >&2; exit 97; }
+  *fetch*)
+    [ -s "${SSL_CERT_FILE:-}" ] || { echo "fetch ran without a CA bundle" >&2; exit 97; }
     ;;
 esac
 exit 0
@@ -1400,9 +1409,9 @@ EOF2
 
   local export_line pull_line
   export_line="$(grep -n 'security trust-settings-export -d' "$MOCK_LOG" | head -1 | cut -d: -f1)"
-  pull_line="$(grep -n "git -C $TEEUP_PATH pull --ff-only" "$MOCK_LOG" | head -1 | cut -d: -f1)"
-  [[ -n "$export_line" && -n "$pull_line" ]] || { echo "expected refresh and pull calls"; cat "$MOCK_LOG"; return 1; }
-  [[ "$export_line" -lt "$pull_line" ]] || { echo "git pull ran before the CA bundle refresh"; return 1; }
+  pull_line="$(grep -n "git -C $TEEUP_PATH fetch --tags --force origin" "$MOCK_LOG" | head -1 | cut -d: -f1)"
+  [[ -n "$export_line" && -n "$pull_line" ]] || { echo "expected refresh and fetch calls"; cat "$MOCK_LOG"; return 1; }
+  [[ "$export_line" -lt "$pull_line" ]] || { echo "git fetch ran before the CA bundle refresh"; return 1; }
   cleanup_test_env
 }
 
@@ -1412,7 +1421,7 @@ test_update_explains_a_certificate_pull_failure() {
   mock_command_script git <<'EOF2'
 case "$*" in
   *status*) exit 0 ;;
-  *pull*) echo "SSL certificate problem: self signed certificate in certificate chain" >&2; exit 128 ;;
+  *fetch*) echo "SSL certificate problem: self signed certificate in certificate chain" >&2; exit 128 ;;
 esac
 exit 0
 EOF2
@@ -1468,7 +1477,7 @@ test_update_one_capability_refuses_what_it_cannot_update() {
   out="$(TEEUP_SKIP=alpha "$TEEUP" update alpha 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "alpha is skipped on this machine (TEEUP_SKIP)" || return 1
-  assert_contains "$("$TEEUP" help)" "teeup update [<capability>]" || return 1
+  assert_contains "$("$TEEUP" help)" "teeup update [--main|--release] [<capability>]" || return 1
   cleanup_test_env
 }
 
@@ -1673,14 +1682,123 @@ test_update_dry_run_changes_nothing() {
   : > "$MOCK_LOG"
   local out
   out="$(DRY_RUN=true "$TEEUP" update 2>&1)"
-  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH pull --ff-only" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH fetch --tags --force origin" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH checkout --quiet --detach v9.9.9" || return 1
   assert_contains "$out" "[DRY-RUN] Would execute: touch $TEST_HOME/made" || return 1
   assert_contains "$out" "[DRY-RUN] Would execute: brew update" || return 1
   assert_contains "$out" "[DRY-RUN] Would execute: mise -C / upgrade" || return 1
-  assert_not_contains "$(cat "$MOCK_LOG")" "pull --ff-only" "nothing was pulled" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "fetch --tags" "nothing was fetched" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "checkout --quiet" "nothing was checked out" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "brew update" "nothing was upgraded" || return 1
   [[ ! -e "$TEST_HOME/made" ]] || { echo "a migration mutated in dry run"; return 1; }
   [[ ! -e "$TEST_HOME/.local/state/teeup/migrations/1780000000.sh" ]] || { echo "marker written in dry run"; return 1; }
+  cleanup_test_env
+}
+
+# --main and --release choose the channel and save it, so the next plain
+# `teeup update` follows the same one.
+test_update_main_flag_saves_the_channel_and_follows_main() {
+  setup
+  mock_update_world
+  local out
+  out="$("$TEEUP" update --main 2>&1)"
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_UPDATE_CHANNEL="main"' || return 1
+  assert_contains "$out" "teeup update now follows main." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH checkout --quiet -B main origin/main" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH pull --ff-only origin main" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "checkout --quiet --detach" || return 1
+  : > "$MOCK_LOG"
+  "$TEEUP" update >/dev/null 2>&1
+  assert_contains "$(cat "$MOCK_LOG")" "pull --ff-only origin main" "the channel is sticky" || return 1
+  out="$("$TEEUP" update --release 2>&1)"
+  assert_contains "$(cat "$TEST_HOME/.config/teeup/answers")" 'TEEUP_UPDATE_CHANNEL="release"' || return 1
+  assert_contains "$out" "teeup update now follows releases." || return 1
+  cleanup_test_env
+}
+
+test_update_channel_flag_warns_about_a_machine_pin() {
+  setup
+  mock_update_world
+  pin_machine 'TEEUP_UPDATE_CHANNEL="release"'
+  local out
+  out="$("$TEEUP" update --main 2>&1)"
+  assert_contains "$out" "pins TEEUP_UPDATE_CHANNEL=release" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
+# A single-capability update never touches the checkout, so a channel flag
+# there would be saved and silently do nothing this run.
+test_update_refuses_a_channel_flag_with_a_capability() {
+  setup
+  mock_update_world
+  "$TEEUP" install alpha >/dev/null
+  local rc=0 out
+  out="$("$TEEUP" update --main alpha 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "teeup update alpha does not update teeup itself" || return 1
+  assert_not_contains "$out" "configure:alpha" || return 1
+  if grep -q TEEUP_UPDATE_CHANNEL "$TEST_HOME/.config/teeup/answers" 2>/dev/null; then
+    echo "the refused flag was saved"; return 1
+  fi
+  rc=0
+  out="$("$TEEUP" update --main --release 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Use one of --main and --release." || return 1
+  rc=0
+  out="$("$TEEUP" update --nightly 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Unknown option: --nightly" || return 1
+  cleanup_test_env
+}
+
+test_update_channel_flag_dry_run_writes_nothing() {
+  setup
+  mock_update_world
+  local out
+  out="$(DRY_RUN=true "$TEEUP" update --main 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would set TEEUP_UPDATE_CHANNEL" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH checkout --quiet -B main origin/main" "the preview follows the new channel" || return 1
+  if grep -q TEEUP_UPDATE_CHANNEL "$TEST_HOME/.config/teeup/answers" 2>/dev/null; then
+    echo "a dry run saved the channel"; return 1
+  fi
+  cleanup_test_env
+}
+
+# Every machine set up before 0.3.0 tracks main. The first update after it
+# says once that releases are now the default, and how to keep main.
+test_update_tells_a_main_user_that_it_now_follows_releases() {
+  setup
+  mock_command_script git <<'EOF2'
+case "$*" in
+  *status*) exit 0 ;;
+  *describe*) echo v9.9.9 ;;
+  *rev-parse*) echo 1111111 ;;
+  *symbolic-ref*) echo main ;;
+esac
+exit 0
+EOF2
+  mock_command brew 0 ""
+  mock_command mise 0 ""
+  local out notice="teeup now follows releases. To keep following main, run: teeup update --main"
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "$notice" || return 1
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c "teeup now follows releases")" "once per run" || return 1
+  seed_config_answers
+  printf 'TEEUP_UPDATE_CHANNEL="release"\n' >> "$TEST_HOME/.config/teeup/answers"
+  out="$("$TEEUP" update 2>&1)"
+  assert_not_contains "$out" "$notice" "a chosen channel needs no notice" || return 1
+  cleanup_test_env
+}
+
+test_config_reads_and_explains_the_update_channel() {
+  setup
+  seed_config_answers
+  assert_equals "release" "$("$TEEUP" config get TEEUP_UPDATE_CHANNEL)" "the default, before it is set" || return 1
+  local out
+  out="$("$TEEUP" config set TEEUP_UPDATE_CHANNEL main 2>&1)"
+  assert_contains "$out" "Run: teeup update -- that is what reads TEEUP_UPDATE_CHANNEL." || return 1
+  assert_equals "main" "$("$TEEUP" config get TEEUP_UPDATE_CHANNEL)" || return 1
   cleanup_test_env
 }
 
@@ -2766,6 +2884,12 @@ run_test "update refuses a dirty checkout" test_update_refuses_a_dirty_checkout
 run_test "update carries on when the pull fails" test_update_carries_on_when_the_pull_fails
 run_test "update refreshes the CA bundle before git pull" test_update_refreshes_the_ca_bundle_before_git_pull
 run_test "update explains a certificate pull failure" test_update_explains_a_certificate_pull_failure
+run_test "update --main saves the channel and follows main" test_update_main_flag_saves_the_channel_and_follows_main
+run_test "update channel flag warns about a machine pin" test_update_channel_flag_warns_about_a_machine_pin
+run_test "update refuses a channel flag with a capability" test_update_refuses_a_channel_flag_with_a_capability
+run_test "update channel flag dry run writes nothing" test_update_channel_flag_dry_run_writes_nothing
+run_test "update tells a main user that it now follows releases" test_update_tells_a_main_user_that_it_now_follows_releases
+run_test "config reads and explains the update channel" test_config_reads_and_explains_the_update_channel
 run_test "update one capability upgrades its packages and configures" test_update_one_capability_upgrades_its_packages_and_configures
 run_test "update one capability refuses what it cannot update" test_update_one_capability_refuses_what_it_cannot_update
 run_test "update runs a capability's own update script" test_update_runs_a_capabilitys_own_update_script
