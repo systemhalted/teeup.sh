@@ -21,7 +21,7 @@ teeup copies the two files in `~/.config/wezterm` one time.
 | Entry | Example | Effect |
 |---|---|---|
 | `font_size` | `font_size = 13.0` | Sets the font size. `teeup install font` configures the font family. |
-| `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | Configures a workspace that opens when you press the leader key and then the value of `key`, for example `e`. |
+| `workspaces` | `{ key = "e", name = "work", cwd = "/Users/you/Work" }` | Configures named workspaces for both the single-key leader shortcuts and the `Leader s` fuzzy picker. If the workspace is not open yet, selecting it opens it in `cwd`. |
 | `hyperlink_rules` | A `regex` and `format` pair | Configures extra Cmd+Click link patterns. |
 | `config` | `config = { check_for_updates = false }` | Raw WezTerm settings, which override the teeup defaults. |
 
@@ -44,7 +44,7 @@ Press it and release it, then press the next key within one second.
 | Leader c / Leader k | Open a new tab / close the current tab |
 | Leader f / Leader b | Go to the next tab / go to the previous tab |
 | Leader w | Name a new workspace and open it |
-| Leader s | Select a workspace from a fuzzy list |
+| Leader s | Select a configured workspace from a fuzzy list, opening it in its configured directory if needed |
 | Leader d | Return to the default workspace |
 | Leader r | Start resize mode, where the arrows resize the pane. Escape or Return stops it. |
 | Leader v | Start copy mode |

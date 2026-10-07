@@ -174,7 +174,36 @@ function M.keys(overrides)
         end
       end),
     }) },
-    { key = "s", mods = "LEADER", action = act.ShowLauncherArgs({ flags = "FUZZY|WORKSPACES" }) },
+
+    { key = "s", mods = "LEADER", action = wezterm.action_callback(function(window, pane)
+            local choices = {}
+            for _, ws in ipairs(overrides.workspaces or {}) do
+               table.insert(choices, {
+                               id = ws.cwd,
+                               label = ws.name,
+               })
+            end
+
+            window:perform_action(act.InputSelector {
+                                     title = 'Choose Workspace',
+                                     choices = choices,
+                                     fuzzy = true,
+                                     fuzzy_description = 'Fuzzy find a configured workspace',
+                                     action = wezterm.action_callback(function(inner_window, inner_pane, id, label)
+                                           if not id or not label then
+                                              return
+                                           end
+
+                                           inner_window:perform_action(act.SwitchToWorkspace {
+                                                                          name = label,
+                                                                          spawn = {
+                                                                             cwd = id
+                                                                          },
+                                                                                             }, inner_pane)
+                                           end),
+            }, pane)
+    end)},
+    
     { key = "d", mods = "LEADER", action = act.SwitchToWorkspace({
       name = "default",
       spawn = { cwd = wezterm.home_dir },

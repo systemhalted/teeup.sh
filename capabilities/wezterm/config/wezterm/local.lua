@@ -6,8 +6,10 @@ return {
   -- `teeup install font <name>`, so it is not set here.
   -- font_size = 13.0,
 
-  -- Quick-switch workspaces, reached with the leader key (CTRL+Space) and the
-  -- single letter in `key`.
+  -- Quick-switch workspaces: the leader key (CTRL+Space) plus the single
+  -- letter in `key` jumps straight there, and leader then `s` shows the same
+  -- list in a fuzzy picker. If a workspace is not open yet, WezTerm creates
+  -- it in `cwd`.
   -- workspaces = {
   --   { key = "e", name = "work", cwd = "/Users/you/Work" },
   --   { key = "p", name = "personal", cwd = "/Users/you/Personal" },
