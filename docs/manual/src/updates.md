@@ -56,7 +56,7 @@ The code on `main` is newer than the newest release, and it can be unstable. tee
 
 To follow releases again, run `teeup update --release`. This does not move the checkout back. The checkout stays on its commit on `main` until there is a newer release.
 
-Before 0.3.0, every installation followed `main`. If `TEEUP_UPDATE_CHANNEL` has no value and the checkout is on the branch `main`, `teeup update` shows this notice: "teeup now follows releases. To keep following main, run: teeup update --main".
+Before teeup 0.3.0-beta, every installation followed `main`. If `TEEUP_UPDATE_CHANNEL` has no value and the checkout is on the branch `main`, `teeup update` shows this notice: "teeup now follows releases. To keep following main, run: teeup update --main".
 
 After you select a channel with `--main` or `--release`, the notice stops. If your machine file sets `TEEUP_UPDATE_CHANNEL`, the machine file wins, and teeup shows a warning. You cannot use `--main` or `--release` with a capability name, because `teeup update <capability>` does not move the checkout.
 
