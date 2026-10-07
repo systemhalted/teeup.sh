@@ -122,11 +122,30 @@ TEEUP_NO_GUM=1 ./bootstrap
 Ctrl-C stops the run, also at a prompt, but teeup keeps the answers that you gave.
 Run `./bootstrap` again to continue from the point where it stopped.
 
-### `teeup update` will not pull
+### `teeup update` does not move the checkout
 
-The teeup checkout has uncommitted changes.
-Commit, stash, or discard the changes in `~/.local/share/teeup`.
-Run `teeup update` again.
+`teeup update` moves the checkout in `~/.local/share/teeup` only forward. The message tells you why it did not move:
+
+| Message | What to do |
+|---|---|
+| "has uncommitted changes" | Commit, stash, or discard the changes in the checkout. Then run `teeup update` again. |
+| "teeup is ahead of the newest release" | Nothing. This is correct for a checkout that followed `main`. The checkout moves when a newer release exists. |
+| "has commits that the newest release ... does not have" | The checkout has your own commits. Move them to a branch, or run `teeup update --main` if you want to follow `main`. |
+| "The local branch main ... has commits that origin/main does not have" | Move your commits from `main` to a different branch. Then run `teeup update --main` again. |
+| "git fetch failed" with a certificate message | The network re-signs HTTPS. Run `teeup doctor ca-bundle`, or run `teeup update` on a different network. |
+
+### The installer stops
+
+The one-line installer stops with a message in these cases:
+
+| Message | What to do |
+|---|---|
+| "is not a git checkout of teeup" | Move the directory `~/.local/share/teeup` aside. Then run the installer again. |
+| "softwareupdate could not install" or "The Command Line Tools are still missing" | Run `xcode-select --install`, complete the dialog, and then run the installer again. |
+| "git clone ... failed" | The network can re-sign HTTPS, which git does not trust before teeup builds its certificate bundle. Run the installer on a different network. |
+| "Run the installer as your own user" | Do not use `sudo` for the installer. The installer asks for your password when it needs it. |
+
+If the installer shows "Waiting for the Command Line Tools installer to finish", complete Apple's dialog. The installer continues when the tools are installed.
 
 ### A script fails with exit status 127 and "is provided by capability"
 
