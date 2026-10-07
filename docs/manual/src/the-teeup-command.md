@@ -14,7 +14,8 @@ Run `teeup list` to see all capabilities.
 | `teeup install font <name>` | Install a Nerd Font and configure every tool to use it. Run `teeup install font list` to see the known font names. |
 | `teeup configure <capability>` | Configure the capability again. |
 | `teeup reset <capability>` | Restore the configuration files to the teeup version. teeup makes a backup of your files and prints the differences. |
-| `teeup update` | Update the machine: pull the checkout, upgrade the packages and the mise tools, and run the migrations. Then configure the core and daily tiers again, render the theme, and run your hooks. |
+| `teeup update` | Update the machine: move the checkout to the newest release, upgrade the packages and the mise tools, and run the migrations. Then configure the core and daily tiers again, render the theme, and run your hooks. |
+| `teeup update --main` | Follow `main` instead of releases, now and in later updates. `teeup update --release` follows releases again. See [Updates](updates.md#release-or-main). |
 | `teeup update <capability>` | Upgrade the packages for one capability, or run its own update script if it has one. Then configure the capability again. |
 | `teeup remove <capability>` | Undo what a capability installed. Your configuration files remain. See [Removing a capability](#removing-a-capability). |
 | `teeup uninstall` | Remove teeup from the Mac after you confirm. Add `--packages` to uninstall the packages. Add `--identity` to remove your git identity. Add `--yes` to run without prompts. See [Uninstall](uninstall.md). |

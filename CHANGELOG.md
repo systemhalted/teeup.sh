@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **One-line installer.** `curl -fsSL https://teeup.systemhalted.in/install.sh | bash` installs the Xcode Command Line Tools if they are missing, clones teeup at its newest release, and runs `./bootstrap`. Options after `bash -s --` go to bootstrap. The installer is published with the manual on every release tag.
+
+### Changed
+- **`teeup update` follows releases.** It moves the checkout to the newest release tag on `main` instead of pulling `main`, and never moves it backwards. A checkout already ahead of the newest release stays where it is. `teeup update --main` follows `main` instead, `teeup update --release` switches back, and the choice is saved as `TEEUP_UPDATE_CHANNEL`. A checkout on `main` with no saved choice gets a one-line notice.
+
 ## [0.2.1-beta] - 2026-10-07
 
 teeup now installs its own `gh` and accepts a command already on `PATH` only when it runs. The manual is rewritten in ASD-STE100 Simplified Technical English.

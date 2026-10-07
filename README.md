@@ -22,6 +22,25 @@ teeup sets up a Mac and manages it afterwards. It installs command-line tools, l
 
 ## Installation
 
+Run one of these lines in Terminal:
+
+```bash
+curl -fsSL https://teeup.systemhalted.in/install.sh | bash
+wget -qO- https://teeup.systemhalted.in/install.sh | bash
+```
+
+The installer installs the Xcode Command Line Tools if they are missing. It clones teeup into `~/.local/share/teeup` at the newest release, then runs `./bootstrap` there. Options after `bash -s --` go to `./bootstrap`, for example `curl -fsSL https://teeup.systemhalted.in/install.sh | bash -s -- --skip-daily`.
+
+To read the installer before it runs, download it first:
+
+```bash
+curl -fsSLo install.sh https://teeup.systemhalted.in/install.sh
+less install.sh
+bash install.sh
+```
+
+Or clone teeup by hand:
+
 ```bash
 git clone https://github.com/systemhalted/teeup.sh ~/.local/share/teeup
 cd ~/.local/share/teeup

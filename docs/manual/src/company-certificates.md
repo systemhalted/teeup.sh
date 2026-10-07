@@ -29,6 +29,10 @@ export GIT_SSL_CAINFO="$HOME/certs/other.pem"
 
 To remove the bundle entirely, run `teeup remove ca-bundle`.
 
+## Installing teeup on such a network
+
+Before teeup makes its bundle, curl and git do not trust the company certificate. On such a network, the one-line installer and `git clone` can fail with a certificate error. Run the installer on a different network, for example a phone hotspot. Or clone teeup by hand on a different network, and then run `./bootstrap` (see [Getting started](getting-started.md#the-first-run)). After `./bootstrap` makes the bundle, teeup works on the company network.
+
 ## Troubleshooting
 
 `teeup doctor ca-bundle` shows if this Mac needs a bundle, and if the bundle is available and current.
