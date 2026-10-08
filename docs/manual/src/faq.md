@@ -41,7 +41,7 @@ Answer no to the daily set in the wizard, or run `./bootstrap --skip-daily`. If 
 
 ## Adding new tools
 
-Install the new tool with `brew install`. `teeup update` upgrades all the packages that Homebrew manages, also the packages that teeup did not install. To make the tool part of teeup, write a capability (see [Hooks and extending](hooks-and-extending.md)).
+Install the new tool with `brew install`. `teeup update` upgrades only the packages that teeup capabilities use, so you upgrade the new tool yourself with `brew upgrade`. To make the tool part of teeup, write a capability (see [Hooks and extending](hooks-and-extending.md)).
 
 ## Removing capabilities
 
@@ -62,6 +62,14 @@ The teeup shell layer uses zsh, and the zsh capability makes `/bin/zsh` your log
 ## Telemetry and network usage
 
 teeup does not collect data or require an account. It connects to the network to download packages, and to update its checkout during `teeup update`. It also connects to sign you in to GitHub and to upload your public SSH key, which you approve in the browser.
+
+## The newest code
+
+`teeup update` installs the newest release. To get the code on `main` before it is in a release, run `teeup update --main`. The code on `main` can be unstable. To follow releases again, run `teeup update --release`. See [Release or main](updates.md#release-or-main).
+
+## Reading the installer first
+
+The one-line installer sends the script from `curl` directly to `bash`. To read the script before it runs, download it, read it, and then run it with `bash install.sh`. [Getting started](getting-started.md) shows the commands.
 
 ## Manual version
 

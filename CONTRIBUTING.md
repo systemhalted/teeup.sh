@@ -37,6 +37,7 @@ run against.
 | Path | What it is | Who owns it |
 |---|---|---|
 | `bootstrap` | the only entry point on a fresh Mac | teeup |
+| `install.sh` | the one-line installer: Command Line Tools, a clone at the newest release, then `bootstrap`; published with the manual | teeup |
 | `bin/teeup` | verb dispatch; `teeup <verb> <cap>` runs `capabilities/<cap>/<verb>` | teeup |
 | `lib/*.sh` | sourced by `bin/teeup` and by every capability script through `lib/all.sh` | teeup |
 | `capabilities/<name>/` | one tool: metadata, scripts, shipped files, theme templates | teeup |
@@ -47,7 +48,7 @@ run against.
 | `share/agents/skills/teeup/` | the agent skill | teeup |
 | `migrations/<epoch>.sh` | one-shot fixes for machines already set up | teeup |
 | `machines/<hostname>.conf` | committed per-machine overrides; a fork's fallback when `$TEEUP_CONFIG_DIR/machines` has none | whoever owns that machine |
-| `tests/` | `helper.sh`, `run.sh`, `lib/`, `capabilities/`, `cli.sh`, `bootstrap.sh`, `docs.sh` | teeup |
+| `tests/` | `helper.sh`, `run.sh`, `lib/`, `capabilities/`, `cli.sh`, `bootstrap.sh`, `install.sh`, `docs.sh` | teeup |
 | `docs/legacy-parity.md` | where each part of the previous installer went | teeup |
 | `docs/manual/` | the mdBook manual published to teeup.systemhalted.in | teeup |
 | `docs/superpowers/` | specs, implementation plans and reviews: the design record | read-only |
@@ -411,8 +412,9 @@ script: `setup`, one function per behaviour, a `run_test` line for each, and
 the file defines against the ones it was asked to run and fails the suite
 over any that were left out, so a test nobody passes to `run_test` cannot
 silently stop running. `tests/run.sh` finds `tests/lib/*.sh`,
-`tests/capabilities/*.sh`, `tests/cli.sh`, `tests/bootstrap.sh` and
-`tests/docs.sh`; anything else needs a line in its glob.
+`tests/capabilities/*.sh`, `tests/cli.sh`, `tests/bootstrap.sh`,
+`tests/install.sh` and `tests/docs.sh`; anything else needs a line in its
+glob.
 
 Four rules catch most new tests out.
 

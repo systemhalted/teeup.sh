@@ -106,7 +106,7 @@ dev_new_capability() {
 # single source of truth CI itself reads from.
 dev_shell_files() {
   local f
-  printf '%s\n' "$TEEUP_PATH/bootstrap" "$TEEUP_PATH/bin/teeup"
+  printf '%s\n' "$TEEUP_PATH/bootstrap" "$TEEUP_PATH/bin/teeup" "$TEEUP_PATH/install.sh"
   for f in "$TEEUP_PATH"/lib/*.sh; do
     if [[ -f "$f" ]]; then printf '%s\n' "$f"; fi
   done
@@ -122,7 +122,8 @@ dev_shell_files() {
   done
   for f in "$TEEUP_TESTS_DIR"/helper.sh "$TEEUP_TESTS_DIR"/run.sh \
            "$TEEUP_TESTS_DIR"/sandbox.sh "$TEEUP_TESTS_DIR"/sandbox-run.sh \
-           "$TEEUP_TESTS_DIR"/cli.sh "$TEEUP_TESTS_DIR"/bootstrap.sh "$TEEUP_TESTS_DIR"/docs.sh \
+           "$TEEUP_TESTS_DIR"/cli.sh "$TEEUP_TESTS_DIR"/bootstrap.sh \
+           "$TEEUP_TESTS_DIR"/install.sh "$TEEUP_TESTS_DIR"/docs.sh \
            "$TEEUP_TESTS_DIR"/lib/*.sh "$TEEUP_TESTS_DIR"/capabilities/*.sh; do
     if [[ -f "$f" ]]; then printf '%s\n' "$f"; fi
   done

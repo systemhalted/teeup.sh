@@ -80,4 +80,4 @@ The "Adding a capability" section of `CONTRIBUTING.md` in the checkout has more 
 - Write macOS preferences so that `teeup remove` can restore them.
 - Register lazy commands and apps.
 
-A capability that you add lives in your checkout of teeup. If the checkout has uncommitted changes, `teeup update` stops. After you commit the changes, `git pull --ff-only` cannot fast-forward, so the update prints a warning and continues with your checkout as it is. Keep the capability on a branch that you merge yourself, or send it upstream.
+A capability that you add lives in your checkout of teeup. If the checkout has uncommitted changes, `teeup update` stops. After you commit the changes, teeup cannot move the checkout forward, so the update prints a warning and continues with your checkout as it is. Keep the capability on a branch that you merge yourself, or send it upstream.

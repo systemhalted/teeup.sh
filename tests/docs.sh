@@ -54,7 +54,7 @@ test_manual_remove_count_matches_the_tree() {
   n="$(nothing_to_remove | wc -l | tr -d ' ')"
   bullet="$(awk '/^- \*\*`teeup remove/,/^- \*\*`?[A-Z]/' "$REPO/docs/manual/src/the-teeup-command.md")"
   case "$n" in
-    7) printf '%s' "$bullet" | grep -q 'Seven capabilities' || { echo "the manual says a different number than the seven in the tree"; return 1; } ;;
+    7) [[ "$bullet" == *'Seven capabilities'* ]] || { echo "the manual says a different number than the seven in the tree"; return 1; } ;;
     *) echo "the set changed size (now $n): update the manual bullet and this test's spelling"; return 1 ;;
   esac
   return 0
@@ -78,7 +78,9 @@ test_manual_remove_script_count_matches_the_tree() {
     13) word=thirteen ;;
     *) echo "no spelling for $n remove scripts: update this test and the manual"; return 1 ;;
   esac
-  printf '%s' "$bullet" | grep -q "$word capabilities ship one today" || {
+  # A match, not printf | grep -q: under pipefail, grep -q exiting at the
+  # first match can fail printf with a broken pipe (seen on CI).
+  [[ "$bullet" == *"$word capabilities ship one today"* ]] || {
     echo "the manual does not say $word capabilities ship a remove script, but $n do"
     return 1
   }

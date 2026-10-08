@@ -4,7 +4,7 @@ teeup reads its settings from two files: the answers file that the wizard writes
 
 | File | Written by | Holds |
 |---|---|---|
-| `~/.config/teeup/answers` | The wizard and `teeup config` | Your name and email, the theme, the daily set, the Emacs flavor, the package manager |
+| `~/.config/teeup/answers` | The wizard, `teeup config` and `teeup update --main` or `--release` | Your name and email, the theme, the daily set, the Emacs flavor, the package manager, the update channel |
 | `~/.config/teeup/machines/<hostname>.conf` | You | Settings pinned for this Mac, and the only file where you configure a work identity |
 
 `<hostname>` is the short name that `hostname -s` prints.
@@ -20,6 +20,7 @@ The answers file is a list of `KEY="value"` lines that only you can read.
 | `TEEUP_DAILY` | `yes` or `no`: installs the daily set | `./bootstrap` |
 | `TEEUP_EMACS_FLAVOR` | `starter`, `doom`, `spacemacs` or `none` | `teeup configure emacs` and `teeup update` |
 | `TEEUP_PACKAGE_MANAGER` | `homebrew` or `macports` | `./bootstrap` the first time |
+| `TEEUP_UPDATE_CHANNEL` | `release` or `main`: what `teeup update` follows. No value means `release`. See [Release or main](updates.md#release-or-main). | `teeup update` |
 
 ## teeup config
 
@@ -73,7 +74,7 @@ teeup checks the machine file. An invalid shell file or a malformed `TEEUP_WORK_
 
 teeup searches for the machine file in two locations and uses the first file it finds:
 
-1. `~/.config/teeup/machines/<hostname>.conf` is your personal file, and `git pull` does not change it.
+1. `~/.config/teeup/machines/<hostname>.conf` is your personal file, and `teeup update` does not change it.
 2. `machines/<hostname>.conf` in the teeup checkout is for users who keep a fork of teeup.
 
 teeup does not merge the two files. If both exist, it tells you which one it uses.

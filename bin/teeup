@@ -29,7 +29,10 @@ teeup - your Mac, ready to code
   teeup install font list        list the fonts teeup knows by name
   teeup configure <capability>   re-run only its configuration
   teeup reset <capability>       put its config files back to the shipped version (backups kept)
-  teeup update [<capability>]    pull, migrate, upgrade packages, re-configure, re-theme
+  teeup update [--main|--release] [<capability>]
+                                 move teeup to its newest release (or main), migrate,
+                                  upgrade packages, re-configure, re-theme;
+                                 --main and --release choose what later updates follow
   teeup remove <capability>      undo what a capability installed
   teeup uninstall [--packages] [--identity] [--yes]
                                  take teeup off this Mac (asks first; keeps your
@@ -371,19 +374,39 @@ _update_checkout() {
     err "Commit, stash or discard them, then run: teeup update"
     return 2
   fi
-  local pull_out rc=0
-  pull_out="$(run_cmd git -C "$TEEUP_PATH" pull --ff-only 2>&1)" || rc=$?
-  [[ -z "$pull_out" ]] || printf '%s\n' "$pull_out"
-  if [[ $rc -ne 0 ]]; then
-    if [[ "$pull_out" == *"certificate"* ]]; then
-      warn "git pull --ff-only failed: git does not trust the certificate it was shown, which usually means a network proxy is re-signing HTTPS. Continuing with the checkout as it is."
-      warn "teeup builds a certificate bundle from the Keychain when the Mac has company root certificates. Run: teeup doctor ca-bundle"
-    else
-      warn "git pull --ff-only failed; continuing with the checkout as it is."
-    fi
-    return 1
+  # Every machine set up before releases existed tracks main, and the
+  # release channel leaves a checkout that is ahead of the newest release
+  # where it is -- so nothing visibly changes for them, and this is the one
+  # place they hear about it. An explicit answer (either one) silences it.
+  if [[ -z "${TEEUP_UPDATE_CHANNEL:-}" ]] &&
+     [[ "$(git -C "$TEEUP_PATH" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" == "main" ]]; then
+    log "teeup now follows releases. To keep following main, run: teeup update --main"
   fi
-  return 0
+  # lib/channel.sh: 0 moved or already right, 1 could not move (warned), 2
+  # must not continue -- the same contract as this function's own.
+  local rc=0
+  channel_sync "$TEEUP_PATH" "$(channel_get)" || rc=$?
+  return $rc
+}
+
+# _update_set_channel <main|release>: what `teeup update --main|--release`
+# saves before the update runs. The machine file is sourced after the
+# answers file, so a pin there keeps winning: say so, and keep this run on
+# the pinned channel rather than the one answers_set just exported.
+_update_set_channel() {
+  local channel="$1" pinned
+  if pinned="$(machine_get TEEUP_UPDATE_CHANNEL)" && [[ "$pinned" != "$channel" ]]; then
+    warn "$(machine_file) pins TEEUP_UPDATE_CHANNEL=${pinned:-<empty>}, which is sourced after the answers file, so --$channel has no effect until that line changes."
+    answers_set TEEUP_UPDATE_CHANNEL "$channel"
+    export TEEUP_UPDATE_CHANNEL="$pinned"
+    return 0
+  fi
+  answers_set TEEUP_UPDATE_CHANNEL "$channel"
+  if [[ "$channel" == "main" ]]; then
+    ok_unless_dry "teeup update now follows main."
+  else
+    ok_unless_dry "teeup update now follows releases."
+  fi
 }
 
 # _update_configure_tier <core|daily>
@@ -432,7 +455,7 @@ _update_configure_tier() {
   done
 }
 
-# teeup update [<capability>]
+# teeup update [--main|--release] [<capability>]
 # Spec section 9. Every step is idempotent, so this is also the repair path
 # for a bootstrap that stopped half way. Failures are collected rather than
 # fatal and the exit status reports them, so one formula that will not build
@@ -442,10 +465,33 @@ _update_configure_tier() {
 # configure, because a script can decide "not applicable" during this very
 # run, not only at install time.
 cmd_update() {
-  # Before the pull and brew update below; its own warning is enough when it
+  local target="" channel="" failed=0 name pkg cask rc=0 theme_done=false current_theme
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --main|--release)
+        if [[ -n "$channel" && "$channel" != "${1#--}" ]]; then
+          die "Use one of --main and --release."
+        fi
+        channel="${1#--}"
+        ;;
+      -*) die "Unknown option: $1. Usage: teeup update [--main|--release] [<capability>]" ;;
+      *)
+        if [[ -n "$target" ]]; then
+          die "teeup update takes one capability; got $target and $1."
+        fi
+        target="$1"
+        ;;
+    esac
+    shift
+  done
+  # A single-capability update never moves the checkout, so a channel flag
+  # with it would be saved and do nothing this run.
+  if [[ -n "$channel" && -n "$target" ]]; then
+    die "teeup update $target does not update teeup itself, so --$channel would change nothing. Run it on its own: teeup update --$channel"
+  fi
+  # Before the fetch and brew update below; its own warning is enough when it
   # fails, since a missing bundle only matters behind a re-signing proxy.
   ca_bundle_rebuild || true
-  local target="${1:-}" failed=0 name pkg cask rc=0 theme_done=false current_theme
   if [[ -n "$target" ]]; then
     cap_exists "$target" || die "Unknown capability: $target"
     if cap_skipped "$target"; then
@@ -499,6 +545,9 @@ cmd_update() {
     return 0
   fi
 
+  if [[ -n "$channel" ]]; then
+    _update_set_channel "$channel"
+  fi
   _update_checkout || rc=$?
   if [[ $rc -eq 2 ]]; then exit 1; fi
   if [[ $rc -ne 0 ]]; then failed=1; fi
@@ -805,7 +854,7 @@ _config_keys() {
 _config_key_known() {
   local key="$1" k
   case "$key" in
-    TEEUP_GITHUB_UPLOAD_PERSONAL|TEEUP_GITHUB_UPLOAD_WORK) return 0 ;;
+    TEEUP_GITHUB_UPLOAD_PERSONAL|TEEUP_GITHUB_UPLOAD_WORK|TEEUP_UPDATE_CHANNEL) return 0 ;;
   esac
   for k in $(_config_keys); do
     if [[ "$k" == "$key" ]]; then
@@ -894,6 +943,7 @@ _config_apply_hint() {
     # --reload, because a plain `theme set` of the theme already current is
     # a no-op, and this write may name exactly that theme.
     TEEUP_THEME) log "Run: teeup theme set --reload${value:+ $value} -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
+    TEEUP_UPDATE_CHANNEL) log "Run: teeup update -- that is what reads $key." ;;
     TEEUP_PACKAGE_MANAGER) warn "$key only takes effect the next time ./bootstrap or teeup install package-manager runs; nothing on this machine changed yet." ;;
     *) warn "$key is not one of the answers ./bootstrap writes (TEEUP_NAME, TEEUP_EMAIL, TEEUP_EMACS_FLAVOR, TEEUP_DAILY, TEEUP_PACKAGE_MANAGER, TEEUP_THEME); teeup config cannot say what, if anything, reads it." ;;
   esac
@@ -974,6 +1024,8 @@ cmd_config() {
             # machines/<hostname>.conf -- so this has to match it, or a
             # leftover answers-file TEEUP_WORK_* value reads as live (I3).
             TEEUP_WORK_*) printf '%s\n' "$(work_get "$key")" ;;
+            # Unset means release, so say that rather than an empty line.
+            TEEUP_UPDATE_CHANNEL) channel_get ;;
             *) printf '%s\n' "${!key:-}" ;;
           esac
           return 0

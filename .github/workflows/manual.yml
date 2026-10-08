@@ -36,6 +36,12 @@ jobs:
       - name: Build the manual
         run: mdbook build docs/manual
 
+      # The one-line installer is served next to the manual, at
+      # https://teeup.systemhalted.in/install.sh, so it changes only with a
+      # release tag, like the manual itself.
+      - name: Publish the installer
+        run: cp install.sh docs/manual/book/install.sh
+
       - uses: actions/upload-pages-artifact@v4
         with:
           path: docs/manual/book

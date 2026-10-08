@@ -13,7 +13,7 @@ DRY_RUN=true teeup update    # the same, as a preview that changes nothing
 
 | Step | What happens |
 |---|---|
-| 1. Pull | `git pull --ff-only` runs in the teeup checkout and downloads the new version of teeup. |
+| 1. Checkout | `git fetch` downloads the new releases and commits of teeup. Then teeup moves the checkout forward on its channel: to the newest release, or to the newest commit on `main`. See [Release or main](#release-or-main). |
 | 2. Packages | Homebrew: `brew update` runs, and then `brew upgrade` upgrades only the packages and casks that teeup installed for the capabilities on this Mac. teeup does not upgrade other Homebrew packages: use `brew upgrade` for them. A package that a capability uses belongs to teeup, so teeup upgrades it even if you installed it before teeup. A future version will let you choose (issue #79). MacPorts: `port selfupdate` runs, and then `port upgrade` upgrades the ports that teeup installed. |
 | 3. mise | `mise upgrade` runs for every tool in the global mise configuration, which includes the language runtimes and the AI tools. |
 | 4. Migrations | teeup runs every migration script that this Mac did not run yet. |
@@ -40,7 +40,27 @@ Two problems stop the update at different points:
 | The checkout has uncommitted changes | Before step 1, so no step ran yet. | "... has uncommitted changes, so teeup update will not pull." Commit, stash, or discard the changes, and then run the command again. |
 | A migration fails | At step 4, after the pull, the package upgrades, and `mise upgrade` ran. | "Migration ... failed, so the migrations after it did not run." The configure, theme, and hook steps do not run. Fix the cause, and then run the command again. |
 
-Every other problem is a warning, and the run continues. For example, the computer is offline, a pull cannot fast-forward, a formula fails to build, or a `configure` step fails. At the end, teeup prints "teeup is up to date." or "teeup update finished, with the problems above.". If there were problems, the exit status is not zero.
+Every other problem is a warning, and the run continues. For example, the computer is offline, the checkout cannot move forward, a formula fails to build, or a `configure` step fails. At the end, teeup prints "teeup is up to date." or "teeup update finished, with the problems above.". If there were problems, the exit status is not zero.
+
+## Release or main
+
+`teeup update` follows releases by default. It moves the checkout to the newest release tag on `main`. teeup never moves the checkout back to an older commit. If the checkout is ahead of the newest release, it stays where it is until there is a newer release.
+
+To follow `main`, run this command:
+
+```sh
+teeup update --main
+```
+
+The code on `main` is newer than the newest release, and it can be unstable. teeup saves the choice as `TEEUP_UPDATE_CHANNEL` in the answers file, so the next `teeup update` follows `main` too.
+
+If a release is withdrawn, a Mac that already has it stays on it until a newer release exists. A Mac that does not have it never moves to it.
+
+To follow releases again, run `teeup update --release`. This does not move the checkout back. The checkout stays on its commit on `main` until there is a newer release.
+
+Before teeup 0.3.0-beta, every installation followed `main`. If `TEEUP_UPDATE_CHANNEL` has no value and the checkout is on the branch `main`, `teeup update` shows this notice: "teeup now follows releases. To keep following main, run: teeup update --main".
+
+After you select a channel with `--main` or `--release`, the notice stops. If your machine file sets `TEEUP_UPDATE_CHANNEL`, the machine file wins, and teeup shows a warning. You cannot use `--main` or `--release` with a capability name, because `teeup update <capability>` does not move the checkout.
 
 ## One capability
 

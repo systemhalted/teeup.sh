@@ -14,7 +14,38 @@ Some applications need a minimum macOS version: AeroSpace and Google Chrome need
 
 ## The first run
 
-Clone teeup into `~/.local/share/teeup` and run the bootstrap script:
+Run the installer in Terminal. Use `curl` or `wget`:
+
+```sh
+curl -fsSL https://teeup.systemhalted.in/install.sh | bash
+wget -qO- https://teeup.systemhalted.in/install.sh | bash
+```
+
+The installer does three things:
+
+1. If the Xcode Command Line Tools are missing, it installs them with `softwareupdate`. It asks for your password for `sudo`. If `softwareupdate` does not find the tools, Apple's installer opens, and the script waits until you complete it.
+2. It clones teeup into `~/.local/share/teeup` and checks out the newest release.
+3. It runs `./bootstrap` in the checkout.
+
+The installer stops if the Mac does not run macOS, or if you run it as root. If `~/.local/share/teeup` is a teeup checkout already, the installer runs its `./bootstrap` again. If the directory exists but is not a git checkout, the installer stops and changes nothing.
+
+To give options to `./bootstrap`, put them after `bash -s --`:
+
+```sh
+curl -fsSL https://teeup.systemhalted.in/install.sh | bash -s -- --skip-daily
+```
+
+With `--dry-run`, the installer shows the Command Line Tools step and the clone, but does not do them. Then it stops, because the dry run of `./bootstrap` needs the checkout.
+
+To read the installer before it runs, download it first:
+
+```sh
+curl -fsSLo install.sh https://teeup.systemhalted.in/install.sh
+less install.sh
+bash install.sh
+```
+
+You can also clone teeup by hand and run the bootstrap script:
 
 ```sh
 git clone https://github.com/systemhalted/teeup.sh ~/.local/share/teeup

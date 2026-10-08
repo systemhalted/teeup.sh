@@ -58,7 +58,7 @@ jobs:
 
       - name: Shellcheck the runtime
         run: |
-          shellcheck --severity=warning bootstrap bin/teeup lib/*.sh \
+          shellcheck --severity=warning bootstrap bin/teeup install.sh lib/*.sh \
             $(find capabilities -type f \( -name install -o -name configure \
               -o -name remove -o -name doctor -o -name theme-apply \
               -o -name font-apply \)) \
@@ -67,7 +67,7 @@ jobs:
             share/teeup/skeleton/install share/teeup/skeleton/configure \
             share/teeup/skeleton/test.sh \
             tests/helper.sh tests/run.sh tests/sandbox.sh tests/sandbox-run.sh \
-            tests/cli.sh tests/bootstrap.sh tests/docs.sh \
+            tests/cli.sh tests/bootstrap.sh tests/install.sh tests/docs.sh \
             tests/lib/*.sh tests/capabilities/*.sh
 
       - name: Lint capability metadata
