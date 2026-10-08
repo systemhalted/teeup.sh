@@ -224,6 +224,7 @@ test_missing_clt_without_a_label_waits_for_the_dialog() {
   setup
   mock_missing_clt
   mock_command softwareupdate 0 "No new software available."
+  mock_command pgrep 0 "123"
   mock_command_script sleep <<'EOF2'
 : > "$HOME/clt-installed"
 EOF2
@@ -234,6 +235,22 @@ EOF2
   assert_contains "$(cat "$MOCK_LOG")" "sleep 30" || return 1
   assert_contains "$out" "Waiting for the Command Line Tools" || return 1
   [[ -d "$DEST/.git" ]] || { echo "no clone after the dialog"; return 1; }
+  cleanup_clt_test
+}
+
+# A cancelled dialog: Apple's installer is gone and the tools never arrive,
+# so the wait ends and the installer stops with the rerun instructions.
+test_a_cancelled_clt_dialog_stops_the_wait() {
+  setup
+  mock_missing_clt
+  mock_command softwareupdate 0 "No new software available."
+  mock_command pgrep 1 ""
+  mock_command sleep 0 ""
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "The Command Line Tools are still missing" || return 1
+  [[ ! -e "$DEST" ]] || { echo "cloned without the tools"; return 1; }
   cleanup_clt_test
 }
 
@@ -278,6 +295,7 @@ run_test "root is refused" test_root_is_refused
 run_test "a Mac is required" test_a_mac_is_required
 run_test "missing CLT installs through softwareupdate" test_missing_clt_installs_through_softwareupdate
 run_test "missing CLT without a label waits for the dialog" test_missing_clt_without_a_label_waits_for_the_dialog
+run_test "a cancelled CLT dialog stops the wait" test_a_cancelled_clt_dialog_stops_the_wait
 run_test "dry run writes nothing" test_dry_run_writes_nothing
 run_test "CLT marker and label match the capability" test_clt_marker_and_label_match_the_capability
 print_summary

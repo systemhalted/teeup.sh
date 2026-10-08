@@ -36,7 +36,7 @@ have_tty() {
 # one-liner does not have to be run twice. tests/install.sh checks that the
 # marker and the label pattern stay the same in both files.
 install_clt() {
-  local dry="$1" marker label
+  local dry="$1" marker label waited
   if xcode-select -p >/dev/null 2>&1; then
     say "Xcode Command Line Tools present."
     return 0
@@ -65,9 +65,16 @@ install_clt() {
     rm -f "$marker"
     warn "softwareupdate lists no Command Line Tools package, so Apple's installer opens. Complete its dialog; this script waits for it."
     xcode-select --install >/dev/null 2>&1 || true
+    # Stop waiting once Apple's installer is gone (cancelled, or it never
+    # opened), after a minute for it to appear, or after an hour; the check
+    # below then says how to try again.
+    waited=0
     until xcode-select -p >/dev/null 2>&1; do
+      if [ "$waited" -ge 3600 ]; then break; fi
+      if [ "$waited" -ge 60 ] && ! pgrep -f "Install Command Line Developer Tools" >/dev/null 2>&1; then break; fi
       say "Waiting for the Command Line Tools installer to finish..."
       sleep 30
+      waited=$((waited + 30))
     done
   fi
   xcode-select -p >/dev/null 2>&1 ||
