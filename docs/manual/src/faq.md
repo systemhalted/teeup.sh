@@ -73,4 +73,4 @@ The one-line installer sends the script from `curl` directly to `bash`. To read 
 
 ## Manual version
 
-This manual applies to teeup 0.2.1-beta. `teeup version` prints the version that you have.
+This manual applies to teeup 0.3.0-beta. `teeup version` prints the version that you have.

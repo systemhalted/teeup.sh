@@ -9,11 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-beta] - 2026-10-07
+
+teeup installs with one line, and `teeup update` now follows releases instead of `main`. Every existing installation tracked `main`, so it keeps its checkout, moves forward with the next release, and shows a notice about `teeup update --main`.
+
 ### Added
 - **One-line installer.** `curl -fsSL https://teeup.systemhalted.in/install.sh | bash` installs the Xcode Command Line Tools if they are missing, clones teeup at its newest release, and runs `./bootstrap`. Options after `bash -s --` go to bootstrap. The installer is published with the manual on every release tag.
 
 ### Changed
 - **`teeup update` follows releases.** It moves the checkout to the newest release tag on `main` instead of pulling `main`, and never moves it backwards. A checkout already ahead of the newest release stays where it is. `teeup update --main` follows `main` instead, `teeup update --release` switches back, and the choice is saved as `TEEUP_UPDATE_CHANNEL`. A checkout on `main` with no saved choice gets a one-line notice.
+
+### Fixed
+- **FAQ on package upgrades.** The FAQ said that `teeup update` upgrades every Homebrew package. It upgrades only the packages that teeup capabilities use, as it has since 0.2.0-beta.
+
+### Development
+- **Release checks.** `tests/lib/channel.sh` runs the release rule against real git repositories, and `tests/install.sh` runs the installer against a fixture repository with the Command Line Tools mocked. CI lints `install.sh`.
+- **A flaky docs test.** The checks of the manual's `teeup remove` counts no longer pipe `printf` into `grep -q`, which failed with a broken pipe under `pipefail` on CI.
 
 ## [0.2.1-beta] - 2026-10-07
 
