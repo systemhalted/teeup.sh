@@ -869,7 +869,8 @@ mock_update_world() {
   mock_command_script git <<'EOF2'
 case "$*" in
   *status*) exit 0 ;;
-  *describe*) echo v9.9.9 ;;
+  *"for-each-ref"*) echo refs/teeup/releases/v9.9.9 ;;
+  *"rev-list --count"*) echo 5 ;;
   *"rev-parse HEAD") echo 1111111 ;;
   *rev-parse*) echo 9999999 ;;
   *symbolic-ref*) exit 1 ;;
@@ -1220,8 +1221,8 @@ test_update_walks_every_step_in_order() {
   printf '#!/usr/bin/env bash\necho "migration ran"\n' > "$TEEUP_MIGRATIONS_DIR/1780000000.sh"
   local out
   out="$("$TEEUP" update 2>&1)"
-  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH fetch --tags --force --prune --prune-tags origin" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH checkout --quiet --detach v9.9.9" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH fetch --quiet --prune origin +refs/heads/main:refs/remotes/origin/main +refs/tags/v*:refs/teeup/releases/v*" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "git -C $TEEUP_PATH checkout --quiet --detach refs/teeup/releases/v9.9.9" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "pull --ff-only" "the release channel never pulls" || return 1
   assert_contains "$out" "Updated teeup from $(cat "$TEEUP_PATH/version") to v9.9.9." || return 1
   assert_contains "$out" "migration ran" || return 1
@@ -1409,7 +1410,7 @@ EOF2
 
   local export_line pull_line
   export_line="$(grep -n 'security trust-settings-export -d' "$MOCK_LOG" | head -1 | cut -d: -f1)"
-  pull_line="$(grep -n "git -C $TEEUP_PATH fetch --tags --force --prune --prune-tags origin" "$MOCK_LOG" | head -1 | cut -d: -f1)"
+  pull_line="$(grep -nF "git -C $TEEUP_PATH fetch --quiet --prune origin +refs/heads/main:refs/remotes/origin/main +refs/tags/v*:refs/teeup/releases/v*" "$MOCK_LOG" | head -1 | cut -d: -f1)"
   [[ -n "$export_line" && -n "$pull_line" ]] || { echo "expected refresh and fetch calls"; cat "$MOCK_LOG"; return 1; }
   [[ "$export_line" -lt "$pull_line" ]] || { echo "git fetch ran before the CA bundle refresh"; return 1; }
   cleanup_test_env
@@ -1682,8 +1683,8 @@ test_update_dry_run_changes_nothing() {
   : > "$MOCK_LOG"
   local out
   out="$(DRY_RUN=true "$TEEUP" update 2>&1)"
-  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH fetch --tags --force --prune --prune-tags origin" || return 1
-  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH checkout --quiet --detach v9.9.9" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH fetch --quiet --prune origin +refs/heads/main:refs/remotes/origin/main +refs/tags/v*:refs/teeup/releases/v*" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: git -C $TEEUP_PATH checkout --quiet --detach refs/teeup/releases/v9.9.9" || return 1
   assert_contains "$out" "[DRY-RUN] Would execute: touch $TEST_HOME/made" || return 1
   assert_contains "$out" "[DRY-RUN] Would execute: brew update" || return 1
   assert_contains "$out" "[DRY-RUN] Would execute: mise -C / upgrade" || return 1
@@ -1772,7 +1773,8 @@ test_update_tells_a_main_user_that_it_now_follows_releases() {
   mock_command_script git <<'EOF2'
 case "$*" in
   *status*) exit 0 ;;
-  *describe*) echo v9.9.9 ;;
+  *"for-each-ref"*) echo refs/teeup/releases/v9.9.9 ;;
+  *"rev-list --count"*) echo 5 ;;
   *rev-parse*) echo 1111111 ;;
   *symbolic-ref*) echo main ;;
 esac

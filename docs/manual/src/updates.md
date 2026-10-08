@@ -54,6 +54,8 @@ teeup update --main
 
 The code on `main` is newer than the newest release, and it can be unstable. teeup saves the choice as `TEEUP_UPDATE_CHANNEL` in the answers file, so the next `teeup update` follows `main` too.
 
+If a release is withdrawn, a Mac that already has it stays on it until a newer release exists. A Mac that does not have it never moves to it.
+
 To follow releases again, run `teeup update --release`. This does not move the checkout back. The checkout stays on its commit on `main` until there is a newer release.
 
 Before teeup 0.3.0-beta, every installation followed `main`. If `TEEUP_UPDATE_CHANNEL` has no value and the checkout is on the branch `main`, `teeup update` shows this notice: "teeup now follows releases. To keep following main, run: teeup update --main".

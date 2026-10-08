@@ -80,6 +80,7 @@ test_channel_get_treats_an_unknown_value_as_release() {
 test_newest_release_skips_an_old_unrelated_tag() {
   setup
   make_fixture
+  channel_fetch "$CLONE" >/dev/null 2>&1
   assert_equals "v0.2.0" "$(channel_newest_release "$CLONE")" "v2.0.0 is further from main than v0.2.0" || return 1
   cleanup_test_env
 }
@@ -155,9 +156,41 @@ test_a_withdrawn_release_tag_is_not_chosen() {
   tgit -C "$WORK" push -q origin :refs/tags/v0.2.0
   channel_sync "$CLONE" release >/dev/null 2>&1
   head_is "$CLONE" v0.1.0 || { echo "HEAD moved to the withdrawn v0.2.0"; return 1; }
-  if git -C "$CLONE" rev-parse -q --verify refs/tags/v0.2.0 >/dev/null; then
-    echo "the local v0.2.0 tag was kept"; return 1
+  if git -C "$CLONE" rev-parse -q --verify refs/teeup/releases/v0.2.0 >/dev/null; then
+    echo "teeup kept its copy of the withdrawn v0.2.0"; return 1
   fi
+  cleanup_test_env
+}
+
+# Pruning withdrawn releases must not touch the user's own tags: a local
+# tag that origin never had, and one that keeps an otherwise unreachable
+# commit alive.
+test_a_local_only_tag_survives_an_update() {
+  setup
+  make_fixture
+  git -C "$CLONE" checkout -q --detach v0.1.0
+  tgit -C "$CLONE" tag mine
+  tgit -C "$CLONE" tag v9.9.9-local
+  channel_sync "$CLONE" release >/dev/null 2>&1
+  git -C "$CLONE" rev-parse -q --verify refs/tags/mine >/dev/null || { echo "the tag mine was deleted"; return 1; }
+  git -C "$CLONE" rev-parse -q --verify refs/tags/v9.9.9-local >/dev/null || { echo "the tag v9.9.9-local was deleted"; return 1; }
+  cleanup_test_env
+}
+
+# A machine already on a release whose tag is later withdrawn stays on it:
+# teeup never moves backwards, and the next release moves it forward.
+test_a_machine_on_a_withdrawn_release_stays_until_the_next_one() {
+  setup
+  make_fixture
+  git -C "$CLONE" checkout -q --detach v0.2.0
+  tgit -C "$WORK" push -q origin :refs/tags/v0.2.0
+  channel_sync "$CLONE" release >/dev/null 2>&1
+  head_is "$CLONE" v0.2.0 || { echo "HEAD moved off the withdrawn release"; return 1; }
+  fixture_commit "0.2.1-beta"
+  tgit -C "$WORK" tag -a v0.2.1 -m "v0.2.1"
+  tgit -C "$WORK" push -q origin main --tags
+  channel_sync "$CLONE" release >/dev/null 2>&1
+  [[ "$(cat "$CLONE/version")" == "0.2.1-beta" ]] || { echo "the next release did not move it forward"; return 1; }
   cleanup_test_env
 }
 
@@ -227,7 +260,7 @@ test_dry_run_changes_nothing() {
   DRY_RUN=true
   out="$(channel_sync "$CLONE" release 2>&1)"
   head_is "$CLONE" v0.1.0 || { echo "a dry run moved HEAD"; return 1; }
-  assert_contains "$out" "[DRY-RUN] Would execute: git -C $CLONE checkout --quiet --detach v0.2.0" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: git -C $CLONE checkout --quiet --detach refs/tags/v0.2.0" || return 1
   out="$(channel_sync "$CLONE" main 2>&1)"
   head_is "$CLONE" v0.1.0 || { echo "a dry run moved HEAD"; return 1; }
   if git -C "$CLONE" symbolic-ref -q HEAD >/dev/null; then echo "a dry run left the detached HEAD"; return 1; fi
@@ -268,6 +301,8 @@ EOF2
 
 echo "lib/channel.sh"
 run_test "a withdrawn release tag is not chosen" test_a_withdrawn_release_tag_is_not_chosen
+run_test "a local-only tag survives an update" test_a_local_only_tag_survives_an_update
+run_test "a machine on a withdrawn release stays until the next one" test_a_machine_on_a_withdrawn_release_stays_until_the_next_one
 run_test "channel_get defaults to release" test_channel_get_defaults_to_release
 run_test "channel_get treats an unknown value as release" test_channel_get_treats_an_unknown_value_as_release
 run_test "newest release skips an old unrelated tag" test_newest_release_skips_an_old_unrelated_tag

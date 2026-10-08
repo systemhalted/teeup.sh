@@ -26,14 +26,51 @@ channel_get() {
   esac
 }
 
-# channel_newest_release <dir> -> the newest release tag on origin/main.
-# Releases are tagged on main, so the nearest v<digit> tag behind
-# origin/main is the newest one. An older tag that sits further back
-# (such as a v2.0.0 left from before the version numbers restarted) loses
-# to a nearer one.
+# Release tags are fetched into a namespace of their own, so that pruning
+# a withdrawn release never touches a tag the user made in refs/tags.
+CHANNEL_RELEASES="refs/teeup/releases"
+
+# channel_fetch <dir>: fetch origin's main and its v<digit> tags. --prune
+# applies only to the refspecs given here, so it drops a release whose tag
+# was deleted on origin and leaves every other local ref alone.
+channel_fetch() {
+  _channel_run "git fetch" git -C "$1" fetch --quiet --prune origin \
+    "+refs/heads/main:refs/remotes/origin/main" \
+    "+refs/tags/v*:$CHANNEL_RELEASES/v*"
+}
+
+# _channel_release_refs <dir> -> where the releases are: teeup's namespace
+# once channel_fetch has filled it, else the clone's own tags (a checkout
+# that has not fetched yet, as in a dry run).
+_channel_release_refs() {
+  if [[ -n "$(git -C "$1" for-each-ref --count=1 --format='%(refname)' "$CHANNEL_RELEASES/")" ]]; then
+    printf '%s\n' "$CHANNEL_RELEASES"
+  else
+    printf 'refs/tags\n'
+  fi
+}
+
+# channel_newest_release <dir> -> the newest release on origin/main, as a
+# tag name, from what channel_fetch fetched. Releases are tagged on main,
+# so the newest is the one with the most commits behind it. An older tag
+# further back (such as a v2.0.0 left from before the version numbers
+# restarted) loses to a nearer one.
 # Prints nothing and returns non-zero when there is no such tag.
 channel_newest_release() {
-  git -C "$1" describe --tags --abbrev=0 --match 'v[0-9]*' origin/main 2>/dev/null
+  local dir="$1" ref n best="" best_n=-1 refs
+  refs="$(_channel_release_refs "$dir")"
+  for ref in $(git -C "$dir" for-each-ref --format='%(refname)' "$refs/"); do
+    # A refspec has only *, not [0-9]: keep v<digit> names here.
+    case "${ref#"$refs"/}" in v[0-9]*) ;; *) continue ;; esac
+    git -C "$dir" merge-base --is-ancestor "$ref" origin/main 2>/dev/null || continue
+    n="$(git -C "$dir" rev-list --count "$ref")"
+    if [[ "$n" -gt "$best_n" ]]; then
+      best="${ref#"$refs"/}"
+      best_n="$n"
+    fi
+  done
+  [[ -n "$best" ]] || return 1
+  printf '%s\n' "$best"
 }
 
 # _channel_git_failed <what> <output>: the warning for a failed fetch or
@@ -66,14 +103,12 @@ _channel_run() {
 # move (warned; the checkout is left as it is), 2 must not continue (an
 # unknown channel, which only a caller bug can pass).
 channel_sync() {
-  local dir="$1" channel="$2" tag old head branch
+  local dir="$1" channel="$2" tag ref old head branch
   case "$channel" in
     release|main) ;;
     *) err "channel_sync: unknown channel '$channel'"; return 2 ;;
   esac
-  # --prune-tags drops a local tag that origin no longer has, so a release
-  # withdrawn by deleting its tag stops being chosen.
-  _channel_run "git fetch" git -C "$dir" fetch --tags --force --prune --prune-tags origin || return 1
+  channel_fetch "$dir" || return 1
 
   if [[ "$channel" == "main" ]]; then
     branch="$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
@@ -104,13 +139,16 @@ channel_sync() {
     return 1
   fi
   head="$(git -C "$dir" rev-parse HEAD)"
-  if [[ "$head" == "$(git -C "$dir" rev-parse "$tag^{commit}")" ]]; then
+  ref="$(_channel_release_refs "$dir")/$tag"
+  if [[ "$head" == "$(git -C "$dir" rev-parse "$ref^{commit}")" ]]; then
     log "teeup is on the newest release, $tag."
-  elif git -C "$dir" merge-base --is-ancestor HEAD "$tag"; then
+  elif git -C "$dir" merge-base --is-ancestor HEAD "$ref"; then
     old="$(cat "$dir/version" 2>/dev/null || echo "an unknown version")"
-    _channel_run "git checkout $tag" git -C "$dir" checkout --quiet --detach "$tag" || return 1
+    _channel_run "git checkout $tag" git -C "$dir" checkout --quiet --detach "$ref" || return 1
     ok_unless_dry "Updated teeup from $old to $tag."
-  elif git -C "$dir" merge-base --is-ancestor "$tag" HEAD; then
+  elif git -C "$dir" merge-base --is-ancestor "$ref" HEAD; then
+    # This includes a machine still on a release whose tag was withdrawn:
+    # teeup does not move it back. A newer release moves it forward.
     log "teeup is ahead of the newest release ($tag); it stays where it is until a newer release exists."
   else
     warn "The checkout in $dir has commits that the newest release ($tag) does not have, so teeup leaves it where it is."
