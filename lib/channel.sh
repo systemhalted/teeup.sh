@@ -86,6 +86,12 @@ channel_sync() {
         warn "The local branch main in $dir has commits that origin/main does not have, so teeup leaves the checkout where it is."
         return 1
       fi
+      # A checkout detached at a commit of its own (made on top of a
+      # release) would be left behind by the switch; keep it instead.
+      if ! git -C "$dir" merge-base --is-ancestor HEAD origin/main; then
+        warn "The checkout in $dir has commits that origin/main does not have, so teeup leaves it where it is. Put them on a branch first."
+        return 1
+      fi
       _channel_run "git checkout main" git -C "$dir" checkout --quiet -B main origin/main || return 1
     fi
     _channel_run "git pull --ff-only" git -C "$dir" pull --ff-only origin main || return 1

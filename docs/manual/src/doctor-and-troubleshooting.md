@@ -131,6 +131,7 @@ Run `./bootstrap` again to continue from the point where it stopped.
 | "has uncommitted changes" | Commit, stash, or discard the changes in the checkout. Then run `teeup update` again. |
 | "teeup is ahead of the newest release" | Nothing. This is correct for a checkout that followed `main`. The checkout moves when a newer release exists. |
 | "has commits that the newest release ... does not have" | The checkout has your own commits. Move them to a branch, or run `teeup update --main` if you want to follow `main`. |
+| "The checkout ... has commits that origin/main does not have" | You made commits on top of a release. Put them on a branch, then run `teeup update --main` again. |
 | "The local branch main ... has commits that origin/main does not have" | Move your commits from `main` to a different branch. Then run `teeup update --main` again. |
 | "git fetch failed" with a certificate message | The network re-signs HTTPS. Run `teeup doctor ca-bundle`, or run `teeup update` on a different network. |
 

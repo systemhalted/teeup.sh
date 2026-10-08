@@ -161,6 +161,23 @@ test_a_withdrawn_release_tag_is_not_chosen() {
   cleanup_test_env
 }
 
+# A commit made on top of a detached release is not on origin/main, so
+# switching to main would leave it behind: --main refuses instead.
+test_main_keeps_a_detached_commit_of_its_own() {
+  setup
+  make_fixture
+  git -C "$CLONE" checkout -q --detach v0.2.0
+  printf 'local\n' > "$CLONE/local.txt"
+  tgit -C "$CLONE" add local.txt
+  tgit -C "$CLONE" commit -q -m "local change"
+  local before rc=0
+  before="$(git -C "$CLONE" rev-parse HEAD)"
+  channel_sync "$CLONE" main >/dev/null 2>&1 || rc=$?
+  assert_equals "1" "$rc" "channel_sync should refuse" || return 1
+  assert_equals "$before" "$(git -C "$CLONE" rev-parse HEAD)" "HEAD moved off the local commit" || return 1
+  cleanup_test_env
+}
+
 test_main_from_a_detached_tag_ends_on_branch_main() {
   setup
   make_fixture
@@ -259,6 +276,7 @@ run_test "release already on the newest release changes nothing" test_release_al
 run_test "release never moves main backwards" test_release_never_moves_main_backwards
 run_test "release never picks the unrelated v2.0.0 tag" test_release_never_picks_the_unrelated_v2_tag
 run_test "release fetches a release made after the clone" test_release_fetches_a_release_made_after_the_clone
+run_test "main keeps a detached commit of its own" test_main_keeps_a_detached_commit_of_its_own
 run_test "main from a detached tag ends on branch main" test_main_from_a_detached_tag_ends_on_branch_main
 run_test "main on branch main pulls" test_main_on_branch_main_pulls
 run_test "main keeps a local main with its own commits" test_main_keeps_a_local_main_with_its_own_commits
