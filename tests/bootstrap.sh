@@ -843,6 +843,23 @@ test_wizard_offers_emacsclient_with_the_daily_emacs() {
   cleanup_test_env
 }
 
+# MacPorts' emacs port is terminal-only, so emacsclient -c cannot open a
+# window there: the default editor is the terminal frame, and -c is not
+# offered.
+test_wizard_offers_the_terminal_emacs_on_macports() {
+  setup
+  # Option 2 of the package-manager question is MacPorts (see
+  # test_choosing_macports_runs_the_macports_path).
+  mock_command port 0 ""
+  local out choices
+  out="$("$BOOT" --dry-run 2>&1 <<<$'2\nAda Lovelace\nada@example.com\n1\ny\n1\n')"
+  assert_equals "emacsclient -t" "$(first_choice "$out" "Default editor")" || return 1
+  assert_equals "emacsclient -t" "$(first_choice "$out" "Terminal editor")" || return 1
+  choices="$(printf '%s\n' "$out" | awk '/Default editor/ { f = 1; next } f && /^  [0-9]+\) / { print } f && !/^  [0-9]+\) / { exit }')"
+  assert_not_contains "$choices" "emacsclient -c" "MacPorts' emacs cannot open a window" || return 1
+  cleanup_test_env
+}
+
 test_wizard_offers_nvim_without_the_daily_emacs() {
   setup
   local out
@@ -939,6 +956,7 @@ run_test "the wizard does not ask the flavor without the daily tier" test_wizard
 run_test "the wizard does not ask for a pinned flavor" test_wizard_does_not_ask_for_a_pinned_flavor
 run_test "the wizard offers emacsclient with the daily Emacs" test_wizard_offers_emacsclient_with_the_daily_emacs
 run_test "the wizard offers nvim without the daily Emacs" test_wizard_offers_nvim_without_the_daily_emacs
+run_test "the wizard offers the terminal Emacs on MacPorts" test_wizard_offers_the_terminal_emacs_on_macports
 run_test "the wizard offers the recorded editor first on a rerun" test_wizard_offers_the_recorded_editor_first_on_a_rerun
 run_test "the wizard does not ask for a pinned editor" test_wizard_does_not_ask_for_a_pinned_editor
 

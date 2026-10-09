@@ -159,7 +159,7 @@ _wizard_valid_email() { email_valid "$1"; }
 wizard() {
   local name email theme daily themes pinned_theme ask_theme=true
   local flavor="" current_flavor other_flavor flavors pinned_flavor
-  local effective_flavor editor="" terminal_editor="" default_editor default_terminal
+  local effective_flavor editor="" terminal_editor="" default_editor default_terminal window_emacs
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
@@ -219,16 +219,31 @@ wizard() {
   # to nvim otherwise. The shell layer reads both answers (env, editor
   # section); teeup config set changes them later.
   effective_flavor="${flavor:-${pinned_flavor:-$(answers_get TEEUP_EMACS_FLAVOR starter)}}"
+  # MacPorts installs the terminal-only emacs port, which cannot open the
+  # window emacsclient -c asks for, so there the default editor is the
+  # terminal frame and -c is not offered.
+  window_emacs=true
+  if [[ "$(pkg_backend)" == "macports" ]]; then window_emacs=false; fi
   if [[ "$daily" == "yes" && "$effective_flavor" != "none" ]]; then
-    default_editor="emacsclient -c"
+    if [[ "$window_emacs" == "true" ]]; then
+      default_editor="emacsclient -c"
+    else
+      default_editor="emacsclient -t"
+    fi
     default_terminal="emacsclient -t"
   else
     default_editor="nvim"
     default_terminal="nvim"
   fi
-  editor="$(_wizard_ask_editor TEEUP_EDITOR "Default editor" "$default_editor" \
-    "emacsclient -c" "emacsclient -t" nvim vim "zed --wait" "code --wait" "cursor --wait")" ||
-    ui_rc_or_exit $?
+  if [[ "$window_emacs" == "true" ]]; then
+    editor="$(_wizard_ask_editor TEEUP_EDITOR "Default editor" "$default_editor" \
+      "emacsclient -c" "emacsclient -t" nvim vim "zed --wait" "code --wait" "cursor --wait")" ||
+      ui_rc_or_exit $?
+  else
+    editor="$(_wizard_ask_editor TEEUP_EDITOR "Default editor" "$default_editor" \
+      "emacsclient -t" nvim vim "zed --wait" "code --wait" "cursor --wait")" ||
+      ui_rc_or_exit $?
+  fi
   terminal_editor="$(_wizard_ask_editor TEEUP_TERMINAL_EDITOR "Terminal editor (over SSH, and when no default editor is set)" "$default_terminal" \
     "emacsclient -t" nvim vim)" || ui_rc_or_exit $?
   answers_set TEEUP_NAME "$name"
