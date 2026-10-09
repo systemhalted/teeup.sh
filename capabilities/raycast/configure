@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Configuration only, and idempotent: a second run must report that there was
+# nothing to do rather than do it again. Every mutation goes through run_cmd
+# or a DRY_RUN-guarded primitive, so `DRY_RUN=true` changes nothing.
+#
+# The usual shapes, in the order they are usually needed:
+#
+#   copy_config_once "$TEEUP_CAP_DIR/config/raycast/config.toml" \
+#     "$(user_config_dir)/raycast/config.toml"
+#   defaults_write com.example.raycast SomeKey -bool true
+#   launchagent_install com.example.raycast <<PLIST
+#   ...
+#   PLIST
+#
+#log "Nothing to configure yet for raycast."
+na_marker="${TEEUP_CAP_NA_MARKER:-}"
+export TEEUP_CONFIGURING="$TEEUP_CAP"
+
+if [[ -d "${TEEUP_APPS_DIR:-/Applications/}/Raycast.app" ]]; then
+    log "Raycast is installed; open it with: open -a Raycast"
+elif ! casks_supported; then
+    TEEUP_CAP_NA_MARKER="$na_marker"
+    not_applicable "Raycast is a cask and MacPorts has no port fot Raycast; download it from https://www.raycast.com/ -- the settings above are ready for a hand-downloaded Raycast.app."
+else
+    log "Raycast.app is not in ${TEEUP_APPS_DIR:-/Applications} yet; the settings are ready for it."
+fi

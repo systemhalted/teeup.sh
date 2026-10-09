@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Packages only. Anything that writes a config file, a macOS default or a
+# LaunchAgent belongs in `configure`, which runs as its own process so a
+# config change never means re-reading an install.
+#
+# pkg_install <package> [command]: the second argument is the command the
+# package provides, and the install is skipped when it is already on PATH.
+# For a GUI app use `cask_install <cask>` and set casks= and apps= in the
+# metadata instead.
+if casks_supported; then
+    cask_install raycast
+else
+    warn "Raycast is a cask and MacPorts has no port fot Raycast; download it from https://www.raycast.com/"
+fi
+

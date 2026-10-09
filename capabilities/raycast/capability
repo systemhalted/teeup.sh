@@ -1,0 +1,8 @@
+summary="Raycast is a collection of powerful productivity tools all within an extendable launcher. Fast, ergonomic and reliable."
+group=apps
+tier=lazy
+requires="package-manager"
+provides="raycast"
+casks="raycast"
+apps="Raycast"
+interactive=false
