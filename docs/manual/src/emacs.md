@@ -1,6 +1,6 @@
 # Emacs
 
-Emacs is in the daily tier. teeup installs the GUI build and the `emacs-app` cask, which puts `emacs` and `emacsclient` on your `PATH`. Emacs runs as a daemon from login, and git and the shell use `emacsclient` as their editor.
+Emacs is in the daily tier. teeup installs the GUI build and the `emacs-app` cask, which puts `emacs` and `emacsclient` on your `PATH`. Emacs runs as a daemon from login. If you do not select a different editor, git and the shell use `emacsclient` (read [Editors](shell-tools.md#editors)).
 
 <!-- SCREENSHOT: An Emacs window opened with `e README.md` from WezTerm, showing the teeup starter layer with the current theme. -->
 

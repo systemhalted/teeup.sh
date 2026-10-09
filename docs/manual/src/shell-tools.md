@@ -14,7 +14,7 @@ The layer adds [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosugges
 
 ## Editors
 
-The teeup shell sets `EDITOR`, `VISUAL`, and `SUDO_EDITOR` to the same editor. Tools such as `teeup config edit` and `crontab -e` open that editor. Two answers select it:
+The teeup shell sets `EDITOR`, `VISUAL`, and `SUDO_EDITOR` to the same editor. Tools such as `teeup config edit`, `crontab -e`, and `git commit` open that editor. Two answers select it:
 
 | Answer | Used | Examples |
 |---|---|---|
@@ -25,7 +25,7 @@ The wizard asks for both. To change one, run `teeup config set TEEUP_EDITOR zed 
 
 If neither answer has a value, the shell uses `emacsclient -t` when it finds `emacsclient`, then `nvim`, then `vim`. An `EDITOR` or `VISUAL` value from outside teeup stays as it is. To use a different editor in one shell, set `EDITOR` in `~/.config/zsh/local.zsh`.
 
-git uses its own editor setting, which `teeup configure git` writes (read [Identity](identity.md)).
+teeup does not set `core.editor` for git, so git uses the same editor. To give git a different editor, set `core.editor` in `~/.config/git/local`.
 
 ## Commands teeup replaces
 

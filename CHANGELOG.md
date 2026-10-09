@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Editor settings.** Two answers select the editor that the shell puts in `EDITOR`, `VISUAL`, and `SUDO_EDITOR`. `TEEUP_EDITOR` is for a local session, for example `emacsclient -c` or `zed --wait`. `TEEUP_TERMINAL_EDITOR` is for SSH, and for a local session when `TEEUP_EDITOR` has no value. The wizard asks for both after the Emacs flavor, and the machine file can pin them. `teeup config set` accepts both, and shows a warning when the editor is not a command on `PATH`.
 
+### Changed
+- **git follows the shell's editor.** `teeup configure git` no longer writes `core.editor` or `sequence.editor`, so `git commit` and `git rebase -i` use `VISUAL`, then `EDITOR`. Before, git used `emacsclient -t` or `vim`, whatever the editor answers said. To give git its own editor, set `core.editor` in `~/.config/git/local`.
+
 ### Fixed
 - **`EDITOR` and `VISUAL` stuck at `vim`.** `~/.zshenv` reads the shell layer before macOS adds `/usr/local/bin` to `PATH`, so the shell did not find `emacsclient` there and selected `vim`. The layer now adds `/usr/local/bin` itself. It also records the editor that it selected, and a later pass selects again when the value did not change.
 
