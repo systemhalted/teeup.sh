@@ -12,6 +12,21 @@ teeup sets `/bin/zsh` as your login shell and configures it with plain scripts. 
 
 The layer adds [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions), [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting), and zsh-completions. It keeps 50,000 lines of shared history and starts mise, Starship, zoxide, and fzf. Starship reads `~/.config/starship.toml`, which teeup copies one time (read [Dotfiles](dotfiles.md)).
 
+## Editors
+
+The teeup shell sets `EDITOR`, `VISUAL`, and `SUDO_EDITOR` to the same editor. Tools such as `teeup config edit` and `crontab -e` open that editor. Two answers select it:
+
+| Answer | Used | Examples |
+|---|---|---|
+| `TEEUP_EDITOR` | In a local session | `emacsclient -c`, `zed --wait`, `nvim` |
+| `TEEUP_TERMINAL_EDITOR` | Over SSH, and in a local session when `TEEUP_EDITOR` has no value | `emacsclient -t`, `nvim`, `vim` |
+
+The wizard asks for both. To change one, run `teeup config set TEEUP_EDITOR zed --wait`, and then open a new terminal. If the first word is not a command on `PATH`, teeup saves the value and shows a warning.
+
+If neither answer has a value, the shell uses `emacsclient -t` when it finds `emacsclient`, then `nvim`, then `vim`. An `EDITOR` or `VISUAL` value from outside teeup stays as it is. To use a different editor in one shell, set `EDITOR` in `~/.config/zsh/local.zsh`.
+
+git uses its own editor setting, which `teeup configure git` writes (read [Identity](identity.md)).
+
 ## Commands teeup replaces
 
 teeup replaces `ls` and `cd` with aliases and a function. The [Aliases](#aliases) section shows other shortcuts.

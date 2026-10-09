@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Editor settings.** Two answers select the editor that the shell puts in `EDITOR`, `VISUAL`, and `SUDO_EDITOR`. `TEEUP_EDITOR` is for a local session, for example `emacsclient -c` or `zed --wait`. `TEEUP_TERMINAL_EDITOR` is for SSH, and for a local session when `TEEUP_EDITOR` has no value. The wizard asks for both after the Emacs flavor, and the machine file can pin them. `teeup config set` accepts both, and shows a warning when the editor is not a command on `PATH`.
+
+### Fixed
+- **`EDITOR` and `VISUAL` stuck at `vim`.** `~/.zshenv` reads the shell layer before macOS adds `/usr/local/bin` to `PATH`, so the shell did not find `emacsclient` there and selected `vim`. The layer now adds `/usr/local/bin` itself. It also records the editor that it selected, and a later pass selects again when the value did not change.
+
 ## [0.3.0-beta] - 2026-10-07
 
 teeup installs with one line, and `teeup update` now follows releases instead of `main`. Every existing installation tracked `main`, so it keeps its checkout, moves forward with the next release, and shows a notice about `teeup update --main`.

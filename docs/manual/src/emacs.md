@@ -53,7 +53,7 @@ The LaunchAgent `sh.teeup.emacs` starts `Emacs --fg-daemon` at login. `launchd` 
 |---|---|
 | `e <file>` | A new Emacs window (`emacsclient -c`) |
 | `et <file>` | A frame in the current terminal (`emacsclient -t`) |
-| `$EDITOR` and `$VISUAL` | `emacsclient -t`, so git, `teeup config edit`, and other tools open in the terminal |
+| `$EDITOR` and `$VISUAL` | The editor that you select in the wizard. With Emacs, the default is `emacsclient -c`, and `emacsclient -t` over SSH. Read [Editors](shell-tools.md#editors). |
 
 If the daemon is not running, `emacsclient` from the shell starts a new daemon, because the teeup shell sets an empty `ALTERNATE_EDITOR`.
 
