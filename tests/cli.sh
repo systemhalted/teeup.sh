@@ -2280,7 +2280,53 @@ test_config_set_warns_when_nothing_known_applies_the_change() {
   local out
   out="$("$TEEUP" config set TEEUP_CUSTOM_FLAG yes 2>&1)"
   assert_contains "$out" "not one of the answers" || return 1
+  assert_contains "$out" "TEEUP_EDITOR, TEEUP_TERMINAL_EDITOR" "the list names the editor answers" || return 1
   assert_equals "yes" "$("$TEEUP" config get TEEUP_CUSTOM_FLAG)" "the write itself still happens" || return 1
+  cleanup_test_env
+}
+
+# The two editor answers are read by the shell layer, not by a teeup verb, so
+# the hint is a new terminal. Both read as empty before anything sets them.
+test_config_get_knows_the_editor_answers_before_they_are_set() {
+  setup
+  seed_config_answers
+  local out rc=0
+  out="$("$TEEUP" config get TEEUP_EDITOR 2>&1)" || rc=$?
+  assert_success "$rc" "TEEUP_EDITOR: $out" || return 1
+  assert_equals "" "$out" || return 1
+  rc=0
+  out="$("$TEEUP" config get TEEUP_TERMINAL_EDITOR 2>&1)" || rc=$?
+  assert_success "$rc" "TEEUP_TERMINAL_EDITOR: $out" || return 1
+  assert_equals "" "$out" || return 1
+  cleanup_test_env
+}
+
+test_config_set_editor_says_to_open_a_new_terminal() {
+  setup
+  seed_config_answers
+  mock_command zed 0 ""
+  local out
+  out="$("$TEEUP" config set TEEUP_EDITOR zed --wait 2>&1)"
+  assert_contains "$out" "Open a new terminal to use it." || return 1
+  assert_not_contains "$out" "is not a command" || return 1
+  assert_equals "zed --wait" "$("$TEEUP" config get TEEUP_EDITOR)" || return 1
+  # A lazy shim is a command teeup installs on first use.
+  mkdir -p "$TEST_HOME/.local/state/teeup/shims"
+  printf '#!/bin/sh\nexit 0\n' > "$TEST_HOME/.local/state/teeup/shims/nvim"
+  chmod +x "$TEST_HOME/.local/state/teeup/shims/nvim"
+  out="$("$TEEUP" config set TEEUP_TERMINAL_EDITOR nvim 2>&1)"
+  assert_contains "$out" "Open a new terminal to use it." || return 1
+  assert_not_contains "$out" "is not a command" "a lazy shim counts" || return 1
+  cleanup_test_env
+}
+
+test_config_set_editor_warns_about_an_unknown_command_but_keeps_it() {
+  setup
+  seed_config_answers
+  local out
+  out="$("$TEEUP" config set TEEUP_TERMINAL_EDITOR teeup-no-such-editor -t 2>&1)"
+  assert_contains "$out" "teeup-no-such-editor is not a command on PATH" || return 1
+  assert_equals "teeup-no-such-editor -t" "$("$TEEUP" config get TEEUP_TERMINAL_EDITOR)" "the value is still written" || return 1
   cleanup_test_env
 }
 
@@ -2961,6 +3007,9 @@ run_test "config set warns about package manager before install" test_config_set
 run_test "config set refuses package manager once installed" test_config_set_refuses_package_manager_once_it_is_installed
 run_test "config set warns when nothing known applies the change" test_config_set_warns_when_nothing_known_applies_the_change
 run_test "config keys accepts an exported machine line" test_config_keys_accepts_an_exported_machine_line
+run_test "config get knows the editor answers before they are set" test_config_get_knows_the_editor_answers_before_they_are_set
+run_test "config set editor says to open a new terminal" test_config_set_editor_says_to_open_a_new_terminal
+run_test "config set editor warns about an unknown command but keeps it" test_config_set_editor_warns_about_an_unknown_command_but_keeps_it
 run_test "config get header lists both machine files" test_config_get_header_lists_both_machine_files_when_both_exist
 run_test "config get shows a leftover work answer as ignored" test_config_get_shows_a_leftover_work_answer_as_ignored
 run_test "config get shows the machine file's work answer as pinned" test_config_get_shows_the_machine_files_work_answer_as_pinned
