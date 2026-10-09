@@ -819,6 +819,69 @@ test_wizard_does_not_ask_for_a_pinned_flavor() {
   cleanup_test_env
 }
 
+# first_choice <output> <header> -> the first option the plain-read ui_choose
+# listed under the first line containing <header>, which is also the answer
+# an empty reply takes. The header shares a line with the previous prompt.
+first_choice() {
+  printf '%s\n' "$1" | awk -v h="$2" '
+    found && /^  1\) / { sub(/^  1\) /, ""); print; exit }
+    index($0, h) > 0 { found = 1 }'
+}
+
+test_wizard_offers_emacsclient_with_the_daily_emacs() {
+  setup
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_equals "emacsclient -c" "$(first_choice "$out" "Default editor")" || return 1
+  assert_equals "emacsclient -t" "$(first_choice "$out" "Terminal editor")" || return 1
+  assert_contains "$out" "Would set TEEUP_EDITOR in" || return 1
+  assert_contains "$out" "Would set TEEUP_TERMINAL_EDITOR in" || return 1
+  local terminal_choices
+  terminal_choices="$(printf '%s\n' "$out" | awk '/Terminal editor/ { f = 1; next } f && /^  [0-9]+\) / { print } f && !/^  [0-9]+\) / { exit }')"
+  assert_not_contains "$terminal_choices" "--wait" "the terminal question offers only terminal editors" || return 1
+  assert_not_contains "$terminal_choices" "emacsclient -c" || return 1
+  cleanup_test_env
+}
+
+test_wizard_offers_nvim_without_the_daily_emacs() {
+  setup
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n1\nn\n')"
+  assert_equals "nvim" "$(first_choice "$out" "Default editor")" "no daily set" || return 1
+  assert_equals "nvim" "$(first_choice "$out" "Terminal editor")" "no daily set" || return 1
+  # Option 4 of the flavor question is none: the daily set without Emacs.
+  out="$("$BOOT" --dry-run 2>&1 <<<$'1\nAda Lovelace\nada@example.com\n1\ny\n4\n')"
+  assert_equals "nvim" "$(first_choice "$out" "Default editor")" "flavor none" || return 1
+  assert_equals "nvim" "$(first_choice "$out" "Terminal editor")" "flavor none" || return 1
+  cleanup_test_env
+}
+
+test_wizard_offers_the_recorded_editor_first_on_a_rerun() {
+  setup
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_EDITOR="hx"\nTEEUP_NAME="Ada"\nTEEUP_TERMINAL_EDITOR="vim"\n' > "$TEST_HOME/.config/teeup/answers"
+  local out
+  out="$("$BOOT" --dry-run --reconfigure 2>&1 <<<"$WIZARD_INPUT")"
+  assert_equals "hx" "$(first_choice "$out" "Default editor")" "a value set by teeup config set" || return 1
+  assert_equals "vim" "$(first_choice "$out" "Terminal editor")" || return 1
+  cleanup_test_env
+}
+
+test_wizard_does_not_ask_for_a_pinned_editor() {
+  setup
+  export TEEUP_MACHINES_DIR="$TEST_HOME/machines"
+  mkdir -p "$TEST_HOME/machines"
+  printf 'TEEUP_EDITOR="zed --wait"\nTEEUP_TERMINAL_EDITOR="nvim"\n' > "$TEST_HOME/machines/testmac.conf"
+  local out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_contains "$out" "Default editor is pinned to zed --wait by $TEST_HOME/machines/testmac.conf; not asking." || return 1
+  assert_contains "$out" "Terminal editor is pinned to nvim by $TEST_HOME/machines/testmac.conf; not asking." || return 1
+  assert_not_contains "$out" "Would set TEEUP_EDITOR in" || return 1
+  assert_not_contains "$out" "Would set TEEUP_TERMINAL_EDITOR in" || return 1
+  unset TEEUP_MACHINES_DIR
+  cleanup_test_env
+}
+
 echo "bootstrap"
 run_test "refuses non-macOS" test_refuses_non_macos
 run_test "refuses root" test_refuses_root
@@ -874,5 +937,9 @@ run_test "dry run walks the daily tier in order" test_dry_run_walks_the_daily_ti
 run_test "the wizard records the Emacs flavor" test_wizard_records_the_emacs_flavor
 run_test "the wizard does not ask the flavor without the daily tier" test_wizard_does_not_ask_the_flavor_without_the_daily_tier
 run_test "the wizard does not ask for a pinned flavor" test_wizard_does_not_ask_for_a_pinned_flavor
+run_test "the wizard offers emacsclient with the daily Emacs" test_wizard_offers_emacsclient_with_the_daily_emacs
+run_test "the wizard offers nvim without the daily Emacs" test_wizard_offers_nvim_without_the_daily_emacs
+run_test "the wizard offers the recorded editor first on a rerun" test_wizard_offers_the_recorded_editor_first_on_a_rerun
+run_test "the wizard does not ask for a pinned editor" test_wizard_does_not_ask_for_a_pinned_editor
 
 print_summary
