@@ -19,17 +19,25 @@ teeup install dev-env python
 
 ## Homebrew or mise?
 
-teeup installs a tool with mise when you need more than one version of it. It uses Homebrew or MacPorts when one current version is correct for the whole Mac.
+teeup uses two sources. The tools that teeup itself needs come from Homebrew or MacPorts. The tools that you use come from mise, at the versions of the teeup release.
 
-mise installs these items:
-- Language runtimes. Projects specify their own versions in `mise.toml`, and `mise activate` changes between them when you change directories. Homebrew keeps one version of each formula.
-- The AI command-line tools: Claude Code, Codex, Gemini CLI, Copilot CLI, and OpenCode. mise downloads each tool the first time that you run it.
+| Source | Tools |
+|---|---|
+| Homebrew or MacPorts | mise, git, the GitHub CLI, gum, jq, zsh and its plugins, curl, wget, tree, GnuPG, btop, Colima and Docker, and every app |
+| mise, at the versions of the release | ripgrep, fd, fzf, bat, eza, zoxide, yq, tealdeer (`tldr`), dust, delta, git-lfs, lazygit, Starship, Neovim, tmux, Herdr, and the Ollama command |
+| mise, at the versions that you choose | Language runtimes, the AI command-line tools, and every tool that you add with `mise use -g` |
 
-Homebrew or MacPorts installs the other tools. These include the command-line tools (ripgrep, fd, bat, jq, and the rest), git, delta, lazygit, the GitHub CLI, tmux, Neovim, Starship, and mise. Homebrew installs the apps from Homebrew casks. MacPorts has no casks, so with MacPorts, WezTerm and Emacs come from ports and teeup tells you to download the other apps yourself.
+The file `share/teeup/tools.lock` in the teeup checkout records the versions of the second row. A new teeup release can change these versions. teeup installs each tool with mise and puts a link to it in `~/.local/bin`. A command then starts the tool directly, without mise, so it starts as fast as a Homebrew copy.
 
-`teeup update` upgrades the packages that teeup installed, and runs `mise upgrade` for the tools in your global mise configuration.
+teeup records the same versions in `~/.config/mise/conf.d/teeup.toml`, so `mise prune` keeps them. teeup never edits your `~/.config/mise/config.toml`. If you set a version for one of these tools in your own file, a shell that runs `mise activate` uses your version.
 
-Most capabilities accept a copy of their command that you installed a different way, such as your own ripgrep, if its version command runs. A broken command or a stale shim on `PATH` does not replace the package.
+Language runtimes come from mise because projects need different versions. Each project specifies its versions in `mise.toml`, and `mise activate` changes between them when you change directories. mise downloads each AI tool the first time that you run it.
+
+A Mac with MacPorts gets the same tools from mise as a Mac with Homebrew. MacPorts has no casks, so with MacPorts, WezTerm and Emacs come from ports and teeup tells you to download the other apps yourself.
+
+`teeup update` installs a new pinned version when a release changes it. It upgrades the Homebrew or MacPorts packages only when it moves teeup to a new commit. It also runs `mise upgrade` for the tools in your global mise configuration. See [Updates](updates.md).
+
+Most capabilities accept a copy of their command that you installed a different way, such as your own jq, if its version command runs. A broken command or a stale shim on `PATH` does not replace the package. A file of your own at `~/.local/bin/rg`, or at the path of another pinned tool, stays, and teeup does not link that tool.
 
 The GitHub CLI is an exception: teeup always installs its own `gh`, because git uses `gh` to sign in. `teeup doctor github` warns when a different `gh` comes first on `PATH`. If you add a tool to mise yourself with `mise use -g`, you must control that tool yourself.
 

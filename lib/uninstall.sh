@@ -1009,8 +1009,8 @@ _uninstall_is_identity_config() {
 }
 
 # _uninstall_git_config_removed_packages_note <path to git/config>
-# --packages can uninstall git-delta, git-lfs and gh (capabilities/git and
-# capabilities/github's own packages) while a kept git/config -- edited, or
+# --packages can uninstall delta and git-lfs (capabilities/git's mise tools)
+# and gh (capabilities/github's own package) while a kept git/config -- edited, or
 # pristine and kept because --identity was not given -- still sets
 # core.pager and interactive.diffFilter to delta, the lfs clean/smudge/
 # process filter, and the GitHub and gist credential helpers to

@@ -27,6 +27,7 @@ Run `teeup list` to see all capabilities.
 ## Removing a capability
 
 - **`teeup remove <capability>`** runs the `remove` script of the capability, if it has one, and then uninstalls the casks and packages that its metadata lists.
+  It also removes the links of the tools that it installed through mise, and uninstalls their pinned versions.
   Finally, teeup forgets the capability, but your configuration files remain.
 
   A `remove` script is optional, and thirteen capabilities ship one today:
@@ -40,7 +41,7 @@ Run `teeup list` to see all capabilities.
   - The `ca-bundle` script deletes its PEM bundle.
   - The `emacs` and `wezterm` scripts uninstall their MacPorts ports.
 
-  The command refuses to run if another installed capability requires this one, or if the capability does not have a `remove` script, packages, or casks.
+  The command refuses to run if another installed capability requires this one. It also refuses if the capability does not have a `remove` script, packages, casks, or tools from mise.
   Seven capabilities have nothing to undo: `dev-dirs`, `package-manager`, `secrets`, `ssh`, `teeup-runtime`, `theme`, and `xcode-clt`.
   For these capabilities, `teeup remove secrets` and similar commands tell you so, and the capability stays marked as installed.
   If a `remove` script reports "not applicable on this machine", teeup reports that status, not a clean removal.

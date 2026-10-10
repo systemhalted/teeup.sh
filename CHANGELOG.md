@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **User tools come from mise, at the versions of the release (#112).** ripgrep, fd, fzf, bat, eza, zoxide, yq, tealdeer, dust, delta, git-lfs, lazygit, Starship, Neovim, tmux, Herdr and the Ollama command install through mise at the versions in `share/teeup/tools.lock`, and `~/.local/bin` links to each binary, so a call starts no mise process. `~/.config/mise/conf.d/teeup.toml` records the same versions, so `mise prune` keeps them. A release changes the lock; `teeup update` installs and links the new versions and leaves the old ones for `mise prune`. What teeup itself needs (mise, git, gh, gum, jq, the zsh layer), tools mise has no package for, btop, Colima and every cask stay with Homebrew or MacPorts.
+- **`teeup update` upgrades Homebrew or MacPorts packages only when it moves teeup.** Formulae cannot be pinned, so an update that stays on the same commit leaves their versions where they are.
+- **mise installs earlier.** It now comes right after `teeup-runtime` in the core tier, before zsh, Starship, cli-tools and git, which install their tools through it.
+- **Ollama without its app.** When the `ollama-app` cask cannot install (macOS 13, MacPorts), the `ollama` command still comes from mise, and teeup says to start the server with `ollama serve`. The formula fallback is gone.
+
+### Added
+- **`mise_tools` capability field.** `<tool>:<command>` pairs, linted by `teeup commands --check`, removed by `teeup remove` and `teeup uninstall`, and checked by `teeup doctor`, which also names the old Homebrew or MacPorts copy of each tool with the command that removes it.
+- **A migration for existing Macs.** It installs and links the pinned tools and keeps the package-manager copies.
+
 ## [0.3.0-beta] - 2026-10-07
 
 teeup installs with one line, and `teeup update` now follows releases instead of `main`. Every existing installation tracked `main`, so it keeps its checkout, moves forward with the next release, and shows a notice about `teeup update --main`.

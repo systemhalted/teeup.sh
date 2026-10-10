@@ -66,7 +66,7 @@ user files source thick default files.
    or let `./bin/teeup dev new-capability <name>` do it (item 30).
 2. `capability` is a sourced `KEY=value` file with no logic: `summary`,
    `group`, `tier` (`core|daily|lazy`), `requires`, `provides`, `packages`,
-   `casks`, `apps`, `interactive`.
+   `package_commands`, `mise_tools`, `casks`, `apps`, `interactive`.
 3. `install` only installs packages (`pkg_install`, `cask_install`).
    `configure` only writes configuration (`copy_config_once`,
    `write_managed_file`, `append_once`, `run_cmd`). Both are idempotent and
@@ -79,11 +79,23 @@ user files source thick default files.
    do not wrap those in `run_cmd`.
 5. `provides` must not list a command macOS already ships (`python3`, `ruby`,
    `java`, `git`, `perl`).
-6. Homebrew or mise: put a tool in `packages` (Homebrew, or MacPorts) when one
-   current version for the whole Mac is right, which is almost everything.
-   Use mise only for a tool people need several versions of, as `dev-env`
-   does for language runtimes, or one mise fetches on first call, as the
-   `ai-*` capabilities do. The manual states the rule for users in
+6. Homebrew or mise (#112): what teeup itself needs comes from the package
+   manager (`packages`): the package manager, mise, git, gh, gum and jq, the
+   zsh layer, anything mise has no package for (curl, wget, tree, gnupg),
+   anything with no macOS build upstream (btop), colima with its lima
+   dependency, and every cask. The tools the user uses come from mise at
+   exact versions: list them as `mise_tools="<tool>:<command> ..."`, give
+   each tool one line in `share/teeup/tools.lock` (`<tool> <version>`, plus
+   the backend as a third field when the registry's first choice is not an
+   `aqua:` source), add `mise` to `requires`, and call
+   `mise_tools_apply "$TEEUP_CAP"` from `install` and
+   `mise_tools_repair "$TEEUP_CAP"` from `configure`. `mise_tool_install`
+   links `~/.local/bin/<command>` to the pinned binary, so a call starts no
+   mise process. `cap_check` rejects a malformed pair, a tool with no lock
+   line, a tool or command two capabilities claim, and a capability with
+   mise tools that does not require mise. Language runtimes stay with
+   `teeup install dev-env`, and the `ai-*` wrappers stay as they are. The
+   manual states the rule for users in
    [Runtimes](docs/manual/src/runtimes.md#homebrew-or-mise).
    `package_commands="<package>:<command>"` lets doctor accept a copy of the
    command already on `PATH` in place of the package when its version command
@@ -242,7 +254,8 @@ user files source thick default files.
     verbs work for free; a `cp` of your own is invisible to them. A capability
     with no `config/` or `home/` directory is not resettable, and says so.
 24. `teeup remove <cap>` uninstalls the `casks` and `packages` your metadata
-    names and clears the done marker. Add a `remove` script only for machine
+    names, removes the links of its `mise_tools` and uninstalls their pinned
+    versions, and clears the done marker. Add a `remove` script only for machine
     state teeup created that a package manager cannot undo: a LaunchAgent
     (`launchagent_remove <label>`), recorded `defaults` (`defaults_restore`),
     a `hidutil` mapping. It runs before the uninstall, while the tool is
