@@ -723,6 +723,25 @@ test_capabilities_leave_a_user_s_mise_tool_out_of_the_summary() {
   cleanup_test_env
 }
 
+# The user replaced teeup's link with their own while teeup's entry stayed:
+# the tool is the user's, so the summary leaves it out as remove does.
+test_capabilities_leave_a_user_link_over_teeup_s_entry_out_of_the_summary() {
+  setup
+  tool_cap_fixture
+  rm -f "$TEST_HOME/.local/bin/rg"
+  ln -s "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$TEST_HOME/.local/bin/rg"
+  [[ -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "fixture: teeup's entry is still there"; return 1; }
+  : > "$MOCK_LOG"
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall" || return 1
+  _UNINSTALL_PACKAGES=true
+  state_done mark cap-search
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_REMOVED" "mise tools" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall" || return 1
+  cleanup_test_env
+}
+
 # The seven `teeup remove` refuses. Each is decided, none is run, and none
 # counts as a problem.
 test_capabilities_decide_each_of_the_seven_remove_refuses() {
@@ -1491,6 +1510,7 @@ run_test "capabilities uninstall mise tools when asked" test_capabilities_uninst
 run_test "capabilities name the mise versions teeup leaves installed" test_capabilities_name_the_mise_versions_teeup_leaves_installed
 run_test "capabilities name both mise versions when both are installed" test_capabilities_name_both_mise_versions_when_both_are_installed
 run_test "capabilities leave a user's mise tool out of the summary" test_capabilities_leave_a_user_s_mise_tool_out_of_the_summary
+run_test "capabilities leave a user link over teeup's entry out of the summary" test_capabilities_leave_a_user_link_over_teeup_s_entry_out_of_the_summary
 run_test "capabilities decide each of the seven remove refuses" test_capabilities_decide_each_of_the_seven_remove_refuses
 run_test "capabilities refuse what a failed dependent still needs" test_capabilities_refuse_what_a_failed_dependent_still_needs
 run_test "capabilities keep the zsh the login shell runs" test_capabilities_keep_the_zsh_the_login_shell_runs

@@ -1140,6 +1140,61 @@ test_tool_a_user_link_made_after_teeup_s_is_gone_is_the_user_s() {
   cleanup_test_env
 }
 
+# The user deleted teeup's link and made their own symlink into the same
+# mise install. Their link makes the tool theirs: remove keeps the link,
+# leaves the version installed, and drops teeup's stale entry.
+user_link_over_teeup_entry_fixture() {
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  rm -f "$TEST_HOME/.local/bin/rg"
+  ln -s "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$TEST_HOME/.local/bin/rg"
+  : > "$MOCK_LOG"
+}
+
+test_tool_remove_with_packages_leaves_a_user_link_s_version_and_drops_the_entry() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  user_link_over_teeup_entry_fixture || return 1
+  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup." || return 1
+  assert_contains "$out" "Keeping ripgrep 15.2.0: teeup did not link rg" || return 1
+  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "the user's link stays" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the version stays installed" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "teeup's stale entry goes"; return 1; }
+  cleanup_test_env
+}
+
+test_tool_install_keeps_a_user_link_and_drops_teeup_s_entry() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  user_link_over_teeup_entry_fixture || return 1
+  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out
+  out="$(mise_tool_install ripgrep rg 2>&1)" || { echo "install failed: $out"; return 1; }
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup" || return 1
+  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "the user's link stays" || return 1
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "teeup's stale entry goes"; return 1; }
+  cleanup_test_env
+}
+
+test_tool_user_link_dry_runs_change_nothing() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  user_link_over_teeup_entry_fixture || return 1
+  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg"
+  DRY_RUN=true mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  DRY_RUN=true mise_tool_remove ripgrep rg true >/dev/null 2>&1 || return 1
+  DRY_RUN=true mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
+  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "the user's link stays" || return 1
+  [[ -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "a dry run drops nothing"; return 1; }
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  cleanup_test_env
+}
+
 test_tool_remove_dry_run_touches_nothing() {
   setup
   tools_fixture
@@ -1533,5 +1588,8 @@ run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_
 run_test "tool a user link made after teeup's is gone is the user's" test_tool_a_user_link_made_after_teeup_s_is_gone_is_the_user_s
 run_test "tool install repairs a missing inner entry" test_tool_install_repairs_a_missing_inner_entry
 run_test "tool remove dry run touches nothing" test_tool_remove_dry_run_touches_nothing
+run_test "tool remove with packages leaves a user link's version and drops the entry" test_tool_remove_with_packages_leaves_a_user_link_s_version_and_drops_the_entry
+run_test "tool install keeps a user link and drops teeup's entry" test_tool_install_keeps_a_user_link_and_drops_teeup_s_entry
+run_test "tool user link dry runs change nothing" test_tool_user_link_dry_runs_change_nothing
 run_test "tool remove keeps the inner entry until the uninstall succeeds" test_tool_remove_keeps_the_inner_entry_until_the_uninstall_succeeds
 print_summary

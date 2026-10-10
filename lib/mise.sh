@@ -596,11 +596,16 @@ mise_tool_link_owned() {
 }
 
 # mise_tool_used <command> -> 0 when teeup uses the tool behind <command>:
-# its own entry exists (dangling or not), or ~/.local/bin/<command> is
-# teeup's link. This, not a record, decides whether `teeup remove
-# --packages` may uninstall the version.
+# ~/.local/bin/<command> is teeup's link, or it is missing and teeup's own
+# entry still exists (the user deleted the link; a retry after a failed
+# uninstall). Anything else at the ~/.local/bin path makes the tool the
+# user's, even with an entry of teeup's left over. This, not a record,
+# decides whether `teeup remove --packages` may uninstall the version.
 mise_tool_used() {
-  local inner
+  local inner link="$HOME/.local/bin/$1"
+  if [[ -e "$link" || -L "$link" ]] && ! mise_tool_link_owned "$link"; then
+    return 1
+  fi
   inner="$(_mise_tool_inner "$1")"
   if [[ -e "$inner" || -L "$inner" ]]; then
     return 0
@@ -663,7 +668,8 @@ mise_tool_link_is() {
 # that entry. A call then runs the binary directly, with no mise process in
 # between. A lock bump re-points only the entry. A file or link at the
 # ~/.local/bin path that is not teeup's is kept, with a warning, as
-# mise_wrapper_write does, and no entry is made for it. The previous version
+# mise_wrapper_write does; no entry is made for it, and a stale one is
+# dropped. The previous version
 # stays installed; `mise prune` removes it once nothing pins it.
 # TEEUP_CAP names the capability in the repair hints when it is set.
 # 0 linked, already linked, kept, or previewed; 1 <command> is missing.
@@ -680,6 +686,8 @@ mise_tool_install() {
   owner="${TEEUP_CAP:-<capability>}"
   if [[ -e "$link" || -L "$link" ]] && ! mise_tool_link_owned "$link"; then
     warn "Keeping $link: it was not written by teeup, so $command is not the pinned $tool $version. Remove it, then run: teeup configure $owner"
+    # An entry teeup made before the user put their own file there is stale.
+    _mise_tool_inner_remove "$command" || true
     return 0
   fi
   if ! have mise; then
@@ -747,8 +755,8 @@ mise_tool_install() {
 # (mise_tool_versions) that mise has installed, and deletes the entry only
 # after that worked: on a failure the entry stays, so a retry still knows
 # teeup used the tool. `mise uninstall` never runs for a tool teeup does not
-# use (mise_tool_used): with a foreign file at the path and no entry of
-# teeup's own, the version is not teeup's to take away. The conf.d file is
+# use (mise_tool_used): with a foreign file at the path, the version is not
+# teeup's to take away, and a leftover entry of teeup's is dropped. The conf.d file is
 # the caller's to rewrite (cap_remove does it once per capability).
 # 0 removed or nothing to do; 1 something that should be gone is still there.
 mise_tool_remove() {
@@ -785,7 +793,8 @@ mise_tool_remove() {
   fi
   if [[ "$used" != "true" ]]; then
     log "Keeping $tool $version: teeup did not link $command, so it leaves the version installed."
-    return 0
+    _mise_tool_inner_remove "$command"
+    return $?
   fi
   spec="$(tools_lock_spec "$tool")"
   if ! have mise; then
