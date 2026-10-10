@@ -855,6 +855,7 @@ _config_key_known() {
   local key="$1" k
   case "$key" in
     TEEUP_GITHUB_UPLOAD_PERSONAL|TEEUP_GITHUB_UPLOAD_WORK|TEEUP_UPDATE_CHANNEL) return 0 ;;
+    TEEUP_EDITOR|TEEUP_TERMINAL_EDITOR) return 0 ;;
   esac
   for k in $(_config_keys); do
     if [[ "$k" == "$key" ]]; then
@@ -945,8 +946,35 @@ _config_apply_hint() {
     TEEUP_THEME) log "Run: teeup theme set --reload${value:+ $value} -- it validates the name and re-renders every themed tool, which this write alone does not." ;;
     TEEUP_UPDATE_CHANNEL) log "Run: teeup update -- that is what reads $key." ;;
     TEEUP_PACKAGE_MANAGER) warn "$key only takes effect the next time ./bootstrap or teeup install package-manager runs; nothing on this machine changed yet." ;;
-    *) warn "$key is not one of the answers ./bootstrap writes (TEEUP_NAME, TEEUP_EMAIL, TEEUP_EMACS_FLAVOR, TEEUP_DAILY, TEEUP_PACKAGE_MANAGER, TEEUP_THEME); teeup config cannot say what, if anything, reads it." ;;
+    # Read by the shell layer (capabilities/zsh/default/env) as each shell
+    # starts, so no teeup verb applies it.
+    TEEUP_EDITOR|TEEUP_TERMINAL_EDITOR)
+      _config_editor_check "$key" "$value"
+      log "Open a new terminal to use it."
+      ;;
+    *) warn "$key is not one of the answers ./bootstrap writes (TEEUP_NAME, TEEUP_EMAIL, TEEUP_EMACS_FLAVOR, TEEUP_DAILY, TEEUP_PACKAGE_MANAGER, TEEUP_THEME, TEEUP_EDITOR, TEEUP_TERMINAL_EDITOR); teeup config cannot say what, if anything, reads it." ;;
   esac
+}
+
+# _config_editor_check <key> <value> -> warns when the first word of an
+# editor answer is not a command on PATH. Any value is accepted: the editor
+# may be installed later, or live in a directory only a login shell adds. A
+# teeup lazy shim counts, since the first call installs the command.
+_config_editor_check() {
+  local key="$1" value="$2" cmd
+  # The command is the first word, or a quoted path that holds spaces, the
+  # same rule the shell layer (capabilities/zsh/default/env) applies.
+  case "$value" in
+    \"*) cmd="${value#\"}"; cmd="${cmd%%\"*}" ;;
+    \'*) cmd="${value#\'}"; cmd="${cmd%%\'*}" ;;
+    *) cmd="${value%%[[:space:]]*}" ;;
+  esac
+  [[ -n "$cmd" ]] || return 0
+  if command -v "$cmd" >/dev/null 2>&1 || [[ -x "$TEEUP_STATE_DIR/shims/$cmd" ]]; then
+    return 0
+  fi
+  warn "$cmd is not a command on PATH; $key is saved, but the shell uses a different editor until $cmd is installed."
+  return 0
 }
 
 # _config_file_keys <file> -> every TEEUP_* key <file> assigns, sorted, once

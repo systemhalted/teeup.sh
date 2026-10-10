@@ -76,8 +76,10 @@ After teeup installs the Command Line Tools, the first prompt asks which package
 | Theme | The first theme in the list. | `TEEUP_THEME` |
 | Install the daily set too (Emacs)? | Yes. | `TEEUP_DAILY` |
 | Emacs flavor: `starter`, `doom`, `spacemacs` or `none` | `starter` | `TEEUP_EMACS_FLAVOR` |
+| Default editor | `emacsclient -c` with the daily set and an Emacs flavor (`emacsclient -t` with MacPorts, which has no window build). `nvim` if not. | `TEEUP_EDITOR` |
+| Terminal editor | `emacsclient -t` with the daily set and an Emacs flavor. `nvim` if not. | `TEEUP_TERMINAL_EDITOR` |
 
-teeup asks the Emacs question only if you answer yes to the daily set. If you enter an empty name or an invalid email, teeup asks the question again, up to three attempts in total. If your machine file pins a package manager, theme, or Emacs flavor, teeup shows that the value is pinned and does not ask that question. See [Answers and machines](answers-and-machines.md).
+teeup asks the Emacs question only if you answer yes to the daily set. If you enter an empty name or an invalid email, teeup asks the question again, up to three attempts in total. If your machine file pins a package manager, theme, Emacs flavor, or editor, teeup does not ask that question and shows the pinned value. See [Answers and machines](answers-and-machines.md).
 
 teeup saves the answers to `~/.config/teeup/answers`, and a second `./bootstrap` run uses them again without the questions. To change the answers, run `./bootstrap --reconfigure` or use `teeup config`.
 

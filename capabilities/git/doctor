@@ -224,7 +224,7 @@ fi
 
 generated="$git_dir/teeup-generated"
 if [[ ! -f "$generated" ]]; then
-  doctor_fail "No $generated, so the editor, pager and signing settings the shipped config expects are missing." "teeup configure git"
+  doctor_fail "No $generated, so the pager and signing settings the shipped config expects are missing." "teeup configure git"
   doctor_verdict
   exit
 fi

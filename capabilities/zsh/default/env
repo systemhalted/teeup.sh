@@ -118,6 +118,11 @@ else
     path_prepend "$_teeup_brew/bin"
   fi
 fi
+# /etc/paths puts /usr/local/bin on PATH, but only once /etc/zprofile runs
+# path_helper, after ~/.zshenv has already read this file. Append it here so
+# the first pass sees what the login shell will see (emacsclient lives there
+# on many Macs). path_append is a no-op when it is already present.
+path_append "$_teeup_prefix_root/usr/local/bin"
 unset _teeup_backend _teeup_brew _teeup_prefix_root
 
 # Cargo's own bin directory. mise's rust backend is rustup, which installs
@@ -157,6 +162,11 @@ path_append "$TEEUP_STATE_DIR/shims"
 export PATH
 
 # --- editor ------------------------------------------------------------------
+# Two answers name the editor (teeup config set, or the machine file, both
+# sourced above): TEEUP_EDITOR for a local session, TEEUP_TERMINAL_EDITOR over
+# SSH and as the fallback when TEEUP_EDITOR is unset or not installed. With neither, the order
+# is emacsclient -t, then a real nvim, then vim.
+#
 # A lazy shim answers `command -v` for a command nothing installed provides
 # (the neovim capability's provides="nvim"), so a hit inside the shims
 # directory is not an editor. The shims are last on PATH, so a real nvim
@@ -169,29 +179,87 @@ export PATH
 # skipped, say -- would abort shell startup here instead of falling through to
 # the vim fallback below. Every command substitution in this file needs the
 # same guard, for the same reason.
-_teeup_nvim="$(command -v nvim 2>/dev/null || true)"
-case "$_teeup_nvim" in
-  "$TEEUP_STATE_DIR/shims/"*) _teeup_nvim="" ;;
-esac
-if [ -z "${EDITOR:-}" ]; then
-  if command -v emacsclient >/dev/null 2>&1; then
-    # An empty ALTERNATE_EDITOR makes emacsclient start the daemon itself.
-    ALTERNATE_EDITOR=""
-    export ALTERNATE_EDITOR
-    EDITOR="emacsclient -t"
-  elif [ -n "$_teeup_nvim" ]; then
-    EDITOR="nvim"
-  else
-    EDITOR="vim"
-  fi
-  export EDITOR
+# An answer is used only when its first word is a command: one that names an
+# editor that is not installed (Emacs skipped with --skip-daily or TEEUP_SKIP
+# after the wizard chose it, a failed install, an editor removed later) would
+# leave git commit and crontab -e with nothing to open, so the next one is
+# tried. A lazy shim counts, because the answer asked for that editor.
+#
+# _teeup_editor_ok <answer>: true when the answer's command exists. The command
+# is the first word, or a path in double or single quotes when it holds spaces
+# ("/Applications/My Editor.app/.../editor" --wait), as EDITOR is written for
+# git and crontab.
+_teeup_editor_ok() {
+  case "$1" in
+    \"*) _teeup_editor_word="${1#\"}"; _teeup_editor_word="${_teeup_editor_word%%\"*}" ;;
+    \'*) _teeup_editor_word="${1#\'}"; _teeup_editor_word="${_teeup_editor_word%%\'*}" ;;
+    *) _teeup_editor_word="${1%% *}" ;;
+  esac
+  command -v "$_teeup_editor_word" >/dev/null 2>&1
+}
+_teeup_editor=""
+if [ -z "${SSH_CONNECTION:-}" ] && [ -z "${SSH_TTY:-}" ] && [ -n "${TEEUP_EDITOR:-}" ] &&
+   _teeup_editor_ok "$TEEUP_EDITOR"; then
+  _teeup_editor="$TEEUP_EDITOR"
+elif [ -n "${TEEUP_TERMINAL_EDITOR:-}" ] && _teeup_editor_ok "$TEEUP_TERMINAL_EDITOR"; then
+  _teeup_editor="$TEEUP_TERMINAL_EDITOR"
 fi
-unset _teeup_nvim
-# Defaulted, not forced: a parent process that set VISUAL or SUDO_EDITOR on
-# purpose keeps its value, and an inherited EDITOR does not silently become
-# all three.
-export VISUAL="${VISUAL:-$EDITOR}"
-export SUDO_EDITOR="${SUDO_EDITOR:-$EDITOR}"
+unset -f _teeup_editor_ok
+unset _teeup_editor_word
+if [ -z "$_teeup_editor" ]; then
+  _teeup_nvim="$(command -v nvim 2>/dev/null || true)"
+  case "$_teeup_nvim" in
+    "$TEEUP_STATE_DIR/shims/"*) _teeup_nvim="" ;;
+  esac
+  if command -v emacsclient >/dev/null 2>&1; then
+    _teeup_editor="emacsclient -t"
+  elif [ -n "$_teeup_nvim" ]; then
+    _teeup_editor="nvim"
+  else
+    _teeup_editor="vim"
+  fi
+  unset _teeup_nvim
+fi
+# A value set outside teeup is kept. A value equal to TEEUP_EDITOR_AUTO is one
+# an earlier pass chose (~/.zshenv before path_helper ran, or a parent shell),
+# so it is chosen again: otherwise a vim picked with macOS's minimal PATH
+# stayed after ~/.zprofile had put emacsclient on PATH. VISUAL and SUDO_EDITOR
+# follow EDITOR, so an inherited EDITOR still becomes all three.
+# TEEUP_EDITOR_AUTO is recorded only when teeup set EDITOR itself: an
+# inherited EDITOR that happens to equal teeup's choice is still not teeup's,
+# and a later pass must keep it.
+_teeup_auto="${TEEUP_EDITOR_AUTO:-}"
+_teeup_chose=false
+if [ -z "${EDITOR:-}" ] || [ "$EDITOR" = "$_teeup_auto" ]; then
+  EDITOR="$_teeup_editor"
+  _teeup_chose=true
+fi
+# When teeup sets EDITOR to emacsclient, ALTERNATE_EDITOR is set to empty,
+# which makes emacsclient start the daemon itself; an inherited value (false,
+# say) would stop that. Matched on the command, so a full or quoted path
+# (".../bin/emacsclient" -c) counts too.
+if [ "$_teeup_chose" = "true" ]; then
+  case "$_teeup_editor" in
+    emacsclient*|*/emacsclient|*/emacsclient[\ \"\']*)
+      ALTERNATE_EDITOR=""
+      export ALTERNATE_EDITOR
+      ;;
+  esac
+fi
+if [ -z "${VISUAL:-}" ] || [ "$VISUAL" = "$_teeup_auto" ]; then
+  VISUAL="$EDITOR"
+fi
+if [ -z "${SUDO_EDITOR:-}" ] || [ "$SUDO_EDITOR" = "$_teeup_auto" ]; then
+  SUDO_EDITOR="$EDITOR"
+fi
+export EDITOR VISUAL SUDO_EDITOR
+if [ "$_teeup_chose" = "true" ]; then
+  TEEUP_EDITOR_AUTO="$_teeup_editor"
+  export TEEUP_EDITOR_AUTO
+else
+  unset TEEUP_EDITOR_AUTO
+fi
+unset _teeup_editor _teeup_auto _teeup_chose
 
 # --- everything else ---------------------------------------------------------
 # BAT_THEME is the shell-level theme hook; `teeup theme set` overrides this
