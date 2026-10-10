@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Raycast.** `teeup install raycast` installs the Raycast launcher from its Homebrew cask, and the menu offers it under Apps. MacPorts has no port of it, so teeup shows the download page there.
 - **Editor settings.** Two answers select the editor that the shell puts in `EDITOR`, `VISUAL`, and `SUDO_EDITOR`. `TEEUP_EDITOR` is for a local session, for example `emacsclient -c` or `zed --wait`. `TEEUP_TERMINAL_EDITOR` is for SSH, and for a local session when `TEEUP_EDITOR` has no value. The wizard asks for both after the Emacs flavor, and the machine file can pin them. `teeup config set` accepts both, and shows a warning when the editor is not a command on `PATH`.
 
 ### Changed
