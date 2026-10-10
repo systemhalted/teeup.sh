@@ -44,6 +44,20 @@ make_cap() {
   chmod +x "$dir/install" "$dir/configure"
 }
 
+# tool_cap_fixture: mise and a capability with one pinned tool, both marked
+# installed, the tool linked.
+tool_cap_fixture() {
+  mock_mise_tools
+  TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  printf 'ripgrep 15.2.0\n' > "$TEEUP_TOOLS_LOCK"
+  make_cap mise core
+  make_cap search lazy "mise"
+  printf 'mise_tools="ripgrep:rg"\n' >> "$TEEUP_CAPS_DIR/search/capability"
+  state_done mark cap-mise
+  state_done mark cap-search
+  mise_tools_apply search >/dev/null 2>&1
+}
+
 # run_fix <command>: what the user would do with a printed fix, in their
 # shell: zsh when the machine has it (every CI runner does), else bash. -f:
 # without it zsh sources ~/.zshenv first, teeup's own shell layer, in the
@@ -626,6 +640,38 @@ test_capabilities_uninstall_packages_when_asked() {
   assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm" || return 1
   assert_contains "$_UNINSTALL_REMOVED" "tool's packages: ripgrep wezterm" || return 1
+  cleanup_test_env
+}
+
+test_capabilities_unlink_mise_tools_and_name_the_mise_uninstall_to_run() {
+  setup
+  tool_cap_fixture
+  local conf="$TEST_HOME/.config/mise/conf.d/teeup.toml" fix
+  uninstall_capabilities >/dev/null 2>&1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the link goes"; return 1; }
+  [[ ! -e "$conf" ]] || { echo "the conf.d file goes"; return 1; }
+  assert_contains "$_UNINSTALL_REMOVED" "search's links in $TEST_HOME/.local/bin: rg" || return 1
+  assert_contains "$_UNINSTALL_REMOVED" "the pinned tool list teeup wrote for mise ($conf)" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "mise tools: ripgrep@15.2.0. Remove them later with: mise uninstall ripgrep@15.2.0" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall" "kept unless asked" || return 1
+  uninstall_clean || return 1
+  while IFS= read -r fix; do
+    case "$fix" in *"mise uninstall"*) run_fix "${fix##*: }" || { echo "the printed fix failed: $fix"; return 1; } ;; esac
+  done <<EOF2
+$_UNINSTALL_KEPT
+EOF2
+  [[ ! -e "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" ]] || { echo "the printed fix removes the install"; return 1; }
+  cleanup_test_env
+}
+
+test_capabilities_uninstall_mise_tools_when_asked() {
+  setup
+  tool_cap_fixture
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
+  assert_contains "$_UNINSTALL_REMOVED" "search's mise tools: ripgrep@15.2.0" || return 1
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall" || return 1
   cleanup_test_env
 }
 
@@ -1392,6 +1438,8 @@ run_test "package inventory lists metadata software and prints commands that wor
 run_test "package inventory uses only marked capabilities for an installed teeup" test_package_inventory_uses_only_marked_capabilities_for_an_installed_teeup
 run_test "capabilities name what the tools made for themselves" test_capabilities_name_what_the_tools_made_for_themselves
 run_test "capabilities uninstall packages when asked" test_capabilities_uninstall_packages_when_asked
+run_test "capabilities unlink mise tools and name the mise uninstall to run" test_capabilities_unlink_mise_tools_and_name_the_mise_uninstall_to_run
+run_test "capabilities uninstall mise tools when asked" test_capabilities_uninstall_mise_tools_when_asked
 run_test "capabilities decide each of the seven remove refuses" test_capabilities_decide_each_of_the_seven_remove_refuses
 run_test "capabilities refuse what a failed dependent still needs" test_capabilities_refuse_what_a_failed_dependent_still_needs
 run_test "capabilities keep the zsh the login shell runs" test_capabilities_keep_the_zsh_the_login_shell_runs

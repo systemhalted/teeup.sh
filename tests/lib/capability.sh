@@ -434,6 +434,42 @@ EOF2
   cleanup_test_env
 }
 
+test_cap_remove_takes_the_links_and_with_packages_the_pinned_installs() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  make_tool_cap search "ripgrep:rg"
+  state_done mark cap-search
+  mise_tools_apply search >/dev/null 2>&1
+  local link="$TEST_HOME/.local/bin/rg" conf="$TEST_HOME/.config/mise/conf.d/teeup.toml" rc=0
+  [[ -L "$link" && -f "$conf" ]] || { echo "fixture: rg is linked and pinned"; return 1; }
+  cap_remove search false >/dev/null 2>&1 || rc=$?
+  assert_success "$rc" "a capability with only mise tools has something to undo" || return 1
+  [[ ! -e "$link" && ! -L "$link" ]] || { echo "the link goes"; return 1; }
+  [[ ! -e "$conf" ]] || { echo "nothing is pinned any more, so the conf.d file goes"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" "without packages the install stays" || return 1
+  state_done check cap-search && { echo "the marker is cleared"; return 1; }
+  state_done mark cap-search
+  mise_tools_apply search >/dev/null 2>&1
+  cap_remove search true >/dev/null 2>&1 || { echo "remove with packages failed"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
+  cleanup_test_env
+}
+
+test_cap_remove_keeps_the_marker_when_a_mise_uninstall_fails() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  make_tool_cap search "ripgrep:rg"
+  state_done mark cap-search
+  mise_tools_apply search >/dev/null 2>&1
+  local rc=0
+  MOCK_MISE_FAIL_UNINSTALL=ripgrep cap_remove search true >/dev/null 2>&1 || rc=$?
+  assert_equals "1" "$rc" || return 1
+  state_done check cap-search || { echo "a retry must still find it"; return 1; }
+  cleanup_test_env
+}
+
 test_check_accepts_well_formed_mise_tools() {
   setup
   tools_fixture
@@ -572,6 +608,8 @@ run_test "cap_remove with packages runs the script then uninstalls" test_cap_rem
 run_test "cap_remove without packages keeps them and tells the script" test_cap_remove_without_packages_keeps_them_and_tells_the_script
 run_test "cap_remove reads packages from the metadata only" test_cap_remove_reads_packages_from_the_metadata_only
 run_test "cap_remove reports a failed script and a failed uninstall" test_cap_remove_reports_a_failed_script_and_a_failed_uninstall
+run_test "cap_remove takes the links and, with packages, the pinned installs" test_cap_remove_takes_the_links_and_with_packages_the_pinned_installs
+run_test "cap_remove keeps the marker when a mise uninstall fails" test_cap_remove_keeps_the_marker_when_a_mise_uninstall_fails
 run_test "check accepts well-formed mise_tools" test_check_accepts_well_formed_mise_tools
 run_test "check rejects a bad mise_tools pair" test_check_rejects_a_bad_mise_tools_pair
 run_test "check rejects a mise tool without a lock line" test_check_rejects_a_mise_tool_without_a_lock_line

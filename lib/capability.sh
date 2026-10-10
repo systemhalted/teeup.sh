@@ -388,18 +388,20 @@ cap_run_hooks() {
 #   0  removed, and the done marker cleared
 #   1  a cask or package would not uninstall; the marker is kept so a retry
 #      can find what is left
-#   2  nothing to undo: no remove script, and no packages or casks named.
+#   2  nothing to undo: no remove script, and no packages, casks or mise
+#      tools named.
 #      Nothing was run and the marker is kept
 #   3  the remove script failed; nothing was uninstalled and the marker is kept
 # Leaves TEEUP_CAP_NA set to what the remove script answered ("false" when
 # there was no script), for a caller that reports it.
 cap_remove() {
-  local target="$1" with_packages="$2" cask pkg failed=0 pkgs casks_meta has_remove=false
+  local target="$1" with_packages="$2" cask pkg failed=0 pkgs casks_meta has_remove=false tool_pairs pair
   pkgs="$(cap_meta_get "$target" packages)"
   casks_meta="$(cap_meta_get "$target" casks)"
+  tool_pairs="$(cap_meta_get "$target" mise_tools)"
   [[ -f "$(cap_dir "$target")/remove" ]] && has_remove=true
   TEEUP_CAP_NA=false
-  if [[ "$has_remove" != "true" && -z "$pkgs" && -z "$casks_meta" ]]; then
+  if [[ "$has_remove" != "true" && -z "$pkgs" && -z "$casks_meta" && -z "$tool_pairs" ]]; then
     return 2
   fi
   if [[ "$has_remove" == "true" ]]; then
@@ -411,6 +413,15 @@ cap_remove() {
       return 3
     fi
     unset TEEUP_REMOVE_PACKAGES
+  fi
+  # A mise tool's link always goes; its pinned install only with packages.
+  # conf.d is rewritten without this capability either way, so `mise prune`
+  # may take what nothing pins any more.
+  for pair in $tool_pairs; do
+    mise_tool_remove "${pair%%:*}" "${pair#*:}" "$with_packages" || failed=1
+  done
+  if [[ -n "$tool_pairs" ]]; then
+    mise_tools_conf_write --without "$target" || failed=1
   fi
   if [[ "$with_packages" == "true" ]]; then
     for cask in $casks_meta; do

@@ -721,11 +721,31 @@ EOF
   uninstall_note kept "Secrets in your login Keychain ($names). Delete them with: $cmds"
 }
 
+# _uninstall_mise_specs <name> -> "<spec>@<version> ..." for each of
+# <name>'s mise tools that mise has installed, for a summary line and a
+# `mise uninstall` that works as printed. Without mise every pinned spec is
+# listed, since nothing can say otherwise.
+_uninstall_mise_specs() {
+  local name="$1" pair tool version spec out=""
+  for pair in $(cap_meta_get "$name" mise_tools); do
+    tool="${pair%%:*}"
+    version="$(tools_lock_version "$tool")" || continue
+    spec="$(tools_lock_spec "$tool")"
+    if have mise && ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
+      continue
+    fi
+    out="${out:+$out }$spec@$version"
+  done
+  printf '%s\n' "$out"
+}
+
 # _uninstall_remove_one <name>
 _uninstall_remove_one() {
-  local name="$1" rc=0 with="$_UNINSTALL_PACKAGES" names login
+  local name="$1" rc=0 with="$_UNINSTALL_PACKAGES" names login tool_specs tool_cmds pair link_dir="$HOME/.local/bin"
   names="$(cap_meta_get "$name" packages) $(cap_meta_get "$name" casks)"
   names="$(printf '%s' "$names" | awk '{$1=$1; print}')"
+  # Asked before cap_remove: with packages, mise no longer has them after.
+  tool_specs="$(_uninstall_mise_specs "$name")"
   # The login shell must survive. zsh's packages include zsh itself; when
   # the login shell is the package manager's zsh, uninstalling it would
   # leave Terminal nothing to start. The capability stays marked installed,
@@ -756,6 +776,23 @@ _uninstall_remove_one() {
           pkg_collect_installed_items "$name"
         fi
       fi
+      # Only links that are gone: a file teeup did not write was kept.
+      tool_cmds=""
+      for pair in $(cap_meta_get "$name" mise_tools); do
+        if [[ "$DRY_RUN" == "true" || ! ( -e "$link_dir/${pair#*:}" || -L "$link_dir/${pair#*:}" ) ]]; then
+          tool_cmds="${tool_cmds:+$tool_cmds }${pair#*:}"
+        fi
+      done
+      if [[ -n "$tool_cmds" ]]; then
+        uninstall_note removed "$name's links in $link_dir: $tool_cmds"
+      fi
+      if [[ -n "$tool_specs" ]]; then
+        if [[ "$with" == "true" ]]; then
+          uninstall_note removed "$name's mise tools: $tool_specs"
+        else
+          TEEUP_COLLECTED_MISE="${TEEUP_COLLECTED_MISE:+$TEEUP_COLLECTED_MISE }$tool_specs"
+        fi
+      fi
       ;;
     2)
       # Nothing teeup tracks for it beyond its own record, which goes with
@@ -777,13 +814,16 @@ _uninstall_remove_one() {
 # pulling the package manager out from under a half-removed capability is
 # how a retry becomes impossible.
 uninstall_capabilities() {
-  local name blockers had
+  local name blockers had conf conf_had=false
   # Reset here, not just at source time: the ledger globals below must not
   # accumulate if the caller (a test, most likely) runs this twice in one
   # process.
   _UNINSTALL_GONE=" "
   TEEUP_COLLECTED_PKGS=""
   TEEUP_COLLECTED_CASKS=""
+  TEEUP_COLLECTED_MISE=""
+  conf="$(mise_tools_conf_file)"
+  if [[ -f "$conf" ]]; then conf_had=true; fi
   had=" $(uninstall_caps | tr '\n' ' ')"
   for name in $had; do
     blockers="$(uninstall_blockers "$name")"
@@ -823,6 +863,14 @@ uninstall_capabilities() {
   fi
   if [[ -n "$TEEUP_COLLECTED_CASKS" ]]; then
     uninstall_note kept "Apps: $TEEUP_COLLECTED_CASKS. Remove them later with: brew uninstall --cask $TEEUP_COLLECTED_CASKS"
+  fi
+  if [[ -n "$TEEUP_COLLECTED_MISE" ]]; then
+    uninstall_note kept "mise tools: $TEEUP_COLLECTED_MISE. Remove them later with: mise uninstall $TEEUP_COLLECTED_MISE"
+  fi
+  # cap_remove rewrote conf.d after each capability; the last one with mise
+  # tools deleted it.
+  if [[ "$conf_had" == "true" ]] && { [[ "$DRY_RUN" == "true" ]] || [[ ! -e "$conf" ]]; }; then
+    uninstall_note removed "the pinned tool list teeup wrote for mise ($conf)"
   fi
   # What a tool made for itself was never teeup's to track, so it is named
   # rather than silently left behind.

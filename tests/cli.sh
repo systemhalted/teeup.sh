@@ -814,7 +814,7 @@ test_remove_dies_when_nothing_can_be_undone() {
   local rc=0 out
   out="$("$TEEUP" remove widget 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "widget ships no remove script and installs no packages or casks that teeup tracks" || return 1
+  assert_contains "$out" "widget ships no remove script and installs no packages, casks or mise tools that teeup tracks" || return 1
   assert_not_contains "$out" "Removed widget." || return 1
   "$TEEUP" has widget || { echo "the marker must survive; nothing was actually removed"; return 1; }
   cleanup_test_env
