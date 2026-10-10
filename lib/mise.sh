@@ -396,14 +396,19 @@ mise_tools_conf_file() {
 # Writes conf.d/teeup.toml from the lock: one [tools] entry for each mise
 # tool of each capability marked installed (TEEUP_SKIP or not: a capability
 # skipped after its install still has its links, and an unpinned version is
-# one `mise prune` removes). --with counts a capability whose install or
-# configure is running before its done marker exists; --without leaves out
-# one being removed. The user's config.toml is never edited. With nothing to
-# pin, teeup's file is deleted. A file without the marker is not teeup's and
-# is left alone.
+# one `mise prune` removes). Only an installed version is pinned (Decision
+# 5): a pin for a missing version makes `mise activate` warn in every shell.
+# When the lock's version is not installed (its download failed, or sync
+# skipped the capability), the tool keeps the line it has in the current
+# file, or is left out when it has none. Without mise on PATH, or in a dry
+# run, the lock's version is pinned as it is. --with counts a capability
+# whose install or configure is running before its done marker exists;
+# --without leaves out one being removed. The user's config.toml is never
+# edited. With nothing to pin, teeup's file is deleted. A file without the
+# marker is not teeup's and is left alone.
 # 0 written, already current or removed; 1 refused.
 mise_tools_conf_write() {
-  local with="" without="" file name pair tool version spec body=""
+  local with="" without="" file name pair tool version spec body="" old="" line check=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --with|--without)
@@ -422,6 +427,12 @@ mise_tools_conf_write() {
     warn "Keeping $file: it was not written by teeup, so the versions teeup pins are in no mise config and mise prune can remove them. Move it aside, then run: teeup update"
     return 1
   fi
+  if [[ -f "$file" ]]; then
+    old="$(cat "$file")"
+  fi
+  if [[ "$DRY_RUN" != "true" ]] && have mise; then
+    check=true
+  fi
   for name in $(cap_list); do
     if [[ "$name" == "$without" ]]; then continue; fi
     if [[ "$name" != "$with" ]] && ! state_done check "cap-$name"; then continue; fi
@@ -432,6 +443,13 @@ mise_tools_conf_write() {
         continue
       fi
       spec="$(tools_lock_spec "$tool")"
+      if [[ "$check" == "true" ]] && ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
+        line="$(printf '%s\n' "$old" | awk -v k="\"$spec\" = " 'index($0, k) == 1 { print; exit }')"
+        if [[ -n "$line" ]]; then
+          body="$body$line"$'\n'
+        fi
+        continue
+      fi
       body="$body\"$spec\" = \"$version\""$'\n'
     done
   done
@@ -678,8 +696,9 @@ mise_tool_remove() {
 # mise_tools_apply <capability>
 # What a capability's install runs for its mise_tools pairs: install and
 # link each one, then rewrite conf.d with this capability counted as
-# installed. Installing first means a version that fails to download is
-# never pinned, so `mise activate` does not warn about it in every shell. A
+# installed. Installing first lets mise_tools_conf_write see which versions
+# are on disk: one that failed to download is never pinned, so `mise
+# activate` does not warn about it in every shell. A
 # mise the package manager installed earlier in this run is found even
 # before the shell layer puts its prefix on PATH.
 # 0 every tool linked; 1 otherwise (the warnings say which).

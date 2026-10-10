@@ -105,6 +105,19 @@ tools_fixture() {
   CONF="$TEST_HOME/.config/mise/conf.d/teeup.toml"
 }
 
+# installed_fixture: tells mock_mise that every version the fixture lock
+# pins is installed, so mise_tools_conf_write pins it.
+installed_fixture() {
+  printf '%s\n' ripgrep@15.2.0 tealdeer@1.9.0 aqua:neovim/neovim@0.12.6 >> "$HOME/mise-installed"
+}
+
+# bump_lock <tool> <version>: moves one pin in the fixture lock, as a
+# release that changes share/teeup/tools.lock does.
+bump_lock() {
+  awk -v t="$1" -v v="$2" '$1 == t { $2 = v } { print }' "$TEEUP_TOOLS_LOCK" > "$TEEUP_TOOLS_LOCK.new"
+  mv "$TEEUP_TOOLS_LOCK.new" "$TEEUP_TOOLS_LOCK"
+}
+
 test_lock_reader_returns_the_pinned_version_and_spec() {
   setup
   tools_lock_fixture
@@ -133,6 +146,7 @@ test_lock_reader_fails_for_a_tool_the_lock_does_not_name() {
 test_conf_lists_the_tools_of_installed_capabilities_only() {
   setup
   tools_fixture
+  installed_fixture
   state_done mark cap-search
   mise_tools_conf_write >/dev/null || { echo "the write failed"; return 1; }
   assert_file_exists "$CONF" || return 1
@@ -150,6 +164,7 @@ test_conf_lists_the_tools_of_installed_capabilities_only() {
 test_conf_counts_a_capability_being_installed_and_drops_one_being_removed() {
   setup
   tools_fixture
+  installed_fixture
   state_done mark cap-search
   mise_tools_conf_write --with editor >/dev/null || return 1
   assert_contains "$(cat "$CONF")" '"aqua:neovim/neovim" = "0.12.6"' "the backend spec is the key" || return 1
@@ -178,6 +193,7 @@ test_conf_leaves_a_file_teeup_did_not_write() {
 test_conf_follows_mise_config_dir_and_dry_run_writes_nothing() {
   setup
   tools_fixture
+  installed_fixture
   state_done mark cap-search
   export MISE_CONFIG_DIR="$TEST_HOME/mise c\$fg 'q'"
   local out
@@ -1155,6 +1171,65 @@ test_local_bin_on_path_puts_it_first_once() {
   cleanup_test_env
 }
 
+test_conf_warns_about_a_tool_the_lock_does_not_name() {
+  setup
+  tools_fixture
+  installed_fixture
+  make_tool_cap extra "nosuch:ns"
+  state_done mark cap-search
+  state_done mark cap-extra
+  local out
+  out="$(mise_tools_conf_write 2>&1)" || { echo "the write failed"; return 1; }
+  assert_contains "$out" "extra names nosuch in mise_tools, but $TEEUP_TOOLS_LOCK has no line for it, so $CONF leaves it out." || return 1
+  assert_not_contains "$(cat "$CONF")" "nosuch" || return 1
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "the other tools are still pinned" || return 1
+  cleanup_test_env
+}
+
+test_conf_keeps_the_old_pin_when_the_new_version_fails_to_install() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  mise_tools_sync >/dev/null 2>&1 || { echo "the first sync failed"; return 1; }
+  bump_lock ripgrep 15.3.0
+  bump_lock tealdeer 1.9.1
+  local rc=0
+  MOCK_MISE_FAIL_INSTALL=ripgrep mise_tools_sync >/dev/null 2>&1 || rc=$?
+  assert_equals "1" "$rc" "the failed install is reported" || return 1
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "the installed version stays pinned" || return 1
+  assert_not_contains "$(cat "$CONF")" "15.3.0" "a version that is not installed is never pinned" || return 1
+  assert_contains "$(cat "$CONF")" '"tealdeer" = "1.9.1"' "a tool that installed moves to its new pin" || return 1
+  cleanup_test_env
+}
+
+test_conf_keeps_a_skipped_capability_s_old_pin() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  state_done mark cap-editor
+  TEEUP_SKIP=editor mise_tools_sync >/dev/null 2>&1 || { echo "sync failed"; return 1; }
+  assert_not_contains "$(cat "$CONF")" "neovim" "a version never installed and never pinned is left out" || return 1
+  mise_tools_sync >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$CONF")" '"aqua:neovim/neovim" = "0.12.6"' || return 1
+  bump_lock neovim 0.13.0
+  TEEUP_SKIP=editor mise_tools_sync >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$CONF")" '"aqua:neovim/neovim" = "0.12.6"' "sync left the skipped capability alone, so its pin stays" || return 1
+  assert_not_contains "$(cat "$CONF")" "0.13.0" || return 1
+  cleanup_test_env
+}
+
+test_local_bin_on_path_moves_a_later_entry_to_the_front() {
+  setup
+  PATH="/opt/x/bin:$HOME/.local/bin:/usr/bin"
+  local_bin_on_path
+  assert_equals "$HOME/.local/bin:/opt/x/bin:/usr/bin" "$PATH" "moved to the front, the later copy dropped" || return 1
+  local_bin_on_path
+  assert_equals "$HOME/.local/bin:/opt/x/bin:/usr/bin" "$PATH" "a second call changes nothing" || return 1
+  cleanup_test_env
+}
+
 # The lock and the metadata agree: every tool a capability names has exactly
 # one lock line, and the lock names no tool that no capability uses.
 test_lock_and_metadata_agree() {
@@ -1244,4 +1319,8 @@ run_test "sync links every installed, unskipped capability" test_sync_links_ever
 run_test "every mise call runs from /" test_every_mise_call_runs_from_root
 run_test "local_bin_on_path puts it first once" test_local_bin_on_path_puts_it_first_once
 run_test "lock and metadata agree" test_lock_and_metadata_agree
+run_test "conf warns about a tool the lock does not name" test_conf_warns_about_a_tool_the_lock_does_not_name
+run_test "conf keeps the old pin when the new version fails to install" test_conf_keeps_the_old_pin_when_the_new_version_fails_to_install
+run_test "conf keeps a skipped capability's old pin" test_conf_keeps_a_skipped_capability_s_old_pin
+run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
 print_summary
