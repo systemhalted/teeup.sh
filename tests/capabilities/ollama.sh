@@ -82,6 +82,53 @@ test_install_on_macports_uses_mise_and_no_port() {
   cleanup_test_env
 }
 
+# With mise skipped, the ollama command has no source, so a Mac that also
+# cannot get the app has nothing of Ollama to install.
+OLLAMA_NA_MESSAGE="Ollama needs either the Ollama app (a Homebrew cask) or mise for the ollama command; mise is skipped and the app could not be installed here."
+
+test_install_on_macports_is_not_applicable_when_mise_is_skipped() {
+  setup
+  export TEEUP_PACKAGE_MANAGER=macports
+  mock_command port 0 ""
+  local out
+  out="$(TEEUP_SKIP=mise DRY_RUN=false "$TEEUP" install ollama 2>&1)" || true
+  assert_contains "$out" "$OLLAMA_NA_MESSAGE" || return 1
+  assert_not_contains "$out" "the ollama command comes from mise" "no promise of a command mise will not install" || return 1
+  "$TEEUP" has ollama && { echo "ollama must not be marked installed"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / install" || return 1
+  cleanup_test_env
+}
+
+test_install_is_not_applicable_when_the_cask_fails_and_mise_is_skipped() {
+  setup
+  mock_command_script brew <<'EOF2'
+case "$1 ${2:-}" in
+  "list "*) exit 1 ;;
+  "install --cask") exit 1 ;;
+esac
+exit 0
+EOF2
+  local out
+  out="$(TEEUP_SKIP=mise DRY_RUN=false "$TEEUP" install ollama 2>&1)" || true
+  assert_contains "$(cat "$MOCK_LOG")" "brew install --cask ollama-app" "the app is tried first" || return 1
+  assert_contains "$out" "$OLLAMA_NA_MESSAGE" || return 1
+  assert_not_contains "$out" "The ollama command still comes from mise" || return 1
+  "$TEEUP" has ollama && { echo "ollama must not be marked installed"; return 1; }
+  cleanup_test_env
+}
+
+# The app alone is still Ollama: install warns about the missing command and
+# succeeds, as before.
+test_install_keeps_the_app_when_mise_is_skipped() {
+  setup
+  local out
+  out="$(TEEUP_SKIP=mise DRY_RUN=false "$TEEUP" install ollama 2>&1)" || { echo "install failed: $out"; return 1; }
+  assert_contains "$out" "only the app was installed" || return 1
+  assert_not_contains "$out" "$OLLAMA_NA_MESSAGE" || return 1
+  "$TEEUP" has ollama || { echo "ollama must be marked installed"; return 1; }
+  cleanup_test_env
+}
+
 test_configure_names_the_pull_command_only_when_it_exists() {
   setup
   local out
@@ -109,6 +156,9 @@ run_test "install gets the cask and the pinned command" test_install_gets_the_ca
 run_test "install keeps the mise command when the cask fails on an old Mac" test_install_keeps_the_mise_command_when_the_cask_fails_on_an_old_mac
 run_test "install does not blame macOS when this Mac is current" test_install_does_not_blame_macos_when_this_mac_is_current
 run_test "install on MacPorts uses mise and no port" test_install_on_macports_uses_mise_and_no_port
+run_test "install on MacPorts is not applicable when mise is skipped" test_install_on_macports_is_not_applicable_when_mise_is_skipped
+run_test "install is not applicable when the cask fails and mise is skipped" test_install_is_not_applicable_when_the_cask_fails_and_mise_is_skipped
+run_test "install keeps the app when mise is skipped" test_install_keeps_the_app_when_mise_is_skipped
 run_test "configure names the pull command only when it exists" test_configure_names_the_pull_command_only_when_it_exists
 run_test "launch opens the app and the shim exists" test_launch_opens_the_app_and_the_shim_exists
 print_summary

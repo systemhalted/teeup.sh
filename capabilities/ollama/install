@@ -4,9 +4,14 @@
 # the package manager's directories (and ahead of the CLI the cask links
 # there). Ollama.app, the menu-bar app that runs the server, comes from the
 # ollama-app cask, which needs macOS 14 or newer and exists only on
-# Homebrew. Without the app, `ollama serve` runs the server.
+# Homebrew. Without the app, `ollama serve` runs the server. With mise
+# skipped and no app, nothing of Ollama can be installed here.
+ollama_na="Ollama needs either the Ollama app (a Homebrew cask) or mise for the ollama command; mise is skipped and the app could not be installed here."
 if casks_supported; then
   if ! cask_install ollama-app; then
+    if cap_skipped mise; then
+      not_applicable "$ollama_na"
+    fi
     # Only blame the macOS floor when this Mac is actually below it (I6): the
     # cask can as well fail from a network problem, a tap issue or a
     # quarantine prompt.
@@ -18,9 +23,12 @@ if casks_supported; then
     fi
     unset ollama_macos_major
   fi
+elif cap_skipped mise; then
+  not_applicable "$ollama_na"
 else
   log "MacPorts has no Ollama.app; the ollama command comes from mise. Start the server with: ollama serve"
 fi
+unset ollama_na
 if ! mise_tools_apply "$TEEUP_CAP"; then
   if cap_skipped mise; then
     warn "The ollama command comes from mise, which is skipped on this machine (TEEUP_SKIP); only the app was installed."
