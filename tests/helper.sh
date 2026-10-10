@@ -147,6 +147,12 @@ missing_tool_status() {
   if [[ "${CI:-}" == "true" ]]; then echo 1; else echo "$TEST_SKIPPED"; fi
 }
 
+# lock_version <tool> -> the version share/teeup/tools.lock pins. Tests use
+# it so that a release which moves a pin does not have to edit them.
+lock_version() {
+  awk -v t="$1" '$1 !~ /^#/ && $1 == t { print $2; exit }' "$TEEUP_PATH/share/teeup/tools.lock"
+}
+
 cleanup_test_env() {
   case "${TEST_HOME:-}" in
     /tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*) rm -rf "$TEST_HOME" ;;

@@ -349,3 +349,35 @@ mise_upgrade() {
   fi
   run_cmd mise -C / upgrade || { warn "mise upgrade returned non-zero."; return 1; }
 }
+
+# --- user tools pinned by the release (#112) ---------------------------------
+# The tools the user uses come from mise at the exact versions in
+# share/teeup/tools.lock; what teeup itself needs stays with the package
+# manager. A test points TEEUP_TOOLS_LOCK at a fixture.
+
+TEEUP_TOOLS_LOCK="${TEEUP_TOOLS_LOCK:-$TEEUP_PATH/share/teeup/tools.lock}"
+
+# tools_lock_version <tool> -> the version the lock pins; 1 when the lock is
+# unreadable or names no such tool. Comment lines never match.
+tools_lock_version() {
+  local tool="$1" version
+  [[ -r "$TEEUP_TOOLS_LOCK" ]] || return 1
+  version="$(awk -v t="$tool" '$1 !~ /^#/ && $1 == t { print $2; exit }' "$TEEUP_TOOLS_LOCK")"
+  if [[ -z "$version" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$version"
+}
+
+# tools_lock_spec <tool> -> what mise is given for <tool>: the lock's third
+# field when it names a backend (neovim's registry entry lists vfox first,
+# and the release wants the aqua build), else the tool name itself.
+tools_lock_spec() {
+  local tool="$1" spec
+  [[ -r "$TEEUP_TOOLS_LOCK" ]] || return 1
+  spec="$(awk -v t="$tool" '$1 !~ /^#/ && $1 == t { print ($3 != "" ? $3 : $1); exit }' "$TEEUP_TOOLS_LOCK")"
+  if [[ -z "$spec" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$spec"
+}

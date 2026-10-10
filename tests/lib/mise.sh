@@ -71,6 +71,56 @@ setup() {
   export DRY_RUN=false
 }
 
+# A lock of the test's own, so these tests neither depend on nor move with
+# the versions a release pins.
+tools_lock_fixture() {
+  TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  cat > "$TEEUP_TOOLS_LOCK" <<'EOF2'
+# a comment, and a blank line below
+
+ripgrep 15.2.0
+neovim 0.12.6 aqua:neovim/neovim
+tealdeer 1.9.0
+EOF2
+}
+
+test_lock_reader_returns_the_pinned_version_and_spec() {
+  setup
+  tools_lock_fixture
+  assert_equals "15.2.0" "$(tools_lock_version ripgrep)" || return 1
+  assert_equals "ripgrep" "$(tools_lock_spec ripgrep)" "no backend field means the registry name" || return 1
+  assert_equals "0.12.6" "$(tools_lock_version neovim)" || return 1
+  assert_equals "aqua:neovim/neovim" "$(tools_lock_spec neovim)" || return 1
+  cleanup_test_env
+}
+
+test_lock_reader_fails_for_a_tool_the_lock_does_not_name() {
+  setup
+  tools_lock_fixture
+  local rc=0
+  tools_lock_version nosuch >/dev/null || rc=$?
+  assert_equals "1" "$rc" || return 1
+  rc=0
+  tools_lock_version "#" >/dev/null || rc=$?
+  assert_equals "1" "$rc" "a comment line is not a tool" || return 1
+  rc=0
+  TEEUP_TOOLS_LOCK="$TEST_HOME/missing.lock" tools_lock_version ripgrep >/dev/null || rc=$?
+  assert_equals "1" "$rc" "no lock file, no version" || return 1
+  cleanup_test_env
+}
+
+test_shipped_lock_is_well_formed() {
+  setup
+  local lock="$TEEUP_PATH/share/teeup/tools.lock" bad dups
+  assert_file_exists "$lock" || return 1
+  bad="$(awk '!/^#/ && NF && (NF < 2 || NF > 3 || $1 !~ /^[A-Za-z0-9][A-Za-z0-9_.+-]*$/ || $2 !~ /^[0-9][0-9A-Za-z.+-]*$/ || (NF == 3 && $3 !~ /:/))' "$lock")"
+  assert_equals "" "$bad" "every line is <tool> <version> [<backend>:<name>]" || return 1
+  dups="$(awk '!/^#/ && NF { print $1 }' "$lock" | sort | uniq -d)"
+  assert_equals "" "$dups" "one line per tool" || return 1
+  assert_equals "$(awk '$1 == "ripgrep" { print $2 }' "$lock")" "$(lock_version ripgrep)" "the test helper reads the same file" || return 1
+  cleanup_test_env
+}
+
 # Real Mac, 2026-09-26: teeup remove ai deleted the wrappers but left each
 # tool installed and still requested in the global mise config, so the next
 # teeup update (mise upgrade) would bring it back. Removing a tool teeup
@@ -789,4 +839,7 @@ run_test "dev-env leaves a pinned runtime alone" test_dev_env_leaves_a_pinned_ru
 run_test "dev-env messages do not claim zsh without it" test_dev_env_messages_do_not_claim_zsh_without_it
 run_test "dev-env messages mention javav and mise activate once zsh is installed" test_dev_env_messages_mention_javav_and_mise_activate_once_zsh_is_installed
 run_test "upgrade covers the global config and tolerates no mise" test_upgrade_covers_the_global_config_and_tolerates_no_mise
+run_test "lock reader returns the pinned version and spec" test_lock_reader_returns_the_pinned_version_and_spec
+run_test "lock reader fails for a tool the lock does not name" test_lock_reader_fails_for_a_tool_the_lock_does_not_name
+run_test "shipped lock is well formed" test_shipped_lock_is_well_formed
 print_summary
