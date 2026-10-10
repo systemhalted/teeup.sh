@@ -1390,6 +1390,30 @@ test_dry_run_teardown_does_not_call_the_terminal_app_directory_a_leftover() {
   cleanup_test_env
 }
 
+# $TEEUP_MISE_TOOLS_DIR (lib/mise.sh) is a top-level entry of the state dir
+# teeup writes, so a dry run must not call it a leftover.
+test_dry_run_teardown_does_not_call_the_mise_tools_directory_a_leftover() {
+  setup
+  teeup_runtime_home
+  tool_cap_fixture
+  [[ -L "$TEEUP_STATE_DIR/tools/rg" ]] || { echo "fixture: rg has teeup's own entry"; return 1; }
+  DRY_RUN=true uninstall_teardown >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_KEPT" "holds files teeup did not write" "a dry run must preview tools/ as one of teeup's own entries, not a leftover" || return 1
+  cleanup_test_env
+}
+
+# An entry left in tools/ (a command a later release dropped from
+# mise_tools, say) goes with the state dir instead of keeping it.
+test_teardown_removes_a_leftover_mise_tools_entry_with_the_state_dir() {
+  setup
+  teeup_runtime_home
+  mkdir -p "$TEEUP_STATE_DIR/tools"
+  ln -s /nonexistent/bin/old "$TEEUP_STATE_DIR/tools/old"
+  uninstall_teardown >/dev/null 2>&1
+  [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "the state dir must go once tools/ is one of teeup's own entries"; return 1; }
+  cleanup_test_env
+}
+
 # Task 6 carry (Task 5's re-review observation): a ZDOTDIR changed since
 # install leaves the old zsh home files still recorded in stock, at a
 # directory uninstall_shell no longer looks at by default. They must still
@@ -1511,6 +1535,8 @@ run_test "capabilities name the mise versions teeup leaves installed" test_capab
 run_test "capabilities name both mise versions when both are installed" test_capabilities_name_both_mise_versions_when_both_are_installed
 run_test "capabilities leave a user's mise tool out of the summary" test_capabilities_leave_a_user_s_mise_tool_out_of_the_summary
 run_test "capabilities leave a user link over teeup's entry out of the summary" test_capabilities_leave_a_user_link_over_teeup_s_entry_out_of_the_summary
+run_test "dry run teardown does not call the mise tools directory a leftover" test_dry_run_teardown_does_not_call_the_mise_tools_directory_a_leftover
+run_test "teardown removes a leftover mise tools entry with the state dir" test_teardown_removes_a_leftover_mise_tools_entry_with_the_state_dir
 run_test "capabilities decide each of the seven remove refuses" test_capabilities_decide_each_of_the_seven_remove_refuses
 run_test "capabilities refuse what a failed dependent still needs" test_capabilities_refuse_what_a_failed_dependent_still_needs
 run_test "capabilities keep the zsh the login shell runs" test_capabilities_keep_the_zsh_the_login_shell_runs
