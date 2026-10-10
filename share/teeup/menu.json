@@ -49,6 +49,7 @@
   "launch.firefox": {"label": "Firefox Developer Edition", "when": "teeup has firefox-developer-edition", "action": "teeup launch Firefox Developer Edition"},
   "launch.chrome": {"label": "Google Chrome", "when": "teeup has chrome", "action": "teeup launch Google Chrome"},
   "launch.obsidian": {"label": "Obsidian", "when": "teeup has obsidian", "action": "teeup launch Obsidian"},
+  "launch.raycast": {"label": "Raycast", "when": "teeup has raycast", "action": "teeup launch Raycast"},
   "launch.ollama": {"label": "Ollama", "when": "teeup has ollama", "action": "teeup launch Ollama"},
   "launch.aerospace": {"label": "AeroSpace", "when": "teeup has aerospace", "action": "teeup launch AeroSpace"},
 

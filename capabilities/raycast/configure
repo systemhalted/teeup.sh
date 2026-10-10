@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Raycast keeps its own settings, so there is nothing to ship. The script says
 # whether the app is in place. app_installed also looks in ~/Applications,
-# where a cask can install, so a Raycast there counts on a MacPorts Mac too.
+# where a cask can install, so a Raycast there counts on a MacPorts Mac and on
+# an Intel Mac with macOS 26 too. The guards repeat install's, because
+# configure can run on its own (teeup configure raycast).
 app="Raycast"
 if app_installed "$app"; then
   log "$app is installed; open it with: open -a '$app'"
+elif [[ "$(macos_major)" -ge 26 && "$(arch)" != "arm64" ]] 2>/dev/null; then
+  not_applicable "Raycast for macOS 26 and newer runs only on Apple Silicon, and this Mac is $(arch); there is nothing to configure."
 elif ! casks_supported; then
   not_applicable "Raycast is a cask and MacPorts has no port of it; download it from https://www.raycast.com/"
 else

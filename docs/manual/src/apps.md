@@ -6,7 +6,7 @@ In addition to the terminal and the editors, teeup installs other apps.
 |---|---|---|---|
 | Firefox Developer Edition | `firefox-developer-edition` | lazy | This is the daily browser. |
 | Obsidian | `obsidian` | lazy | An app for notes. It needs macOS 12 or newer. |
-| Raycast | `raycast` | lazy | A launcher for apps and commands. teeup does not change the Spotlight key. |
+| Raycast | `raycast` | lazy | A launcher for apps and commands. On macOS 26 and newer it needs Apple Silicon. teeup does not change the Spotlight key. |
 | Google Chrome | `chrome` | lazy | Needs macOS 13 or newer. |
 | AeroSpace | `aerospace` | core | A tiling window manager. It needs macOS 13 or newer. |
 | Ollama | `ollama` | lazy | Runs local language models. teeup does not download a model for you. |

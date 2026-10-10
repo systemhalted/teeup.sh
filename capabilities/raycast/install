@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Raycast is an app with no command, so this is a cask and the metadata has
-# casks= and apps= and no provides=. MacPorts has no port of it.
-if casks_supported; then
+# casks= and apps= and no provides=. MacPorts has no port of it, and the cask
+# for macOS 26 and newer is Apple Silicon only.
+if app_installed Raycast; then
+  ok "Raycast is already installed."
+elif [[ "$(macos_major)" -ge 26 && "$(arch)" != "arm64" ]] 2>/dev/null; then
+  not_applicable "Raycast for macOS 26 and newer runs only on Apple Silicon, and this Mac is $(arch); there is nothing to install."
+elif casks_supported; then
   cask_install raycast
 else
   warn "Raycast is a cask and MacPorts has no port of it; download it from https://www.raycast.com/"

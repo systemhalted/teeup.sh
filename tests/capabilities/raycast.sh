@@ -60,6 +60,45 @@ test_configure_finds_raycast_in_the_home_applications() {
   cleanup_test_env
 }
 
+# mock_intel_tahoe: an Intel Mac on macOS 26, where the Raycast cask is
+# Apple Silicon only.
+mock_intel_tahoe() {
+  mock_command_script uname <<'EOF3'
+case "$1" in
+  -s) echo Darwin ;;
+  -m) echo x86_64 ;;
+  *) echo Darwin ;;
+esac
+EOF3
+  mock_command sw_vers 0 "26.0"
+}
+
+test_install_is_not_applicable_on_intel_with_macos_26() {
+  setup
+  mock_intel_tahoe
+  local out
+  out="$(DRY_RUN=true "$TEEUP" install raycast 2>&1)" || true
+  assert_contains "$out" "Raycast for macOS 26 and newer runs only on Apple Silicon" || return 1
+  assert_not_contains "$out" "brew install --cask raycast" || return 1
+  out="$(DRY_RUN=false "$TEEUP" configure raycast 2>&1)" || true
+  assert_contains "$out" "Raycast for macOS 26 and newer runs only on Apple Silicon" "configure" || return 1
+  cleanup_test_env
+}
+
+# An older Raycast that is already there still counts on that Mac.
+test_an_installed_raycast_counts_on_intel_with_macos_26() {
+  setup
+  mock_intel_tahoe
+  mkdir -p "$TEST_HOME/Applications/Raycast.app"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" install raycast 2>&1)"
+  assert_not_contains "$out" "runs only on Apple Silicon" || return 1
+  assert_not_contains "$out" "brew install --cask raycast" || return 1
+  out="$(DRY_RUN=false "$TEEUP" configure raycast 2>&1)"
+  assert_contains "$out" "Raycast is installed; open it with: open -a 'Raycast'" || return 1
+  cleanup_test_env
+}
+
 test_configure_writes_nothing_in_a_dry_run() {
   setup
   local before after
@@ -98,7 +137,11 @@ test_the_tier_is_lazy() {
 
 test_the_menu_offers_raycast() {
   setup
-  assert_contains "$(cat "$TEEUP_PATH/share/teeup/menu.json")" '"install.apps.raycast": {"label": "Raycast", "when": "! teeup has raycast", "action": "teeup install raycast"}' || return 1
+  local menu
+  menu="$(cat "$TEEUP_PATH/share/teeup/menu.json")"
+  assert_contains "$menu" '"install.apps.raycast": {"label": "Raycast", "when": "! teeup has raycast", "action": "teeup install raycast"}' || return 1
+  # Once installed, the install row hides; the launch row keeps it reachable.
+  assert_contains "$menu" '"launch.raycast": {"label": "Raycast", "when": "teeup has raycast", "action": "teeup launch Raycast"}' || return 1
   cleanup_test_env
 }
 
@@ -107,6 +150,8 @@ run_test "install dry run gets the cask" test_install_dry_run_gets_the_cask
 run_test "install warns on MacPorts" test_install_warns_on_macports
 run_test "configure reports the app" test_configure_reports_the_app
 run_test "configure finds Raycast in ~/Applications" test_configure_finds_raycast_in_the_home_applications
+run_test "install is not applicable on Intel with macOS 26" test_install_is_not_applicable_on_intel_with_macos_26
+run_test "an installed Raycast counts on Intel with macOS 26" test_an_installed_raycast_counts_on_intel_with_macos_26
 run_test "configure writes nothing in a dry run" test_configure_writes_nothing_in_a_dry_run
 run_test "there is no raycast command shim" test_there_is_no_raycast_command_shim
 run_test "the tier is lazy" test_the_tier_is_lazy
