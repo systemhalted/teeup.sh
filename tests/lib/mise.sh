@@ -84,6 +84,27 @@ tealdeer 1.9.0
 EOF2
 }
 
+# make_tool_cap <name> <mise_tools>: a fixture capability whose scripts run
+# what a real one with mise tools runs.
+make_tool_cap() {
+  local name="$1" pairs="$2" dir="$TEST_HOME/caps/$1"
+  mkdir -p "$dir"
+  printf 'summary="Fixture %s"\ngroup=system\ntier=lazy\nrequires="mise"\nprovides=""\nmise_tools="%s"\ninteractive=false\n' "$name" "$pairs" > "$dir/capability"
+  printf '#!/usr/bin/env bash\nmise_tools_apply "$TEEUP_CAP"\n' > "$dir/install"
+  printf '#!/usr/bin/env bash\nmise_tools_repair "$TEEUP_CAP"\n' > "$dir/configure"
+  chmod +x "$dir/install" "$dir/configure"
+}
+
+# tools_fixture: the fixture lock and two capabilities, search (two tools
+# whose commands differ from their names) and editor (a backend spec).
+tools_fixture() {
+  tools_lock_fixture
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  make_tool_cap search "ripgrep:rg tealdeer:tldr"
+  make_tool_cap editor "neovim:nvim"
+  CONF="$TEST_HOME/.config/mise/conf.d/teeup.toml"
+}
+
 test_lock_reader_returns_the_pinned_version_and_spec() {
   setup
   tools_lock_fixture
@@ -106,6 +127,67 @@ test_lock_reader_fails_for_a_tool_the_lock_does_not_name() {
   rc=0
   TEEUP_TOOLS_LOCK="$TEST_HOME/missing.lock" tools_lock_version ripgrep >/dev/null || rc=$?
   assert_equals "1" "$rc" "no lock file, no version" || return 1
+  cleanup_test_env
+}
+
+test_conf_lists_the_tools_of_installed_capabilities_only() {
+  setup
+  tools_fixture
+  state_done mark cap-search
+  mise_tools_conf_write >/dev/null || { echo "the write failed"; return 1; }
+  assert_file_exists "$CONF" || return 1
+  assert_equals "$TEEUP_MISE_CONF_MARKER" "$(head -1 "$CONF")" "the marker is line 1" || return 1
+  assert_contains "$(cat "$CONF")" "[tools]" || return 1
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' || return 1
+  assert_contains "$(cat "$CONF")" '"tealdeer" = "1.9.0"' "the key is the tool, not its command" || return 1
+  assert_not_contains "$(cat "$CONF")" "neovim" "editor is not installed here" || return 1
+  local out
+  out="$(mise_tools_conf_write 2>&1)"
+  assert_contains "$out" "Already current: $CONF" "a second write is quiet" || return 1
+  cleanup_test_env
+}
+
+test_conf_counts_a_capability_being_installed_and_drops_one_being_removed() {
+  setup
+  tools_fixture
+  state_done mark cap-search
+  mise_tools_conf_write --with editor >/dev/null || return 1
+  assert_contains "$(cat "$CONF")" '"aqua:neovim/neovim" = "0.12.6"' "the backend spec is the key" || return 1
+  mise_tools_conf_write --without search >/dev/null || return 1
+  [[ ! -e "$CONF" ]] || { echo "nothing is pinned any more, so teeup's file goes"; return 1; }
+  local rc=0
+  mise_tools_conf_write --with >/dev/null 2>&1 || rc=$?
+  assert_equals "1" "$rc" "a flag without its value is refused, not looped on" || return 1
+  cleanup_test_env
+}
+
+test_conf_leaves_a_file_teeup_did_not_write() {
+  setup
+  tools_fixture
+  state_done mark cap-search
+  mkdir -p "${CONF%/*}"
+  printf '[tools]\nripgrep = "14.0.0"\n' > "$CONF"
+  local out rc=0
+  out="$(mise_tools_conf_write 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "Keeping $CONF: it was not written by teeup" || return 1
+  assert_equals "$(printf '[tools]\nripgrep = "14.0.0"')" "$(cat "$CONF")" "the user's file is untouched" || return 1
+  cleanup_test_env
+}
+
+test_conf_follows_mise_config_dir_and_dry_run_writes_nothing() {
+  setup
+  tools_fixture
+  state_done mark cap-search
+  export MISE_CONFIG_DIR="$TEST_HOME/mise c\$fg 'q'"
+  local out
+  out="$(DRY_RUN=true mise_tools_conf_write 2>&1)"
+  assert_contains "$out" "Would write $MISE_CONFIG_DIR/conf.d/teeup.toml" || return 1
+  [[ ! -e "$MISE_CONFIG_DIR/conf.d/teeup.toml" ]] || { echo "dry run wrote the file"; return 1; }
+  mise_tools_conf_write >/dev/null || return 1
+  assert_file_exists "$MISE_CONFIG_DIR/conf.d/teeup.toml" || return 1
+  [[ ! -e "$CONF" ]] || { echo "MISE_CONFIG_DIR moves conf.d too"; return 1; }
+  unset MISE_CONFIG_DIR
   cleanup_test_env
 }
 
@@ -842,4 +924,8 @@ run_test "upgrade covers the global config and tolerates no mise" test_upgrade_c
 run_test "lock reader returns the pinned version and spec" test_lock_reader_returns_the_pinned_version_and_spec
 run_test "lock reader fails for a tool the lock does not name" test_lock_reader_fails_for_a_tool_the_lock_does_not_name
 run_test "shipped lock is well formed" test_shipped_lock_is_well_formed
+run_test "conf lists the tools of installed capabilities only" test_conf_lists_the_tools_of_installed_capabilities_only
+run_test "conf counts a capability being installed and drops one being removed" test_conf_counts_a_capability_being_installed_and_drops_one_being_removed
+run_test "conf leaves a file teeup did not write" test_conf_leaves_a_file_teeup_did_not_write
+run_test "conf follows MISE_CONFIG_DIR and dry run writes nothing" test_conf_follows_mise_config_dir_and_dry_run_writes_nothing
 print_summary
