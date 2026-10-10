@@ -94,11 +94,11 @@ user files source thick default files.
    `$TEEUP_MISE_TOOLS_DIR` (`~/.local/state/teeup/tools/<command>`), and that
    entry to the pinned binary, so a call starts no mise process. The
    `~/.local/bin` path is teeup's only while it links to that entry; anything
-   else there is the user's, and its version is never uninstalled. `cap_check` rejects a malformed pair, a tool with no lock
-   line, a tool or command two capabilities claim, and a capability with
-   mise tools that does not require mise. Language runtimes stay with
-   `teeup install dev-env`, and the `ai-*` wrappers stay as they are. The
-   manual states the rule for users in
+   else there is the user's, and its version is never uninstalled. `cap_check`
+   rejects a malformed pair, a tool with no lock line, a tool or command two
+   capabilities claim, and a capability with mise tools that does not require
+   mise. Language runtimes stay with `teeup install dev-env`, and the `ai-*`
+   wrappers stay as they are. The manual states the rule for users in
    [Runtimes](docs/manual/src/runtimes.md#homebrew-or-mise).
    `package_commands="<package>:<command>"` lets doctor accept a copy of the
    command already on `PATH` in place of the package when its version command
