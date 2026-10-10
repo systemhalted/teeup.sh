@@ -881,6 +881,280 @@ test_upgrade_covers_the_global_config_and_tolerates_no_mise() {
 }
 
 echo "lib/mise.sh"
+test_tool_install_installs_the_pinned_version_then_links_the_which_result() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  local link="$TEST_HOME/.local/bin/rg" bin="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out
+  out="$(mise_tool_install ripgrep rg 2>&1)" || { echo "install failed: $out"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.2.0" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / which --tool ripgrep@15.2.0 rg" || return 1
+  [[ -L "$link" ]] || { echo "rg must be a symlink"; return 1; }
+  assert_equals "$bin" "$(readlink "$link")" || return 1
+  assert_equals "rg 15.2.0" "$("$link" --version)" "the link runs the binary itself" || return 1
+  assert_contains "$out" "Linked rg to ripgrep 15.2.0 (mise)" || return 1
+  : > "$MOCK_LOG"
+  out="$(mise_tool_install ripgrep rg 2>&1)"
+  assert_contains "$out" "Already linked: rg (ripgrep 15.2.0)" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "install ripgrep" "an installed version is not installed again" || return 1
+  cleanup_test_env
+}
+
+test_tool_install_follows_a_command_and_a_backend_that_differ_from_the_tool() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install tealdeer tldr >/dev/null 2>&1 || return 1
+  mise_tool_install neovim nvim >/dev/null 2>&1 || return 1
+  assert_equals "$TEST_HOME/.local/share/mise/installs/tealdeer/1.9.0/bin/tldr" "$(readlink "$TEST_HOME/.local/bin/tldr")" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install aqua:neovim/neovim@0.12.6" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / which --tool aqua:neovim/neovim@0.12.6 nvim" || return 1
+  [[ -L "$TEST_HOME/.local/bin/nvim" ]] || { echo "nvim is the link, not neovim"; return 1; }
+  [[ ! -e "$TEST_HOME/.local/bin/neovim" && ! -e "$TEST_HOME/.local/bin/tealdeer" ]] || { echo "the tool name is not a command"; return 1; }
+  cleanup_test_env
+}
+
+test_tool_install_keeps_a_file_or_link_teeup_did_not_write() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mkdir -p "$TEST_HOME/.local/bin"
+  printf '#!/bin/sh\necho mine\n' > "$TEST_HOME/.local/bin/rg"
+  ln -s /bin/sh "$TEST_HOME/.local/bin/tldr"
+  local out rc=0
+  out="$(mise_tool_install ripgrep rg 2>&1)" || rc=$?
+  assert_success "$rc" "a kept file is the user's choice, not a failure" || return 1
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup" || return 1
+  assert_equals "$(printf '#!/bin/sh\necho mine')" "$(cat "$TEST_HOME/.local/bin/rg")" || return 1
+  out="$(mise_tool_install tealdeer tldr 2>&1)" || true
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/tldr" || return 1
+  assert_equals "/bin/sh" "$(readlink "$TEST_HOME/.local/bin/tldr")" "a foreign symlink is kept too" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "install" "nothing is installed for a command that stays foreign" || return 1
+  cleanup_test_env
+}
+
+test_tool_install_repairs_a_link_left_dangling_by_mise_uninstall() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  rm -rf "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0"
+  [[ -L "$TEST_HOME/.local/bin/rg" && ! -e "$TEST_HOME/.local/bin/rg" ]] || { echo "fixture: the link must dangle"; return 1; }
+  : > "$MOCK_LOG"
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.2.0" || return 1
+  [[ -e "$TEST_HOME/.local/bin/rg" ]] || { echo "the link must resolve again"; return 1; }
+  cleanup_test_env
+}
+
+test_tool_install_relinks_when_the_lock_moves() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  sed 's/^ripgrep 15.2.0$/ripgrep 15.3.0/' "$TEEUP_TOOLS_LOCK" > "$TEST_HOME/lock.new"
+  mv "$TEST_HOME/lock.new" "$TEEUP_TOOLS_LOCK"
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  assert_equals "$TEST_HOME/.local/share/mise/installs/ripgrep/15.3.0/bin/rg" "$(readlink "$TEST_HOME/.local/bin/rg")" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the old version stays for mise prune" || return 1
+  cleanup_test_env
+}
+
+test_tool_install_without_mise_fails_but_a_dry_run_previews() {
+  setup
+  tools_fixture
+  export TEEUP_TEST_MISSING=mise
+  local out rc=0
+  out="$(mise_tool_install ripgrep rg 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "mise is not on PATH, so ripgrep 15.2.0 was not installed and rg is missing. Run: teeup install mise" || return 1
+  rc=0
+  out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)" || rc=$?
+  assert_success "$rc" "a first bootstrap previews cli-tools before mise exists" || return 1
+  assert_contains "$out" "Would execute: mise -C / install ripgrep@15.2.0" || return 1
+  assert_contains "$out" "Would link $TEST_HOME/.local/bin/rg to ripgrep 15.2.0 (mise)" || return 1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" ]] || { echo "nothing is linked"; return 1; }
+  unset TEEUP_TEST_MISSING
+  cleanup_test_env
+}
+
+test_tool_install_dry_run_installs_and_links_nothing() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  local out
+  out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)"
+  assert_contains "$out" "Would execute: mise -C / install ripgrep@15.2.0" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / install" "the install only previews" || return 1
+  [[ ! -e "$TEST_HOME/.local/share/mise/installs" && ! -e "$TEST_HOME/.local/bin/rg" ]] || { echo "dry run changed the disk"; return 1; }
+  cleanup_test_env
+}
+
+test_tool_install_reports_a_failed_install() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  local out rc=0
+  out="$(MOCK_MISE_FAIL_INSTALL=ripgrep mise_tool_install ripgrep rg 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "mise could not install ripgrep 15.2.0, so rg is missing." || return 1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "no link to a version that is not there"; return 1; }
+  cleanup_test_env
+}
+
+# A path with a space, a dollar sign and a quote in it, through both the
+# symlink and the exec script (the fallback for a tool that cannot run from
+# a link).
+test_tool_install_writes_a_script_for_a_tool_that_needs_one_under_an_odd_home() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  export HOME="$TEST_HOME/h o\$m'e"
+  mkdir -p "$HOME"
+  TEEUP_MISE_EXEC_SCRIPT_TOOLS="neovim"
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  assert_equals "rg ran: a b" "$("$HOME/.local/bin/rg" a b)" || return 1
+  mise_tool_install neovim nvim >/dev/null 2>&1 || return 1
+  local script="$HOME/.local/bin/nvim"
+  [[ -f "$script" && ! -L "$script" ]] || { echo "nvim must be a script, not a link"; return 1; }
+  assert_equals "$TEEUP_MISE_TOOL_MARKER" "$(sed -n 2p "$script")" || return 1
+  assert_equals "nvim ran: x y z" "$("$script" x y z)" || return 1
+  mise_tool_link_owned "$script" || { echo "teeup owns its script"; return 1; }
+  assert_contains "$(mise_tool_install neovim nvim 2>&1)" "Already linked: nvim" || return 1
+  # shellcheck disable=SC2034  # read by lib/mise.sh in the next test
+  TEEUP_MISE_EXEC_SCRIPT_TOOLS=""
+  cleanup_test_env
+}
+
+test_tool_remove_deletes_only_a_teeup_link() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  printf '#!/bin/sh\necho mine\n' > "$TEST_HOME/.local/bin/tldr"
+  local out
+  out="$(mise_tool_remove ripgrep rg false 2>&1)" || { echo "remove failed: $out"; return 1; }
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the link must go"; return 1; }
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "without packages the install stays" || return 1
+  out="$(mise_tool_remove tealdeer tldr false 2>&1)" || return 1
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/tldr: it was not written by teeup." || return 1
+  assert_file_exists "$TEST_HOME/.local/bin/tldr" || return 1
+  cleanup_test_env
+}
+
+test_tool_remove_with_packages_uninstalls_the_pinned_version() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  local out rc=0
+  out="$(DRY_RUN=true mise_tool_remove ripgrep rg true 2>&1)" || rc=$?
+  assert_contains "$out" "Would execute: mise -C / uninstall ripgrep@15.2.0" || return 1
+  [[ -L "$TEST_HOME/.local/bin/rg" ]] || { echo "dry run removed the link"; return 1; }
+  mise_tool_remove ripgrep rg true >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
+  [[ ! -e "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" ]] || { echo "the pinned version must go"; return 1; }
+  rc=0
+  mise_tool_install ripgrep rg >/dev/null 2>&1
+  out="$(MOCK_MISE_FAIL_UNINSTALL=ripgrep mise_tool_remove ripgrep rg true 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "Run: mise uninstall ripgrep@15.2.0" || return 1
+  cleanup_test_env
+}
+
+test_apply_installs_every_pair_and_writes_the_conf() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tools_apply search >/dev/null 2>&1 || { echo "apply failed"; return 1; }
+  [[ -L "$TEST_HOME/.local/bin/rg" && -L "$TEST_HOME/.local/bin/tldr" ]] || { echo "both commands are linked"; return 1; }
+  assert_contains "$(cat "$CONF")" '"tealdeer" = "1.9.0"' "the capability being installed is pinned" || return 1
+  assert_not_contains "$(cat "$CONF")" "neovim" || return 1
+  cleanup_test_env
+}
+
+test_apply_finds_a_mise_the_package_manager_just_installed() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mkdir -p "$TEEUP_PKG_PREFIX/bin"
+  mv "$MOCK_BIN/mise" "$TEEUP_PKG_PREFIX/bin/mise"
+  hide_host_commands mise
+  mise_tools_apply search >/dev/null 2>&1 || { echo "a mise under the package prefix must be found"; return 1; }
+  [[ -L "$TEST_HOME/.local/bin/rg" ]] || return 1
+  cleanup_test_env
+}
+
+test_apply_refuses_when_mise_is_skipped() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  local out rc=0
+  out="$(TEEUP_SKIP=mise mise_tools_apply search 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "mise is skipped on this machine (TEEUP_SKIP), so teeup does not install rg tldr for search." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "install" || return 1
+  out="$(TEEUP_SKIP=mise mise_tools_repair search 2>&1)" || { echo "repair never fails"; return 1; }
+  assert_equals "" "$out" "configure says nothing more once install said it" || return 1
+  cleanup_test_env
+}
+
+test_repair_warns_but_succeeds() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  local out rc=0
+  out="$(MOCK_MISE_FAIL_INSTALL=tealdeer mise_tools_repair search 2>&1)" || rc=$?
+  assert_success "$rc" "configure carries on" || return 1
+  assert_contains "$out" "Some of search's tools from mise are missing or not linked" || return 1
+  assert_contains "$out" "run: teeup configure search" || return 1
+  [[ -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the other tool is still linked"; return 1; }
+  cleanup_test_env
+}
+
+test_sync_links_every_installed_unskipped_capability() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  state_done mark cap-editor
+  mise_tools_sync >/dev/null 2>&1 || { echo "sync failed"; return 1; }
+  [[ -L "$TEST_HOME/.local/bin/rg" && -L "$TEST_HOME/.local/bin/tldr" && -L "$TEST_HOME/.local/bin/nvim" ]] || return 1
+  rm -f "$TEST_HOME/.local/bin/nvim"
+  TEEUP_SKIP=editor mise_tools_sync >/dev/null 2>&1 || return 1
+  [[ ! -e "$TEST_HOME/.local/bin/nvim" ]] || { echo "a skipped capability is left as it is"; return 1; }
+  assert_contains "$(cat "$CONF")" "aqua:neovim/neovim" "its pin stays, so mise prune keeps its install" || return 1
+  local out rc=0
+  out="$(TEEUP_TEST_MISSING=mise mise_tools_sync 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'mise is not on PATH')" "one warning, not one per tool" || return 1
+  cleanup_test_env
+}
+
+test_every_mise_call_runs_from_root() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  mise_tools_apply search >/dev/null 2>&1
+  mise_tools_sync >/dev/null 2>&1
+  mise_tool_remove ripgrep rg true >/dev/null 2>&1
+  local stray
+  stray="$(grep '^mise ' "$MOCK_LOG" | grep -v '^mise -C / ' || true)"
+  assert_equals "" "$stray" "a project mise.toml in the current directory must not redirect a call" || return 1
+  cleanup_test_env
+}
+
+test_local_bin_on_path_puts_it_first_once() {
+  setup
+  PATH="/usr/bin:/bin"
+  local_bin_on_path
+  assert_equals "$HOME/.local/bin:/usr/bin:/bin" "$PATH" || return 1
+  local_bin_on_path
+  assert_equals "$HOME/.local/bin:/usr/bin:/bin" "$PATH" "a second call adds nothing" || return 1
+  cleanup_test_env
+}
+
 run_test "global state distinguishes the three cases" test_global_state_distinguishes_the_three_cases
 run_test "tool unuse drops a requested tool" test_tool_unuse_drops_a_requested_tool
 run_test "tool unuse leaves an unrequested tool alone" test_tool_unuse_leaves_an_unrequested_tool_alone
@@ -928,4 +1202,22 @@ run_test "conf lists the tools of installed capabilities only" test_conf_lists_t
 run_test "conf counts a capability being installed and drops one being removed" test_conf_counts_a_capability_being_installed_and_drops_one_being_removed
 run_test "conf leaves a file teeup did not write" test_conf_leaves_a_file_teeup_did_not_write
 run_test "conf follows MISE_CONFIG_DIR and dry run writes nothing" test_conf_follows_mise_config_dir_and_dry_run_writes_nothing
+run_test "tool install installs the pinned version then links the which result" test_tool_install_installs_the_pinned_version_then_links_the_which_result
+run_test "tool install follows a command and a backend that differ from the tool" test_tool_install_follows_a_command_and_a_backend_that_differ_from_the_tool
+run_test "tool install keeps a file or link teeup did not write" test_tool_install_keeps_a_file_or_link_teeup_did_not_write
+run_test "tool install repairs a link left dangling by mise uninstall" test_tool_install_repairs_a_link_left_dangling_by_mise_uninstall
+run_test "tool install relinks when the lock moves" test_tool_install_relinks_when_the_lock_moves
+run_test "tool install without mise fails but a dry run previews" test_tool_install_without_mise_fails_but_a_dry_run_previews
+run_test "tool install dry run installs and links nothing" test_tool_install_dry_run_installs_and_links_nothing
+run_test "tool install reports a failed install" test_tool_install_reports_a_failed_install
+run_test "tool install writes a script for a tool that needs one, under an odd home" test_tool_install_writes_a_script_for_a_tool_that_needs_one_under_an_odd_home
+run_test "tool remove deletes only a teeup link" test_tool_remove_deletes_only_a_teeup_link
+run_test "tool remove with packages uninstalls the pinned version" test_tool_remove_with_packages_uninstalls_the_pinned_version
+run_test "apply installs every pair and writes the conf" test_apply_installs_every_pair_and_writes_the_conf
+run_test "apply finds a mise the package manager just installed" test_apply_finds_a_mise_the_package_manager_just_installed
+run_test "apply refuses when mise is skipped" test_apply_refuses_when_mise_is_skipped
+run_test "repair warns but succeeds" test_repair_warns_but_succeeds
+run_test "sync links every installed, unskipped capability" test_sync_links_every_installed_unskipped_capability
+run_test "every mise call runs from /" test_every_mise_call_runs_from_root
+run_test "local_bin_on_path puts it first once" test_local_bin_on_path_puts_it_first_once
 print_summary

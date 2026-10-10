@@ -18,6 +18,9 @@ unset _self _dir
 # shellcheck source=lib/all.sh
 source "$TEEUP_PATH/lib/all.sh"
 answers_load
+# The links mise_tool_install writes must win over an older package-manager
+# copy here too, as they do in every shell the zsh layer starts.
+local_bin_on_path
 
 usage() {
   cat <<'USAGE'
@@ -745,6 +748,7 @@ cmd_lazy_run() {
   done
   [[ "$found" == "true" ]] || die "$cap does not provide $command"
   pkg_backend_path
+  local_bin_on_path
   if real="$(lazy_real_command "$command")"; then
     exec "$real" "$@"
   fi

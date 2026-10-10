@@ -153,6 +153,56 @@ lock_version() {
   awk -v t="$1" '$1 !~ /^#/ && $1 == t { print $2; exit }' "$TEEUP_PATH/share/teeup/tools.lock"
 }
 
+# mock_mise_tools
+# A mise that installs pinned tools the way lib/mise.sh asks it to.
+# `install <tool>@<version>` creates <installs>/<dir>/<version>/bin, where
+# <dir> is the tool with ':' and '/' turned into '-' (as mise names a
+# backend's directory); `where` answers from that directory; `which --tool
+# <tool>@<version> <command>` makes an executable for <command> there once
+# and prints its path; `uninstall` deletes the version. The executable
+# answers --version, -V and version with "<command> <version>" and otherwise
+# prints "<command> ran: <args>". MOCK_MISE_FAIL_INSTALL=<tool> or
+# MOCK_MISE_FAIL_UNINSTALL=<tool> makes that one call fail. Every other call
+# succeeds and prints nothing, which is a fresh global config's answer to
+# `ls --global`.
+mock_mise_tools() {
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+root="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/installs"
+spec_dir() {
+  printf '%s/%s/%s\n' "$root" "$(printf '%s' "${1%@*}" | tr ':/' '--')" "${1##*@}"
+}
+case "$1" in
+  install)
+    if [ "${MOCK_MISE_FAIL_INSTALL:-}" = "${2%@*}" ]; then
+      echo "mise ERROR failed to install $2" >&2
+      exit 1
+    fi
+    mkdir -p "$(spec_dir "$2")/bin"
+    ;;
+  where)
+    d="$(spec_dir "$2")"
+    [ -d "$d" ] || { echo "mise ERROR $2 is not installed" >&2; exit 1; }
+    printf '%s\n' "$d"
+    ;;
+  which)
+    d="$(spec_dir "$3")"
+    [ -d "$d/bin" ] || exit 1
+    if [ ! -x "$d/bin/$4" ]; then
+      printf '#!/bin/sh\ncase "$1" in --version|-V|version) echo "%s %s"; exit 0 ;; esac\necho "%s ran: $*"\n' "$4" "${3##*@}" "$4" > "$d/bin/$4"
+      chmod +x "$d/bin/$4"
+    fi
+    printf '%s\n' "$d/bin/$4"
+    ;;
+  uninstall)
+    [ "${MOCK_MISE_FAIL_UNINSTALL:-}" = "${2%@*}" ] && exit 1
+    rm -rf "$(spec_dir "$2")"
+    ;;
+esac
+exit 0
+EOF2
+}
+
 cleanup_test_env() {
   case "${TEST_HOME:-}" in
     /tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*) rm -rf "$TEST_HOME" ;;

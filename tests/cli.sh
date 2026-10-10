@@ -2825,6 +2825,20 @@ test_read_only_verbs_still_work_off_macos() {
   cleanup_test_env
 }
 
+# A capability script must see the links mise_tool_install writes, before
+# the shell layer exists: a first bootstrap's Terminal has no ~/.local/bin.
+test_capability_scripts_see_local_bin_first() {
+  setup
+  cat > "$TEEUP_CAPS_DIR/alpha/configure" <<'EOF2'
+#!/usr/bin/env bash
+echo "first:${PATH%%:*}"
+EOF2
+  local out
+  out="$("$TEEUP" configure alpha)"
+  assert_contains "$out" "first:$TEST_HOME/.local/bin" || return 1
+  cleanup_test_env
+}
+
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install skips a done requirement but repairs the target" test_install_skips_a_done_requirement_but_repairs_the_target
 run_test "install runs a missing requirement" test_install_runs_a_missing_requirement
@@ -3347,4 +3361,5 @@ run_test "uninstall reports a refused home file and still finishes" test_uninsta
 run_test "uninstall reports a refused state dir and still finishes" test_uninstall_reports_a_refused_state_dir_and_still_finishes
 run_test "refuses to change a machine that is not a Mac" test_refuses_to_change_a_machine_that_is_not_a_mac
 run_test "read-only verbs still work off macOS" test_read_only_verbs_still_work_off_macos
+run_test "capability scripts see ~/.local/bin first" test_capability_scripts_see_local_bin_first
 print_summary
