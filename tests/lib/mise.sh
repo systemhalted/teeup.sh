@@ -1163,11 +1163,16 @@ test_every_mise_call_runs_from_root() {
 
 test_local_bin_on_path_puts_it_first_once() {
   setup
+  # PATH is restored before the asserts, so cleanup_test_env still finds rm.
+  local saved_path="$PATH" first second
   PATH="/usr/bin:/bin"
   local_bin_on_path
-  assert_equals "$HOME/.local/bin:/usr/bin:/bin" "$PATH" || return 1
+  first="$PATH"
   local_bin_on_path
-  assert_equals "$HOME/.local/bin:/usr/bin:/bin" "$PATH" "a second call adds nothing" || return 1
+  second="$PATH"
+  PATH="$saved_path"
+  assert_equals "$HOME/.local/bin:/usr/bin:/bin" "$first" || return 1
+  assert_equals "$HOME/.local/bin:/usr/bin:/bin" "$second" "a second call adds nothing" || return 1
   cleanup_test_env
 }
 
@@ -1222,11 +1227,17 @@ test_conf_keeps_a_skipped_capability_s_old_pin() {
 
 test_local_bin_on_path_moves_a_later_entry_to_the_front() {
   setup
+  # This PATH has no /bin, where macOS keeps rm, so it is restored before
+  # the asserts and before cleanup_test_env.
+  local saved_path="$PATH" first second
   PATH="/opt/x/bin:$HOME/.local/bin:/usr/bin"
   local_bin_on_path
-  assert_equals "$HOME/.local/bin:/opt/x/bin:/usr/bin" "$PATH" "moved to the front, the later copy dropped" || return 1
+  first="$PATH"
   local_bin_on_path
-  assert_equals "$HOME/.local/bin:/opt/x/bin:/usr/bin" "$PATH" "a second call changes nothing" || return 1
+  second="$PATH"
+  PATH="$saved_path"
+  assert_equals "$HOME/.local/bin:/opt/x/bin:/usr/bin" "$first" "moved to the front, the later copy dropped" || return 1
+  assert_equals "$HOME/.local/bin:/opt/x/bin:/usr/bin" "$second" "a second call changes nothing" || return 1
   cleanup_test_env
 }
 
