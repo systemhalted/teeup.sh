@@ -1,7 +1,7 @@
 summary="Neovim with LazyVim, following the teeup theme"
 group=editors
 tier=lazy
-requires="package-manager git cli-tools"
+requires="package-manager git cli-tools mise"
 provides="nvim"
 packages="neovim"
 package_commands="neovim:nvim"

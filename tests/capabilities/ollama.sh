@@ -12,6 +12,8 @@ EOF2
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
   export TEEUP_TEST_MISSING="ollama"
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 test_install_gets_the_cask() {

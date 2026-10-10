@@ -11,6 +11,8 @@ EOF2
   # The host may ship herdr; the install tests only preview.
   export TEEUP_TEST_MISSING="herdr"
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 test_install_gets_the_formula() {

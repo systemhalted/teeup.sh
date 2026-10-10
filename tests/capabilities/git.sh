@@ -28,6 +28,8 @@ EOF_GIT
   mock_command git-lfs 0 ""
   export TEEUP_TEST_MISSING="delta lazygit emacsclient"
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 # One identity, full stop (2026-09-17 decision): git never asks about work,

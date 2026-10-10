@@ -67,6 +67,8 @@ EOF2
   EMACS_DIR="$TEST_HOME/.config/emacs"
   DOOM_DIR="$TEST_HOME/.config/doom"
   PLIST="$TEST_HOME/Library/LaunchAgents/sh.teeup.emacs.plist"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 # A Doom checkout and a private module already in place, so configure skips

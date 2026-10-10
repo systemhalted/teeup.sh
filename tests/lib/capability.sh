@@ -507,6 +507,39 @@ test_check_passes_on_the_shipped_tree() {
   cleanup_test_env
 }
 
+# A first bootstrap installs core.list top to bottom, so mise must come before
+# every capability that installs a tool through it, and every entry's
+# requires must already be above it.
+test_shipped_core_list_installs_mise_before_its_users() {
+  setup
+  TEEUP_CAPS_DIR="$TEEUP_PATH/capabilities"
+  local seen=" " name r pos=0 mise_pos=""
+  for name in $(cap_tier_list core); do
+    pos=$((pos + 1))
+    for r in $(cap_meta_get "$name" requires); do
+      case "$seen" in
+        *" $r "*) ;;
+        *) echo "$name requires $r, which core.list puts later"; return 1 ;;
+      esac
+    done
+    if [[ "$name" == "mise" ]]; then mise_pos="$pos"; fi
+    # shellcheck disable=SC2194  # a membership check against a fixed roster, not a variable
+    case " zsh starship cli-tools git " in
+      *" $name "*)
+        [[ -n "$mise_pos" ]] || { echo "$name comes before mise in core.list"; return 1; }
+        ;;
+    esac
+    seen="$seen$name "
+  done
+  for name in cli-tools git starship neovim tmux herdr ollama; do
+    case " $(cap_meta_get "$name" requires) " in
+      *" mise "*) ;;
+      *) echo "$name does not require mise"; return 1 ;;
+    esac
+  done
+  cleanup_test_env
+}
+
 echo "lib/capability.sh"
 run_test "list and exists" test_list_and_exists
 run_test "meta get with default" test_meta_get_with_default
@@ -545,4 +578,5 @@ run_test "check rejects a mise tool without a lock line" test_check_rejects_a_mi
 run_test "check rejects a mise command or tool in two capabilities" test_check_rejects_a_mise_command_or_tool_in_two_capabilities
 run_test "check requires mise for mise_tools" test_check_requires_mise_for_mise_tools
 run_test "check passes on the shipped tree" test_check_passes_on_the_shipped_tree
+run_test "shipped core.list installs mise before its users" test_shipped_core_list_installs_mise_before_its_users
 print_summary

@@ -242,6 +242,8 @@ esac
 exit 0
 EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 seed_keys() {

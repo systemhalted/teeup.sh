@@ -11,6 +11,8 @@ EOF2
   # A fresh Mac has none of these.
   export TEEUP_TEST_MISSING="rg fd fzf bat eza zoxide jq yq btop tldr dust gpg"
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 # The whole point of `pkg_install <pkg> <command>`: the system already

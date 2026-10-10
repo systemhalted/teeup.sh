@@ -1,7 +1,7 @@
 summary="Herdr, the agent multiplexer that lives in your terminal"
 group=ai
 tier=lazy
-requires="package-manager"
+requires="package-manager mise"
 provides="herdr"
 packages="herdr"
 package_commands="herdr:herdr"

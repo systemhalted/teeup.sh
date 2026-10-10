@@ -12,6 +12,8 @@ EOF2
   export TEEUP_TEST_MISSING="tmux"
   TEEUP="$TEEUP_PATH/bin/teeup"
   CONF="$TEST_HOME/.config/tmux/tmux.conf"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 test_install_gets_tmux() {

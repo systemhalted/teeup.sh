@@ -1,7 +1,7 @@
 summary="Starship prompt"
 group=shell
 tier=core
-requires="zsh"
+requires="zsh mise"
 provides=""
 packages="starship"
 package_commands="starship:starship"

@@ -73,16 +73,9 @@ esac
 exit 0
 EOF2
   # mise capability: `mise ls --global` is a read, so DRY_RUN does not cover
-  # it. Succeeding with no output is the fresh-machine answer: the global
-  # mise.toml asks for no tools yet.
-  mock_command_script mise <<'EOF2'
-[ "$1" = "-C" ] && shift 2
-case "$1 ${2:-}" in
-  "ls --global") : ;;
-  *) : ;;
-esac
-exit 0
-EOF2
+  # it, and mock_mise_tools answers it with nothing, the fresh-machine
+  # answer. The same mock installs and links the pinned user tools.
+  mock_mise_tools
   # emacs and emacsclient are in the list below because a fresh Mac has
   # neither and a Linux developer machine may have both in /usr/bin: with them
   # hidden, emacs configure skips the daemon agent and never reaches launchctl.

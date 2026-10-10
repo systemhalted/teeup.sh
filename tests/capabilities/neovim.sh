@@ -29,6 +29,8 @@ EOF2
   mkdir -p "$XDG_RUNTIME_DIR" "$TMPDIR"
   TEEUP="$TEEUP_PATH/bin/teeup"
   NVIM="$TEST_HOME/.config/nvim"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 # mark_installed: what `teeup install neovim` records after configure.

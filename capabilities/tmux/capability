@@ -1,7 +1,7 @@
 summary="tmux terminal multiplexer"
 group=shell
 tier=lazy
-requires="package-manager"
+requires="package-manager mise"
 provides="tmux"
 packages="tmux"
 package_commands="tmux:tmux"
