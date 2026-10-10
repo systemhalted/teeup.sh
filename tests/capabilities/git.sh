@@ -110,7 +110,9 @@ test_configure_ships_the_config_and_the_editor() {
   assert_contains "$body" "defaultBranch = main" || return 1
   local generated
   generated="$(cat "$TEST_HOME/.config/git/teeup-generated")"
-  assert_contains "$generated" "editor = vim" || return 1
+  # The editor is the shell's (TEEUP_EDITOR, TEEUP_TERMINAL_EDITOR): git falls
+  # back to VISUAL, then EDITOR, so the generated file must not pin one.
+  assert_not_contains "$generated" "editor =" || return 1
   # delta is hidden by TEEUP_TEST_MISSING and no key exists yet, so the
   # generated include has to switch both dangerous defaults back off.
   assert_contains "$generated" "pager = less" || return 1
@@ -192,13 +194,13 @@ test_generated_include_is_read_after_the_defaults() {
   cleanup_test_env
 }
 
-test_configure_prefers_emacsclient_when_present() {
+test_configure_leaves_the_editor_to_the_shell_even_with_emacsclient() {
   setup
   export TEEUP_TEST_MISSING="delta lazygit"
   mock_command emacsclient 0 ""
   seed_answers
   DRY_RUN=false "$TEEUP" configure git >/dev/null 2>&1
-  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "editor = emacsclient -t" || return 1
+  assert_not_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "editor =" || return 1
   cleanup_test_env
 }
 
@@ -1666,7 +1668,7 @@ run_test "generated include is read after the defaults" test_generated_include_i
 run_test "configure renders include paths for a custom XDG_CONFIG_HOME" test_configure_renders_include_paths_for_a_custom_xdg_config_home
 run_test "configure renders include paths with XDG_CONFIG_HOME metacharacters" test_configure_renders_include_paths_with_xdg_config_home_metacharacters
 run_test "configure quotes include paths with hash and semicolon in XDG_CONFIG_HOME" test_configure_quotes_include_paths_with_hash_and_semicolon_in_xdg_config_home
-run_test "configure prefers emacsclient when present" test_configure_prefers_emacsclient_when_present
+run_test "configure leaves the editor to the shell, even with emacsclient" test_configure_leaves_the_editor_to_the_shell_even_with_emacsclient
 run_test "configure ships the lfs filter and warns about gitconfig" test_configure_ships_the_lfs_filter_and_warns_about_gitconfig
 run_test "configure warns when GIT_CONFIG_GLOBAL is set" test_configure_warns_when_git_config_global_is_set
 run_test "configure is idempotent" test_configure_is_idempotent

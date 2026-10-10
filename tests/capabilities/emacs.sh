@@ -830,16 +830,18 @@ test_remove_unloads_the_agent_through_lib_macos() {
   cleanup_test_env
 }
 
-test_configure_points_git_at_emacsclient() {
+# An older teeup pinned core.editor (vim, chosen before Emacs existed) in the
+# generated git config. Configuring emacs re-runs git's configure, which no
+# longer writes an editor, so git falls back to the shell's VISUAL and EDITOR.
+test_configure_clears_an_old_git_editor_pin() {
   setup
-  # git ran in the core tier before emacs existed and chose vim.
   mkdir -p "$TEST_HOME/.config/git"
   printf '[core]\n\teditor = vim\n' > "$TEST_HOME/.config/git/teeup-generated"
   mock_command delta 0 ""
   local out
   out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
-  assert_contains "$out" "Re-running the git configuration so git opens emacsclient." || return 1
-  assert_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "editor = emacsclient -t" || return 1
+  assert_contains "$out" "Re-running the git configuration so git uses the shell's editor." || return 1
+  assert_not_contains "$(cat "$TEST_HOME/.config/git/teeup-generated")" "editor =" || return 1
   out="$(DRY_RUN=false "$TEEUP" configure emacs 2>&1)"
   assert_not_contains "$out" "Re-running the git configuration" "an up-to-date git is left alone" || return 1
   printf '[core]\n\teditor = vim\n' > "$TEST_HOME/.config/git/teeup-generated"
@@ -1174,7 +1176,7 @@ run_test "theme-apply reloads a running daemon" test_theme_apply_reloads_a_runni
 run_test "theme-apply reloads a running daemon for doom" test_theme_apply_reloads_a_running_daemon_for_doom
 run_test "remove unloads the agent through lib/macos" test_remove_unloads_the_agent_through_lib_macos
 run_test "remove keeps the port when packages are kept" test_remove_keeps_the_port_when_packages_are_kept
-run_test "configure points git at emacsclient" test_configure_points_git_at_emacsclient
+run_test "configure clears an old git editor pin" test_configure_clears_an_old_git_editor_pin
 run_test "starter loads in a real emacs" test_starter_loads_in_a_real_emacs
 run_test "env file paths survive special bytes" test_env_file_paths_survive_special_bytes
 run_test "doom theme-apply picks up a new theme without restarting" test_doom_theme_apply_picks_up_a_new_theme_without_restarting

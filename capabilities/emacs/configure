@@ -434,23 +434,23 @@ PLIST
 fi
 
 # --- git's editor -------------------------------------------------------------
-# The git capability writes core.editor = emacsclient -t only when emacsclient
-# is on PATH, and git runs in the core tier, before this daily capability has
-# installed Emacs. Re-running it here (copying capabilities/ssh/configure's own
-# git re-run, DRY_RUN branch included) makes a first bootstrap end with git
-# opening emacsclient rather than vim. A machine where git was never
-# configured, or skips it, has nothing to update; a git already pointed at
-# emacsclient is left alone.
+# git now leaves the editor to the shell (VISUAL, then EDITOR, from
+# TEEUP_EDITOR and TEEUP_TERMINAL_EDITOR). An older teeup pinned core.editor in
+# the generated git config, often to vim, because git runs in the core tier
+# before this daily capability installs Emacs. Re-running git's configure
+# (copying capabilities/ssh/configure's own git re-run, DRY_RUN branch
+# included) rewrites that file without the pin. A machine where git was never
+# configured, skips it, or has no pin left has nothing to update.
 git_generated="$(user_config_dir)/git/teeup-generated"
-git_wants_emacsclient=false
-if [[ -f "$git_generated" ]] && ! grep -q 'editor = emacsclient' "$git_generated"; then
-  git_wants_emacsclient=true
+git_has_editor_pin=false
+if [[ -f "$git_generated" ]] && grep -q 'editor = ' "$git_generated"; then
+  git_has_editor_pin=true
 fi
-if have emacsclient && ! cap_skipped git; then
-  if [[ "$DRY_RUN" == "true" || "$git_wants_emacsclient" == "true" ]]; then
-    log "Re-running the git configuration so git opens emacsclient."
+if ! cap_skipped git; then
+  if [[ "$git_has_editor_pin" == "true" ]]; then
+    log "Re-running the git configuration so git uses the shell's editor."
     cap_run git configure || { rc=$?; ui_rc_or_exit $rc || true; warn "Could not re-run the git configuration. Run: teeup configure git"; }
   else
-    log "No $git_generated to update, or it already opens emacsclient."
+    log "No $git_generated to update, or it has no editor pin."
   fi
 fi
