@@ -726,7 +726,8 @@ EOF
 # line and a `mise uninstall` that works as printed. The versions are the
 # ones mise_tool_remove uninstalls (mise_tool_versions), for the tools it
 # would uninstall (mise_tool_used), so a tool linked by the user is not
-# named. Without mise every such version is listed, since nothing can say
+# named, and a version another mise config also asks for is left out as
+# mise_tool_remove leaves it installed. Without mise every such version is listed, since nothing can say
 # otherwise. Asked before cap_remove, which deletes what this reads.
 _uninstall_mise_specs() {
   local name="$1" pair tool spec v out=""
@@ -738,6 +739,9 @@ _uninstall_mise_specs() {
     spec="$(tools_lock_spec "$tool")" || continue
     for v in $(mise_tool_versions "$tool"); do
       if have mise && ! mise -C / where "$spec@$v" >/dev/null 2>&1; then
+        continue
+      fi
+      if mise_tool_requested_elsewhere "$spec" "$v" >/dev/null; then
         continue
       fi
       out="${out:+$out }$spec@$v"

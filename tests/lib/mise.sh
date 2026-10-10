@@ -1490,6 +1490,59 @@ test_tool_remove_with_packages_uninstalls_when_the_teeup_link_is_gone() {
   cleanup_test_env
 }
 
+# A version the user's own mise config also asks for is theirs too:
+# uninstalling it would break their request, so remove keeps it and says
+# which file asks for it.
+test_tool_remove_with_packages_keeps_a_version_the_user_s_config_asks_for() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  mise_tools_sync >/dev/null 2>&1 || return 1
+  printf '[tools]\nripgrep = "15.2.0"\n' > "$TEST_HOME/.config/mise/config.toml"
+  local out
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  assert_contains "$out" "Keeping ripgrep 15.2.0: $TEST_HOME/.config/mise/config.toml also asks for it." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the version stays" || return 1
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "teeup's own entry goes"; return 1; }
+  cleanup_test_env
+}
+
+# teeup's own conf.d line is not "another" request, and a user's request for
+# a different version does not protect this one.
+test_tool_remove_with_packages_uninstalls_a_version_only_teeup_asks_for() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  mise_tools_sync >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "fixture: teeup's conf.d asks for it" || return 1
+  printf '[tools]\nripgrep = "14.1.0"\n' > "$TEST_HOME/.config/mise/config.toml"
+  local out
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
+  assert_not_contains "$out" "Keeping ripgrep" || return 1
+  cleanup_test_env
+}
+
+# A mise without `ls --all-sources`: the global config file answers instead.
+test_tool_remove_with_packages_reads_the_user_s_config_without_all_sources() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install neovim nvim >/dev/null 2>&1 || return 1
+  mkdir -p "$TEST_HOME/elsewhere"
+  printf '[tools]\n"aqua:neovim/neovim" = "0.12.6"\n' > "$TEST_HOME/elsewhere/mise.toml"
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/elsewhere/mise.toml" MOCK_MISE_NO_ALL_SOURCES=1
+  local out
+  out="$(mise_tool_remove neovim nvim true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  assert_contains "$out" "Keeping neovim 0.12.6: $TEST_HOME/elsewhere/mise.toml also asks for it." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  unset MISE_GLOBAL_CONFIG_FILE MOCK_MISE_NO_ALL_SOURCES
+  cleanup_test_env
+}
+
 test_local_bin_on_path_moves_a_later_entry_to_the_front() {
   setup
   # This PATH has no /bin, where macOS keeps rm, so it is restored before
@@ -1603,6 +1656,9 @@ run_test "conf warns once when MISE_GLOBAL_CONFIG_FILE is set" test_conf_warns_o
 run_test "conf says nothing about MISE_GLOBAL_CONFIG_FILE with nothing to pin" test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin
 run_test "tool remove with packages uninstalls the retained pin" test_tool_remove_with_packages_uninstalls_the_retained_pin
 run_test "tool remove with packages uninstalls when the teeup link is gone" test_tool_remove_with_packages_uninstalls_when_the_teeup_link_is_gone
+run_test "tool remove with packages keeps a version the user's config asks for" test_tool_remove_with_packages_keeps_a_version_the_user_s_config_asks_for
+run_test "tool remove with packages uninstalls a version only teeup asks for" test_tool_remove_with_packages_uninstalls_a_version_only_teeup_asks_for
+run_test "tool remove with packages reads the user's config without --all-sources" test_tool_remove_with_packages_reads_the_user_s_config_without_all_sources
 run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
 run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_a_user_symlink_into_the_mise_installs_dir
 run_test "tool a user link made after teeup's is gone is the user's" test_tool_a_user_link_made_after_teeup_s_is_gone_is_the_user_s

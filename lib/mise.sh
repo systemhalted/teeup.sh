@@ -400,13 +400,71 @@ _mise_tools_conf_version() {
   else
     content="$(cat "$(mise_tools_conf_file)" 2>/dev/null || true)"
   fi
-  printf '%s\n' "$content" | awk -v k="\"$spec\" = \"" '
-    index($0, k) == 1 {
-      v = substr($0, length(k) + 1)
-      sub(/"$/, "", v)
-      print v
+  printf '%s\n' "$content" | _mise_toml_version "$spec"
+}
+
+# _mise_toml_version <spec> < <toml> -> the version a `"<spec>" = "<v>"` or
+# `<spec> = "<v>"` line asks for (the first one), or nothing. teeup writes
+# the quoted form; `mise use -g` writes a plain name bare. A table value
+# (`<spec> = { version = ... }`) is not read.
+_mise_toml_version() {
+  awk -v s="$1" '{
+      line = $0
+      sub(/^[ \t]+/, "", line)
+      if (index(line, "\"" s "\"") == 1) rest = substr(line, length(s) + 3)
+      else if (index(line, s) == 1) rest = substr(line, length(s) + 1)
+      else next
+      if (rest !~ /^[ \t]*=[ \t]*"/) next
+      sub(/^[ \t]*=[ \t]*"/, "", rest)
+      sub(/".*$/, "", rest)
+      print rest
       exit
     }'
+}
+
+# mise_tool_requested_elsewhere <spec> <version> -> the path of a mise
+# config other than teeup's conf.d file that asks for <spec> at <version>;
+# fails when none does. `mise ls --all-sources --json <spec>` lists every
+# version with each config file that asks for it ("sources", each with a
+# "path"); --global refuses --all-sources, and from / only the global stack
+# is in reach anyway. A mise without --all-sources gets the global config
+# file read the way mise_global_state reads it.
+mise_tool_requested_elsewhere() {
+  local spec="$1" version="$2" teeup_file rows config_file v
+  teeup_file="$(mise_tools_conf_file)"
+  if rows="$(mise -C / ls --all-sources --json "$spec" 2>/dev/null)"; then
+    # A record's "version" comes before its "sources"; "requested_version"
+    # and "install_path" do not match the patterns, as the quote before the
+    # key is part of each. teeup's file also matches by its tail, in case
+    # mise prints the directory in another spelling (a symlinked home).
+    printf '%s\n' "$rows" | awk -v v="$version" -v t="$teeup_file" '
+      /"version": "/ {
+        cur = $0
+        sub(/^[^:]*: "/, "", cur)
+        sub(/",?[ \t]*$/, "", cur)
+      }
+      /"path": "/ {
+        p = $0
+        sub(/^[^:]*: "/, "", p)
+        sub(/",?[ \t]*$/, "", p)
+        if (cur == v && p != t && p !~ /\/conf\.d\/teeup\.toml$/) {
+          print p
+          found = 1
+          exit
+        }
+      }
+      END { exit !found }'
+    return $?
+  fi
+  config_file="${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml}"
+  if [[ -f "$config_file" ]]; then
+    v="$(_mise_toml_version "$spec" < "$config_file")"
+    if [[ -n "$v" && "$v" == "$version" ]]; then
+      printf '%s\n' "$config_file"
+      return 0
+    fi
+  fi
+  return 1
 }
 
 # mise_tools_conf_file -> where teeup pins its tools for mise. mise reads
@@ -767,11 +825,13 @@ mise_tool_install() {
 # after that worked: on a failure the entry stays, so a retry still knows
 # teeup used the tool. `mise uninstall` never runs for a tool teeup does not
 # use (mise_tool_used): with a foreign file at the path, the version is not
-# teeup's to take away, and a leftover entry of teeup's is dropped. The conf.d file is
+# teeup's to take away, and a leftover entry of teeup's is dropped. A
+# version another mise config also asks for (mise_tool_requested_elsewhere)
+# stays installed, with a note that names that config. The conf.d file is
 # the caller's to rewrite (cap_remove does it once per capability).
 # 0 removed or nothing to do; 1 something that should be gone is still there.
 mise_tool_remove() {
-  local tool="$1" command="$2" with_packages="${3:-false}" link version spec v rc=0 used=false
+  local tool="$1" command="$2" with_packages="${3:-false}" link version spec v rc=0 used=false source_file
   _mise_plain_names mise_tool_remove "$tool" "$command" || return 1
   link="$HOME/.local/bin/$command"
   # Asked before the link goes: an owned link is one way teeup used it.
@@ -811,6 +871,10 @@ mise_tool_remove() {
   if ! have mise; then
     if [[ "$DRY_RUN" == "true" ]]; then
       for v in $(mise_tool_versions "$tool"); do
+        if source_file="$(mise_tool_requested_elsewhere "$spec" "$v")"; then
+          log "Keeping $tool $v: $source_file also asks for it."
+          continue
+        fi
         run_cmd mise -C / uninstall "$spec@$v"
       done
       _mise_tool_inner_remove "$command"
@@ -822,6 +886,10 @@ mise_tool_remove() {
   for v in $(mise_tool_versions "$tool"); do
     if ! mise -C / where "$spec@$v" >/dev/null 2>&1; then
       log "Not installed through mise, so nothing to uninstall: $tool $v"
+      continue
+    fi
+    if source_file="$(mise_tool_requested_elsewhere "$spec" "$v")"; then
+      log "Keeping $tool $v: $source_file also asks for it."
       continue
     fi
     if ! run_cmd mise -C / uninstall "$spec@$v"; then

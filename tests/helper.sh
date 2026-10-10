@@ -164,9 +164,14 @@ lock_version() {
 # and prints its path; `uninstall` deletes the version. The executable
 # answers --version, -V and version with "<command> <version>" and otherwise
 # prints "<command> ran: <args>". MOCK_MISE_FAIL_INSTALL=<tool> or
-# MOCK_MISE_FAIL_UNINSTALL=<tool> makes that one call fail. Every other call
-# succeeds and prints nothing, which is a fresh global config's answer to
-# `ls --global`.
+# MOCK_MISE_FAIL_UNINSTALL=<tool> makes that one call fail. `ls
+# --all-sources --json <tool>` answers as mise 2026.9 does, one record per
+# version a config file asks for, from config.toml and conf.d/*.toml in the
+# mise config directory (MISE_GLOBAL_CONFIG_FILE alone when it is set), so a
+# test asks for a version by writing `<tool> = "<version>"` there; with
+# MOCK_MISE_NO_ALL_SOURCES=1 it fails as a mise without --all-sources does.
+# Every other call succeeds and prints nothing, which is a fresh global
+# config's answer to `ls --global`.
 mock_mise_tools() {
   mock_command_script mise <<'EOF2'
 [ "$1" = "-C" ] && shift 2
@@ -199,6 +204,39 @@ case "$1" in
   uninstall)
     [ "${MOCK_MISE_FAIL_UNINSTALL:-}" = "${2%@*}" ] && exit 1
     rm -rf "$(spec_dir "$2")"
+    ;;
+  ls)
+    case " $* " in *" --all-sources "*) ;; *) exit 0 ;; esac
+    if [ -n "${MOCK_MISE_NO_ALL_SOURCES:-}" ]; then
+      echo "error: unexpected argument '--all-sources' found" >&2
+      exit 2
+    fi
+    for tool in "$@"; do :; done
+    dir="${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}"
+    if [ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]; then
+      files="$MISE_GLOBAL_CONFIG_FILE"
+    else
+      files="$dir/config.toml $(ls "$dir"/conf.d/*.toml 2>/dev/null | tr '\n' ' ')"
+    fi
+    first=1
+    echo "["
+    for f in $files; do
+      [ -f "$f" ] || continue
+      for v in $(awk -v s="$tool" '{
+          line = $0; sub(/^[ \t]+/, "", line)
+          if (index(line, "\"" s "\"") == 1) rest = substr(line, length(s) + 3)
+          else if (index(line, s) == 1) rest = substr(line, length(s) + 1)
+          else next
+          if (rest !~ /^[ \t]*=[ \t]*"/) next
+          sub(/^[ \t]*=[ \t]*"/, "", rest); sub(/".*$/, "", rest); print rest
+        }' "$f"); do
+        [ "$first" = 1 ] || echo "  ,"
+        first=0
+        printf '  {\n    "version": "%s",\n    "install_path": "%s",\n    "sources": [\n      {\n        "type": "mise.toml",\n        "path": "%s",\n        "requested_version": "%s"\n      }\n    ]\n  }\n' \
+          "$v" "$(spec_dir "$tool@$v")" "$f" "$v"
+      done
+    done
+    echo "]"
     ;;
 esac
 exit 0
