@@ -905,7 +905,7 @@ test_default_env_editor_keeps_an_inherited_editor() {
   printf 'TEEUP_EDITOR="zed --wait"\n' > "$TEST_HOME/.config/teeup/answers"
   mock_command zed 0 ""
   out="$(editor_probe "$root" "export EDITOR=nano VISUAL=micro")"
-  assert_equals "nano|micro|nano|zed --wait" "$out" || return 1
+  assert_equals "nano|micro|nano|" "$out" "teeup did not choose the editor, so it records no choice" || return 1
   cleanup_test_env
 }
 
@@ -981,6 +981,24 @@ test_default_env_editor_sets_alternate_editor_for_an_emacsclient_path() {
 . '$TEEUP_PATH/capabilities/zsh/default/env'
 print -r -- \"\${ALTERNATE_EDITOR+set}|\$EDITOR\"" 2>/dev/null)"
   assert_equals "set|\"$app/emacsclient\" -c" "$out" || return 1
+  cleanup_test_env
+}
+
+# An inherited EDITOR that happens to equal teeup's automatic choice is still
+# not teeup's: a later pass, after emacsclient appears, must keep it.
+test_default_env_editor_keeps_an_inherited_editor_equal_to_the_automatic_one() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/empty root" late="$TEST_HOME/late bin" zsh_bin out
+  mkdir -p "$root"
+  make_emacsclient "$late"
+  zsh_bin="$(command -v zsh)"
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" PATH="$MOCK_BIN" EDITOR=vim "$zsh_bin" -f -c "unset VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO SSH_CONNECTION SSH_TTY
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+PATH='$late':\"\$PATH\"
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+print -r -- \"\$EDITOR|\$VISUAL|\$SUDO_EDITOR\"" 2>/dev/null)"
+  assert_equals "vim|vim|vim" "$out" || return 1
   cleanup_test_env
 }
 
@@ -1135,6 +1153,7 @@ run_test "default env editor lets the machine file pin win" test_default_env_edi
 run_test "default env editor skips an answer whose command is missing" test_default_env_editor_skips_an_answer_whose_command_is_missing
 run_test "default env editor accepts a quoted path with spaces" test_default_env_editor_accepts_a_quoted_path_with_spaces
 run_test "default env editor sets ALTERNATE_EDITOR for an emacsclient path" test_default_env_editor_sets_alternate_editor_for_an_emacsclient_path
+run_test "default env editor keeps an inherited editor equal to the automatic one" test_default_env_editor_keeps_an_inherited_editor_equal_to_the_automatic_one
 run_test "default env prefers the user's own machine file over the repo's" test_default_env_prefers_the_users_own_machine_file_over_the_repos
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero

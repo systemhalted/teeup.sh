@@ -234,9 +234,14 @@ esac
 # so it is chosen again: otherwise a vim picked with macOS's minimal PATH
 # stayed after ~/.zprofile had put emacsclient on PATH. VISUAL and SUDO_EDITOR
 # follow EDITOR, so an inherited EDITOR still becomes all three.
+# TEEUP_EDITOR_AUTO is recorded only when teeup set EDITOR itself: an
+# inherited EDITOR that happens to equal teeup's choice is still not teeup's,
+# and a later pass must keep it.
 _teeup_auto="${TEEUP_EDITOR_AUTO:-}"
+_teeup_chose=false
 if [ -z "${EDITOR:-}" ] || [ "$EDITOR" = "$_teeup_auto" ]; then
   EDITOR="$_teeup_editor"
+  _teeup_chose=true
 fi
 if [ -z "${VISUAL:-}" ] || [ "$VISUAL" = "$_teeup_auto" ]; then
   VISUAL="$EDITOR"
@@ -244,9 +249,14 @@ fi
 if [ -z "${SUDO_EDITOR:-}" ] || [ "$SUDO_EDITOR" = "$_teeup_auto" ]; then
   SUDO_EDITOR="$EDITOR"
 fi
-TEEUP_EDITOR_AUTO="$_teeup_editor"
-export EDITOR VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO
-unset _teeup_editor _teeup_auto
+export EDITOR VISUAL SUDO_EDITOR
+if [ "$_teeup_chose" = "true" ]; then
+  TEEUP_EDITOR_AUTO="$_teeup_editor"
+  export TEEUP_EDITOR_AUTO
+else
+  unset TEEUP_EDITOR_AUTO
+fi
+unset _teeup_editor _teeup_auto _teeup_chose
 
 # --- everything else ---------------------------------------------------------
 # BAT_THEME is the shell-level theme hook; `teeup theme set` overrides this
