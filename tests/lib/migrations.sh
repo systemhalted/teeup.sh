@@ -197,6 +197,73 @@ copy_github_package_migration() {
   cp "$TEEUP_PATH/migrations/$GITHUB_PACKAGE_MIGRATION" "$TEEUP_MIGRATIONS_DIR/$GITHUB_PACKAGE_MIGRATION"
 }
 
+MISE_TOOLS_MIGRATION=1791459420.sh
+
+copy_mise_tools_migration() {
+  cp "$TEEUP_PATH/migrations/$MISE_TOOLS_MIGRATION" "$TEEUP_MIGRATIONS_DIR/$MISE_TOOLS_MIGRATION"
+}
+
+# A Homebrew that has every formula: the copies teeup installed before #112.
+mock_brew_with_everything() {
+  mock_command_script brew <<'EOF2'
+case "$1" in
+  --version) echo "Homebrew 4.3.9" ;;
+  list) exit 0 ;;
+esac
+exit 0
+EOF2
+}
+
+test_mise_tools_migration_links_the_tools_and_keeps_the_homebrew_copies() {
+  setup
+  copy_mise_tools_migration
+  mock_mise_tools
+  mock_brew_with_everything
+  state_done mark cap-cli-tools
+  state_done mark cap-neovim
+  local bin="$TEST_HOME/.local/bin" conf="$TEST_HOME/.config/mise/conf.d/teeup.toml"
+  migration_run "$MISE_TOOLS_MIGRATION" >/dev/null 2>&1 || { echo "the migration failed"; return 1; }
+  [[ -L "$bin/rg" && -L "$bin/tldr" && -L "$bin/nvim" ]] || { echo "core and lazy tools are linked"; return 1; }
+  [[ ! -e "$bin/delta" && ! -L "$bin/delta" ]] || { echo "git is not installed here, so its tools are not"; return 1; }
+  assert_contains "$(cat "$conf")" "\"ripgrep\" = \"$(lock_version ripgrep)\"" || return 1
+  assert_contains "$(cat "$conf")" "\"aqua:neovim/neovim\" = \"$(lock_version neovim)\"" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" "the Homebrew copies stay" || return 1
+  assert_file_exists "$MARKS/$MISE_TOOLS_MIGRATION" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_migration_dry_run_changes_nothing() {
+  setup
+  copy_mise_tools_migration
+  mock_mise_tools
+  mock_brew_with_everything
+  state_done mark cap-cli-tools
+  local out
+  out="$(DRY_RUN=true migration_run "$MISE_TOOLS_MIGRATION" 2>&1)"
+  assert_contains "$out" "Would execute: mise -C / install ripgrep@$(lock_version ripgrep)" || return 1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -e "$TEST_HOME/.config/mise/conf.d/teeup.toml" ]] || { echo "dry run changed the disk"; return 1; }
+  [[ ! -e "$MARKS/$MISE_TOOLS_MIGRATION" ]] || { echo "dry run marked the migration"; return 1; }
+  cleanup_test_env
+}
+
+# A failed or impossible move must not stop the update: every later
+# teeup update runs mise_tools_sync from the new code and tries again.
+test_mise_tools_migration_without_mise_lets_the_update_continue() {
+  setup
+  copy_mise_tools_migration
+  mock_brew_with_everything
+  export TEEUP_TEST_MISSING=mise
+  state_done mark cap-cli-tools
+  local out rc=0
+  out="$(migration_run "$MISE_TOOLS_MIGRATION" 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "mise is not on PATH" || return 1
+  assert_contains "$out" "The next teeup update tries again" || return 1
+  assert_file_exists "$MARKS/$MISE_TOOLS_MIGRATION" || return 1
+  unset TEEUP_TEST_MISSING
+  cleanup_test_env
+}
+
 mock_github_package_manager() {
   mock_command_script brew <<'EOF2'
 case "$1" in
@@ -502,6 +569,9 @@ run_test "github package migration installs gh for an existing capability" test_
 run_test "github package migration does nothing when gh is installed" test_github_package_migration_does_nothing_when_gh_is_installed
 run_test "github package migration does nothing when github is not done" test_github_package_migration_does_nothing_when_github_is_not_done
 run_test "github package migration dry run changes nothing" test_github_package_migration_dry_run_changes_nothing
+run_test "mise tools migration links the tools and keeps the Homebrew copies" test_mise_tools_migration_links_the_tools_and_keeps_the_homebrew_copies
+run_test "mise tools migration dry run changes nothing" test_mise_tools_migration_dry_run_changes_nothing
+run_test "mise tools migration without mise lets the update continue" test_mise_tools_migration_without_mise_lets_the_update_continue
 run_test "a file that is not a migration name is skipped loudly" test_a_file_that_is_not_a_migration_name_is_skipped_loudly
 run_test "run_pending counts correctly with an odd name present" test_run_pending_counts_correctly_with_an_odd_name_present
 run_test "list is oldest first and ignores other files" test_list_is_oldest_first_and_ignores_other_files
