@@ -27,7 +27,7 @@ teeup uses two sources. The tools that teeup itself needs come from Homebrew or 
 | mise, at the versions of the release | ripgrep, fd, fzf, bat, eza, zoxide, yq, tealdeer (`tldr`), dust, delta, git-lfs, lazygit, Starship, Neovim, tmux, Herdr, and the Ollama command |
 | mise, at the versions that you choose | Language runtimes, the AI command-line tools, and every tool that you add with `mise use -g` |
 
-The file `share/teeup/tools.lock` in the teeup checkout records the versions of the second row. A new teeup release can change these versions. teeup installs each tool with mise and puts a link to it in `~/.local/bin`. A command then starts the tool directly, without mise, so it starts as fast as a Homebrew copy.
+The file `share/teeup/tools.lock` in the teeup checkout records the versions of the second row. A new teeup release can change these versions. teeup installs each tool with mise and links it in two steps. The link in `~/.local/bin` points to a link in `~/.local/state/teeup/tools`, and that link points to the tool. A command then starts the tool directly, without mise, so it starts as fast as a Homebrew copy.
 
 teeup records the same versions in `~/.config/mise/conf.d/teeup.toml`, so `mise prune` keeps them. teeup never edits your `~/.config/mise/config.toml`. mise reads both files, and its own rules decide which version applies. See the [mise configuration](https://mise.jdx.dev/configuration.html) page.
 
@@ -37,7 +37,7 @@ A Mac with MacPorts gets the same tools from mise as a Mac with Homebrew. MacPor
 
 `teeup update` installs a new pinned version when a release changes it. It upgrades the Homebrew or MacPorts packages only when it moves teeup to a new commit. It also runs `mise upgrade` for the tools in your global mise configuration. See [Updates](updates.md).
 
-Most capabilities accept a copy of their command that you installed a different way, such as your own jq, if its version command runs. A broken command or a stale shim on `PATH` does not replace the package. A file of your own at `~/.local/bin/rg`, or at the path of another pinned tool, stays, and teeup does not link that tool.
+Most capabilities accept a copy of their command that you installed a different way, such as your own jq, if its version command runs. A broken command or a stale shim on `PATH` does not replace the package. A file of your own at `~/.local/bin/rg`, or at the path of another pinned tool, stays, and teeup does not link that tool. teeup owns a link in `~/.local/bin` only when it points into `~/.local/state/teeup/tools`. If you link a tool to a mise install yourself, your link stays, and `teeup remove` does not uninstall that version.
 
 The GitHub CLI is an exception: teeup always installs its own `gh`, because git uses `gh` to sign in. `teeup doctor github` warns when a different `gh` comes first on `PATH`. If you add a tool to mise yourself with `mise use -g`, you must control that tool yourself.
 

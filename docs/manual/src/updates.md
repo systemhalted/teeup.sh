@@ -16,7 +16,7 @@ DRY_RUN=true teeup update    # the same, as a preview that changes nothing
 | 1. Checkout | `git fetch` downloads the new releases and commits of teeup. Then teeup moves the checkout forward on its channel: to the newest release, or to the newest commit on `main`. See [Release or main](#release-or-main). |
 | 2. Packages | `brew update` runs (with MacPorts, `port selfupdate`). If step 1 moved the checkout to a new commit, `brew upgrade` (with MacPorts, `port upgrade`) upgrades only the packages and casks that teeup installed. If the checkout did not move, their versions stay as they are. But if this upgrade failed on the last update, teeup tries it again. teeup does not upgrade other Homebrew packages: use `brew upgrade` for them. A package that a capability uses belongs to teeup, so teeup upgrades it even if you installed it before teeup. A future version will let you choose (issue #79). |
 | 3. mise | `mise upgrade` runs for every tool in the global mise configuration, which includes the language runtimes and the AI tools. |
-| 4. Pinned tools | For each installed capability, teeup installs the tools of that capability that `share/teeup/tools.lock` names, at the versions of the release, and links them into `~/.local/bin`. teeup does not change the tools of a capability in `TEEUP_SKIP`. See [Tool versions](#tool-versions). |
+| 4. Pinned tools | For each installed capability, teeup installs the tools of that capability that `share/teeup/tools.lock` names, at the versions of the release, and links them into `~/.local/bin` through `~/.local/state/teeup/tools`. teeup does not change the tools of a capability in `TEEUP_SKIP`. See [Tool versions](#tool-versions). |
 | 5. Migrations | teeup runs every migration script that this Mac did not run yet. |
 | 6. Configure | The `configure` script runs again for every installed capability in the core tier, and then in the daily tier. |
 | 7. Theme | If step 6 did not render the current theme, teeup renders it again. |
@@ -36,7 +36,7 @@ Step 6 applies the changed answers. If you set a new Emacs flavor with `teeup co
 
 A teeup release sets the version of each tool that comes from mise. The file `share/teeup/tools.lock` records these versions. The tools change only when `teeup update` moves teeup to a release with a different file. If teeup stays on the same release, `teeup update` installs no new tool versions.
 
-When a release changes a version, step 4 installs the new version and changes the link in `~/.local/bin`. The old version stays installed. Run `mise prune` to remove the versions that nothing uses.
+When a release changes a version, step 4 installs the new version and changes the link in `~/.local/state/teeup/tools`. The link in `~/.local/bin` stays as it is. The old version stays installed. Run `mise prune` to remove the versions that nothing uses.
 
 Homebrew cannot keep a formula at a fixed version. Thus teeup upgrades the packages that it installed only when the checkout moves to a new commit. On the release channel, this is a new release. On `main`, this is a new commit. If that upgrade fails, the next update tries it again, also when the checkout did not move.
 

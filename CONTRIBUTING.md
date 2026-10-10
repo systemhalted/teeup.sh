@@ -90,8 +90,11 @@ user files source thick default files.
    `aqua:` source), add `mise` to `requires`, and call
    `mise_tools_apply "$TEEUP_CAP"` from `install` and
    `mise_tools_repair "$TEEUP_CAP"` from `configure`. `mise_tool_install`
-   links `~/.local/bin/<command>` to the pinned binary, so a call starts no
-   mise process. `cap_check` rejects a malformed pair, a tool with no lock
+   links `~/.local/bin/<command>` to teeup's own entry in
+   `$TEEUP_MISE_TOOLS_DIR` (`~/.local/state/teeup/tools/<command>`), and that
+   entry to the pinned binary, so a call starts no mise process. The
+   `~/.local/bin` path is teeup's only while it links to that entry; anything
+   else there is the user's, and its version is never uninstalled. `cap_check` rejects a malformed pair, a tool with no lock
    line, a tool or command two capabilities claim, and a capability with
    mise tools that does not require mise. Language runtimes stay with
    `teeup install dev-env`, and the `ai-*` wrappers stay as they are. The

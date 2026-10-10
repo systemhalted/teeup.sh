@@ -86,7 +86,9 @@ Every call keeps the `-C /` rule.
      <command>`.
   4. Point `~/.local/bin/<command>` at it with a symlink. A file there that
      teeup did not create is kept, with a warning, as `mise_wrapper_write`
-     does today.
+     does today. (Changed to two-hop links in review: `~/.local/bin/<command>`
+     points at `~/.local/state/teeup/tools/<command>`, which points at the
+     binary.)
 - `mise_tool_remove <tool> <command>` removes the link if it is teeup's. When
   packages are removed, it also runs `mise -C / uninstall <tool>@<version>`,
   then rewrites the conf.d file.

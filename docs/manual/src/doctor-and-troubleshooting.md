@@ -11,7 +11,8 @@ teeup doctor git       # one capability
 ## What doctor checks
 
 For each installed capability, doctor prints a heading `== git: ... ==` and checks that the packages, casks, and apps that its metadata names are installed.
-It also checks that each tool from mise has its link in `~/.local/bin`, at the version of the teeup release, and that the tool runs.
+It also checks each tool from mise.
+The link in `~/.local/bin` must point to the teeup link in `~/.local/state/teeup/tools`, at the version of the teeup release, and the tool must run.
 It also runs the checks in the doctor script of the capability, if it has one.
 Eleven capabilities have a doctor script, including `ssh` (key pairs, file modes, the `Host` blocks), `git`, `github`, `zsh`, `mise`, `starship`, and `aerospace`.
 
@@ -162,7 +163,7 @@ Doctor shows a warning for each old copy, with the command that removes it, for 
 
 ### A tool link in `~/.local/bin` is missing or broken
 
-`mise uninstall` and `mise prune` can remove the version that a link in `~/.local/bin` points to. Doctor then reports the link as broken. Run the fix that doctor shows, for example `teeup configure cli-tools`. This command installs the pinned version again and repairs the link.
+teeup links each tool in two steps. `~/.local/bin/rg` points to `~/.local/state/teeup/tools/rg`, and that link points to the version that mise installed. `mise uninstall` and `mise prune` can remove that version, and doctor then reports the link as broken. If you delete `~/.local/state/teeup`, doctor reports the second link as missing. Run the fix that doctor shows, for example `teeup configure cli-tools`. This command installs the pinned version again and repairs the links.
 
 ### Commits are not signed
 
