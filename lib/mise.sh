@@ -424,8 +424,10 @@ mise_tools_conf_file() {
 # 5): a pin for a missing version makes `mise activate` warn in every shell.
 # When the lock's version is not installed (its download failed, or sync
 # skipped the capability), the tool keeps the line it has in the current
-# file, or is left out when it has none. Without mise on PATH, or in a dry
-# run, the lock's version is pinned as it is. --with counts a capability
+# file, or is left out when it has none. A TEEUP_SKIP'd capability's tool
+# always keeps its current line when it has one, and only without one
+# follows the rule above. Without mise on PATH, or in a dry run, the lock's
+# version is pinned as it is. --with counts a capability
 # whose install or configure is running before its done marker exists;
 # --without leaves out one being removed. The user's config.toml is never
 # edited. With nothing to pin, teeup's file is deleted. A file without the
@@ -471,6 +473,15 @@ mise_tools_conf_write() {
         continue
       fi
       spec="$(tools_lock_spec "$tool")"
+      # A skipped capability is not teeup's to move: its line stays as it
+      # is, even when the lock's new version is on disk for another reason.
+      if cap_skipped "$name"; then
+        old_version="$(_mise_tools_conf_version "$spec" "$old")"
+        if [[ -n "$old_version" ]]; then
+          body="$body\"$spec\" = \"$old_version\""$'\n'
+          continue
+        fi
+      fi
       if [[ "$check" == "true" ]] && ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
         old_version="$(_mise_tools_conf_version "$spec" "$old")"
         if [[ -n "$old_version" ]]; then

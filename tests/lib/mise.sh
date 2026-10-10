@@ -1393,6 +1393,25 @@ test_conf_keeps_a_skipped_capability_s_old_pin() {
   cleanup_test_env
 }
 
+# A skipped capability is not managed by teeup, so its pin stays at the
+# version it had, even when the lock's new version is on disk for another
+# reason (installed by hand here).
+test_conf_keeps_a_skipped_capability_s_pin_when_the_new_version_is_installed() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  state_done mark cap-editor
+  mise_tools_sync >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$CONF")" '"aqua:neovim/neovim" = "0.12.6"' || return 1
+  bump_lock neovim 0.13.0
+  mise -C / install aqua:neovim/neovim@0.13.0 || return 1
+  TEEUP_SKIP=editor mise_tools_sync >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$CONF")" '"aqua:neovim/neovim" = "0.12.6"' "the skipped capability keeps its pin" || return 1
+  assert_not_contains "$(cat "$CONF")" "0.13.0" || return 1
+  cleanup_test_env
+}
+
 # MISE_GLOBAL_CONFIG_FILE makes mise read only that file as its global
 # config, so conf.d/teeup.toml (and the pins teeup just wrote to it) are
 # invisible to mise: `mise prune` can then remove them. teeup cannot edit the
@@ -1579,6 +1598,7 @@ run_test "lock and metadata agree" test_lock_and_metadata_agree
 run_test "conf warns about a tool the lock does not name" test_conf_warns_about_a_tool_the_lock_does_not_name
 run_test "conf keeps the old pin when the new version fails to install" test_conf_keeps_the_old_pin_when_the_new_version_fails_to_install
 run_test "conf keeps a skipped capability's old pin" test_conf_keeps_a_skipped_capability_s_old_pin
+run_test "conf keeps a skipped capability's pin when the new version is installed" test_conf_keeps_a_skipped_capability_s_pin_when_the_new_version_is_installed
 run_test "conf warns once when MISE_GLOBAL_CONFIG_FILE is set" test_conf_warns_once_when_mise_global_config_file_is_set
 run_test "conf says nothing about MISE_GLOBAL_CONFIG_FILE with nothing to pin" test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin
 run_test "tool remove with packages uninstalls the retained pin" test_tool_remove_with_packages_uninstalls_the_retained_pin
