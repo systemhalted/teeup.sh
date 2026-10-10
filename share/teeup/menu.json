@@ -16,9 +16,8 @@
   "install.apps": {"label": "Apps"},
   "install.apps.firefox": {"label": "Firefox Developer Edition", "when": "! teeup has firefox-developer-edition", "action": "teeup install firefox-developer-edition"},
   "install.apps.chrome": {"label": "Google Chrome", "when": "! teeup has chrome", "action": "teeup install chrome"},
-    "install.apps.obsidian": {"label": "Obsidian", "when": "! teeup has obsidian", "action": "teeup install obsidian"},
-
-    "install.apps.rayast": {"label": "Raycast", "when": "! teeup has raycast", "action": "teeup install raycast"},
+  "install.apps.obsidian": {"label": "Obsidian", "when": "! teeup has obsidian", "action": "teeup install obsidian"},
+  "install.apps.raycast": {"label": "Raycast", "when": "! teeup has raycast", "action": "teeup install raycast"},
 
   "install.ai": {"label": "AI"},
   "install.ai.claude": {"label": "Claude Code", "when": "! teeup has ai-claude", "action": "teeup install ai-claude"},
