@@ -23,7 +23,7 @@ The teeup shell sets `EDITOR`, `VISUAL`, and `SUDO_EDITOR` to the same editor. T
 
 The wizard asks for both. To change one, run `teeup config set TEEUP_EDITOR zed --wait`, and then open a new terminal. If the first word is not a command on `PATH`, teeup saves the value and shows a warning.
 
-If neither answer has a value, the shell uses `emacsclient -t` when it finds `emacsclient`, then `nvim`, then `vim`. An `EDITOR` or `VISUAL` value from outside teeup stays as it is. To use a different editor in one shell, set `EDITOR` in `~/.config/zsh/local.zsh`.
+If an answer names an editor that is not installed, the shell does not use that answer. If neither answer can be used, the shell uses `emacsclient -t` when it finds `emacsclient`, then `nvim`, then `vim`. An `EDITOR` or `VISUAL` value from outside teeup stays as it is. To use a different editor in one shell, set `EDITOR` in `~/.config/zsh/local.zsh`.
 
 teeup does not set `core.editor` for git, so git uses the same editor. To give git a different editor, set `core.editor` in `~/.config/git/local`.
 

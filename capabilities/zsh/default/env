@@ -164,7 +164,7 @@ export PATH
 # --- editor ------------------------------------------------------------------
 # Two answers name the editor (teeup config set, or the machine file, both
 # sourced above): TEEUP_EDITOR for a local session, TEEUP_TERMINAL_EDITOR over
-# SSH and as the fallback when TEEUP_EDITOR is unset. With neither, the order
+# SSH and as the fallback when TEEUP_EDITOR is unset or not installed. With neither, the order
 # is emacsclient -t, then a real nvim, then vim.
 #
 # A lazy shim answers `command -v` for a command nothing installed provides
@@ -179,10 +179,18 @@ export PATH
 # skipped, say -- would abort shell startup here instead of falling through to
 # the vim fallback below. Every command substitution in this file needs the
 # same guard, for the same reason.
-if [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_TTY:-}" ]; then
-  _teeup_editor="${TEEUP_TERMINAL_EDITOR:-}"
-else
-  _teeup_editor="${TEEUP_EDITOR:-${TEEUP_TERMINAL_EDITOR:-}}"
+# An answer is used only when its first word is a command: one that names an
+# editor that is not installed (Emacs skipped with --skip-daily or TEEUP_SKIP
+# after the wizard chose it, a failed install, an editor removed later) would
+# leave git commit and crontab -e with nothing to open, so the next one is
+# tried. A lazy shim counts, because the answer asked for that editor.
+_teeup_editor=""
+if [ -z "${SSH_CONNECTION:-}" ] && [ -z "${SSH_TTY:-}" ] && [ -n "${TEEUP_EDITOR:-}" ] &&
+   command -v "${TEEUP_EDITOR%% *}" >/dev/null 2>&1; then
+  _teeup_editor="$TEEUP_EDITOR"
+elif [ -n "${TEEUP_TERMINAL_EDITOR:-}" ] &&
+   command -v "${TEEUP_TERMINAL_EDITOR%% *}" >/dev/null 2>&1; then
+  _teeup_editor="$TEEUP_TERMINAL_EDITOR"
 fi
 if [ -z "$_teeup_editor" ]; then
   _teeup_nvim="$(command -v nvim 2>/dev/null || true)"

@@ -224,7 +224,12 @@ wizard() {
   # terminal frame and -c is not offered.
   window_emacs=true
   if [[ "$(pkg_backend)" == "macports" ]]; then window_emacs=false; fi
-  if [[ "$daily" == "yes" && "$effective_flavor" != "none" ]]; then
+  # Emacs is the default only when this run installs it: --skip-daily and
+  # TEEUP_SKIP=emacs leave the daily answer yes but install no Emacs, and an
+  # answer naming an editor that does not exist leaves git commit nothing to
+  # open (the shell layer falls back too, for an install that fails).
+  if [[ "$daily" == "yes" && "$effective_flavor" != "none" && "${SKIP_DAILY:-false}" != "true" ]] &&
+     ! cap_skipped emacs; then
     if [[ "$window_emacs" == "true" ]]; then
       default_editor="emacsclient -c"
     else

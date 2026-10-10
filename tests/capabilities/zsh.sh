@@ -861,6 +861,7 @@ test_default_env_editor_uses_the_editor_answer_locally() {
   make_emacsclient "$root/usr/local/bin"
   mkdir -p "$TEST_HOME/.config/teeup"
   printf 'TEEUP_EDITOR="zed --wait"\nTEEUP_TERMINAL_EDITOR="nvim"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command zed 0 ""
   out="$(editor_probe "$root" "")"
   assert_equals "zed --wait|zed --wait|zed --wait|zed --wait" "$out" || return 1
   cleanup_test_env
@@ -870,7 +871,9 @@ test_default_env_editor_uses_the_terminal_answer_over_ssh() {
   setup
   require_zsh || return 1
   local root="$TEST_HOME/root" out
-  mkdir -p "$root" "$TEST_HOME/.config/teeup"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  make_emacsclient "$root/usr/local/bin"
+  mock_command zed 0 ""
   printf 'TEEUP_EDITOR="zed --wait"\nTEEUP_TERMINAL_EDITOR="emacsclient -t"\n' > "$TEST_HOME/.config/teeup/answers"
   out="$(editor_probe "$root" "export SSH_CONNECTION='10.0.0.2 50000 10.0.0.1 22'")"
   assert_equals "emacsclient -t|emacsclient -t|emacsclient -t|emacsclient -t" "$out" "SSH_CONNECTION" || return 1
@@ -885,6 +888,7 @@ test_default_env_editor_falls_back_to_the_terminal_answer() {
   local root="$TEST_HOME/root" out
   mkdir -p "$root" "$TEST_HOME/.config/teeup"
   printf 'TEEUP_TERMINAL_EDITOR="nvim"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command nvim 0 ""
   out="$(editor_probe "$root" "")"
   assert_equals "nvim|nvim|nvim|nvim" "$out" || return 1
   cleanup_test_env
@@ -899,6 +903,7 @@ test_default_env_editor_keeps_an_inherited_editor() {
   make_emacsclient "$root/usr/local/bin"
   mkdir -p "$TEST_HOME/.config/teeup"
   printf 'TEEUP_EDITOR="zed --wait"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command zed 0 ""
   out="$(editor_probe "$root" "export EDITOR=nano VISUAL=micro")"
   assert_equals "nano|micro|nano|zed --wait" "$out" || return 1
   cleanup_test_env
@@ -908,7 +913,8 @@ test_default_env_editor_lets_the_machine_file_pin_win() {
   setup
   require_zsh || return 1
   local root="$TEST_HOME/root" out
-  mkdir -p "$root" "$TEST_HOME/.config/teeup/machines"
+  mkdir -p "$TEST_HOME/.config/teeup/machines"
+  make_emacsclient "$root/usr/local/bin"
   printf 'TEEUP_EDITOR="zed --wait"\n' > "$TEST_HOME/.config/teeup/answers"
   printf 'TEEUP_EDITOR="emacsclient -c"\n' > "$TEST_HOME/.config/teeup/machines/testmac.conf"
   # The hostname mock is a script that needs /bin/sh's tools to answer, and
@@ -916,6 +922,29 @@ test_default_env_editor_lets_the_machine_file_pin_win() {
   # editors this exposes are never consulted.
   out="$(editor_probe "$root" "PATH='$MOCK_BIN:/usr/bin:/bin'")"
   assert_equals "emacsclient -c|emacsclient -c|emacsclient -c|emacsclient -c" "$out" || return 1
+  cleanup_test_env
+}
+
+# An answer names an editor that is not installed: --skip-daily or
+# TEEUP_SKIP=emacs after the wizard chose Emacs, a failed install, or an
+# editor removed later. The shell must not export an editor that cannot open,
+# so it falls back: TEEUP_EDITOR, then TEEUP_TERMINAL_EDITOR, then the
+# automatic order.
+test_default_env_editor_skips_an_answer_whose_command_is_missing() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" out
+  mkdir -p "$root" "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_EDITOR="emacsclient -c"\nTEEUP_TERMINAL_EDITOR="emacsclient -t"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command nvim 0 ""
+  out="$(editor_probe "$root" "")"
+  assert_equals "nvim|nvim|nvim|nvim" "$out" "both answers missing: the automatic order" || return 1
+  printf 'TEEUP_EDITOR="zed --wait"\nTEEUP_TERMINAL_EDITOR="vim"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command vim 0 ""
+  out="$(editor_probe "$root" "")"
+  assert_equals "vim|vim|vim|vim" "$out" "a missing default editor falls back to the terminal answer" || return 1
+  out="$(editor_probe "$root" "export SSH_TTY=/dev/ttys004")"
+  assert_equals "vim|vim|vim|vim" "$out" "over SSH too" || return 1
   cleanup_test_env
 }
 
@@ -1067,6 +1096,7 @@ run_test "default env editor uses the terminal answer over ssh" test_default_env
 run_test "default env editor falls back to the terminal answer" test_default_env_editor_falls_back_to_the_terminal_answer
 run_test "default env editor keeps an inherited editor" test_default_env_editor_keeps_an_inherited_editor
 run_test "default env editor lets the machine file pin win" test_default_env_editor_lets_the_machine_file_pin_win
+run_test "default env editor skips an answer whose command is missing" test_default_env_editor_skips_an_answer_whose_command_is_missing
 run_test "default env prefers the user's own machine file over the repo's" test_default_env_prefers_the_users_own_machine_file_over_the_repos
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero

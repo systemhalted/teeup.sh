@@ -860,6 +860,20 @@ test_wizard_offers_the_terminal_emacs_on_macports() {
   cleanup_test_env
 }
 
+# The daily set answered yes, but this run will not install Emacs: the
+# default must not name an editor that will not exist.
+test_wizard_offers_nvim_when_emacs_is_skipped_this_run() {
+  setup
+  local out
+  out="$("$BOOT" --dry-run --skip-daily 2>&1 <<<"$WIZARD_INPUT")"
+  assert_equals "nvim" "$(first_choice "$out" "Default editor")" "--skip-daily" || return 1
+  assert_equals "nvim" "$(first_choice "$out" "Terminal editor")" "--skip-daily" || return 1
+  out="$(TEEUP_SKIP="emacs" "$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")"
+  assert_equals "nvim" "$(first_choice "$out" "Default editor")" "TEEUP_SKIP=emacs" || return 1
+  assert_equals "nvim" "$(first_choice "$out" "Terminal editor")" "TEEUP_SKIP=emacs" || return 1
+  cleanup_test_env
+}
+
 test_wizard_offers_nvim_without_the_daily_emacs() {
   setup
   local out
@@ -957,6 +971,7 @@ run_test "the wizard does not ask for a pinned flavor" test_wizard_does_not_ask_
 run_test "the wizard offers emacsclient with the daily Emacs" test_wizard_offers_emacsclient_with_the_daily_emacs
 run_test "the wizard offers nvim without the daily Emacs" test_wizard_offers_nvim_without_the_daily_emacs
 run_test "the wizard offers the terminal Emacs on MacPorts" test_wizard_offers_the_terminal_emacs_on_macports
+run_test "the wizard offers nvim when Emacs is skipped this run" test_wizard_offers_nvim_when_emacs_is_skipped_this_run
 run_test "the wizard offers the recorded editor first on a rerun" test_wizard_offers_the_recorded_editor_first_on_a_rerun
 run_test "the wizard does not ask for a pinned editor" test_wizard_does_not_ask_for_a_pinned_editor
 
