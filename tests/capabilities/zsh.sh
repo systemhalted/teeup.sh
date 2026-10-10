@@ -981,6 +981,11 @@ test_default_env_editor_sets_alternate_editor_for_an_emacsclient_path() {
 . '$TEEUP_PATH/capabilities/zsh/default/env'
 print -r -- \"\${ALTERNATE_EDITOR+set}|\$EDITOR\"" 2>/dev/null)"
   assert_equals "set|\"$app/emacsclient\" -c" "$out" || return 1
+  # An inherited non-empty value would stop emacsclient starting the daemon.
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" PATH="$MOCK_BIN" ALTERNATE_EDITOR=false "$zsh_bin" -f -c "unset EDITOR VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO SSH_CONNECTION SSH_TTY
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+print -r -- \"[\$ALTERNATE_EDITOR]\"" 2>/dev/null)"
+  assert_equals "[]" "$out" "an inherited ALTERNATE_EDITOR is cleared" || return 1
   cleanup_test_env
 }
 

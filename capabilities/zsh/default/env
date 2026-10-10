@@ -220,15 +220,6 @@ if [ -z "$_teeup_editor" ]; then
   fi
   unset _teeup_nvim
 fi
-# Matched on the command, so a full or quoted path (".../bin/emacsclient" -c)
-# counts too.
-case "$_teeup_editor" in
-  emacsclient*|*/emacsclient|*/emacsclient[\ \"\']*)
-    # An empty ALTERNATE_EDITOR makes emacsclient start the daemon itself.
-    ALTERNATE_EDITOR="${ALTERNATE_EDITOR:-}"
-    export ALTERNATE_EDITOR
-    ;;
-esac
 # A value set outside teeup is kept. A value equal to TEEUP_EDITOR_AUTO is one
 # an earlier pass chose (~/.zshenv before path_helper ran, or a parent shell),
 # so it is chosen again: otherwise a vim picked with macOS's minimal PATH
@@ -242,6 +233,18 @@ _teeup_chose=false
 if [ -z "${EDITOR:-}" ] || [ "$EDITOR" = "$_teeup_auto" ]; then
   EDITOR="$_teeup_editor"
   _teeup_chose=true
+fi
+# When teeup sets EDITOR to emacsclient, ALTERNATE_EDITOR is set to empty,
+# which makes emacsclient start the daemon itself; an inherited value (false,
+# say) would stop that. Matched on the command, so a full or quoted path
+# (".../bin/emacsclient" -c) counts too.
+if [ "$_teeup_chose" = "true" ]; then
+  case "$_teeup_editor" in
+    emacsclient*|*/emacsclient|*/emacsclient[\ \"\']*)
+      ALTERNATE_EDITOR=""
+      export ALTERNATE_EDITOR
+      ;;
+  esac
 fi
 if [ -z "${VISUAL:-}" ] || [ "$VISUAL" = "$_teeup_auto" ]; then
   VISUAL="$EDITOR"
