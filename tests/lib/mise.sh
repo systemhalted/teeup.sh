@@ -1099,6 +1099,29 @@ test_tool_install_records_its_link_and_remove_forgets_it() {
   cleanup_test_env
 }
 
+# The user deleted or replaced a teeup link before `teeup remove`: the record
+# must still drop the command, or a symlink the user makes later under the
+# same name would count as teeup's.
+test_tool_remove_forgets_a_link_that_is_gone_or_replaced() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  local record="$TEEUP_STATE_DIR/mise-links"
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  mise_tool_install tealdeer tldr >/dev/null 2>&1 || return 1
+  rm -f "$TEST_HOME/.local/bin/rg"
+  DRY_RUN=true mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
+  assert_equals "$(printf 'rg\ntldr')" "$(cat "$record")" "a dry run keeps the record" || return 1
+  mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
+  assert_equals "tldr" "$(cat "$record")" "a link that is gone leaves the record" || return 1
+  rm -f "$TEST_HOME/.local/bin/tldr"
+  printf '#!/bin/sh\n' > "$TEST_HOME/.local/bin/tldr"
+  mise_tool_remove tealdeer tldr false >/dev/null 2>&1 || return 1
+  assert_equals "" "$(cat "$record")" "a link the user replaced leaves the record" || return 1
+  [[ -f "$TEST_HOME/.local/bin/tldr" ]] || { echo "the user's file must stay"; return 1; }
+  cleanup_test_env
+}
+
 test_tool_remove_with_packages_uninstalls_the_pinned_version() {
   setup
   tools_fixture
@@ -1377,4 +1400,5 @@ run_test "conf keeps a skipped capability's old pin" test_conf_keeps_a_skipped_c
 run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
 run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_a_user_symlink_into_the_mise_installs_dir
 run_test "tool install records its link and remove forgets it" test_tool_install_records_its_link_and_remove_forgets_it
+run_test "tool remove forgets a link that is gone or replaced" test_tool_remove_forgets_a_link_that_is_gone_or_replaced
 print_summary

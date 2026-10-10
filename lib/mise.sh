@@ -708,7 +708,13 @@ mise_tool_remove() {
       ok_unless_dry "Removed the link: $command"
     else
       warn "Keeping $link: it was not written by teeup."
+      # The user replaced teeup's link: the command is no longer teeup's.
+      _mise_link_forget "$command" || warn "Could not drop $command from $(_mise_links_file)."
     fi
+  else
+    # The user deleted teeup's link: drop it from the record too, so a link
+    # the user makes later under the same name is not taken for teeup's.
+    _mise_link_forget "$command" || warn "Could not drop $command from $(_mise_links_file)."
   fi
   if [[ "$with_packages" != "true" ]]; then
     return 0
