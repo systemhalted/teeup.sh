@@ -159,6 +159,7 @@ _wizard_valid_email() { email_valid "$1"; }
 wizard() {
   local name email theme daily themes pinned_theme ask_theme=true
   local flavor="" current_flavor other_flavor flavors pinned_flavor
+  local effective_flavor editor="" terminal_editor="" default_editor default_terminal window_emacs
   echo ""
   echo "A few questions. Answers are saved to $(answers_file) and can be changed later with: ./bootstrap --reconfigure"
   echo ""
@@ -214,12 +215,74 @@ wizard() {
       flavor="$(ui_choose "Emacs flavor (starter is teeup's config; none leaves ~/.config/emacs alone)" $flavors)" || ui_rc_or_exit $?
     fi
   fi
+  # The editors default to Emacs when this run sets the daily Emacs up, and
+  # to nvim otherwise. The shell layer reads both answers (env, editor
+  # section); teeup config set changes them later.
+  effective_flavor="${flavor:-${pinned_flavor:-$(answers_get TEEUP_EMACS_FLAVOR starter)}}"
+  # MacPorts installs the terminal-only emacs port, which cannot open the
+  # window emacsclient -c asks for, so there the default editor is the
+  # terminal frame and -c is not offered.
+  window_emacs=true
+  if [[ "$(pkg_backend)" == "macports" ]]; then window_emacs=false; fi
+  # Emacs is the default only when this run installs it: --skip-daily and
+  # TEEUP_SKIP=emacs leave the daily answer yes but install no Emacs, and an
+  # answer naming an editor that does not exist leaves git commit nothing to
+  # open (the shell layer falls back too, for an install that fails).
+  if [[ "$daily" == "yes" && "$effective_flavor" != "none" && "${SKIP_DAILY:-false}" != "true" ]] &&
+     ! cap_skipped emacs; then
+    if [[ "$window_emacs" == "true" ]]; then
+      default_editor="emacsclient -c"
+    else
+      default_editor="emacsclient -t"
+    fi
+    default_terminal="emacsclient -t"
+  else
+    default_editor="nvim"
+    default_terminal="nvim"
+  fi
+  if [[ "$window_emacs" == "true" ]]; then
+    editor="$(_wizard_ask_editor TEEUP_EDITOR "Default editor" "$default_editor" \
+      "emacsclient -c" "emacsclient -t" nvim vim "zed --wait" "code --wait" "cursor --wait")" ||
+      ui_rc_or_exit $?
+  else
+    editor="$(_wizard_ask_editor TEEUP_EDITOR "Default editor" "$default_editor" \
+      "emacsclient -t" nvim vim "zed --wait" "code --wait" "cursor --wait")" ||
+      ui_rc_or_exit $?
+  fi
+  terminal_editor="$(_wizard_ask_editor TEEUP_TERMINAL_EDITOR "Terminal editor (over SSH, and when no default editor is set)" "$default_terminal" \
+    "emacsclient -t" nvim vim)" || ui_rc_or_exit $?
   answers_set TEEUP_NAME "$name"
   answers_set TEEUP_EMAIL "$email"
   if [[ "$ask_theme" == "true" ]]; then answers_set TEEUP_THEME "$theme"; fi
   answers_set TEEUP_DAILY "$daily"
   if [[ -n "$flavor" ]]; then answers_set TEEUP_EMACS_FLAVOR "$flavor"; fi
+  if [[ -n "$editor" ]]; then answers_set TEEUP_EDITOR "$editor"; fi
+  if [[ -n "$terminal_editor" ]]; then answers_set TEEUP_TERMINAL_EDITOR "$terminal_editor"; fi
   answers_load
+}
+
+# _wizard_ask_editor <key> <prompt> <default> <choice...> -> prints the chosen
+# editor, or nothing when the machine file pins <key> (asking would record an
+# answer nothing reads, the same rule as the theme). The recorded answer is
+# offered first, even one teeup config set wrote that is not in <choice...>,
+# so an empty reply keeps it; with none, <default> comes first.
+_wizard_ask_editor() {
+  local key="$1" prompt="$2" default="$3" pinned current choice
+  shift 3
+  if pinned="$(machine_get "$key")"; then
+    # To stderr: the caller captures stdout as the answer.
+    log "${prompt%% (*} is pinned to ${pinned:-<empty>} by $(machine_file); not asking." >&2
+    return 0
+  fi
+  current="$(answers_get "$key" "$default")"
+  local -a choices=()
+  local seen=$'\n'
+  for choice in "$current" "$default" "$@"; do
+    case "$seen" in *$'\n'"$choice"$'\n'*) continue ;; esac
+    seen="$seen$choice"$'\n'
+    choices+=("$choice")
+  done
+  ui_choose "$prompt" "${choices[@]}"
 }
 
 # The one question that cannot wait for the wizard: step 2 installs the package

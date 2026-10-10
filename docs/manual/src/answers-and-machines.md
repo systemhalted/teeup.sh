@@ -4,7 +4,7 @@ teeup reads its settings from two files: the answers file that the wizard writes
 
 | File | Written by | Holds |
 |---|---|---|
-| `~/.config/teeup/answers` | The wizard, `teeup config` and `teeup update --main` or `--release` | Your name and email, the theme, the daily set, the Emacs flavor, the package manager, the update channel |
+| `~/.config/teeup/answers` | The wizard, `teeup config` and `teeup update --main` or `--release` | Your name and email, the theme, the daily set, the Emacs flavor, the editors, the package manager, the update channel |
 | `~/.config/teeup/machines/<hostname>.conf` | You | Settings pinned for this Mac, and the only file where you configure a work identity |
 
 `<hostname>` is the short name that `hostname -s` prints.
@@ -19,6 +19,8 @@ The answers file is a list of `KEY="value"` lines that only you can read.
 | `TEEUP_THEME` | The theme | `teeup theme set <name>` |
 | `TEEUP_DAILY` | `yes` or `no`: installs the daily set | `./bootstrap` |
 | `TEEUP_EMACS_FLAVOR` | `starter`, `doom`, `spacemacs` or `none` | `teeup configure emacs` and `teeup update` |
+| `TEEUP_EDITOR` | The editor for a local session, for example `emacsclient -c` or `zed --wait`. See [Editors](shell-tools.md#editors). | A new terminal |
+| `TEEUP_TERMINAL_EDITOR` | The editor over SSH, and when `TEEUP_EDITOR` has no value, for example `emacsclient -t` or `nvim` | A new terminal |
 | `TEEUP_PACKAGE_MANAGER` | `homebrew` or `macports` | `./bootstrap` the first time |
 | `TEEUP_UPDATE_CHANNEL` | `release` or `main`: what `teeup update` follows. No value means `release`. See [Release or main](updates.md#release-or-main). | `teeup update` |
 
@@ -39,7 +41,7 @@ teeup config set TEEUP_EMACS_FLAVOR doom
 🔹 Run: teeup configure emacs -- that is what reads TEEUP_EMACS_FLAVOR (teeup update now covers it too).
 ```
 
-`teeup config edit` opens `$VISUAL`, then `$EDITOR`, then `vi`. If Emacs is installed, the teeup shell sets `EDITOR` and `VISUAL` to `emacsclient -t`. When you close the editor, teeup checks that every line has the `KEY="value"` format. If a line does not, teeup restores the previous file and prints the broken line. Because teeup reads the answers file at the start of every command, a broken line breaks `teeup config edit`.
+`teeup config edit` opens `$VISUAL`, then `$EDITOR`, then `vi`. The teeup shell sets `EDITOR` and `VISUAL` from your editor answers (see [Editors](shell-tools.md#editors)). When you close the editor, teeup checks that every line has the `KEY="value"` format. If a line does not, teeup restores the previous file and prints the broken line. Because teeup reads the answers file at the start of every command, a broken line breaks `teeup config edit`.
 
 `teeup config set` does not accept two keys:
 
@@ -63,10 +65,11 @@ Every setting in the machine file is optional:
 | `TEEUP_PACKAGE_MANAGER` | `TEEUP_PACKAGE_MANAGER="macports"` | Pins the package manager. |
 | `TEEUP_THEME` | `TEEUP_THEME="catppuccin"` | Pins the theme. |
 | `TEEUP_EMACS_FLAVOR` | `TEEUP_EMACS_FLAVOR="doom"` | Pins the Emacs flavor. |
+| `TEEUP_EDITOR`, `TEEUP_TERMINAL_EDITOR` | `TEEUP_EDITOR="zed --wait"` | Pins the editors. |
 | `TEEUP_WORK_EMAIL` and related keys | see [Identity](identity.md) | A second, work SSH key. |
 | `TEEUP_PERSONAL_SSH_HOST` and `TEEUP_PERSONAL_GH_ACCOUNT` | see [Identity](identity.md) | The SSH host alias and GitHub login for the personal identity. |
 
-A pinned key overrides the answers file. The wizard does not ask about a pinned theme, flavor, or package manager. If you set a different value with `teeup config set`, it warns you that the pin overrides it. To change a pinned value, edit the machine file.
+A pinned key overrides the answers file. The wizard does not ask about a pinned theme, flavor, editor, or package manager. If you set a different value with `teeup config set`, it warns you that the pin overrides it. To change a pinned value, edit the machine file.
 
 teeup checks the machine file. An invalid shell file or a malformed `TEEUP_WORK_EMAIL` stops every teeup command with an error.
 

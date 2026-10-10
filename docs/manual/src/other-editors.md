@@ -1,6 +1,6 @@
 # Other editors
 
-Emacs is the editor that teeup configures for the shell and git (read [Emacs](emacs.md)). Four more editors are available. They are all lazy, so teeup installs each one the first time you run it.
+If Emacs is installed and you do not select a different editor, the shell and git use Emacs (read [Editors](shell-tools.md#editors)). Four more editors are available. They are all lazy, so teeup installs each one the first time you run it.
 
 | Editor | Tier | How to get it | Capability |
 |---|---|---|---|

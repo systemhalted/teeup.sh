@@ -1,6 +1,6 @@
 # Emacs
 
-Emacs is in the daily tier. teeup installs the GUI build and the `emacs-app` cask, which puts `emacs` and `emacsclient` on your `PATH`. Emacs runs as a daemon from login, and git and the shell use `emacsclient` as their editor.
+Emacs is in the daily tier. teeup installs the GUI build and the `emacs-app` cask, which puts `emacs` and `emacsclient` on your `PATH`. Emacs runs as a daemon from login. If you do not select a different editor, git and the shell use `emacsclient` (read [Editors](shell-tools.md#editors)).
 
 <!-- SCREENSHOT: An Emacs window opened with `e README.md` from WezTerm, showing the teeup starter layer with the current theme. -->
 
@@ -53,7 +53,7 @@ The LaunchAgent `sh.teeup.emacs` starts `Emacs --fg-daemon` at login. `launchd` 
 |---|---|
 | `e <file>` | A new Emacs window (`emacsclient -c`) |
 | `et <file>` | A frame in the current terminal (`emacsclient -t`) |
-| `$EDITOR` and `$VISUAL` | `emacsclient -t`, so git, `teeup config edit`, and other tools open in the terminal |
+| `$EDITOR` and `$VISUAL` | The editor that you select in the wizard. With Emacs, the default is `emacsclient -c`, and `emacsclient -t` over SSH. Read [Editors](shell-tools.md#editors). |
 
 If the daemon is not running, `emacsclient` from the shell starts a new daemon, because the teeup shell sets an empty `ALTERNATE_EDITOR`.
 

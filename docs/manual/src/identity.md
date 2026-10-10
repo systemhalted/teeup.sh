@@ -7,7 +7,7 @@ teeup configures git, SSH, and GitHub with your name and personal email. Each ma
 | File | Owner | Holds |
 |---|---|---|
 | `~/.config/git/identity` | teeup | `user.name`, `user.email` and the signing key, from `TEEUP_NAME` and `TEEUP_EMAIL`. |
-| `~/.config/git/teeup-generated` | teeup | The editor, the pager, and whether git signs commits, from the software that is installed. |
+| `~/.config/git/teeup-generated` | teeup | The pager, and whether git signs commits, from the software that is installed. |
 | `~/.config/git/config` | You | Other settings: defaults, aliases, colours. It includes the two files above. |
 | `~/.config/git/local` | You | Optional. git includes this file last, so its settings have priority over all of the files above. |
 
@@ -20,7 +20,7 @@ teeup configure git
 
 If a repository needs a different address, run `git config user.email ...` in that repository. teeup does not change identities by directory.
 
-git signs commits with your SSH key, not with GPG. teeup enables signing when the key exists, and during a first bootstrap the SSH step creates the key and then configures git again. The editor is `emacsclient -t` if Emacs is installed, and `vim` if it is not. If delta is installed, the pager is delta.
+git signs commits with your SSH key, not with GPG. teeup enables signing when the key exists, and during a first bootstrap the SSH step creates the key and then configures git again. git uses the editor that the shell selects (read [Editors](shell-tools.md#editors)). If delta is installed, the pager is delta.
 
 ## SSH
 

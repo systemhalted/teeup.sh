@@ -461,10 +461,10 @@ test_default_env_editor_ignores_a_lazy_shim() {
   chmod +x "$shims/nvim"
   # Only MOCK_BIN and the shims are searched, so an nvim, emacsclient or vim
   # on the host cannot answer the probe.
-  out="$(PATH="$MOCK_BIN:$shims" "$zsh_bin" -f -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- \$EDITOR" 2>/dev/null)"
+  out="$(TEEUP_TEST_PREFIX_ROOT="$TEST_HOME/no-prefix" PATH="$MOCK_BIN:$shims" "$zsh_bin" -f -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- \$EDITOR" 2>/dev/null)"
   assert_equals "vim" "$out" "a lazy shim is not an installed nvim" || return 1
   mock_command nvim 0 ""
-  out="$(PATH="$MOCK_BIN:$shims" "$zsh_bin" -f -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- \$EDITOR" 2>/dev/null)"
+  out="$(TEEUP_TEST_PREFIX_ROOT="$TEST_HOME/no-prefix" PATH="$MOCK_BIN:$shims" "$zsh_bin" -f -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- \$EDITOR" 2>/dev/null)"
   assert_equals "nvim" "$out" "a real nvim ahead of the shims counts" || return 1
   cleanup_test_env
 }
@@ -796,6 +796,217 @@ EOF2
 }
 
 echo "capabilities/zsh"
+# --- editor choice ------------------------------------------------------------
+# editor_probe <prefix root> <zsh code run before env> -> one line,
+# EDITOR|VISUAL|SUDO_EDITOR|TEEUP_EDITOR_AUTO. Only MOCK_BIN is searched, and
+# TEEUP_TEST_PREFIX_ROOT moves /usr/local below <prefix root>, so an editor on
+# the host cannot answer. The four variables and the ssh markers are cleared
+# first; the <zsh code> sets whatever a test wants inherited.
+editor_probe() {
+  local root="$1" pre="$2" zsh_bin
+  zsh_bin="$(command -v zsh)"
+  TEEUP_TEST_PREFIX_ROOT="$root" PATH="$MOCK_BIN" "$zsh_bin" -f -c "unset EDITOR VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO SSH_CONNECTION SSH_TTY; $pre
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+print -r -- \"\$EDITOR|\$VISUAL|\$SUDO_EDITOR|\$TEEUP_EDITOR_AUTO\"" 2>/dev/null
+}
+
+# make_emacsclient <dir>: an executable emacsclient stand-in in <dir>.
+make_emacsclient() {
+  mkdir -p "$1"
+  printf '#!/bin/sh\nexit 0\n' > "$1/emacsclient"
+  chmod +x "$1/emacsclient"
+}
+
+# The owner's Mac: ~/.zshenv reads env with macOS's minimal PATH, which has no
+# /usr/local/bin, where emacsclient lives. env appends it the way /etc/paths
+# would, so the first pass already finds emacsclient.
+test_default_env_editor_finds_emacsclient_in_usr_local_bin() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/prefix root" out
+  make_emacsclient "$root/usr/local/bin"
+  out="$(editor_probe "$root" "")"
+  assert_equals "emacsclient -t|emacsclient -t|emacsclient -t|emacsclient -t" "$out" || return 1
+  cleanup_test_env
+}
+
+# The vim lock-in: the first pass (~/.zshenv) cannot see emacsclient and picks
+# vim; the second pass (~/.zprofile, after path_helper) can. A value teeup
+# chose itself is chosen again, so the second pass moves all three to
+# emacsclient -t. A child shell inherits the exports and does the same.
+test_default_env_editor_is_chosen_again_on_a_later_pass() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/empty root" late="$TEST_HOME/late bin" zsh_bin out
+  mkdir -p "$root"
+  make_emacsclient "$late"
+  zsh_bin="$(command -v zsh)"
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" PATH="$MOCK_BIN" "$zsh_bin" -f -c "unset EDITOR VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO SSH_CONNECTION SSH_TTY
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+first=\"\$EDITOR\"
+PATH='$late':\"\$PATH\"
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+print -r -- \"\$first|\$EDITOR|\$VISUAL|\$SUDO_EDITOR|\$TEEUP_EDITOR_AUTO\"" 2>/dev/null)"
+  assert_equals "vim|emacsclient -t|emacsclient -t|emacsclient -t|emacsclient -t" "$out" || return 1
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" PATH="$late:$MOCK_BIN" EDITOR=vim VISUAL=vim SUDO_EDITOR=vim TEEUP_EDITOR_AUTO=vim \
+    "$zsh_bin" -f -c "unset SSH_CONNECTION SSH_TTY; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- \"\$EDITOR|\$VISUAL|\$SUDO_EDITOR\"" 2>/dev/null)"
+  assert_equals "emacsclient -t|emacsclient -t|emacsclient -t" "$out" "a child shell chooses again" || return 1
+  cleanup_test_env
+}
+
+test_default_env_editor_uses_the_editor_answer_locally() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" out
+  make_emacsclient "$root/usr/local/bin"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_EDITOR="zed --wait"\nTEEUP_TERMINAL_EDITOR="nvim"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command zed 0 ""
+  out="$(editor_probe "$root" "")"
+  assert_equals "zed --wait|zed --wait|zed --wait|zed --wait" "$out" || return 1
+  cleanup_test_env
+}
+
+test_default_env_editor_uses_the_terminal_answer_over_ssh() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" out
+  mkdir -p "$TEST_HOME/.config/teeup"
+  make_emacsclient "$root/usr/local/bin"
+  mock_command zed 0 ""
+  printf 'TEEUP_EDITOR="zed --wait"\nTEEUP_TERMINAL_EDITOR="emacsclient -t"\n' > "$TEST_HOME/.config/teeup/answers"
+  out="$(editor_probe "$root" "export SSH_CONNECTION='10.0.0.2 50000 10.0.0.1 22'")"
+  assert_equals "emacsclient -t|emacsclient -t|emacsclient -t|emacsclient -t" "$out" "SSH_CONNECTION" || return 1
+  out="$(editor_probe "$root" "export SSH_TTY=/dev/ttys004")"
+  assert_equals "emacsclient -t|emacsclient -t|emacsclient -t|emacsclient -t" "$out" "SSH_TTY" || return 1
+  cleanup_test_env
+}
+
+test_default_env_editor_falls_back_to_the_terminal_answer() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" out
+  mkdir -p "$root" "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_TERMINAL_EDITOR="nvim"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command nvim 0 ""
+  out="$(editor_probe "$root" "")"
+  assert_equals "nvim|nvim|nvim|nvim" "$out" || return 1
+  cleanup_test_env
+}
+
+# An EDITOR or VISUAL a parent process set on purpose is not teeup's to
+# change; SUDO_EDITOR, unset, follows the inherited EDITOR as before.
+test_default_env_editor_keeps_an_inherited_editor() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" out
+  make_emacsclient "$root/usr/local/bin"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_EDITOR="zed --wait"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command zed 0 ""
+  out="$(editor_probe "$root" "export EDITOR=nano VISUAL=micro")"
+  assert_equals "nano|micro|nano|" "$out" "teeup did not choose the editor, so it records no choice" || return 1
+  cleanup_test_env
+}
+
+test_default_env_editor_lets_the_machine_file_pin_win() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" out
+  mkdir -p "$TEST_HOME/.config/teeup/machines"
+  make_emacsclient "$root/usr/local/bin"
+  printf 'TEEUP_EDITOR="zed --wait"\n' > "$TEST_HOME/.config/teeup/answers"
+  printf 'TEEUP_EDITOR="emacsclient -c"\n' > "$TEST_HOME/.config/teeup/machines/testmac.conf"
+  # The hostname mock is a script that needs /bin/sh's tools to answer, and
+  # the machine file is found by hostname. Both answers are set, so the host
+  # editors this exposes are never consulted.
+  out="$(editor_probe "$root" "PATH='$MOCK_BIN:/usr/bin:/bin'")"
+  assert_equals "emacsclient -c|emacsclient -c|emacsclient -c|emacsclient -c" "$out" || return 1
+  cleanup_test_env
+}
+
+# An answer names an editor that is not installed: --skip-daily or
+# TEEUP_SKIP=emacs after the wizard chose Emacs, a failed install, or an
+# editor removed later. The shell must not export an editor that cannot open,
+# so it falls back: TEEUP_EDITOR, then TEEUP_TERMINAL_EDITOR, then the
+# automatic order.
+test_default_env_editor_skips_an_answer_whose_command_is_missing() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" out
+  mkdir -p "$root" "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_EDITOR="emacsclient -c"\nTEEUP_TERMINAL_EDITOR="emacsclient -t"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command nvim 0 ""
+  out="$(editor_probe "$root" "")"
+  assert_equals "nvim|nvim|nvim|nvim" "$out" "both answers missing: the automatic order" || return 1
+  printf 'TEEUP_EDITOR="zed --wait"\nTEEUP_TERMINAL_EDITOR="vim"\n' > "$TEST_HOME/.config/teeup/answers"
+  mock_command vim 0 ""
+  out="$(editor_probe "$root" "")"
+  assert_equals "vim|vim|vim|vim" "$out" "a missing default editor falls back to the terminal answer" || return 1
+  out="$(editor_probe "$root" "export SSH_TTY=/dev/ttys004")"
+  assert_equals "vim|vim|vim|vim" "$out" "over SSH too" || return 1
+  cleanup_test_env
+}
+
+# An answer may quote an executable path with spaces in it, the way EDITOR
+# itself is written for git and crontab. The check must read the quoted path
+# as the command, not the fragment before the first space.
+test_default_env_editor_accepts_a_quoted_path_with_spaces() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" app="$TEST_HOME/My Editor.app/bin" out
+  mkdir -p "$root" "$app" "$TEST_HOME/.config/teeup"
+  printf '#!/bin/sh\nexit 0\n' > "$app/editor"
+  chmod +x "$app/editor"
+  printf 'TEEUP_EDITOR="\\"%s/editor\\" --wait"\n' "$app" > "$TEST_HOME/.config/teeup/answers"
+  out="$(editor_probe "$root" "")"
+  assert_equals "\"$app/editor\" --wait" "${out%%|*}" "double quotes" || return 1
+  printf "TEEUP_TERMINAL_EDITOR=\"'%s/editor' -nw\"\n" "$app" > "$TEST_HOME/.config/teeup/answers"
+  out="$(editor_probe "$root" "")"
+  assert_equals "'$app/editor' -nw" "${out%%|*}" "single quotes" || return 1
+  cleanup_test_env
+}
+
+# emacsclient starts the daemon itself only when ALTERNATE_EDITOR is empty,
+# and an answer may name it by a full or quoted path.
+test_default_env_editor_sets_alternate_editor_for_an_emacsclient_path() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" app="$TEST_HOME/Emacs App/bin" zsh_bin out
+  mkdir -p "$root" "$TEST_HOME/.config/teeup"
+  make_emacsclient "$app"
+  printf 'TEEUP_EDITOR="\\"%s/emacsclient\\" -c"\n' "$app" > "$TEST_HOME/.config/teeup/answers"
+  zsh_bin="$(command -v zsh)"
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" PATH="$MOCK_BIN" "$zsh_bin" -f -c "unset EDITOR VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO SSH_CONNECTION SSH_TTY ALTERNATE_EDITOR
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+print -r -- \"\${ALTERNATE_EDITOR+set}|\$EDITOR\"" 2>/dev/null)"
+  assert_equals "set|\"$app/emacsclient\" -c" "$out" || return 1
+  # An inherited non-empty value would stop emacsclient starting the daemon.
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" PATH="$MOCK_BIN" ALTERNATE_EDITOR=false "$zsh_bin" -f -c "unset EDITOR VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO SSH_CONNECTION SSH_TTY
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+print -r -- \"[\$ALTERNATE_EDITOR]\"" 2>/dev/null)"
+  assert_equals "[]" "$out" "an inherited ALTERNATE_EDITOR is cleared" || return 1
+  cleanup_test_env
+}
+
+# An inherited EDITOR that happens to equal teeup's automatic choice is still
+# not teeup's: a later pass, after emacsclient appears, must keep it.
+test_default_env_editor_keeps_an_inherited_editor_equal_to_the_automatic_one() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/empty root" late="$TEST_HOME/late bin" zsh_bin out
+  mkdir -p "$root"
+  make_emacsclient "$late"
+  zsh_bin="$(command -v zsh)"
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" PATH="$MOCK_BIN" EDITOR=vim "$zsh_bin" -f -c "unset VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO SSH_CONNECTION SSH_TTY
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+PATH='$late':\"\$PATH\"
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+print -r -- \"\$EDITOR|\$VISUAL|\$SUDO_EDITOR\"" 2>/dev/null)"
+  assert_equals "vim|vim|vim" "$out" || return 1
+  cleanup_test_env
+}
+
 test_env_survives_errexit_without_nvim() {
   setup
   require_zsh || return 1
@@ -805,7 +1016,7 @@ test_env_survives_errexit_without_nvim() {
   # under errexit, and this file is read by every zsh that starts, including
   # `zsh -e -c ...`. With no nvim, no hostname and no uname reachable, every
   # substitution in the file fails at once: the file must still finish.
-  out="$(PATH="$MOCK_BIN" "$zsh_bin" -f -e -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- reached-the-end" 2>/dev/null)" || rc=$?
+  out="$(TEEUP_TEST_PREFIX_ROOT="$TEST_HOME/no-prefix" PATH="$MOCK_BIN" "$zsh_bin" -f -e -c "unset EDITOR VISUAL; . '$TEEUP_PATH/capabilities/zsh/default/env'; print -r -- reached-the-end" 2>/dev/null)" || rc=$?
   assert_success "$rc" "errexit must not abort the shell layer" || return 1
   assert_contains "$out" "reached-the-end" || return 1
   cleanup_test_env
@@ -937,6 +1148,17 @@ run_test "default env lets the machine file override the answers file" test_defa
 run_test "default env moves the shims last under a macports machine file" test_default_env_moves_the_shims_last_under_a_macports_machine_file
 run_test "default env editor ignores a lazy shim" test_default_env_editor_ignores_a_lazy_shim
 run_test "env survives errexit without nvim" test_env_survives_errexit_without_nvim
+run_test "default env editor finds emacsclient in /usr/local/bin" test_default_env_editor_finds_emacsclient_in_usr_local_bin
+run_test "default env editor is chosen again on a later pass" test_default_env_editor_is_chosen_again_on_a_later_pass
+run_test "default env editor uses the editor answer locally" test_default_env_editor_uses_the_editor_answer_locally
+run_test "default env editor uses the terminal answer over ssh" test_default_env_editor_uses_the_terminal_answer_over_ssh
+run_test "default env editor falls back to the terminal answer" test_default_env_editor_falls_back_to_the_terminal_answer
+run_test "default env editor keeps an inherited editor" test_default_env_editor_keeps_an_inherited_editor
+run_test "default env editor lets the machine file pin win" test_default_env_editor_lets_the_machine_file_pin_win
+run_test "default env editor skips an answer whose command is missing" test_default_env_editor_skips_an_answer_whose_command_is_missing
+run_test "default env editor accepts a quoted path with spaces" test_default_env_editor_accepts_a_quoted_path_with_spaces
+run_test "default env editor sets ALTERNATE_EDITOR for an emacsclient path" test_default_env_editor_sets_alternate_editor_for_an_emacsclient_path
+run_test "default env editor keeps an inherited editor equal to the automatic one" test_default_env_editor_keeps_an_inherited_editor_equal_to_the_automatic_one
 run_test "default env prefers the user's own machine file over the repo's" test_default_env_prefers_the_users_own_machine_file_over_the_repos
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero
