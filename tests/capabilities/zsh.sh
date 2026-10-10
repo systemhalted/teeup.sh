@@ -948,6 +948,25 @@ test_default_env_editor_skips_an_answer_whose_command_is_missing() {
   cleanup_test_env
 }
 
+# An answer may quote an executable path with spaces in it, the way EDITOR
+# itself is written for git and crontab. The check must read the quoted path
+# as the command, not the fragment before the first space.
+test_default_env_editor_accepts_a_quoted_path_with_spaces() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" app="$TEST_HOME/My Editor.app/bin" out
+  mkdir -p "$root" "$app" "$TEST_HOME/.config/teeup"
+  printf '#!/bin/sh\nexit 0\n' > "$app/editor"
+  chmod +x "$app/editor"
+  printf 'TEEUP_EDITOR="\\"%s/editor\\" --wait"\n' "$app" > "$TEST_HOME/.config/teeup/answers"
+  out="$(editor_probe "$root" "")"
+  assert_equals "\"$app/editor\" --wait" "${out%%|*}" "double quotes" || return 1
+  printf "TEEUP_TERMINAL_EDITOR=\"'%s/editor' -nw\"\n" "$app" > "$TEST_HOME/.config/teeup/answers"
+  out="$(editor_probe "$root" "")"
+  assert_equals "'$app/editor' -nw" "${out%%|*}" "single quotes" || return 1
+  cleanup_test_env
+}
+
 test_env_survives_errexit_without_nvim() {
   setup
   require_zsh || return 1
@@ -1097,6 +1116,7 @@ run_test "default env editor falls back to the terminal answer" test_default_env
 run_test "default env editor keeps an inherited editor" test_default_env_editor_keeps_an_inherited_editor
 run_test "default env editor lets the machine file pin win" test_default_env_editor_lets_the_machine_file_pin_win
 run_test "default env editor skips an answer whose command is missing" test_default_env_editor_skips_an_answer_whose_command_is_missing
+run_test "default env editor accepts a quoted path with spaces" test_default_env_editor_accepts_a_quoted_path_with_spaces
 run_test "default env prefers the user's own machine file over the repo's" test_default_env_prefers_the_users_own_machine_file_over_the_repos
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero

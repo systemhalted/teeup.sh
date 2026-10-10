@@ -2330,6 +2330,20 @@ test_config_set_editor_warns_about_an_unknown_command_but_keeps_it() {
   cleanup_test_env
 }
 
+# A quoted executable path with spaces is one command, the way the shell
+# layer reads it: no warning when that path exists.
+test_config_set_editor_accepts_a_quoted_path_with_spaces() {
+  setup
+  seed_config_answers
+  local app="$TEST_HOME/My Editor.app/bin" out
+  mkdir -p "$app"
+  printf '#!/bin/sh\nexit 0\n' > "$app/editor"
+  chmod +x "$app/editor"
+  out="$("$TEEUP" config set TEEUP_EDITOR "\"$app/editor\" --wait" 2>&1)"
+  assert_not_contains "$out" "is not a command on PATH" || return 1
+  cleanup_test_env
+}
+
 # R7.6: _config_keys must see an `export KEY=value` line too, or a key that
 # exists only that way in a hand-written machine file stays invisible.
 test_config_keys_accepts_an_exported_machine_line() {
@@ -3010,6 +3024,7 @@ run_test "config keys accepts an exported machine line" test_config_keys_accepts
 run_test "config get knows the editor answers before they are set" test_config_get_knows_the_editor_answers_before_they_are_set
 run_test "config set editor says to open a new terminal" test_config_set_editor_says_to_open_a_new_terminal
 run_test "config set editor warns about an unknown command but keeps it" test_config_set_editor_warns_about_an_unknown_command_but_keeps_it
+run_test "config set accepts an editor path with spaces in quotes" test_config_set_editor_accepts_a_quoted_path_with_spaces
 run_test "config get header lists both machine files" test_config_get_header_lists_both_machine_files_when_both_exist
 run_test "config get shows a leftover work answer as ignored" test_config_get_shows_a_leftover_work_answer_as_ignored
 run_test "config get shows the machine file's work answer as pinned" test_config_get_shows_the_machine_files_work_answer_as_pinned

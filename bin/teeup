@@ -962,12 +962,18 @@ _config_apply_hint() {
 # teeup lazy shim counts, since the first call installs the command.
 _config_editor_check() {
   local key="$1" value="$2" cmd
-  cmd="${value%%[[:space:]]*}"
+  # The command is the first word, or a quoted path that holds spaces, the
+  # same rule the shell layer (capabilities/zsh/default/env) applies.
+  case "$value" in
+    \"*) cmd="${value#\"}"; cmd="${cmd%%\"*}" ;;
+    \'*) cmd="${value#\'}"; cmd="${cmd%%\'*}" ;;
+    *) cmd="${value%%[[:space:]]*}" ;;
+  esac
   [[ -n "$cmd" ]] || return 0
   if command -v "$cmd" >/dev/null 2>&1 || [[ -x "$TEEUP_STATE_DIR/shims/$cmd" ]]; then
     return 0
   fi
-  warn "$cmd is not a command on PATH; $key is saved, but a shell cannot start it until it is installed."
+  warn "$cmd is not a command on PATH; $key is saved, but the shell uses a different editor until $cmd is installed."
   return 0
 }
 

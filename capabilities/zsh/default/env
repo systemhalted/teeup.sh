@@ -184,14 +184,28 @@ export PATH
 # after the wizard chose it, a failed install, an editor removed later) would
 # leave git commit and crontab -e with nothing to open, so the next one is
 # tried. A lazy shim counts, because the answer asked for that editor.
+#
+# _teeup_editor_ok <answer>: true when the answer's command exists. The command
+# is the first word, or a path in double or single quotes when it holds spaces
+# ("/Applications/My Editor.app/.../editor" --wait), as EDITOR is written for
+# git and crontab.
+_teeup_editor_ok() {
+  case "$1" in
+    \"*) _teeup_editor_word="${1#\"}"; _teeup_editor_word="${_teeup_editor_word%%\"*}" ;;
+    \'*) _teeup_editor_word="${1#\'}"; _teeup_editor_word="${_teeup_editor_word%%\'*}" ;;
+    *) _teeup_editor_word="${1%% *}" ;;
+  esac
+  command -v "$_teeup_editor_word" >/dev/null 2>&1
+}
 _teeup_editor=""
 if [ -z "${SSH_CONNECTION:-}" ] && [ -z "${SSH_TTY:-}" ] && [ -n "${TEEUP_EDITOR:-}" ] &&
-   command -v "${TEEUP_EDITOR%% *}" >/dev/null 2>&1; then
+   _teeup_editor_ok "$TEEUP_EDITOR"; then
   _teeup_editor="$TEEUP_EDITOR"
-elif [ -n "${TEEUP_TERMINAL_EDITOR:-}" ] &&
-   command -v "${TEEUP_TERMINAL_EDITOR%% *}" >/dev/null 2>&1; then
+elif [ -n "${TEEUP_TERMINAL_EDITOR:-}" ] && _teeup_editor_ok "$TEEUP_TERMINAL_EDITOR"; then
   _teeup_editor="$TEEUP_TERMINAL_EDITOR"
 fi
+unset -f _teeup_editor_ok
+unset _teeup_editor_word
 if [ -z "$_teeup_editor" ]; then
   _teeup_nvim="$(command -v nvim 2>/dev/null || true)"
   case "$_teeup_nvim" in
