@@ -392,6 +392,26 @@ _update_checkout() {
   return $rc
 }
 
+# _update_head -> the commit the checkout is on; nothing when it is not a git
+# checkout or git is missing. cmd_update compares it before and after
+# _update_checkout.
+_update_head() {
+  if [[ ! -e "$TEEUP_PATH/.git" ]] || ! have git; then
+    return 0
+  fi
+  git -C "$TEEUP_PATH" rev-parse HEAD 2>/dev/null || true
+}
+
+# _update_mise_tools: the pinned tools at the versions the lock names now
+# (#112), for every installed capability, lazy ones included. It runs in a
+# fresh bash because this process loaded lib/ before _update_checkout moved
+# the checkout, and the new release's lock has to be read by the new
+# release's code.
+_update_mise_tools() {
+  run_logged "mise tools" false \
+    bash -eu -c 'source "$TEEUP_PATH/lib/all.sh"; answers_load; mise_tools_sync'
+}
+
 # _update_set_channel <main|release>: what `teeup update --main|--release`
 # saves before the update runs. The machine file is sourced after the
 # answers file, so a pin there keeps winning: say so, and keep this run on
@@ -468,7 +488,7 @@ _update_configure_tier() {
 # configure, because a script can decide "not applicable" during this very
 # run, not only at install time.
 cmd_update() {
-  local target="" channel="" failed=0 name pkg cask rc=0 theme_done=false current_theme
+  local target="" channel="" failed=0 name pkg cask rc=0 theme_done=false current_theme head_before head_after
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --main|--release)
@@ -551,13 +571,29 @@ cmd_update() {
   if [[ -n "$channel" ]]; then
     _update_set_channel "$channel"
   fi
+  head_before="$(_update_head)"
   _update_checkout || rc=$?
   if [[ $rc -eq 2 ]]; then exit 1; fi
   if [[ $rc -ne 0 ]]; then failed=1; fi
+  head_after="$(_update_head)"
 
   pkg_update || { warn "$(pkg_backend_label) could not refresh its index."; failed=1; }
-  pkg_upgrade_all || { warn "$(pkg_backend_label) could not upgrade everything."; failed=1; }
+  # Package-manager formulae cannot be pinned (#112), so they move only when
+  # teeup does: a new release, or new commits on the main channel. An update
+  # that stays on the same commit leaves their versions where they are. A
+  # checkout that is not git (or has no git on PATH) has no commit to compare,
+  # so it keeps today's behaviour instead: upgrade on every run.
+  if [[ -z "$head_before" || "$head_before" != "$head_after" ]]; then
+    pkg_upgrade_all || { warn "$(pkg_backend_label) could not upgrade everything."; failed=1; }
+  elif [[ "$DRY_RUN" == "true" ]]; then
+    log "A dry run does not move the checkout, so it upgrades no packages. A real run upgrades them when it moves teeup to a new commit."
+  else
+    log "teeup is still on the same commit, so the packages it installed keep their versions. A new release upgrades them."
+  fi
+  # mise upgrade moves what the user added with `mise use -g`; the pinned
+  # tools carry exact versions, which it leaves alone.
   mise_upgrade || failed=1
+  _update_mise_tools || failed=1
 
   # After the upgrades, before the configures. A migration exists to adjust a
   # config for a NEW version of a tool, so it has to see the version this

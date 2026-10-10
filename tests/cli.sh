@@ -863,7 +863,9 @@ EOF2
 
 # Everything `teeup update` reaches out to, mocked: the checkout is clean and
 # one release (v9.9.9) behind origin/main's newest, with HEAD detached; the
-# package manager and mise do nothing, and the fixture core.list is alpha+beta.
+# checkout moves when `git checkout` runs, the way a real one does, so
+# `rev-parse HEAD` answers 1111111 before it and 9999999 after; the package
+# manager and mise do nothing, and the fixture core.list is alpha+beta.
 # lib/channel.sh's own suite runs the release rule against real git.
 mock_update_world() {
   mock_command_script git <<'EOF2'
@@ -871,7 +873,8 @@ case "$*" in
   *status*) exit 0 ;;
   *"for-each-ref"*) echo refs/teeup/releases/v9.9.9 ;;
   *"rev-list --count"*) echo 5 ;;
-  *"rev-parse HEAD") echo 1111111 ;;
+  *"checkout --quiet --detach"*) echo 9999999 > "$HOME/mock-git-head" ;;
+  *"rev-parse HEAD") cat "$HOME/mock-git-head" 2>/dev/null || echo 1111111 ;;
   *rev-parse*) echo 9999999 ;;
   *symbolic-ref*) exit 1 ;;
 esac
@@ -1229,6 +1232,7 @@ test_update_walks_every_step_in_order() {
   assert_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / upgrade" || return 1
+  assert_contains "$out" "Completed: mise tools" || return 1
   assert_contains "$out" "configure:alpha" || return 1
   assert_contains "$out" "configure:beta" || return 1
   assert_not_contains "$out" "install:alpha" "update never installs" || return 1
@@ -1268,11 +1272,105 @@ esac
 exit 0
 EOF2
   : > "$MOCK_LOG"
+  # A second update only upgrades formulae when it moves teeup again.
+  rm -f "$TEST_HOME/mock-git-head"
   local rc=0
   out="$("$TEEUP" update 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "Could not upgrade formulas: ripgrep fzf" || return 1
   assert_contains "$out" "teeup update finished, with the problems above." || return 1
+  cleanup_test_env
+}
+
+test_update_leaves_formulae_alone_when_the_checkout_stays() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  echo 9999999 > "$TEST_HOME/mock-git-head"
+  : > "$MOCK_LOG"
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "teeup is on the newest release, v9.9.9." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew update" "the index still refreshes" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade" "formulae cannot be pinned, so they move only with teeup" || return 1
+  assert_contains "$out" "teeup is still on the same commit, so the packages it installed keep their versions." || return 1
+  assert_contains "$out" "configure:alpha" "the rest of the update still runs" || return 1
+  cleanup_test_env
+}
+
+test_update_dry_run_upgrades_no_formulae() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  : > "$MOCK_LOG"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" update 2>&1)"
+  assert_contains "$out" "Would execute: git -C $TEEUP_PATH checkout --quiet --detach refs/teeup/releases/v9.9.9" || return 1
+  assert_not_contains "$out" "brew upgrade" || return 1
+  assert_contains "$out" "A dry run does not move the checkout, so it upgrades no packages." || return 1
+  cleanup_test_env
+}
+
+# A release that moves a pin moves the tool, on every capability installed
+# here, lazy ones included: update never runs a lazy capability's configure.
+test_update_relinks_a_lazy_tool_whose_lock_version_changed() {
+  setup
+  mock_update_world
+  mock_mise_tools
+  export TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  printf 'ripgrep 15.2.0\n' > "$TEEUP_TOOLS_LOCK"
+  make_cap search lazy
+  printf 'mise_tools="ripgrep:rg"\n' >> "$TEEUP_CAPS_DIR/search/capability"
+  printf '#!/usr/bin/env bash\nmise_tools_apply "$TEEUP_CAP"\n' > "$TEEUP_CAPS_DIR/search/install"
+  "$TEEUP" install search >/dev/null 2>&1
+  local installs="$TEST_HOME/.local/share/mise/installs/ripgrep" link="$TEST_HOME/.local/bin/rg" out
+  assert_equals "$installs/15.2.0/bin/rg" "$(readlink "$link")" "fixture: linked at the first version" || return 1
+  printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.3.0" || return 1
+  assert_equals "$installs/15.3.0/bin/rg" "$(readlink "$link")" || return 1
+  assert_dir_exists "$installs/15.2.0" "the old version stays for mise prune" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/mise/conf.d/teeup.toml")" '"ripgrep" = "15.3.0"' || return 1
+  assert_not_contains "$out" "configure:search" "update still leaves a lazy capability's configure alone" || return 1
+  assert_contains "$out" "teeup is up to date." || return 1
+  cleanup_test_env
+}
+
+test_update_reports_a_pinned_tool_that_would_not_install() {
+  setup
+  mock_update_world
+  mock_mise_tools
+  export TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  printf 'ripgrep 15.2.0\n' > "$TEEUP_TOOLS_LOCK"
+  make_cap search lazy
+  printf 'mise_tools="ripgrep:rg"\n' >> "$TEEUP_CAPS_DIR/search/capability"
+  printf '#!/usr/bin/env bash\nmise_tools_apply "$TEEUP_CAP"\n' > "$TEEUP_CAPS_DIR/search/install"
+  "$TEEUP" install search >/dev/null 2>&1
+  printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
+  local rc=0 out
+  out="$(MOCK_MISE_FAIL_INSTALL=ripgrep "$TEEUP" update 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "mise could not install ripgrep 15.3.0" || return 1
+  assert_contains "$out" "teeup update finished, with the problems above." || return 1
+  assert_equals "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$(readlink "$TEST_HOME/.local/bin/rg")" "the working version stays linked" || return 1
+  cleanup_test_env
+}
+
+# Preflight ruling: a checkout that is not git (or has no git on PATH) keeps
+# today's behaviour -- formulae upgrade on every run, because the "only when
+# teeup moves" rule has no commit to compare against.
+test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  : > "$MOCK_LOG"
+  local out
+  out="$(TEEUP_TEST_MISSING=git "$TEEUP" update 2>&1)" || true
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "a non-git checkout has no commit to compare, so formulae upgrade every run" || return 1
+  assert_not_contains "$out" "teeup is still on the same commit" || return 1
   cleanup_test_env
 }
 
@@ -2889,6 +2987,11 @@ run_test "reset refuses what it cannot reset" test_reset_refuses_what_it_cannot_
 run_test "reset reports a refused write plainly" test_reset_reports_a_refused_write_plainly
 run_test "dev add-migration creates a named scaffold" test_dev_add_migration_creates_a_named_scaffold
 run_test "update upgrades only what teeup installed" test_update_upgrades_only_what_teeup_installed
+run_test "update leaves formulae alone when the checkout stays" test_update_leaves_formulae_alone_when_the_checkout_stays
+run_test "update dry run upgrades no formulae" test_update_dry_run_upgrades_no_formulae
+run_test "update relinks a lazy tool whose lock version changed" test_update_relinks_a_lazy_tool_whose_lock_version_changed
+run_test "update reports a pinned tool that would not install" test_update_reports_a_pinned_tool_that_would_not_install
+run_test "update upgrades formulae when teeup is not a git checkout" test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout
 run_test "update upgrades packages before running migrations" test_update_upgrades_packages_before_running_migrations
 run_test "update runs migrations before configuring" test_update_runs_migrations_before_configuring
 run_test "update walks every step in order" test_update_walks_every_step_in_order
