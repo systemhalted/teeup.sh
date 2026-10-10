@@ -1351,6 +1351,45 @@ test_tool_remove_with_packages_uninstalls_the_retained_pin() {
   cleanup_test_env
 }
 
+# Task 3 (PR #119 Codex round 3): a command whose ~/.local/bin link teeup
+# never wrote (the user's own symlink into the pinned install, say) is not
+# teeup's to uninstall either: `mise uninstall` must not run for it, even
+# though the pinned version really is installed and really is what the link
+# runs.
+test_tool_remove_with_packages_keeps_a_foreign_links_version() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise -C / install ripgrep@15.2.0 >/dev/null 2>&1
+  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg"
+  mkdir -p "$TEST_HOME/.local/bin"
+  ln -s "$mine" "$TEST_HOME/.local/bin/rg"
+  local out
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup." || return 1
+  assert_contains "$out" "Keeping ripgrep 15.2.0: teeup did not link rg, so it leaves the version installed." || return 1
+  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "the user's link stays" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the version stays installed" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  cleanup_test_env
+}
+
+# The record (not just the live link) decides ownership: the user deleted
+# teeup's link, but the command is still on teeup's mise-links record, so the
+# version it names is still teeup's to uninstall.
+test_tool_remove_with_packages_uninstalls_when_the_teeup_link_is_gone() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  rm -f "$TEST_HOME/.local/bin/rg"
+  local out
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
+  [[ ! -e "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" ]] || { echo "the pinned version must go"; return 1; }
+  cleanup_test_env
+}
+
 test_local_bin_on_path_moves_a_later_entry_to_the_front() {
   setup
   # This PATH has no /bin, where macOS keeps rm, so it is restored before
@@ -1462,6 +1501,8 @@ run_test "conf keeps a skipped capability's old pin" test_conf_keeps_a_skipped_c
 run_test "conf warns once when MISE_GLOBAL_CONFIG_FILE is set" test_conf_warns_once_when_mise_global_config_file_is_set
 run_test "conf says nothing about MISE_GLOBAL_CONFIG_FILE with nothing to pin" test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin
 run_test "tool remove with packages uninstalls the retained pin" test_tool_remove_with_packages_uninstalls_the_retained_pin
+run_test "tool remove with packages keeps a foreign link's version" test_tool_remove_with_packages_keeps_a_foreign_links_version
+run_test "tool remove with packages uninstalls when the teeup link is gone" test_tool_remove_with_packages_uninstalls_when_the_teeup_link_is_gone
 run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
 run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_a_user_symlink_into_the_mise_installs_dir
 run_test "tool install records its link and remove forgets it" test_tool_install_records_its_link_and_remove_forgets_it

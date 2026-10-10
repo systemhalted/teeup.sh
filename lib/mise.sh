@@ -723,15 +723,22 @@ mise_tool_install() {
 # without the capability), which can differ from the lock's current version
 # when a bumped pin's download failed and the old one was carried forward
 # (mise_tools_conf_write). Both are uninstalled when they differ and are
-# both actually installed. The conf.d file itself is the caller's to
-# rewrite (cap_remove does it once per capability).
+# both actually installed. `mise uninstall` never runs for a command teeup
+# did not link, even when it is the pinned version that runs: a file or
+# link at the path that is not teeup's (or, for a missing path, is not on
+# teeup's mise-links record at all) means the version is not teeup's to take
+# away either. A path that is simply missing but still on the record (teeup
+# linked it; the user deleted the link) is still teeup's. The conf.d file
+# itself is the caller's to rewrite (cap_remove does it once per
+# capability).
 # 0 removed or nothing to do; 1 something that should be gone is still there.
 mise_tool_remove() {
-  local tool="$1" command="$2" with_packages="${3:-false}" link version spec conf_version versions v rc=0
+  local tool="$1" command="$2" with_packages="${3:-false}" link version spec conf_version versions v rc=0 owns=false
   _mise_plain_names mise_tool_remove "$tool" "$command" || return 1
   link="$HOME/.local/bin/$command"
   if [[ -e "$link" || -L "$link" ]]; then
     if mise_tool_link_owned "$link"; then
+      owns=true
       if ! run_cmd rm -f "$link"; then
         warn "Could not remove $link. Fix its permissions and try again."
         return 1
@@ -748,6 +755,11 @@ mise_tool_remove() {
       _mise_link_forget "$command" || warn "Could not drop $command from $(_mise_links_file)."
     fi
   else
+    # Ask the record before forgetting it: teeup owns the version named
+    # below exactly when it owned the link that is now gone.
+    if _mise_link_recorded "$command"; then
+      owns=true
+    fi
     # The user deleted teeup's link: drop it from the record too, so a link
     # the user makes later under the same name is not taken for teeup's.
     _mise_link_forget "$command" || warn "Could not drop $command from $(_mise_links_file)."
@@ -757,6 +769,10 @@ mise_tool_remove() {
   fi
   if ! version="$(tools_lock_version "$tool")"; then
     log "$TEEUP_TOOLS_LOCK has no line for $tool, so no pinned version of it is uninstalled."
+    return 0
+  fi
+  if [[ "$owns" != "true" ]]; then
+    log "Keeping $tool $version: teeup did not link $command, so it leaves the version installed."
     return 0
   fi
   spec="$(tools_lock_spec "$tool")"
