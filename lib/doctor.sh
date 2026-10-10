@@ -242,9 +242,12 @@ _doctor_mise_tools_check() {
     elif ! mise_tool_link_is "$link" "$bin"; then
       _doctor_report_failure "$cap" "$link does not run $tool $version, the version teeup pins." "teeup configure $cap"
     else
+      # bin/teeup puts ~/.local/bin first on its own PATH (local_bin_on_path),
+      # so this cannot see the order in the user's shell. It only catches
+      # something other than teeup's link that answers to the name first.
       found="$(command -v "$command_name" 2>/dev/null || true)"
       if [[ "$found" != "$link" ]]; then
-        doctor_warn "$command_name resolves to ${found:-nothing} on this PATH, not to teeup's $link ($tool $version). New terminals put $HOME/.local/bin first; check that this shell does too."
+        doctor_warn "$command_name resolves to ${found:-nothing} on this PATH, not to teeup's $link ($tool $version). teeup puts $HOME/.local/bin first on its own PATH, so something else answers to $command_name first. This check does not see the PATH of your shell."
       elif command_runs "$command_name"; then
         doctor_ok "$command_name is $tool $version through mise."
       else
