@@ -1,6 +1,6 @@
 # Core tier: what every terminal session needs. Ordered; each entry's
 # requires= must already be satisfied by the entries above it. mise comes
-# right after teeup-runtime: it needs only the package manager, and zsh,
+# right after teeup-runtime: it needs only the package manager, and
 # starship, cli-tools and git install their user tools through it (#112).
 xcode-clt
 ca-bundle
