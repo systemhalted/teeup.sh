@@ -72,6 +72,7 @@ The five input classes the spec implies and a happy-path test suite would miss, 
 9. **ollama loses its formula fallback.** When the cask cannot install (macOS 13, MacPorts), the `ollama` command still comes from mise and the message tells the user to start the server with `ollama serve`.
 10. **The `tldr` to `tealdeer` MacPorts mapping leaves `package_candidates`.** No capability lists `tldr` as a package any more. Doctor's old-copy notice keeps that knowledge in `mise_tool_old_packages`.
 11. **Task order differs from the suggested decomposition.** Remove/uninstall (Task 6) and doctor (Task 7) land before the metadata switch (Task 8), so no commit exists where a moved tool cannot be removed or is not checked. The lock/metadata agreement test moves from Task 1 to Task 8, because "the lock names nothing else" cannot pass before the metadata names the tools. The core.list reorder is Task 5, after the mise mock exists (Task 4), because `requires=mise` makes `teeup install starship` reach the mise capability in suites that until then never mocked mise.
+12. **`mise_tools_sync` skips the tools of a TEEUP_SKIP'd capability, and `mise_tools_conf_write` keeps that capability's existing pin rather than pinning a version that was never installed.**
 
 ---
 
