@@ -23,6 +23,7 @@ done
 if [[ -n "$failed" ]]; then
   warn "Could not install:$failed. Install them by hand, or re-run: teeup install cli-tools"
 fi
-if ! mise_tools_apply "$TEEUP_CAP"; then
+# With mise skipped, mise_tools_apply has said so, and configure cannot help.
+if ! mise_tools_apply "$TEEUP_CAP" && ! cap_skipped mise; then
   warn "Some of the tools that come from mise are missing (the lines above say which). Fix the cause, then run: teeup configure cli-tools"
 fi

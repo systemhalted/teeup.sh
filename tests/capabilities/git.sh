@@ -59,6 +59,15 @@ test_install_gets_git_delta_lfs_and_lazygit() {
   cleanup_test_env
 }
 
+test_install_with_mise_skipped_warns_once() {
+  setup
+  local out
+  out="$(TEEUP_SKIP=mise DRY_RUN=true "$TEEUP" install git 2>&1)" || true
+  assert_contains "$out" "mise is skipped on this machine (TEEUP_SKIP), so teeup does not install" || return 1
+  assert_not_contains "$out" "delta, git-lfs or lazygit is missing" "configure cannot help while mise is skipped" || return 1
+  cleanup_test_env
+}
+
 test_configure_writes_the_one_identity() {
   setup
   seed_answers
@@ -1635,6 +1644,7 @@ test_doctor_gitconfig_local_fix_names_a_symlink_target() {
 }
 
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
+run_test "install with mise skipped warns once" test_install_with_mise_skipped_warns_once
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
 run_test "a configured work identity does not change the git identity" test_a_configured_work_identity_does_not_change_the_git_identity
 run_test "configure without answers warns and writes no identity" test_configure_without_answers_warns_and_writes_no_identity

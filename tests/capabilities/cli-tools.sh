@@ -203,6 +203,15 @@ test_install_on_macports_gets_the_same_mise_tools() {
   cleanup_test_env
 }
 
+test_install_with_mise_skipped_warns_once() {
+  setup
+  local out
+  out="$(TEEUP_SKIP=mise DRY_RUN=true "$TEEUP" install cli-tools 2>&1)" || true
+  assert_contains "$out" "mise is skipped on this machine (TEEUP_SKIP), so teeup does not install" || return 1
+  assert_not_contains "$out" "Some of the tools that come from mise are missing" "configure cannot help while mise is skipped" || return 1
+  cleanup_test_env
+}
+
 test_configure_writes_the_bat_config() {
   setup
   DRY_RUN=false "$TEEUP" configure cli-tools >/dev/null 2>&1
@@ -236,6 +245,7 @@ run_test "install skips tools already on PATH" test_install_skips_tools_already_
 run_test "install links every mise tool" test_install_links_every_mise_tool
 run_test "install warns but survives a missing port or tool" test_install_warns_but_survives_a_missing_port_or_tool
 run_test "install on MacPorts gets the same mise tools" test_install_on_macports_gets_the_same_mise_tools
+run_test "install with mise skipped warns once" test_install_with_mise_skipped_warns_once
 run_test "configure writes the bat config" test_configure_writes_the_bat_config
 run_test "configure is idempotent" test_configure_is_idempotent
 print_summary

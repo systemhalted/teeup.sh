@@ -8,6 +8,7 @@ pkg_install git || die "git is required and could not be installed."
 # delta, git-lfs and lazygit come from mise at the versions in
 # share/teeup/tools.lock (#112). delta is the pager the generated config
 # names, so a missing one is loud; configure falls back to less without it.
-if ! mise_tools_apply "$TEEUP_CAP"; then
+# With mise skipped, mise_tools_apply has said so, and configure cannot help.
+if ! mise_tools_apply "$TEEUP_CAP" && ! cap_skipped mise; then
   warn "delta, git-lfs or lazygit is missing (the lines above say which). git uses less as its pager until delta is there. Fix the cause, then run: teeup configure git"
 fi
