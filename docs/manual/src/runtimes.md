@@ -29,7 +29,7 @@ teeup uses two sources. The tools that teeup itself needs come from Homebrew or 
 
 The file `share/teeup/tools.lock` in the teeup checkout records the versions of the second row. A new teeup release can change these versions. teeup installs each tool with mise and puts a link to it in `~/.local/bin`. A command then starts the tool directly, without mise, so it starts as fast as a Homebrew copy.
 
-teeup records the same versions in `~/.config/mise/conf.d/teeup.toml`, so `mise prune` keeps them. teeup never edits your `~/.config/mise/config.toml`. If you set a version for one of these tools in your own file, a shell that runs `mise activate` uses your version.
+teeup records the same versions in `~/.config/mise/conf.d/teeup.toml`, so `mise prune` keeps them. teeup never edits your `~/.config/mise/config.toml`. mise reads both files, and its own rules decide which version applies. See the [mise configuration](https://mise.jdx.dev/configuration.html) page.
 
 Language runtimes come from mise because projects need different versions. Each project specifies its versions in `mise.toml`, and `mise activate` changes between them when you change directories. mise downloads each AI tool the first time that you run it.
 
