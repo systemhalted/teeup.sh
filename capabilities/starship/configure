@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 # Copied once and then yours. The palette block between the teeup:theme-palette
 # markers is the exception: `teeup theme set` rewrites it in place.
+mise_tools_repair "$TEEUP_CAP"
 copy_config_once "$TEEUP_CAP_DIR/config/starship.toml" "$(user_config_dir)/starship.toml"

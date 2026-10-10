@@ -169,7 +169,7 @@ cap_install_verbs() {
 
 # cap_check -> lints every capability; prints one problem per line.
 cap_check() {
-  local problems=0 name dir tier provides p verb tpl base other d seen
+  local problems=0 name dir tier provides p verb tpl base other d seen pairs tool cmd seen_tools
   for name in $(cap_list); do
     dir="$(cap_dir "$name")"
     tier="$(cap_meta_get "$name" tier)"
@@ -215,6 +215,28 @@ cap_check() {
         *) echo "$name: package_commands entry '$p' is not <package>:<command>"; problems=$((problems + 1)) ;;
       esac
     done
+    # mise_tools= (#112): <tool>:<command> pairs installed through mise at
+    # the version share/teeup/tools.lock pins and linked as
+    # ~/.local/bin/<command>. Both halves become file names and mise
+    # arguments, so both must be plain names. A tool with no lock line would
+    # install nothing, and a capability that does not require mise could run
+    # before mise is installed, or outlive it in `teeup uninstall`.
+    pairs="$(cap_meta_get "$name" mise_tools)"
+    for p in $pairs; do
+      if ! [[ "$p" =~ ^[A-Za-z0-9][A-Za-z0-9_.+-]*:[A-Za-z0-9][A-Za-z0-9_.+-]*$ ]]; then
+        echo "$name: mise_tools entry '$p' is not <tool>:<command>"; problems=$((problems + 1))
+        continue
+      fi
+      if ! tools_lock_version "${p%%:*}" >/dev/null; then
+        echo "$name: mise_tools names ${p%%:*}, which has no line in $TEEUP_TOOLS_LOCK"; problems=$((problems + 1))
+      fi
+    done
+    if [[ -n "$pairs" ]]; then
+      case " $(cap_meta_get "$name" requires) " in
+        *" mise "*) ;;
+        *) echo "$name: has mise_tools but does not require mise"; problems=$((problems + 1)) ;;
+      esac
+    fi
     # apps= is ";"-separated (names contain spaces); an entry becomes
     # "<name>.app" under /Applications and an argument to `open -a`.
     case "$(cap_meta_get "$name" apps)" in
@@ -271,6 +293,34 @@ cap_check() {
           echo "$name: provides $p, which $other already provides"; problems=$((problems + 1))
           ;;
         *) seen="$seen$p=$name " ;;
+      esac
+    done
+  done
+  # One owner per mise command and per mise tool: two capabilities linking
+  # the same ~/.local/bin/<command> would overwrite each other, and removing
+  # one would uninstall the other's tool.
+  seen=" "
+  seen_tools=" "
+  for name in $(cap_list); do
+    for p in $(cap_meta_get "$name" mise_tools); do
+      case "$p" in *?:?*) ;; *) continue ;; esac
+      tool="${p%%:*}"
+      cmd="${p#*:}"
+      case "$seen" in
+        *" $cmd="*)
+          other="${seen#*" $cmd="}"
+          other="${other%% *}"
+          echo "$name: mise_tools command $cmd is also in $other"; problems=$((problems + 1))
+          ;;
+        *) seen="$seen$cmd=$name " ;;
+      esac
+      case "$seen_tools" in
+        *" $tool="*)
+          other="${seen_tools#*" $tool="}"
+          other="${other%% *}"
+          echo "$name: mise_tools tool $tool is also in $other"; problems=$((problems + 1))
+          ;;
+        *) seen_tools="$seen_tools$tool=$name " ;;
       esac
     done
   done
@@ -338,18 +388,20 @@ cap_run_hooks() {
 #   0  removed, and the done marker cleared
 #   1  a cask or package would not uninstall; the marker is kept so a retry
 #      can find what is left
-#   2  nothing to undo: no remove script, and no packages or casks named.
+#   2  nothing to undo: no remove script, and no packages, casks or mise
+#      tools named.
 #      Nothing was run and the marker is kept
 #   3  the remove script failed; nothing was uninstalled and the marker is kept
 # Leaves TEEUP_CAP_NA set to what the remove script answered ("false" when
 # there was no script), for a caller that reports it.
 cap_remove() {
-  local target="$1" with_packages="$2" cask pkg failed=0 pkgs casks_meta has_remove=false
+  local target="$1" with_packages="$2" cask pkg failed=0 pkgs casks_meta has_remove=false tool_pairs pair
   pkgs="$(cap_meta_get "$target" packages)"
   casks_meta="$(cap_meta_get "$target" casks)"
+  tool_pairs="$(cap_meta_get "$target" mise_tools)"
   [[ -f "$(cap_dir "$target")/remove" ]] && has_remove=true
   TEEUP_CAP_NA=false
-  if [[ "$has_remove" != "true" && -z "$pkgs" && -z "$casks_meta" ]]; then
+  if [[ "$has_remove" != "true" && -z "$pkgs" && -z "$casks_meta" && -z "$tool_pairs" ]]; then
     return 2
   fi
   if [[ "$has_remove" == "true" ]]; then
@@ -361,6 +413,15 @@ cap_remove() {
       return 3
     fi
     unset TEEUP_REMOVE_PACKAGES
+  fi
+  # A mise tool's link always goes; its pinned install only with packages.
+  # conf.d is rewritten without this capability either way, so `mise prune`
+  # may take what nothing pins any more.
+  for pair in $tool_pairs; do
+    mise_tool_remove "${pair%%:*}" "${pair#*:}" "$with_packages" || failed=1
+  done
+  if [[ -n "$tool_pairs" ]]; then
+    mise_tools_conf_write --without "$target" || failed=1
   fi
   if [[ "$with_packages" == "true" ]]; then
     for cask in $casks_meta; do

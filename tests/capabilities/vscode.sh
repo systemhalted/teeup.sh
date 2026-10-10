@@ -39,6 +39,8 @@ EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
   # The real location, space included: ~/Library/Application Support/Code/User.
   SETTINGS="$TEST_HOME/Library/Application Support/Code/User/settings.json"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 # mark_installed: what `teeup install vscode` records after configure.

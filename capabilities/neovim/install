@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# The formula and the port are both called neovim and both install `nvim`.
-# LazyVim wants git (partial clones), ripgrep, fd and fzf, which the git and
-# cli-tools capabilities this one requires already provide; lazy.nvim and the
-# plugins are cloned by Neovim itself on the first start.
-pkg_install neovim nvim || die "Neovim could not be installed."
+# Neovim comes from mise at the version in share/teeup/tools.lock, through
+# the aqua build the lock names, and ~/.local/bin/nvim links to it. LazyVim
+# wants git (partial clones), ripgrep, fd and fzf, which the git and
+# cli-tools capabilities this one requires already provide; lazy.nvim and
+# the plugins are cloned by Neovim itself on the first start.
+if cap_skipped mise; then
+  not_applicable "Neovim comes from mise, which is skipped on this machine (TEEUP_SKIP)."
+fi
+mise_tools_apply "$TEEUP_CAP" || die "Neovim could not be installed."

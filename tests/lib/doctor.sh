@@ -32,6 +32,43 @@ setup() {
   export TEEUP_DOCTOR_REPORT="$REPORT"
 }
 
+# doctor_tools_fixture: widget with two mise tools, a lock of its own, a mise
+# that installs into $TEST_HOME, and ~/.local/bin first on PATH the way
+# bin/teeup puts it.
+doctor_tools_fixture() {
+  TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  printf 'ripgrep 15.2.0\ntealdeer 1.9.0\n' > "$TEEUP_TOOLS_LOCK"
+  make_cap widget
+  printf 'requires="mise"\nmise_tools="ripgrep:rg tealdeer:tldr"\n' >> "$TEEUP_CAPS_DIR/widget/capability"
+  hide_host_commands rg tldr
+  mock_mise_tools
+  export PATH="$HOME/.local/bin:$PATH"
+}
+
+# mock_brew_formulas <formula...>: a Homebrew that has exactly these.
+mock_brew_formulas() {
+  printf '%s\n' "$@" > "$TEST_HOME/brew-formulas"
+  mock_command_script brew <<'EOF2'
+case "$1" in
+  --version) echo "Homebrew 4.3.9" ;;
+  list) grep -qx "${3:-}" "$HOME/brew-formulas" ;;
+esac
+EOF2
+}
+
+# mock_port_ports <port...>: a MacPorts machine that has exactly these.
+mock_port_ports() {
+  printf '%s\n' "$@" > "$TEST_HOME/ports"
+  mock_command_script port <<'EOF2'
+case "$1" in
+  version) echo "Version: 2.9.3" ;;
+  installed) grep -qx "${2:-}" "$HOME/ports" && echo "  ${2} @1.0_0 (active)" ;;
+esac
+EOF2
+  export TEEUP_PACKAGE_MANAGER=macports
+  unset TEEUP_PKG_BACKEND
+}
+
 test_fail_prints_and_records_against_the_current_capability() {
   setup
   local out
@@ -727,9 +764,10 @@ EOF2
   hide_host_commands rg fd fzf bat eza zoxide jq yq btop tree wget curl gpg tldr dust
   local out
   out="$(doctor_run_one cli-tools 2>&1)"
-  assert_contains "$out" "package ripgrep is not installed" || return 1
-  assert_contains "$(cat "$REPORT")" "package ripgrep is not installed" || return 1
+  assert_contains "$out" "package jq is not installed" || return 1
+  assert_contains "$(cat "$REPORT")" "package jq is not installed" || return 1
   assert_contains "$(cat "$REPORT")" "teeup install cli-tools" || return 1
+  assert_contains "$(cat "$REPORT")" "$HOME/.local/bin/rg is missing" "the mise half is checked too" || return 1
   cleanup_test_env
 }
 
@@ -742,14 +780,222 @@ test_run_one_accepts_a_real_capability_whose_commands_are_on_path() {
   mock_command_script brew <<'EOF2'
 case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
 EOF2
+  hide_host_commands rg fd fzf bat eza zoxide yq tldr dust
+  mock_mise_tools
   local cmd
-  for cmd in rg fd fzf bat eza zoxide jq yq btop tree wget curl gpg tldr dust; do
+  for cmd in jq btop tree wget curl gpg; do
     mock_command "$cmd" 0 ""
   done
+  mise_tools_apply cli-tools >/dev/null 2>&1
+  export PATH="$HOME/.local/bin:$PATH"
   local out
   out="$(doctor_run_one cli-tools 2>&1)"
-  assert_not_contains "$out" "is not installed" "every tool is on PATH, which is what install accepted" || return 1
+  assert_not_contains "$out" "is not installed" "every package command is on PATH and every mise tool is linked" || return 1
   assert_equals "" "$(cat "$REPORT")" "nothing here is a finding the user must act on" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_passes_a_linked_pinned_tool() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "rg is ripgrep 15.2.0 through mise." || return 1
+  assert_contains "$out" "tldr is tealdeer 1.9.0 through mise." || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_fails_a_missing_link() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_contains "$(cat "$REPORT")" "$HOME/.local/bin/rg is missing, so rg is not the ripgrep 15.2.0 that teeup pins." || return 1
+  assert_contains "$(cat "$REPORT")" "teeup configure widget" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_fails_a_dangling_link_and_its_fix_repairs_it() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  rm -rf "$HOME/.local/share/mise/installs/ripgrep/15.2.0"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_contains "$(cat "$REPORT")" "$TEEUP_MISE_TOOLS_DIR/rg points at $HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg, which is gone (mise uninstall and mise prune remove it)" || return 1
+  assert_contains "$(cat "$REPORT")" "teeup configure widget" || return 1
+  # What `teeup configure widget` runs for a capability with mise tools.
+  mise_tools_repair widget >/dev/null 2>&1
+  : > "$REPORT"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_equals "" "$(cat "$REPORT")" "the printed fix clears the finding" || return 1
+  cleanup_test_env
+}
+
+# teeup's ~/.local/bin link is there, but the entry it points at in teeup's
+# own directory is gone.
+test_mise_tools_check_fails_a_missing_inner_entry_and_its_fix_repairs_it() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  rm -f "$TEEUP_MISE_TOOLS_DIR/rg"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_contains "$(cat "$REPORT")" "$HOME/.local/bin/rg points at $TEEUP_MISE_TOOLS_DIR/rg, which is missing, so rg does not run." || return 1
+  assert_contains "$(cat "$REPORT")" "teeup configure widget" || return 1
+  mise_tools_repair widget >/dev/null 2>&1
+  : > "$REPORT"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_equals "" "$(cat "$REPORT")" "the printed fix clears the finding" || return 1
+  cleanup_test_env
+}
+
+# A tool in TEEUP_MISE_EXEC_SCRIPT_TOOLS has a script as teeup's own entry.
+test_mise_tools_check_passes_an_exec_script_tool() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  # shellcheck disable=SC2034  # read by lib/mise.sh
+  TEEUP_MISE_EXEC_SCRIPT_TOOLS="ripgrep"
+  mise_tools_apply widget >/dev/null 2>&1
+  [[ -f "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "fixture: rg's entry is a script"; return 1; }
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "rg is ripgrep 15.2.0 through mise." || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_fails_a_link_to_another_version() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  printf 'ripgrep 15.3.0\ntealdeer 1.9.0\n' > "$TEEUP_TOOLS_LOCK"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_contains "$(cat "$REPORT")" "ripgrep 15.3.0 is not installed through mise" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_notes_an_old_homebrew_copy() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas ripgrep tldr
+  mise_tools_apply widget >/dev/null 2>&1
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "Remove it with: brew uninstall ripgrep" || return 1
+  assert_contains "$out" "Remove it with: brew uninstall tldr" "teeup installed tealdeer as tldr" || return 1
+  assert_equals "" "$(cat "$REPORT")" "a notice does not change the exit status" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_notes_an_old_macports_copy() {
+  setup
+  doctor_tools_fixture
+  mock_port_ports ripgrep tealdeer
+  mise_tools_apply widget >/dev/null 2>&1
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "Remove it with: sudo port uninstall ripgrep" || return 1
+  assert_contains "$out" "Remove it with: sudo port uninstall tealdeer" || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
+  unset TEEUP_PACKAGE_MANAGER TEEUP_PKG_BACKEND
+  cleanup_test_env
+}
+
+test_mise_tools_check_leaves_a_foreign_file_alone() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  rm -f "$HOME/.local/bin/rg"
+  printf '#!/bin/sh\necho mine\n' > "$HOME/.local/bin/rg"
+  chmod +x "$HOME/.local/bin/rg"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "$HOME/.local/bin/rg was not written by teeup" || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
+  cleanup_test_env
+}
+
+# A symlink straight into mise's installs directory, rather than to teeup's
+# own entry, is the user's own, so doctor names it as such instead of
+# judging its version.
+test_mise_tools_check_leaves_a_user_symlink_into_mise_alone() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  local mine="$HOME/.local/share/mise/installs/ripgrep/14.0.0/bin/rg"
+  mkdir -p "${mine%/*}"
+  printf '#!/bin/sh\necho mine\n' > "$mine"
+  chmod +x "$mine"
+  mise_tool_remove ripgrep rg false >/dev/null 2>&1
+  ln -s "$mine" "$HOME/.local/bin/rg"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "$HOME/.local/bin/rg was not written by teeup" || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_cannot_verify_without_mise() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  export TEEUP_TEST_MISSING="${TEEUP_TEST_MISSING:-} mise"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_contains "$(cat "$REPORT")" "mise is not on PATH, so teeup could not check that $HOME/.local/bin/rg is ripgrep 15.2.0." || return 1
+  assert_contains "$(cat "$REPORT")" "unknown" "it could not check; it did not find a problem" || return 1
+  assert_not_contains "$(cat "$REPORT")" "	fail" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_only_warns_when_mise_is_skipped() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  local out
+  out="$(TEEUP_SKIP=mise doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "mise is skipped on this machine (TEEUP_SKIP), so teeup did not install ripgrep" || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_warns_when_another_copy_comes_first() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  mock_command rg 0 "rg 13.0.0"
+  export PATH="$MOCK_BIN:$PATH"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "rg resolves to $MOCK_BIN/rg on this PATH, not to teeup's $HOME/.local/bin/rg" || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
+  cleanup_test_env
+}
+
+# MISE_GLOBAL_CONFIG_FILE makes mise ignore conf.d/teeup.toml (lib/mise.sh's
+# mise_tools_conf_write already warns about it once per write); doctor must
+# say the same thing, once per `teeup doctor` run rather than once per
+# capability that has mise_tools.
+test_mise_tools_check_warns_once_about_mise_global_config_file() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/elsewhere/mise.toml"
+  local out
+  out="$(doctor_metadata_check widget 2>&1; doctor_metadata_check widget 2>&1)"
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'MISE_GLOBAL_CONFIG_FILE is set')" "one warning per run, not one per capability" || return 1
+  assert_contains "$out" "MISE_GLOBAL_CONFIG_FILE is set, so mise does not read $(mise_tools_conf_file)" || return 1
+  unset MISE_GLOBAL_CONFIG_FILE
   cleanup_test_env
 }
 
@@ -855,4 +1101,18 @@ run_test "run one does not add a generic failure on top of an unknown" test_run_
 run_test "run one accepts a real capability whose commands are on PATH" test_run_one_accepts_a_real_capability_whose_commands_are_on_path
 run_test "run one checks packages for a real capability with no doctor script" test_run_one_checks_packages_for_a_real_capability_with_no_doctor_script
 run_test "metadata check accepts an app installed without its cask" test_metadata_check_accepts_an_app_installed_without_its_cask
+run_test "mise_tools check passes a linked, pinned tool" test_mise_tools_check_passes_a_linked_pinned_tool
+run_test "mise_tools check fails a missing link" test_mise_tools_check_fails_a_missing_link
+run_test "mise_tools check fails a dangling link, and its fix repairs it" test_mise_tools_check_fails_a_dangling_link_and_its_fix_repairs_it
+run_test "mise_tools check fails a missing inner entry, and its fix repairs it" test_mise_tools_check_fails_a_missing_inner_entry_and_its_fix_repairs_it
+run_test "mise_tools check passes an exec script tool" test_mise_tools_check_passes_an_exec_script_tool
+run_test "mise_tools check fails a link to another version" test_mise_tools_check_fails_a_link_to_another_version
+run_test "mise_tools check notes an old Homebrew copy" test_mise_tools_check_notes_an_old_homebrew_copy
+run_test "mise_tools check notes an old MacPorts copy" test_mise_tools_check_notes_an_old_macports_copy
+run_test "mise_tools check leaves a foreign file alone" test_mise_tools_check_leaves_a_foreign_file_alone
+run_test "mise_tools check leaves a user symlink into mise alone" test_mise_tools_check_leaves_a_user_symlink_into_mise_alone
+run_test "mise_tools check cannot verify without mise" test_mise_tools_check_cannot_verify_without_mise
+run_test "mise_tools check only warns when mise is skipped" test_mise_tools_check_only_warns_when_mise_is_skipped
+run_test "mise_tools check warns when another copy comes first" test_mise_tools_check_warns_when_another_copy_comes_first
+run_test "mise_tools check warns once about MISE_GLOBAL_CONFIG_FILE" test_mise_tools_check_warns_once_about_mise_global_config_file
 print_summary

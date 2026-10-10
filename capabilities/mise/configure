@@ -9,8 +9,8 @@ if ! have mise; then
   exit 0
 fi
 
-# pre-commit lives here, not in the git capability: it is a mise-managed tool,
-# and git runs before mise in the core list. mise_ensure_global (lib/mise.sh)
+# pre-commit lives here, not in the git capability: it is a mise-managed tool
+# the global config requests, unlike git's pinned tools. mise_ensure_global (lib/mise.sh)
 # carries the requested/installed distinction and the `-C /` rule; a failure
 # there warns, and this capability continues, because a missing pre-commit
 # must not take the rest of the core tier down.

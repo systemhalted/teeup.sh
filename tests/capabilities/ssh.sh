@@ -62,6 +62,8 @@ PRIVEOF
 printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICQrTyJ/QCVmRW8OSZqQH+5yAOIvker3oP8F0qMQ3iRN comment\n' > "$out.pub"
 EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 seed_answers() {

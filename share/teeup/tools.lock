@@ -1,0 +1,24 @@
+# share/teeup/tools.lock - the version of every user tool teeup installs
+# through mise (issue #112). One line per tool: <mise tool> <version>, and a
+# third field naming the backend when the registry's first choice is not an
+# aqua: source. A release changes this file in its release PR, and
+# `teeup update` installs and links what it names. tests/lib/mise.sh checks
+# that every tool in a capability's mise_tools has exactly one line here and
+# that nothing else does.
+bat 0.26.1
+delta 0.20.1
+dust 1.2.6
+eza 0.23.5
+fd 10.5.0
+fzf 0.74.4
+git-lfs 3.8.0
+herdr 0.9.3
+lazygit 0.66.0
+neovim 0.12.6 aqua:neovim/neovim
+ollama 0.40.2
+ripgrep 15.2.0
+starship 1.26.0
+tealdeer 1.9.0
+tmux 3.7c
+yq 4.54.1
+zoxide 0.10.0

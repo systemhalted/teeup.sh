@@ -44,6 +44,20 @@ make_cap() {
   chmod +x "$dir/install" "$dir/configure"
 }
 
+# tool_cap_fixture: mise and a capability with one pinned tool, both marked
+# installed, the tool linked.
+tool_cap_fixture() {
+  mock_mise_tools
+  TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  printf 'ripgrep 15.2.0\n' > "$TEEUP_TOOLS_LOCK"
+  make_cap mise core
+  make_cap search lazy "mise"
+  printf 'mise_tools="ripgrep:rg"\n' >> "$TEEUP_CAPS_DIR/search/capability"
+  state_done mark cap-mise
+  state_done mark cap-search
+  mise_tools_apply search >/dev/null 2>&1
+}
+
 # run_fix <command>: what the user would do with a printed fix, in their
 # shell: zsh when the machine has it (every CI runner does), else bash. -f:
 # without it zsh sources ~/.zshenv first, teeup's own shell layer, in the
@@ -626,6 +640,125 @@ test_capabilities_uninstall_packages_when_asked() {
   assert_contains "$(cat "$MOCK_LOG")" "brew uninstall ripgrep" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask wezterm" || return 1
   assert_contains "$_UNINSTALL_REMOVED" "tool's packages: ripgrep wezterm" || return 1
+  cleanup_test_env
+}
+
+test_capabilities_unlink_mise_tools_and_name_the_mise_uninstall_to_run() {
+  setup
+  tool_cap_fixture
+  local conf="$TEST_HOME/.config/mise/conf.d/teeup.toml" fix
+  uninstall_capabilities >/dev/null 2>&1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the link goes"; return 1; }
+  [[ ! -e "$conf" ]] || { echo "the conf.d file goes"; return 1; }
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "teeup's own entries and their directory go"; return 1; }
+  assert_contains "$_UNINSTALL_REMOVED" "search's links in $TEST_HOME/.local/bin: rg" || return 1
+  assert_contains "$_UNINSTALL_REMOVED" "the pinned tool list teeup wrote for mise ($conf)" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "mise tools: ripgrep@15.2.0. Remove them later with: mise uninstall ripgrep@15.2.0" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall" "kept unless asked" || return 1
+  uninstall_clean || return 1
+  while IFS= read -r fix; do
+    case "$fix" in *"mise uninstall"*) run_fix "${fix##*: }" || { echo "the printed fix failed: $fix"; return 1; } ;; esac
+  done <<EOF2
+$_UNINSTALL_KEPT
+EOF2
+  [[ ! -e "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" ]] || { echo "the printed fix removes the install"; return 1; }
+  cleanup_test_env
+}
+
+test_capabilities_uninstall_mise_tools_when_asked() {
+  setup
+  tool_cap_fixture
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
+  assert_contains "$_UNINSTALL_REMOVED" "search's mise tools: ripgrep@15.2.0" || return 1
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall" || return 1
+  cleanup_test_env
+}
+
+# A pin bump whose download failed leaves conf.d on the old version, which
+# is the one teeup still links. The summary names what teeup actually leaves
+# installed, as mise_tool_remove decides it: both versions when both are on
+# disk, and the printed fix removes them.
+test_capabilities_name_the_mise_versions_teeup_leaves_installed() {
+  setup
+  tool_cap_fixture
+  printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
+  MOCK_MISE_FAIL_INSTALL=ripgrep mise_tools_sync >/dev/null 2>&1 || true
+  assert_contains "$(cat "$TEST_HOME/.config/mise/conf.d/teeup.toml")" '"ripgrep" = "15.2.0"' "fixture: the old pin stays" || return 1
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_KEPT" "mise tools: ripgrep@15.2.0. Remove them later with: mise uninstall ripgrep@15.2.0" || return 1
+  cleanup_test_env
+}
+
+test_capabilities_name_both_mise_versions_when_both_are_installed() {
+  setup
+  tool_cap_fixture
+  printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
+  MOCK_MISE_FAIL_INSTALL=ripgrep mise_tools_sync >/dev/null 2>&1 || true
+  mise -C / install ripgrep@15.3.0 >/dev/null 2>&1
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_REMOVED" "search's mise tools: ripgrep@15.2.0 ripgrep@15.3.0" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.3.0" || return 1
+  cleanup_test_env
+}
+
+# A version the user's own mise config also asks for stays installed, so
+# the summary neither claims it removed nor tells the user to uninstall it.
+test_capabilities_leave_a_version_the_user_s_config_asks_for_out_of_the_summary() {
+  setup
+  tool_cap_fixture
+  printf '[tools]\nripgrep = "15.2.0"\n' > "$TEST_HOME/.config/mise/config.toml"
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall ripgrep@15.2.0" || return 1
+  cleanup_test_env
+  setup
+  tool_cap_fixture
+  printf '[tools]\nripgrep = "15.2.0"\n' > "$TEST_HOME/.config/mise/config.toml"
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall ripgrep@15.2.0" || return 1
+  assert_not_contains "$_UNINSTALL_REMOVED" "ripgrep@15.2.0" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the version stays" || return 1
+  cleanup_test_env
+}
+
+# A user's own link, with no entry of teeup's, is not teeup's tool: the
+# summary neither claims its version as removed nor tells the user to
+# uninstall it.
+test_capabilities_leave_a_user_s_mise_tool_out_of_the_summary() {
+  setup
+  tool_cap_fixture
+  rm -f "$TEST_HOME/.local/bin/rg" "$TEEUP_MISE_TOOLS_DIR/rg"
+  ln -s "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$TEST_HOME/.local/bin/rg"
+  : > "$MOCK_LOG"
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_REMOVED" "mise tools" || return 1
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall" || return 1
+  [[ -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the user's link stays"; return 1; }
+  cleanup_test_env
+}
+
+# The user replaced teeup's link with their own while teeup's entry stayed:
+# the tool is the user's, so the summary leaves it out as remove does.
+test_capabilities_leave_a_user_link_over_teeup_s_entry_out_of_the_summary() {
+  setup
+  tool_cap_fixture
+  rm -f "$TEST_HOME/.local/bin/rg"
+  ln -s "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$TEST_HOME/.local/bin/rg"
+  [[ -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "fixture: teeup's entry is still there"; return 1; }
+  : > "$MOCK_LOG"
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall" || return 1
+  _UNINSTALL_PACKAGES=true
+  state_done mark cap-search
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_REMOVED" "mise tools" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall" || return 1
   cleanup_test_env
 }
 
@@ -1277,6 +1410,30 @@ test_dry_run_teardown_does_not_call_the_terminal_app_directory_a_leftover() {
   cleanup_test_env
 }
 
+# $TEEUP_MISE_TOOLS_DIR (lib/mise.sh) is a top-level entry of the state dir
+# teeup writes, so a dry run must not call it a leftover.
+test_dry_run_teardown_does_not_call_the_mise_tools_directory_a_leftover() {
+  setup
+  teeup_runtime_home
+  tool_cap_fixture
+  [[ -L "$TEEUP_STATE_DIR/tools/rg" ]] || { echo "fixture: rg has teeup's own entry"; return 1; }
+  DRY_RUN=true uninstall_teardown >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_KEPT" "holds files teeup did not write" "a dry run must preview tools/ as one of teeup's own entries, not a leftover" || return 1
+  cleanup_test_env
+}
+
+# An entry left in tools/ (a command a later release dropped from
+# mise_tools, say) goes with the state dir instead of keeping it.
+test_teardown_removes_a_leftover_mise_tools_entry_with_the_state_dir() {
+  setup
+  teeup_runtime_home
+  mkdir -p "$TEEUP_STATE_DIR/tools"
+  ln -s /nonexistent/bin/old "$TEEUP_STATE_DIR/tools/old"
+  uninstall_teardown >/dev/null 2>&1
+  [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "the state dir must go once tools/ is one of teeup's own entries"; return 1; }
+  cleanup_test_env
+}
+
 # Task 6 carry (Task 5's re-review observation): a ZDOTDIR changed since
 # install leaves the old zsh home files still recorded in stock, at a
 # directory uninstall_shell no longer looks at by default. They must still
@@ -1392,6 +1549,15 @@ run_test "package inventory lists metadata software and prints commands that wor
 run_test "package inventory uses only marked capabilities for an installed teeup" test_package_inventory_uses_only_marked_capabilities_for_an_installed_teeup
 run_test "capabilities name what the tools made for themselves" test_capabilities_name_what_the_tools_made_for_themselves
 run_test "capabilities uninstall packages when asked" test_capabilities_uninstall_packages_when_asked
+run_test "capabilities unlink mise tools and name the mise uninstall to run" test_capabilities_unlink_mise_tools_and_name_the_mise_uninstall_to_run
+run_test "capabilities uninstall mise tools when asked" test_capabilities_uninstall_mise_tools_when_asked
+run_test "capabilities name the mise versions teeup leaves installed" test_capabilities_name_the_mise_versions_teeup_leaves_installed
+run_test "capabilities name both mise versions when both are installed" test_capabilities_name_both_mise_versions_when_both_are_installed
+run_test "capabilities leave a version the user's config asks for out of the summary" test_capabilities_leave_a_version_the_user_s_config_asks_for_out_of_the_summary
+run_test "capabilities leave a user's mise tool out of the summary" test_capabilities_leave_a_user_s_mise_tool_out_of_the_summary
+run_test "capabilities leave a user link over teeup's entry out of the summary" test_capabilities_leave_a_user_link_over_teeup_s_entry_out_of_the_summary
+run_test "dry run teardown does not call the mise tools directory a leftover" test_dry_run_teardown_does_not_call_the_mise_tools_directory_a_leftover
+run_test "teardown removes a leftover mise tools entry with the state dir" test_teardown_removes_a_leftover_mise_tools_entry_with_the_state_dir
 run_test "capabilities decide each of the seven remove refuses" test_capabilities_decide_each_of_the_seven_remove_refuses
 run_test "capabilities refuse what a failed dependent still needs" test_capabilities_refuse_what_a_failed_dependent_still_needs
 run_test "capabilities keep the zsh the login shell runs" test_capabilities_keep_the_zsh_the_login_shell_runs

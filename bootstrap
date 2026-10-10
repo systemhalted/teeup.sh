@@ -333,6 +333,9 @@ fi
 ca_bundle_rebuild || true  # warns itself; only matters behind a re-signing proxy
 run_capability package-manager || { rc=$?; ui_rc_or_exit $rc || true; die "Core capability package-manager failed. Fix the cause and re-run ./bootstrap."; }
 pkg_backend_path
+# ~/.local/bin before the package manager's directories, as in every teeup
+# shell: git/configure must see the delta that cli-tools linked there.
+local_bin_on_path
 
 # --- 3. teeup runtime (env file, command link, gum, jq) -----------------------
 run_capability teeup-runtime || { rc=$?; ui_rc_or_exit $rc || true; die "Core capability teeup-runtime failed. Fix the cause and re-run ./bootstrap."; }

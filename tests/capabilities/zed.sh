@@ -29,6 +29,8 @@ EOF2
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
   TEEUP="$TEEUP_PATH/bin/teeup"
   SETTINGS="$TEST_HOME/.config/zed/settings.json"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 # mark_installed: what `teeup install zed` records after configure.

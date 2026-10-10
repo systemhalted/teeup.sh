@@ -11,6 +11,8 @@ teeup doctor git       # one capability
 ## What doctor checks
 
 For each installed capability, doctor prints a heading `== git: ... ==` and checks that the packages, casks, and apps that its metadata names are installed.
+It also checks each tool from mise.
+The link in `~/.local/bin` must point to the teeup link in `~/.local/state/teeup/tools`, at the version of the teeup release, and the tool must run.
 It also runs the checks in the doctor script of the capability, if it has one.
 Eleven capabilities have a doctor script, including `ssh` (key pairs, file modes, the `Host` blocks), `git`, `github`, `zsh`, `mise`, `starship`, and `aerospace`.
 
@@ -152,6 +154,16 @@ If the installer shows "Waiting for the Command Line Tools installer to finish",
 
 A command called a lazy shim without a terminal, so the shim could not ask you and did not install anything.
 Run the printed `teeup install` command one time in a terminal.
+
+### Doctor says that Homebrew still has an old copy of a tool
+
+In teeup 0.3.0-beta and older, Homebrew or MacPorts installed tools such as ripgrep, Starship, and Neovim. Now mise installs them at the versions of the teeup release. The old copies stay installed, and `teeup update` does not upgrade them.
+
+Doctor shows a warning for each old copy, with the command that removes it, for example `brew uninstall ripgrep`. The warning does not change the exit status. teeup does not remove the old copies itself.
+
+### A tool link in `~/.local/bin` is missing or broken
+
+teeup links each tool in two steps. `~/.local/bin/rg` points to `~/.local/state/teeup/tools/rg`, and that link points to the version that mise installed. `mise uninstall` and `mise prune` can remove that version, and doctor then reports the link as broken. If you delete `~/.local/state/teeup`, doctor reports the second link as missing. Run the fix that doctor shows, for example `teeup configure cli-tools`. This command installs the pinned version again and repairs the links.
 
 ### Commits are not signed
 

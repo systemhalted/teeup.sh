@@ -28,6 +28,8 @@ EOF_GIT
   mock_command git-lfs 0 ""
   export TEEUP_TEST_MISSING="delta lazygit emacsclient"
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 # One identity, full stop (2026-09-17 decision): git never asks about work,
@@ -42,16 +44,27 @@ seed_answers() {
 
 test_install_gets_git_delta_lfs_and_lazygit() {
   setup
-  # setup mocks git-lfs onto PATH for the configure tests, and pkg_install
-  # short-circuits on a command that is already there. Hide it for this test
-  # only, or the brew assertion below can never fire.
+  # setup mocks git-lfs onto PATH for the configure tests. Hide it for this
+  # test only, so a fresh Mac is what the install previews.
   export TEEUP_TEST_MISSING="delta lazygit emacsclient git-lfs"
   local out
   out="$(DRY_RUN=true "$TEEUP" install git 2>&1)"
   assert_contains "$out" "Would execute: brew install git" || return 1
-  assert_contains "$out" "Would execute: brew install git-delta" || return 1
-  assert_contains "$out" "Would execute: brew install git-lfs" || return 1
-  assert_contains "$out" "Would execute: brew install lazygit" || return 1
+  assert_not_contains "$out" "brew install git-delta" || return 1
+  assert_not_contains "$out" "brew install git-lfs" || return 1
+  assert_not_contains "$out" "brew install lazygit" || return 1
+  assert_contains "$out" "Would execute: mise -C / install delta@$(lock_version delta)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install git-lfs@$(lock_version git-lfs)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install lazygit@$(lock_version lazygit)" || return 1
+  cleanup_test_env
+}
+
+test_install_with_mise_skipped_warns_once() {
+  setup
+  local out
+  out="$(TEEUP_SKIP=mise DRY_RUN=true "$TEEUP" install git 2>&1)" || true
+  assert_contains "$out" "mise is skipped on this machine (TEEUP_SKIP), so teeup does not install" || return 1
+  assert_not_contains "$out" "delta, git-lfs or lazygit is missing" "configure cannot help while mise is skipped" || return 1
   cleanup_test_env
 }
 
@@ -1633,6 +1646,7 @@ test_doctor_gitconfig_local_fix_names_a_symlink_target() {
 }
 
 run_test "install gets git, delta, lfs and lazygit" test_install_gets_git_delta_lfs_and_lazygit
+run_test "install with mise skipped warns once" test_install_with_mise_skipped_warns_once
 run_test "configure writes the one identity" test_configure_writes_the_one_identity
 run_test "a configured work identity does not change the git identity" test_a_configured_work_identity_does_not_change_the_git_identity
 run_test "configure without answers warns and writes no identity" test_configure_without_answers_warns_and_writes_no_identity

@@ -814,7 +814,7 @@ test_remove_dies_when_nothing_can_be_undone() {
   local rc=0 out
   out="$("$TEEUP" remove widget 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "widget ships no remove script and installs no packages or casks that teeup tracks" || return 1
+  assert_contains "$out" "widget ships no remove script and installs no packages, casks or mise tools that teeup tracks" || return 1
   assert_not_contains "$out" "Removed widget." || return 1
   "$TEEUP" has widget || { echo "the marker must survive; nothing was actually removed"; return 1; }
   cleanup_test_env
@@ -863,7 +863,9 @@ EOF2
 
 # Everything `teeup update` reaches out to, mocked: the checkout is clean and
 # one release (v9.9.9) behind origin/main's newest, with HEAD detached; the
-# package manager and mise do nothing, and the fixture core.list is alpha+beta.
+# checkout moves when `git checkout` runs, the way a real one does, so
+# `rev-parse HEAD` answers 1111111 before it and 9999999 after; the package
+# manager and mise do nothing, and the fixture core.list is alpha+beta.
 # lib/channel.sh's own suite runs the release rule against real git.
 mock_update_world() {
   mock_command_script git <<'EOF2'
@@ -871,7 +873,8 @@ case "$*" in
   *status*) exit 0 ;;
   *"for-each-ref"*) echo refs/teeup/releases/v9.9.9 ;;
   *"rev-list --count"*) echo 5 ;;
-  *"rev-parse HEAD") echo 1111111 ;;
+  *"checkout --quiet --detach"*) echo 9999999 > "$HOME/mock-git-head" ;;
+  *"rev-parse HEAD") cat "$HOME/mock-git-head" 2>/dev/null || echo 1111111 ;;
   *rev-parse*) echo 9999999 ;;
   *symbolic-ref*) exit 1 ;;
 esac
@@ -1229,6 +1232,7 @@ test_update_walks_every_step_in_order() {
   assert_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / upgrade" || return 1
+  assert_contains "$out" "Completed: mise tools" || return 1
   assert_contains "$out" "configure:alpha" || return 1
   assert_contains "$out" "configure:beta" || return 1
   assert_not_contains "$out" "install:alpha" "update never installs" || return 1
@@ -1268,11 +1272,181 @@ esac
 exit 0
 EOF2
   : > "$MOCK_LOG"
+  # A second update only upgrades formulae when it moves teeup again.
+  rm -f "$TEST_HOME/mock-git-head"
   local rc=0
   out="$("$TEEUP" update 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "Could not upgrade formulas: ripgrep fzf" || return 1
   assert_contains "$out" "teeup update finished, with the problems above." || return 1
+  cleanup_test_env
+}
+
+test_update_leaves_formulae_alone_when_the_checkout_stays() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  echo 9999999 > "$TEST_HOME/mock-git-head"
+  : > "$MOCK_LOG"
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$out" "teeup is on the newest release, v9.9.9." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew update" "the index still refreshes" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade" "formulae cannot be pinned, so they move only with teeup" || return 1
+  assert_contains "$out" "teeup is still on the same commit, so the packages it installed keep their versions." || return 1
+  assert_contains "$out" "configure:alpha" "the rest of the update still runs" || return 1
+  cleanup_test_env
+}
+
+test_update_dry_run_upgrades_no_formulae() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  : > "$MOCK_LOG"
+  local out
+  out="$(DRY_RUN=true "$TEEUP" update 2>&1)"
+  assert_contains "$out" "Would execute: git -C $TEEUP_PATH checkout --quiet --detach refs/teeup/releases/v9.9.9" || return 1
+  assert_not_contains "$out" "brew upgrade" || return 1
+  assert_contains "$out" "A dry run does not move the checkout, so it upgrades no packages." || return 1
+  cleanup_test_env
+}
+
+# An update that moves teeup but fails to upgrade the packages must try again
+# on the next update, even though that one stays on the same commit.
+# Otherwise the formulae stay behind the release until the next one.
+UPGRADE_PENDING_MARKER='.local/state/teeup/done/update-upgrade-pending'
+
+failing_formula_brew() {
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$*" in
+  "upgrade --formula "*) echo "error" >&2; exit 1 ;;
+  "ls --versions "*) exit 0 ;;
+esac
+exit 0
+EOF2
+}
+
+test_update_retries_a_failed_upgrade_on_the_same_commit() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  failing_formula_brew
+  local rc=0 out
+  "$TEEUP" update >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" || return 1
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" "a failed upgrade after a move is recorded" || return 1
+  : > "$MOCK_LOG"
+  rc=0
+  out="$("$TEEUP" update 2>&1)" || rc=$?
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "the same-commit update tries the upgrade again" || return 1
+  assert_contains "$out" "The last update moved teeup to a new commit but could not upgrade every package, so this update tries again." || return 1
+  assert_not_contains "$out" "teeup is still on the same commit" || return 1
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" "a retry that fails again keeps the record" || return 1
+  cleanup_test_env
+}
+
+test_update_clears_the_retry_once_the_upgrade_succeeds() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  failing_formula_brew
+  "$TEEUP" update >/dev/null 2>&1 || true
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" || return 1
+  mock_command brew 0 ""
+  : > "$MOCK_LOG"
+  "$TEEUP" update >/dev/null 2>&1 || { echo "the retry failed"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "the retry upgrades" || return 1
+  [[ ! -e "$TEST_HOME/$UPGRADE_PENDING_MARKER" ]] || { echo "a successful retry must clear the record"; return 1; }
+  : > "$MOCK_LOG"
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade" "nothing is pending, so the same commit upgrades nothing" || return 1
+  assert_contains "$out" "teeup is still on the same commit, so the packages it installed keep their versions." || return 1
+  cleanup_test_env
+}
+
+test_update_dry_run_leaves_the_retry_record_alone() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  DRY_RUN=true "$TEEUP" update >/dev/null 2>&1 || true
+  [[ ! -e "$TEST_HOME/$UPGRADE_PENDING_MARKER" ]] || { echo "a dry run must not record a pending upgrade"; return 1; }
+  # A real run whose upgrade fails, then a dry run: the record survives it.
+  failing_formula_brew
+  "$TEEUP" update >/dev/null 2>&1 || true
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" || return 1
+  mock_command brew 0 ""
+  DRY_RUN=true "$TEEUP" update >/dev/null 2>&1 || true
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" "a dry run must not clear the record" || return 1
+  cleanup_test_env
+}
+
+# A release that moves a pin moves the tool, on every capability installed
+# here, lazy ones included: update never runs a lazy capability's configure.
+test_update_relinks_a_lazy_tool_whose_lock_version_changed() {
+  setup
+  mock_update_world
+  mock_mise_tools
+  export TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  printf 'ripgrep 15.2.0\n' > "$TEEUP_TOOLS_LOCK"
+  make_cap search lazy
+  printf 'mise_tools="ripgrep:rg"\n' >> "$TEEUP_CAPS_DIR/search/capability"
+  printf '#!/usr/bin/env bash\nmise_tools_apply "$TEEUP_CAP"\n' > "$TEEUP_CAPS_DIR/search/install"
+  "$TEEUP" install search >/dev/null 2>&1
+  local installs="$TEST_HOME/.local/share/mise/installs/ripgrep" link="$TEST_HOME/.local/bin/rg" inner="$TEST_HOME/.local/state/teeup/tools/rg" out
+  assert_equals "$inner" "$(readlink "$link")" "fixture: ~/.local/bin links to teeup's own entry" || return 1
+  assert_equals "$installs/15.2.0/bin/rg" "$(readlink "$inner")" "fixture: linked at the first version" || return 1
+  printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
+  out="$("$TEEUP" update 2>&1)"
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.3.0" || return 1
+  assert_equals "$installs/15.3.0/bin/rg" "$(readlink "$inner")" || return 1
+  assert_equals "$inner" "$(readlink "$link")" "the ~/.local/bin link stays as it was" || return 1
+  assert_dir_exists "$installs/15.2.0" "the old version stays for mise prune" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/mise/conf.d/teeup.toml")" '"ripgrep" = "15.3.0"' || return 1
+  assert_not_contains "$out" "configure:search" "update still leaves a lazy capability's configure alone" || return 1
+  assert_contains "$out" "teeup is up to date." || return 1
+  cleanup_test_env
+}
+
+test_update_reports_a_pinned_tool_that_would_not_install() {
+  setup
+  mock_update_world
+  mock_mise_tools
+  export TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  printf 'ripgrep 15.2.0\n' > "$TEEUP_TOOLS_LOCK"
+  make_cap search lazy
+  printf 'mise_tools="ripgrep:rg"\n' >> "$TEEUP_CAPS_DIR/search/capability"
+  printf '#!/usr/bin/env bash\nmise_tools_apply "$TEEUP_CAP"\n' > "$TEEUP_CAPS_DIR/search/install"
+  "$TEEUP" install search >/dev/null 2>&1
+  printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
+  local rc=0 out
+  out="$(MOCK_MISE_FAIL_INSTALL=ripgrep "$TEEUP" update 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "mise could not install ripgrep 15.3.0" || return 1
+  assert_contains "$out" "teeup update finished, with the problems above." || return 1
+  assert_equals "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$(readlink "$TEST_HOME/.local/state/teeup/tools/rg")" "the working version stays linked" || return 1
+  cleanup_test_env
+}
+
+# Preflight ruling: a checkout that is not git (or has no git on PATH) keeps
+# today's behaviour -- formulae upgrade on every run, because the "only when
+# teeup moves" rule has no commit to compare against.
+test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  : > "$MOCK_LOG"
+  local out
+  out="$(TEEUP_TEST_MISSING=git "$TEEUP" update 2>&1)" || true
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "a non-git checkout has no commit to compare, so formulae upgrade every run" || return 1
+  assert_not_contains "$out" "teeup is still on the same commit" || return 1
   cleanup_test_env
 }
 
@@ -2885,6 +3059,20 @@ test_read_only_verbs_still_work_off_macos() {
   cleanup_test_env
 }
 
+# A capability script must see the links mise_tool_install writes, before
+# the shell layer exists: a first bootstrap's Terminal has no ~/.local/bin.
+test_capability_scripts_see_local_bin_first() {
+  setup
+  cat > "$TEEUP_CAPS_DIR/alpha/configure" <<'EOF2'
+#!/usr/bin/env bash
+echo "first:${PATH%%:*}"
+EOF2
+  local out
+  out="$("$TEEUP" configure alpha)"
+  assert_contains "$out" "first:$TEST_HOME/.local/bin" || return 1
+  cleanup_test_env
+}
+
 run_test "install runs requires in order and marks done" test_install_runs_requires_in_order_and_marks_done
 run_test "install skips a done requirement but repairs the target" test_install_skips_a_done_requirement_but_repairs_the_target
 run_test "install runs a missing requirement" test_install_runs_a_missing_requirement
@@ -2935,6 +3123,14 @@ run_test "reset refuses what it cannot reset" test_reset_refuses_what_it_cannot_
 run_test "reset reports a refused write plainly" test_reset_reports_a_refused_write_plainly
 run_test "dev add-migration creates a named scaffold" test_dev_add_migration_creates_a_named_scaffold
 run_test "update upgrades only what teeup installed" test_update_upgrades_only_what_teeup_installed
+run_test "update leaves formulae alone when the checkout stays" test_update_leaves_formulae_alone_when_the_checkout_stays
+run_test "update dry run upgrades no formulae" test_update_dry_run_upgrades_no_formulae
+run_test "update retries a failed upgrade on the same commit" test_update_retries_a_failed_upgrade_on_the_same_commit
+run_test "update clears the retry once the upgrade succeeds" test_update_clears_the_retry_once_the_upgrade_succeeds
+run_test "update dry run leaves the retry record alone" test_update_dry_run_leaves_the_retry_record_alone
+run_test "update relinks a lazy tool whose lock version changed" test_update_relinks_a_lazy_tool_whose_lock_version_changed
+run_test "update reports a pinned tool that would not install" test_update_reports_a_pinned_tool_that_would_not_install
+run_test "update upgrades formulae when teeup is not a git checkout" test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout
 run_test "update upgrades packages before running migrations" test_update_upgrades_packages_before_running_migrations
 run_test "update runs migrations before configuring" test_update_runs_migrations_before_configuring
 run_test "update walks every step in order" test_update_walks_every_step_in_order
@@ -3411,4 +3607,5 @@ run_test "uninstall reports a refused home file and still finishes" test_uninsta
 run_test "uninstall reports a refused state dir and still finishes" test_uninstall_reports_a_refused_state_dir_and_still_finishes
 run_test "refuses to change a machine that is not a Mac" test_refuses_to_change_a_machine_that_is_not_a_mac
 run_test "read-only verbs still work off macOS" test_read_only_verbs_still_work_off_macos
+run_test "capability scripts see ~/.local/bin first" test_capability_scripts_see_local_bin_first
 print_summary

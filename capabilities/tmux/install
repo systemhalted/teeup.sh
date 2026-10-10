@@ -1,2 +1,7 @@
 #!/usr/bin/env bash
-pkg_install tmux tmux
+# tmux comes from mise (aqua:tmux/tmux-builds) at the version in
+# share/teeup/tools.lock, linked into ~/.local/bin.
+if cap_skipped mise; then
+  not_applicable "tmux comes from mise, which is skipped on this machine (TEEUP_SKIP)."
+fi
+mise_tools_apply "$TEEUP_CAP"

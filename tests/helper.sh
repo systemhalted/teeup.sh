@@ -32,7 +32,8 @@ setup_test_env() {
   unset CARGO_HOME RUSTUP_HOME GOPATH GEM_HOME GEM_PATH JAVA_HOME XDG_RUNTIME_DIR
   unset FPATH SSH_AUTH_SOCK
   unset MISE_CONFIG_DIR MISE_DATA_DIR MISE_GLOBAL_CONFIG_FILE
-  unset TEEUP_CONFIG_DIR TEEUP_STATE_DIR TEEUP_ANSWERS_FILE TEEUP_LOG_FILE
+  unset TEEUP_CONFIG_DIR TEEUP_STATE_DIR TEEUP_MISE_TOOLS_DIR TEEUP_MISE_EXEC_SCRIPT_TOOLS
+  unset TEEUP_ANSWERS_FILE TEEUP_LOG_FILE
   unset TEEUP_MACHINES_DIR TEEUP_CAPS_DIR TEEUP_CAP_DIR TEEUP_CAP_NA_MARKER
   unset TEEUP_MIGRATIONS_DIR
   unset TEEUP_MENU_FILE TEEUP_SKELETON_DIR TEEUP_TESTS_DIR TEEUP_THEMES_DIR
@@ -146,6 +147,100 @@ TEST_SKIPPED=77
 # lua says the check did not run instead of failing it.
 missing_tool_status() {
   if [[ "${CI:-}" == "true" ]]; then echo 1; else echo "$TEST_SKIPPED"; fi
+}
+
+# lock_version <tool> -> the version share/teeup/tools.lock pins. Tests use
+# it so that a release which moves a pin does not have to edit them.
+lock_version() {
+  awk -v t="$1" '$1 !~ /^#/ && $1 == t { print $2; exit }' "$TEEUP_PATH/share/teeup/tools.lock"
+}
+
+# mock_mise_tools
+# A mise that installs pinned tools the way lib/mise.sh asks it to.
+# `install <tool>@<version>` creates <installs>/<dir>/<version>/bin, where
+# <dir> is the tool with ':' and '/' turned into '-' (as mise names a
+# backend's directory); `where` answers from that directory; `which --tool
+# <tool>@<version> <command>` makes an executable for <command> there once
+# and prints its path; `uninstall` deletes the version. The executable
+# answers --version, -V and version with "<command> <version>" and otherwise
+# prints "<command> ran: <args>". MOCK_MISE_FAIL_INSTALL=<tool> or
+# MOCK_MISE_FAIL_UNINSTALL=<tool> makes that one call fail. `ls
+# --all-sources --json <tool>` answers as mise 2026.9 does, one record per
+# version a config file asks for, from config.toml and conf.d/*.toml in the
+# mise config directory (MISE_GLOBAL_CONFIG_FILE alone when it is set), so a
+# test asks for a version by writing `<tool> = "<version>"` there; with
+# MOCK_MISE_NO_ALL_SOURCES=1 it fails as a mise without --all-sources does.
+# Every other call succeeds and prints nothing, which is a fresh global
+# config's answer to `ls --global`.
+mock_mise_tools() {
+  mock_command_script mise <<'EOF2'
+[ "$1" = "-C" ] && shift 2
+root="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/installs"
+spec_dir() {
+  printf '%s/%s/%s\n' "$root" "$(printf '%s' "${1%@*}" | tr ':/' '--')" "${1##*@}"
+}
+case "$1" in
+  install)
+    if [ "${MOCK_MISE_FAIL_INSTALL:-}" = "${2%@*}" ]; then
+      echo "mise ERROR failed to install $2" >&2
+      exit 1
+    fi
+    mkdir -p "$(spec_dir "$2")/bin"
+    ;;
+  where)
+    d="$(spec_dir "$2")"
+    [ -d "$d" ] || { echo "mise ERROR $2 is not installed" >&2; exit 1; }
+    printf '%s\n' "$d"
+    ;;
+  which)
+    d="$(spec_dir "$3")"
+    [ -d "$d/bin" ] || exit 1
+    if [ ! -x "$d/bin/$4" ]; then
+      printf '#!/bin/sh\ncase "$1" in --version|-V|version) echo "%s %s"; exit 0 ;; esac\necho "%s ran: $*"\n' "$4" "${3##*@}" "$4" > "$d/bin/$4"
+      chmod +x "$d/bin/$4"
+    fi
+    printf '%s\n' "$d/bin/$4"
+    ;;
+  uninstall)
+    [ "${MOCK_MISE_FAIL_UNINSTALL:-}" = "${2%@*}" ] && exit 1
+    rm -rf "$(spec_dir "$2")"
+    ;;
+  ls)
+    case " $* " in *" --all-sources "*) ;; *) exit 0 ;; esac
+    if [ -n "${MOCK_MISE_NO_ALL_SOURCES:-}" ]; then
+      echo "error: unexpected argument '--all-sources' found" >&2
+      exit 2
+    fi
+    for tool in "$@"; do :; done
+    dir="${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}"
+    if [ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]; then
+      files="$MISE_GLOBAL_CONFIG_FILE"
+    else
+      files="$dir/config.toml $(ls "$dir"/conf.d/*.toml 2>/dev/null | tr '\n' ' ')"
+    fi
+    first=1
+    echo "["
+    for f in $files; do
+      [ -f "$f" ] || continue
+      for v in $(awk -v s="$tool" '{
+          line = $0; sub(/^[ \t]+/, "", line)
+          if (index(line, "\"" s "\"") == 1) rest = substr(line, length(s) + 3)
+          else if (index(line, s) == 1) rest = substr(line, length(s) + 1)
+          else next
+          if (rest !~ /^[ \t]*=[ \t]*"/) next
+          sub(/^[ \t]*=[ \t]*"/, "", rest); sub(/".*$/, "", rest); print rest
+        }' "$f"); do
+        [ "$first" = 1 ] || echo "  ,"
+        first=0
+        printf '  {\n    "version": "%s",\n    "install_path": "%s",\n    "sources": [\n      {\n        "type": "mise.toml",\n        "path": "%s",\n        "requested_version": "%s"\n      }\n    ]\n  }\n' \
+          "$v" "$(spec_dir "$tool@$v")" "$f" "$v"
+      done
+    done
+    echo "]"
+    ;;
+esac
+exit 0
+EOF2
 }
 
 cleanup_test_env() {

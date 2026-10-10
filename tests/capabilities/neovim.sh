@@ -29,6 +29,8 @@ EOF2
   mkdir -p "$XDG_RUNTIME_DIR" "$TMPDIR"
   TEEUP="$TEEUP_PATH/bin/teeup"
   NVIM="$TEST_HOME/.config/nvim"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 # mark_installed: what `teeup install neovim` records after configure.
@@ -49,23 +51,25 @@ test_neovim_is_lazy_and_provides_nvim() {
   cleanup_test_env
 }
 
-test_install_dry_run_gets_the_formula() {
+test_install_dry_run_gets_the_pinned_neovim() {
   setup
   export TEEUP_TEST_MISSING="nvim"
   local out
-  out="$(DRY_RUN=true "$TEEUP" install neovim)"
-  assert_contains "$out" "[DRY-RUN] Would execute: brew install neovim" || return 1
+  out="$(DRY_RUN=true "$TEEUP" install neovim 2>&1)"
+  assert_contains "$out" "[DRY-RUN] Would execute: mise -C / install aqua:neovim/neovim@$(lock_version neovim)" || return 1
+  assert_not_contains "$out" "brew install neovim" || return 1
   cleanup_test_env
 }
 
-test_install_uses_the_port_on_macports() {
+test_install_on_macports_still_uses_mise() {
   setup
   export TEEUP_PACKAGE_MANAGER=macports
   export TEEUP_TEST_MISSING="nvim"
   mock_command port 1 ""
   local out
   out="$(DRY_RUN=true "$TEEUP" install neovim 2>&1)"
-  assert_contains "$out" "[DRY-RUN] Would execute: sudo port install neovim" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: mise -C / install aqua:neovim/neovim@$(lock_version neovim)" || return 1
+  assert_not_contains "$out" "port install neovim" || return 1
   cleanup_test_env
 }
 
@@ -293,8 +297,8 @@ test_teeup_paths_survive_special_bytes() {
 
 echo "capabilities/neovim"
 run_test "neovim is lazy and provides nvim" test_neovim_is_lazy_and_provides_nvim
-run_test "install dry run gets the formula" test_install_dry_run_gets_the_formula
-run_test "install uses the port on macports" test_install_uses_the_port_on_macports
+run_test "install dry run gets the pinned Neovim" test_install_dry_run_gets_the_pinned_neovim
+run_test "install on MacPorts still uses mise" test_install_on_macports_still_uses_mise
 run_test "configure installs the starter layout" test_configure_installs_the_starter_layout
 run_test "configure is idempotent" test_configure_is_idempotent
 run_test "configure dry run writes nothing" test_configure_dry_run_writes_nothing

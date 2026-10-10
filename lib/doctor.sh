@@ -5,7 +5,7 @@
 # into one file, so the summary can name every failure and the single command
 # that fixes it (spec section 4: "doctor - optional; exit 0 healthy, prints
 # findings", and the Verification gate "teeup doctor must exit 0 afterward").
-# Requires core.sh, state.sh, capability.sh, pkg.sh, lazy.sh.
+# Requires core.sh, state.sh, capability.sh, pkg.sh, lazy.sh, mise.sh.
 #
 # `teeup doctor`'s exit status is tri-state, not boolean, because what a check
 # learns is one of three things, not two: the machine is healthy, the machine
@@ -46,6 +46,11 @@ export TEEUP_DOCTOR_REPORT
 # else, which is exactly what doctor_verdict needs.
 TEEUP_DOCTOR_FAILURES=0
 TEEUP_DOCTOR_UNKNOWNS=0
+
+# Set by _doctor_mise_tools_check the first time it warns about
+# MISE_GLOBAL_CONFIG_FILE, so a machine with several mise_tools capabilities
+# gets that warning once per `teeup doctor` run, not once per capability.
+TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED=false
 
 doctor_ok() { ok "$*"; }
 doctor_warn() { warn "$*"; }
@@ -211,6 +216,75 @@ _doctor_package_command() {
   return 0
 }
 
+# _doctor_mise_tools_check <capability>
+# The mise_tools half of the metadata check (#112). Each command's link in
+# ~/.local/bin points at teeup's own entry (TEEUP_MISE_TOOLS_DIR), the entry
+# runs the version share/teeup/tools.lock pins (a link into that install, or
+# the exec script for a tool in TEEUP_MISE_EXEC_SCRIPT_TOOLS), the command
+# comes first on PATH and runs. A missing link, a missing entry and an entry
+# left dangling (after `mise uninstall` or `mise prune`) are failures whose
+# fix is `teeup configure <cap>`. A copy of the tool the package manager still has
+# from before is a notice with the command that removes it; teeup does not
+# remove it itself. MISE_GLOBAL_CONFIG_FILE makes mise ignore conf.d/teeup.toml
+# altogether (lib/mise.sh's mise_tools_conf_write warns about this too, each
+# time it writes); this says so once per run rather than once per capability.
+_doctor_mise_tools_check() {
+  local cap="$1" pair tool command_name link inner version spec bin found candidate conf_file
+  if [[ -n "${MISE_GLOBAL_CONFIG_FILE:-}" && "$TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED" != "true" ]] &&
+    [[ -n "$(cap_meta_get "$cap" mise_tools)" ]]; then
+    conf_file="$(mise_tools_conf_file)"
+    if [[ -f "$conf_file" ]]; then
+      doctor_warn "MISE_GLOBAL_CONFIG_FILE is set, so mise does not read $conf_file; mise prune can remove teeup's pinned tools. Unset it, or add these versions to $MISE_GLOBAL_CONFIG_FILE yourself."
+      TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED=true
+    fi
+  fi
+  for pair in $(cap_meta_get "$cap" mise_tools); do
+    tool="${pair%%:*}"
+    command_name="${pair#*:}"
+    link="$HOME/.local/bin/$command_name"
+    inner="$TEEUP_MISE_TOOLS_DIR/$command_name"
+    version="$(tools_lock_version "$tool" || true)"
+    spec="$(tools_lock_spec "$tool" || true)"
+    if cap_skipped mise; then
+      doctor_warn "mise is skipped on this machine (TEEUP_SKIP), so teeup did not install $tool; $command_name is whatever else is on PATH."
+    elif [[ ! -e "$link" && ! -L "$link" ]]; then
+      _doctor_report_failure "$cap" "$link is missing, so $command_name is not the $tool $version that teeup pins." "teeup configure $cap"
+    elif ! mise_tool_link_owned "$link"; then
+      doctor_warn "$link was not written by teeup, so teeup leaves it alone, and $command_name may not be $tool $version."
+    elif [[ ! -e "$inner" && ! -L "$inner" ]]; then
+      _doctor_report_failure "$cap" "$link points at $inner, which is missing, so $command_name does not run." "teeup configure $cap"
+    elif [[ -L "$inner" && ! -e "$inner" ]]; then
+      _doctor_report_failure "$cap" "$inner points at $(readlink "$inner"), which is gone (mise uninstall and mise prune remove it), so $command_name does not run." "teeup configure $cap"
+    elif ! have mise; then
+      _doctor_report_unknown "$cap" "mise is not on PATH, so teeup could not check that $link is $tool $version." "teeup install mise"
+    elif ! bin="$(mise -C / which --tool "$spec@$version" "$command_name" 2>/dev/null)" || [[ -z "$bin" ]]; then
+      _doctor_report_failure "$cap" "$tool $version is not installed through mise, so $link runs another version." "teeup configure $cap"
+    elif ! mise_tool_link_is "$inner" "$bin"; then
+      _doctor_report_failure "$cap" "$link does not run $tool $version, the version teeup pins." "teeup configure $cap"
+    else
+      # bin/teeup puts ~/.local/bin first on its own PATH (local_bin_on_path),
+      # so this cannot see the order in the user's shell. It only catches
+      # something other than teeup's link that answers to the name first.
+      found="$(command -v "$command_name" 2>/dev/null || true)"
+      if [[ "$found" != "$link" ]]; then
+        doctor_warn "$command_name resolves to ${found:-nothing} on this PATH, not to teeup's $link ($tool $version). teeup puts $HOME/.local/bin first on its own PATH, so something else answers to $command_name first. This check does not see the PATH of your shell."
+      elif command_runs "$command_name"; then
+        doctor_ok "$command_name is $tool $version through mise."
+      else
+        _doctor_report_failure "$cap" "$link is $tool $version, but $command_name does not run." "teeup configure $cap"
+      fi
+    fi
+    if doctor_backend_can_answer; then
+      for candidate in $(mise_tool_old_packages "$tool"); do
+        if pkg_installed "$candidate" >/dev/null 2>&1; then
+          doctor_warn "$(pkg_backend_label) still has $candidate, an older copy of the $tool that teeup now installs through mise. teeup no longer upgrades it. Remove it with: $(mise_tool_old_package_uninstall "$candidate")"
+        fi
+      done
+    fi
+  done
+  return 0
+}
+
 doctor_metadata_check() {
   local cap="$1" item candidate found app command_name command_path mise_tool fix detail
   # Without the backend's own command there is no way to ask whether anything
@@ -279,6 +353,7 @@ doctor_metadata_check() {
       fi
     done
   fi
+  _doctor_mise_tools_check "$cap"
   for item in $(cap_meta_get "$cap" casks); do
     # Whether this backend has casks at all is a fact about the backend, not a
     # question for its command: MacPorts has none whether or not `port` is
@@ -302,15 +377,16 @@ doctor_metadata_check() {
   #
   # An app that would have come from a cask is not expected on a backend with
   # no casks. MacPorts has none, and the capabilities know it:
-  # capabilities/emacs/install takes the terminal `emacs` port instead, ollama
-  # falls back to its formula. Asserting the app anyway fails a machine that is
-  # working as designed, and `teeup install <cap>` only repeats the same
-  # CLI-only install, so the finding can never be cleared. Every capability in
-  # the tree that declares apps also declares casks, so this made the doctor
-  # gate unusable on a backend the project deliberately supports. The cask loop
-  # above has already said casks are unavailable; a second message per app
-  # would be noise. An app with no cask behind it is still checked everywhere,
-  # because nothing else would ever report it missing.
+  # capabilities/emacs/install takes the terminal `emacs` port instead, and
+  # ollama keeps only the command it gets from mise. Asserting the app anyway
+  # fails a machine that is working as designed, and `teeup install <cap>`
+  # only repeats the same CLI-only install, so the finding can never be
+  # cleared. Every capability in the tree that declares apps also declares
+  # casks, so this made the doctor gate unusable on a backend the project
+  # deliberately supports. The cask loop above has already said casks are
+  # unavailable; a second message per app would be noise. An app with no cask
+  # behind it is still checked everywhere, because nothing else would ever
+  # report it missing.
   if [[ -n "$(cap_meta_get "$cap" casks)" ]] && ! casks_supported; then
     return 0
   fi

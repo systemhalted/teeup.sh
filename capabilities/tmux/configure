@@ -6,10 +6,11 @@
 # it; in that case nothing is installed.
 # tmux_reads_xdg_config -> 0 confirmed 3.1+, 1 confirmed older, 2 unknown
 # (no tmux on PATH, or a build whose -V isn't a plain X.Y, like "next-3.4" or
-# "master"). pkg_install skips installing when any tmux is already on PATH
-# (M8), so a pre-existing 2.x tmux would otherwise get a config it can never
-# read while teeup claims success; only a confirmed-old answer says so, so an
-# unverifiable one is never turned into a claim either way.
+# "master"). The pinned tmux is newer than 3.1, but a tmux the user put in
+# ~/.local/bin is kept in its place (M8), so a pre-existing 2.x tmux would
+# otherwise get a config it can never read while teeup claims success; only
+# a confirmed-old answer says so, so an unverifiable one is never turned into
+# a claim either way.
 tmux_reads_xdg_config() {
   local v major minor
   v="$(tmux -V 2>/dev/null)" || return 2
@@ -27,6 +28,8 @@ tmux_reads_xdg_config() {
   fi
   return 1
 }
+
+mise_tools_repair "$TEEUP_CAP"
 
 if [[ -e "$HOME/.tmux.conf" || -L "$HOME/.tmux.conf" ]]; then
   log "Keeping your $HOME/.tmux.conf; not adding $(user_config_dir)/tmux/tmux.conf, which tmux would load after it."

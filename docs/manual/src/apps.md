@@ -33,7 +33,7 @@ teeup ignores the case of an app name, but you must type a capability name exact
 
 ## Ollama
 
-teeup installs Ollama as the `ollama-app` cask, which includes the `ollama` command. If teeup cannot install the cask (for example, on a Mac older than macOS 14), it installs the `ollama` formula instead. When you need a model, download one:
+teeup installs the Ollama app as the `ollama-app` cask. The `ollama` command comes from mise, at the version that the teeup release pins. The Ollama app updates itself, so `ollama --version` can show a different server version. If the cask cannot install, for example on a Mac older than macOS 14, or with MacPorts, you still have the `ollama` command. Start the server yourself with `ollama serve`. When you need a model, download one:
 
 ```sh
 ollama pull llama3.2

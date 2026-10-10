@@ -19,6 +19,8 @@ case "$1" in --version) echo "Homebrew 4.3.9" ;; esac
 case "$1" in list) exit 1 ;; *) exit 0 ;; esac
 EOF2
   TEEUP="$TEEUP_PATH/bin/teeup"
+  # Nothing in this suite may reach the host's mise (Task 5, #112).
+  mock_mise_tools
 }
 
 test_install_gets_starship() {
@@ -26,7 +28,8 @@ test_install_gets_starship() {
   export TEEUP_TEST_MISSING="starship"
   local out
   out="$(DRY_RUN=true "$TEEUP" install starship 2>&1)"
-  assert_contains "$out" "Would execute: brew install starship" || return 1
+  assert_contains "$out" "Would execute: mise -C / install starship@$(lock_version starship)" || return 1
+  assert_not_contains "$out" "brew install starship" || return 1
   cleanup_test_env
 }
 
