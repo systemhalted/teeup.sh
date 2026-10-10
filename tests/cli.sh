@@ -1313,6 +1313,80 @@ test_update_dry_run_upgrades_no_formulae() {
   cleanup_test_env
 }
 
+# An update that moves teeup but fails to upgrade the packages must try again
+# on the next update, even though that one stays on the same commit.
+# Otherwise the formulae stay behind the release until the next one.
+UPGRADE_PENDING_MARKER='.local/state/teeup/done/update-upgrade-pending'
+
+failing_formula_brew() {
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$*" in
+  "upgrade --formula "*) echo "error" >&2; exit 1 ;;
+  "ls --versions "*) exit 0 ;;
+esac
+exit 0
+EOF2
+}
+
+test_update_retries_a_failed_upgrade_on_the_same_commit() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  failing_formula_brew
+  local rc=0 out
+  "$TEEUP" update >/dev/null 2>&1 || rc=$?
+  assert_failure "$rc" || return 1
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" "a failed upgrade after a move is recorded" || return 1
+  : > "$MOCK_LOG"
+  rc=0
+  out="$("$TEEUP" update 2>&1)" || rc=$?
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "the same-commit update tries the upgrade again" || return 1
+  assert_contains "$out" "The last update moved teeup to a new commit but could not upgrade every package, so this update tries again." || return 1
+  assert_not_contains "$out" "teeup is still on the same commit" || return 1
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" "a retry that fails again keeps the record" || return 1
+  cleanup_test_env
+}
+
+test_update_clears_the_retry_once_the_upgrade_succeeds() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  failing_formula_brew
+  "$TEEUP" update >/dev/null 2>&1 || true
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" || return 1
+  mock_command brew 0 ""
+  : > "$MOCK_LOG"
+  "$TEEUP" update >/dev/null 2>&1 || { echo "the retry failed"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "the retry upgrades" || return 1
+  [[ ! -e "$TEST_HOME/$UPGRADE_PENDING_MARKER" ]] || { echo "a successful retry must clear the record"; return 1; }
+  : > "$MOCK_LOG"
+  local out
+  out="$("$TEEUP" update 2>&1)"
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade" "nothing is pending, so the same commit upgrades nothing" || return 1
+  assert_contains "$out" "teeup is still on the same commit, so the packages it installed keep their versions." || return 1
+  cleanup_test_env
+}
+
+test_update_dry_run_leaves_the_retry_record_alone() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  DRY_RUN=true "$TEEUP" update >/dev/null 2>&1 || true
+  [[ ! -e "$TEST_HOME/$UPGRADE_PENDING_MARKER" ]] || { echo "a dry run must not record a pending upgrade"; return 1; }
+  # A real run whose upgrade fails, then a dry run: the record survives it.
+  failing_formula_brew
+  "$TEEUP" update >/dev/null 2>&1 || true
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" || return 1
+  mock_command brew 0 ""
+  DRY_RUN=true "$TEEUP" update >/dev/null 2>&1 || true
+  assert_file_exists "$TEST_HOME/$UPGRADE_PENDING_MARKER" "a dry run must not clear the record" || return 1
+  cleanup_test_env
+}
+
 # A release that moves a pin moves the tool, on every capability installed
 # here, lazy ones included: update never runs a lazy capability's configure.
 test_update_relinks_a_lazy_tool_whose_lock_version_changed() {
@@ -3049,6 +3123,9 @@ run_test "dev add-migration creates a named scaffold" test_dev_add_migration_cre
 run_test "update upgrades only what teeup installed" test_update_upgrades_only_what_teeup_installed
 run_test "update leaves formulae alone when the checkout stays" test_update_leaves_formulae_alone_when_the_checkout_stays
 run_test "update dry run upgrades no formulae" test_update_dry_run_upgrades_no_formulae
+run_test "update retries a failed upgrade on the same commit" test_update_retries_a_failed_upgrade_on_the_same_commit
+run_test "update clears the retry once the upgrade succeeds" test_update_clears_the_retry_once_the_upgrade_succeeds
+run_test "update dry run leaves the retry record alone" test_update_dry_run_leaves_the_retry_record_alone
 run_test "update relinks a lazy tool whose lock version changed" test_update_relinks_a_lazy_tool_whose_lock_version_changed
 run_test "update reports a pinned tool that would not install" test_update_reports_a_pinned_tool_that_would_not_install
 run_test "update upgrades formulae when teeup is not a git checkout" test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout

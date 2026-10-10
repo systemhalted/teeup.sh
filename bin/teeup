@@ -583,8 +583,32 @@ cmd_update() {
   # that stays on the same commit leaves their versions where they are. A
   # checkout that is not git (or has no git on PATH) has no commit to compare,
   # so it keeps today's behaviour instead: upgrade on every run.
-  if [[ -z "$head_before" || "$head_before" != "$head_after" ]]; then
-    pkg_upgrade_all || { warn "$(pkg_backend_label) could not upgrade everything."; failed=1; }
+  # A move whose upgrade fails leaves the update-upgrade-pending marker, and
+  # the next update upgrades again even on the same commit. Without it, the
+  # formulae would stay behind the release until teeup moves again.
+  local upgrade_why=""
+  if [[ -z "$head_before" ]]; then
+    upgrade_why="no-git"
+  elif [[ "$head_before" != "$head_after" ]]; then
+    upgrade_why="moved"
+  elif state_done check update-upgrade-pending; then
+    upgrade_why="pending"
+  fi
+  if [[ -n "$upgrade_why" ]]; then
+    if [[ "$upgrade_why" == "pending" ]]; then
+      log "The last update moved teeup to a new commit but could not upgrade every package, so this update tries again."
+    fi
+    if [[ "$upgrade_why" == "moved" && "$DRY_RUN" != "true" ]]; then
+      state_done mark update-upgrade-pending || true
+    fi
+    if pkg_upgrade_all; then
+      if [[ "$DRY_RUN" != "true" ]] && state_done check update-upgrade-pending; then
+        state_done clear update-upgrade-pending || failed=1
+      fi
+    else
+      warn "$(pkg_backend_label) could not upgrade everything."
+      failed=1
+    fi
   elif [[ "$DRY_RUN" == "true" ]]; then
     log "A dry run does not move the checkout, so it upgrades no packages. A real run upgrades them when it moves teeup to a new commit."
   else
