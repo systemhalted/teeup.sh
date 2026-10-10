@@ -888,6 +888,26 @@ test_mise_tools_check_leaves_a_foreign_file_alone() {
   cleanup_test_env
 }
 
+# A symlink into mise's installs directory that teeup did not record is the
+# user's own, so doctor names it as such instead of judging its version.
+test_mise_tools_check_leaves_a_user_symlink_into_mise_alone() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  local mine="$HOME/.local/share/mise/installs/ripgrep/14.0.0/bin/rg"
+  mkdir -p "${mine%/*}"
+  printf '#!/bin/sh\necho mine\n' > "$mine"
+  chmod +x "$mine"
+  mise_tool_remove ripgrep rg false >/dev/null 2>&1
+  ln -s "$mine" "$HOME/.local/bin/rg"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "$HOME/.local/bin/rg was not written by teeup" || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
+  cleanup_test_env
+}
+
 test_mise_tools_check_cannot_verify_without_mise() {
   setup
   doctor_tools_fixture
@@ -1035,6 +1055,7 @@ run_test "mise_tools check fails a link to another version" test_mise_tools_chec
 run_test "mise_tools check notes an old Homebrew copy" test_mise_tools_check_notes_an_old_homebrew_copy
 run_test "mise_tools check notes an old MacPorts copy" test_mise_tools_check_notes_an_old_macports_copy
 run_test "mise_tools check leaves a foreign file alone" test_mise_tools_check_leaves_a_foreign_file_alone
+run_test "mise_tools check leaves a user symlink into mise alone" test_mise_tools_check_leaves_a_user_symlink_into_mise_alone
 run_test "mise_tools check cannot verify without mise" test_mise_tools_check_cannot_verify_without_mise
 run_test "mise_tools check only warns when mise is skipped" test_mise_tools_check_only_warns_when_mise_is_skipped
 run_test "mise_tools check warns when another copy comes first" test_mise_tools_check_warns_when_another_copy_comes_first

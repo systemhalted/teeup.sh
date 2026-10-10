@@ -1058,6 +1058,47 @@ test_tool_remove_deletes_only_a_teeup_link() {
   cleanup_test_env
 }
 
+# A symlink the user made into mise's own installs directory (from a
+# `mise use -g`, say) is still the user's: only a command on teeup's
+# mise-links record is teeup's to replace or remove.
+test_tool_keeps_a_user_symlink_into_the_mise_installs_dir() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/14.0.0/bin/rg" out rc=0
+  mkdir -p "${mine%/*}" "$TEST_HOME/.local/bin"
+  printf '#!/bin/sh\necho mine\n' > "$mine"
+  chmod 755 "$mine"
+  ln -s "$mine" "$TEST_HOME/.local/bin/rg"
+  out="$(mise_tool_install ripgrep rg 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup" || return 1
+  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "install keeps the user's link" || return 1
+  out="$(mise_tool_remove ripgrep rg false 2>&1)" || return 1
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup." || return 1
+  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "remove keeps the user's link" || return 1
+  cleanup_test_env
+}
+
+test_tool_install_records_its_link_and_remove_forgets_it() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  local record="$TEEUP_STATE_DIR/mise-links"
+  DRY_RUN=true mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  [[ ! -e "$record" ]] || { echo "a dry run must not record a link"; return 1; }
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  mise_tool_install tealdeer tldr >/dev/null 2>&1 || return 1
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  assert_equals "$(printf 'rg\ntldr')" "$(cat "$record")" "each link is recorded once" || return 1
+  DRY_RUN=true mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
+  assert_equals "$(printf 'rg\ntldr')" "$(cat "$record")" "a dry run keeps the record" || return 1
+  mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
+  assert_equals "tldr" "$(cat "$record")" "the removed link leaves the record" || return 1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the teeup link must go"; return 1; }
+  cleanup_test_env
+}
+
 test_tool_remove_with_packages_uninstalls_the_pinned_version() {
   setup
   tools_fixture
@@ -1334,4 +1375,6 @@ run_test "conf warns about a tool the lock does not name" test_conf_warns_about_
 run_test "conf keeps the old pin when the new version fails to install" test_conf_keeps_the_old_pin_when_the_new_version_fails_to_install
 run_test "conf keeps a skipped capability's old pin" test_conf_keeps_a_skipped_capability_s_old_pin
 run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
+run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_a_user_symlink_into_the_mise_installs_dir
+run_test "tool install records its link and remove forgets it" test_tool_install_records_its_link_and_remove_forgets_it
 print_summary

@@ -540,13 +540,53 @@ _mise_tool_script() {
   printf '#!/bin/sh\n%s\nexec '\''%s'\'' "$@"\n' "$TEEUP_MISE_TOOL_MARKER" "$quoted"
 }
 
+# The commands whose ~/.local/bin link teeup wrote, one per line. A symlink
+# into mise's installs directory says nothing about who made it (a user's
+# `mise use -g` setup can make the same one), so ownership is this record.
+_mise_links_file() {
+  printf '%s/mise-links\n' "$TEEUP_STATE_DIR"
+}
+
+# _mise_link_recorded <command> -> 0 when teeup's record lists <command>.
+_mise_link_recorded() {
+  local file
+  file="$(_mise_links_file)"
+  [[ -f "$file" ]] && grep -qxF "$1" "$file"
+}
+
+# _mise_link_record <command>: adds <command> to the record. A dry run
+# writes nothing.
+_mise_link_record() {
+  local file
+  if [[ "$DRY_RUN" == "true" ]] || _mise_link_recorded "$1"; then
+    return 0
+  fi
+  file="$(_mise_links_file)"
+  mkdir -p "${file%/*}" && printf '%s\n' "$1" >> "$file"
+}
+
+# _mise_link_forget <command>: drops <command> from the record. A dry run
+# writes nothing.
+_mise_link_forget() {
+  local file
+  if [[ "$DRY_RUN" == "true" ]] || ! _mise_link_recorded "$1"; then
+    return 0
+  fi
+  file="$(_mise_links_file)"
+  { grep -vxF "$1" "$file" || true; } > "$file.new" && mv "$file.new" "$file"
+}
+
 # mise_tool_link_owned <path> -> 0 when teeup wrote <path>: a symlink into
-# mise's installs directory (dangling or not), or a script carrying the
-# marker on its second line. Anything else at the path is the user's.
+# mise's installs directory (dangling or not) for a command on teeup's
+# mise-links record, or a script carrying the marker on its second line.
+# Anything else at the path is the user's.
 mise_tool_link_owned() {
   local path="$1" installs target
   installs="$(mise_installs_dir)/"
   if [[ -L "$path" ]]; then
+    if ! _mise_link_recorded "${path##*/}"; then
+      return 1
+    fi
     target="$(readlink "$path")"
     case "$target" in
       "$installs"*) return 0 ;;
@@ -638,6 +678,9 @@ mise_tool_install() {
     warn "Could not link $link to $bin. Fix the permissions of $HOME/.local/bin, then run: teeup configure $owner"
     return 1
   fi
+  if ! _mise_link_record "$command"; then
+    warn "Linked $command, but could not record it in $(_mise_links_file), so teeup will treat $link as yours."
+  fi
   ok_unless_dry "Linked $command to $tool $version (mise)"
 }
 
@@ -661,6 +704,7 @@ mise_tool_remove() {
         warn "$link is still there. Remove it and try again."
         return 1
       fi
+      _mise_link_forget "$command" || warn "Could not drop $command from $(_mise_links_file)."
       ok_unless_dry "Removed the link: $command"
     else
       warn "Keeping $link: it was not written by teeup."
