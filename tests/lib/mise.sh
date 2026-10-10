@@ -1289,6 +1289,45 @@ test_conf_keeps_a_skipped_capability_s_old_pin() {
   cleanup_test_env
 }
 
+# MISE_GLOBAL_CONFIG_FILE makes mise read only that file as its global
+# config, so conf.d/teeup.toml (and the pins teeup just wrote to it) are
+# invisible to mise: `mise prune` can then remove them. teeup cannot edit the
+# user's file for them, so it writes conf.d as always and warns instead, once
+# per write rather than once per tool.
+test_conf_warns_once_when_mise_global_config_file_is_set() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  state_done mark cap-editor
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/elsewhere/mise.toml"
+  local out
+  out="$(mise_tools_sync 2>&1)" || { echo "sync failed: $out"; return 1; }
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'MISE_GLOBAL_CONFIG_FILE is set')" "one warning, not one per tool" || return 1
+  assert_contains "$out" "MISE_GLOBAL_CONFIG_FILE is set, so mise does not read $CONF" || return 1
+  assert_contains "$out" "Unset it, or add these versions to $TEST_HOME/elsewhere/mise.toml yourself." || return 1
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "conf.d is still written as always" || return 1
+  unset MISE_GLOBAL_CONFIG_FILE
+  cleanup_test_env
+}
+
+# When there is nothing to pin, mise_tools_conf_write removes conf.d instead
+# of writing it; the variable then changes nothing mise would read, so the
+# warning would only be noise.
+test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin() {
+  setup
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  mkdir -p "$TEEUP_CAPS_DIR"
+  TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  : > "$TEEUP_TOOLS_LOCK"
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/elsewhere/mise.toml"
+  local out
+  out="$(mise_tools_conf_write 2>&1)" || { echo "write failed: $out"; return 1; }
+  assert_not_contains "$out" "MISE_GLOBAL_CONFIG_FILE" || return 1
+  unset MISE_GLOBAL_CONFIG_FILE
+  cleanup_test_env
+}
+
 test_local_bin_on_path_moves_a_later_entry_to_the_front() {
   setup
   # This PATH has no /bin, where macOS keeps rm, so it is restored before
@@ -1397,6 +1436,8 @@ run_test "lock and metadata agree" test_lock_and_metadata_agree
 run_test "conf warns about a tool the lock does not name" test_conf_warns_about_a_tool_the_lock_does_not_name
 run_test "conf keeps the old pin when the new version fails to install" test_conf_keeps_the_old_pin_when_the_new_version_fails_to_install
 run_test "conf keeps a skipped capability's old pin" test_conf_keeps_a_skipped_capability_s_old_pin
+run_test "conf warns once when MISE_GLOBAL_CONFIG_FILE is set" test_conf_warns_once_when_mise_global_config_file_is_set
+run_test "conf says nothing about MISE_GLOBAL_CONFIG_FILE with nothing to pin" test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin
 run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
 run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_a_user_symlink_into_the_mise_installs_dir
 run_test "tool install records its link and remove forgets it" test_tool_install_records_its_link_and_remove_forgets_it

@@ -47,6 +47,11 @@ export TEEUP_DOCTOR_REPORT
 TEEUP_DOCTOR_FAILURES=0
 TEEUP_DOCTOR_UNKNOWNS=0
 
+# Set by _doctor_mise_tools_check the first time it warns about
+# MISE_GLOBAL_CONFIG_FILE, so a machine with several mise_tools capabilities
+# gets that warning once per `teeup doctor` run, not once per capability.
+TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED=false
+
 doctor_ok() { ok "$*"; }
 doctor_warn() { warn "$*"; }
 
@@ -218,9 +223,19 @@ _doctor_package_command() {
 # `mise prune`) and a missing one are failures whose fix is
 # `teeup configure <cap>`. A copy of the tool the package manager still has
 # from before is a notice with the command that removes it; teeup does not
-# remove it itself.
+# remove it itself. MISE_GLOBAL_CONFIG_FILE makes mise ignore conf.d/teeup.toml
+# altogether (lib/mise.sh's mise_tools_conf_write warns about this too, each
+# time it writes); this says so once per run rather than once per capability.
 _doctor_mise_tools_check() {
-  local cap="$1" pair tool command_name link version spec bin found candidate
+  local cap="$1" pair tool command_name link version spec bin found candidate conf_file
+  if [[ -n "${MISE_GLOBAL_CONFIG_FILE:-}" && "$TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED" != "true" ]] &&
+    [[ -n "$(cap_meta_get "$cap" mise_tools)" ]]; then
+    conf_file="$(mise_tools_conf_file)"
+    if [[ -f "$conf_file" ]]; then
+      doctor_warn "MISE_GLOBAL_CONFIG_FILE is set, so mise does not read $conf_file; mise prune can remove teeup's pinned tools. Unset it, or add these versions to $MISE_GLOBAL_CONFIG_FILE yourself."
+      TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED=true
+    fi
+  fi
   for pair in $(cap_meta_get "$cap" mise_tools); do
     tool="${pair%%:*}"
     command_name="${pair#*:}"

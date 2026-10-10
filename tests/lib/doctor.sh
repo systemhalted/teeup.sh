@@ -946,6 +946,24 @@ test_mise_tools_check_warns_when_another_copy_comes_first() {
   cleanup_test_env
 }
 
+# MISE_GLOBAL_CONFIG_FILE makes mise ignore conf.d/teeup.toml (lib/mise.sh's
+# mise_tools_conf_write already warns about it once per write); doctor must
+# say the same thing, once per `teeup doctor` run rather than once per
+# capability that has mise_tools.
+test_mise_tools_check_warns_once_about_mise_global_config_file() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/elsewhere/mise.toml"
+  local out
+  out="$(doctor_metadata_check widget 2>&1; doctor_metadata_check widget 2>&1)"
+  assert_equals "1" "$(printf '%s\n' "$out" | grep -c 'MISE_GLOBAL_CONFIG_FILE is set')" "one warning per run, not one per capability" || return 1
+  assert_contains "$out" "MISE_GLOBAL_CONFIG_FILE is set, so mise does not read $(mise_tools_conf_file)" || return 1
+  unset MISE_GLOBAL_CONFIG_FILE
+  cleanup_test_env
+}
+
 echo "lib/doctor.sh"
 # A capability this machine cannot have is healthy, not broken. Checking its
 # metadata would call every package it names missing, file a failure with a
@@ -1059,4 +1077,5 @@ run_test "mise_tools check leaves a user symlink into mise alone" test_mise_tool
 run_test "mise_tools check cannot verify without mise" test_mise_tools_check_cannot_verify_without_mise
 run_test "mise_tools check only warns when mise is skipped" test_mise_tools_check_only_warns_when_mise_is_skipped
 run_test "mise_tools check warns when another copy comes first" test_mise_tools_check_warns_when_another_copy_comes_first
+run_test "mise_tools check warns once about MISE_GLOBAL_CONFIG_FILE" test_mise_tools_check_warns_once_about_mise_global_config_file
 print_summary
