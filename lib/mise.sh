@@ -769,3 +769,23 @@ mise_tools_sync() {
   fi
   return $rc
 }
+
+# mise_tool_old_packages <tool> -> the package names this backend knew
+# <tool> by when teeup 0.3.0-beta and older installed it there, for doctor's
+# old-copy notice. Homebrew's tldr formula and MacPorts' tealdeer port both
+# gave the `tldr` command; git-delta gave `delta` on both.
+mise_tool_old_packages() {
+  case "$(pkg_backend):$1" in
+    homebrew:delta|macports:delta) echo "git-delta" ;;
+    homebrew:tealdeer) echo "tldr tealdeer" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+# mise_tool_old_package_uninstall <pkg> -> the command that removes <pkg>.
+mise_tool_old_package_uninstall() {
+  case "$(pkg_backend)" in
+    homebrew) printf 'brew uninstall %s\n' "$1" ;;
+    macports) printf 'sudo port uninstall %s\n' "$1" ;;
+  esac
+}

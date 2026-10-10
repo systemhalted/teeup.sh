@@ -5,7 +5,7 @@
 # into one file, so the summary can name every failure and the single command
 # that fixes it (spec section 4: "doctor - optional; exit 0 healthy, prints
 # findings", and the Verification gate "teeup doctor must exit 0 afterward").
-# Requires core.sh, state.sh, capability.sh, pkg.sh, lazy.sh.
+# Requires core.sh, state.sh, capability.sh, pkg.sh, lazy.sh, mise.sh.
 #
 # `teeup doctor`'s exit status is tri-state, not boolean, because what a check
 # learns is one of three things, not two: the machine is healthy, the machine
@@ -211,6 +211,57 @@ _doctor_package_command() {
   return 0
 }
 
+# _doctor_mise_tools_check <capability>
+# The mise_tools half of the metadata check (#112). Each command's link in
+# ~/.local/bin exists, runs the version share/teeup/tools.lock pins, comes
+# first on PATH and runs. A dangling link (after `mise uninstall` or
+# `mise prune`) and a missing one are failures whose fix is
+# `teeup configure <cap>`. A copy of the tool the package manager still has
+# from before is a notice with the command that removes it; teeup does not
+# remove it itself.
+_doctor_mise_tools_check() {
+  local cap="$1" pair tool command_name link version spec bin found candidate
+  for pair in $(cap_meta_get "$cap" mise_tools); do
+    tool="${pair%%:*}"
+    command_name="${pair#*:}"
+    link="$HOME/.local/bin/$command_name"
+    version="$(tools_lock_version "$tool" || true)"
+    spec="$(tools_lock_spec "$tool" || true)"
+    if cap_skipped mise; then
+      doctor_warn "mise is skipped on this machine (TEEUP_SKIP), so teeup did not install $tool; $command_name is whatever else is on PATH."
+    elif [[ ! -e "$link" && ! -L "$link" ]]; then
+      _doctor_report_failure "$cap" "$link is missing, so $command_name is not the $tool $version that teeup pins." "teeup configure $cap"
+    elif ! mise_tool_link_owned "$link"; then
+      doctor_warn "$link was not written by teeup, so teeup leaves it alone, and $command_name may not be $tool $version."
+    elif [[ -L "$link" && ! -e "$link" ]]; then
+      _doctor_report_failure "$cap" "$link points at $(readlink "$link"), which is gone (mise uninstall and mise prune remove it), so $command_name does not run." "teeup configure $cap"
+    elif ! have mise; then
+      _doctor_report_unknown "$cap" "mise is not on PATH, so teeup could not check that $link is $tool $version." "teeup install mise"
+    elif ! bin="$(mise -C / which --tool "$spec@$version" "$command_name" 2>/dev/null)" || [[ -z "$bin" ]]; then
+      _doctor_report_failure "$cap" "$tool $version is not installed through mise, so $link runs another version." "teeup configure $cap"
+    elif ! mise_tool_link_is "$link" "$bin"; then
+      _doctor_report_failure "$cap" "$link does not run $tool $version, the version teeup pins." "teeup configure $cap"
+    else
+      found="$(command -v "$command_name" 2>/dev/null || true)"
+      if [[ "$found" != "$link" ]]; then
+        doctor_warn "$command_name resolves to ${found:-nothing} on this PATH, not to teeup's $link ($tool $version). New terminals put $HOME/.local/bin first; check that this shell does too."
+      elif command_runs "$command_name"; then
+        doctor_ok "$command_name is $tool $version through mise."
+      else
+        _doctor_report_failure "$cap" "$link is $tool $version, but $command_name does not run." "teeup configure $cap"
+      fi
+    fi
+    if doctor_backend_can_answer; then
+      for candidate in $(mise_tool_old_packages "$tool"); do
+        if pkg_installed "$candidate" >/dev/null 2>&1; then
+          doctor_warn "$(pkg_backend_label) still has $candidate, an older copy of the $tool that teeup now installs through mise. teeup no longer upgrades it. Remove it with: $(mise_tool_old_package_uninstall "$candidate")"
+        fi
+      done
+    fi
+  done
+  return 0
+}
+
 doctor_metadata_check() {
   local cap="$1" item candidate found app command_name command_path mise_tool fix detail
   # Without the backend's own command there is no way to ask whether anything
@@ -279,6 +330,7 @@ doctor_metadata_check() {
       fi
     done
   fi
+  _doctor_mise_tools_check "$cap"
   for item in $(cap_meta_get "$cap" casks); do
     # Whether this backend has casks at all is a fact about the backend, not a
     # question for its command: MacPorts has none whether or not `port` is
