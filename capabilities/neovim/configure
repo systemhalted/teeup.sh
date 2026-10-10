@@ -5,6 +5,7 @@
 # that layer is teeup's and is upgraded by `teeup update`. Neovim reads
 # $XDG_CONFIG_HOME/nvim, so user_config_dir is the right root here.
 NVIM_DIR="$(user_config_dir)/nvim"
+mise_tools_repair "$TEEUP_CAP"
 for rel in init.lua stylua.toml lua/config/lazy.lua lua/config/options.lua \
            lua/config/keymaps.lua lua/config/autocmds.lua lua/plugins/local.lua; do
   copy_config_once "$TEEUP_CAP_DIR/config/nvim/$rel" "$NVIM_DIR/$rel"
@@ -20,8 +21,9 @@ if [[ -f "$HOME/.vimrc" ]]; then
   log "$HOME/.vimrc is Vim's; Neovim reads $NVIM_DIR/init.lua instead."
 fi
 
-# LazyVim stops with an error on a Neovim older than 0.11.2, and pkg_install
-# keeps whatever nvim is already on PATH, so an old one is reported here. The
+# LazyVim stops with an error on a Neovim older than 0.11.2. The pinned one
+# is newer, but an nvim the user put in ~/.local/bin is kept in its place,
+# and another can come first on PATH, so an old one is reported here. The
 # fourth capture is a bare "-" when the version has a pre-release suffix
 # right after the patch number (e.g. "0.11.2-dev+g1234"): such a build is not
 # yet the released 0.11.2 and must still warn (M6), so it is treated as one

@@ -44,16 +44,18 @@ seed_answers() {
 
 test_install_gets_git_delta_lfs_and_lazygit() {
   setup
-  # setup mocks git-lfs onto PATH for the configure tests, and pkg_install
-  # short-circuits on a command that is already there. Hide it for this test
-  # only, or the brew assertion below can never fire.
+  # setup mocks git-lfs onto PATH for the configure tests. Hide it for this
+  # test only, so a fresh Mac is what the install previews.
   export TEEUP_TEST_MISSING="delta lazygit emacsclient git-lfs"
   local out
   out="$(DRY_RUN=true "$TEEUP" install git 2>&1)"
   assert_contains "$out" "Would execute: brew install git" || return 1
-  assert_contains "$out" "Would execute: brew install git-delta" || return 1
-  assert_contains "$out" "Would execute: brew install git-lfs" || return 1
-  assert_contains "$out" "Would execute: brew install lazygit" || return 1
+  assert_not_contains "$out" "brew install git-delta" || return 1
+  assert_not_contains "$out" "brew install git-lfs" || return 1
+  assert_not_contains "$out" "brew install lazygit" || return 1
+  assert_contains "$out" "Would execute: mise -C / install delta@$(lock_version delta)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install git-lfs@$(lock_version git-lfs)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install lazygit@$(lock_version lazygit)" || return 1
   cleanup_test_env
 }
 

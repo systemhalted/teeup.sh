@@ -1155,6 +1155,29 @@ test_local_bin_on_path_puts_it_first_once() {
   cleanup_test_env
 }
 
+# The lock and the metadata agree: every tool a capability names has exactly
+# one lock line, and the lock names no tool that no capability uses.
+test_lock_and_metadata_agree() {
+  setup
+  local lock="$TEEUP_PATH/share/teeup/tools.lock" name pair tool count named=" " t
+  for name in $(cap_list); do
+    for pair in $(cap_meta_get "$name" mise_tools); do
+      tool="${pair%%:*}"
+      count="$(awk -v t="$tool" '$1 !~ /^#/ && $1 == t' "$lock" | wc -l | tr -d ' ')"
+      assert_equals "1" "$count" "$name's $tool needs exactly one lock line" || return 1
+      named="$named$tool "
+    done
+  done
+  [[ "$named" != " " ]] || { echo "no capability names a mise tool"; return 1; }
+  for t in $(awk '!/^#/ && NF { print $1 }' "$lock"); do
+    case "$named" in
+      *" $t "*) ;;
+      *) echo "the lock names $t, which no capability's mise_tools uses"; return 1 ;;
+    esac
+  done
+  cleanup_test_env
+}
+
 run_test "global state distinguishes the three cases" test_global_state_distinguishes_the_three_cases
 run_test "tool unuse drops a requested tool" test_tool_unuse_drops_a_requested_tool
 run_test "tool unuse leaves an unrequested tool alone" test_tool_unuse_leaves_an_unrequested_tool_alone
@@ -1220,4 +1243,5 @@ run_test "repair warns but succeeds" test_repair_warns_but_succeeds
 run_test "sync links every installed, unskipped capability" test_sync_links_every_installed_unskipped_capability
 run_test "every mise call runs from /" test_every_mise_call_runs_from_root
 run_test "local_bin_on_path puts it first once" test_local_bin_on_path_puts_it_first_once
+run_test "lock and metadata agree" test_lock_and_metadata_agree
 print_summary

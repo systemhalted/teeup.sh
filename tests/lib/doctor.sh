@@ -764,9 +764,10 @@ EOF2
   hide_host_commands rg fd fzf bat eza zoxide jq yq btop tree wget curl gpg tldr dust
   local out
   out="$(doctor_run_one cli-tools 2>&1)"
-  assert_contains "$out" "package ripgrep is not installed" || return 1
-  assert_contains "$(cat "$REPORT")" "package ripgrep is not installed" || return 1
+  assert_contains "$out" "package jq is not installed" || return 1
+  assert_contains "$(cat "$REPORT")" "package jq is not installed" || return 1
   assert_contains "$(cat "$REPORT")" "teeup install cli-tools" || return 1
+  assert_contains "$(cat "$REPORT")" "$HOME/.local/bin/rg is missing" "the mise half is checked too" || return 1
   cleanup_test_env
 }
 
@@ -779,13 +780,17 @@ test_run_one_accepts_a_real_capability_whose_commands_are_on_path() {
   mock_command_script brew <<'EOF2'
 case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
 EOF2
+  hide_host_commands rg fd fzf bat eza zoxide yq tldr dust
+  mock_mise_tools
   local cmd
-  for cmd in rg fd fzf bat eza zoxide jq yq btop tree wget curl gpg tldr dust; do
+  for cmd in jq btop tree wget curl gpg; do
     mock_command "$cmd" 0 ""
   done
+  mise_tools_apply cli-tools >/dev/null 2>&1
+  export PATH="$HOME/.local/bin:$PATH"
   local out
   out="$(doctor_run_one cli-tools 2>&1)"
-  assert_not_contains "$out" "is not installed" "every tool is on PATH, which is what install accepted" || return 1
+  assert_not_contains "$out" "is not installed" "every package command is on PATH and every mise tool is linked" || return 1
   assert_equals "" "$(cat "$REPORT")" "nothing here is a finding the user must act on" || return 1
   cleanup_test_env
 }

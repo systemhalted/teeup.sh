@@ -392,7 +392,8 @@ test_a_second_bootstrap_changes_nothing() {
   assert_contains "$out" "Already present: $TEST_HOME/Work" || return 1
   assert_contains "$out" "Already signed in to GitHub (" || return 1
   assert_contains "$out" "macOS preferences already set; nothing to restart." || return 1
-  assert_not_contains "$out" "Installed ripgrep (Homebrew)" "nothing was installed again" || return 1
+  assert_not_contains "$out" "Installed jq (Homebrew)" "nothing was installed again" || return 1
+  assert_contains "$out" "Already linked: rg (ripgrep $(lock_version ripgrep))" "the pinned tools are already in place" || return 1
   assert_not_contains "$out" "Installed wezterm (cask)" "no cask was installed again" || return 1
   assert_not_contains "$out" "Generating the" "the keys were left alone" || return 1
   assert_not_contains "$out" "One manual step" "the AeroSpace block is printed once" || return 1

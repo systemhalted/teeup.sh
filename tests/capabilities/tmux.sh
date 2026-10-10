@@ -19,8 +19,9 @@ EOF2
 test_install_gets_tmux() {
   setup
   local out
-  out="$(DRY_RUN=true "$TEEUP" install tmux)"
-  assert_contains "$out" "Would execute: brew install tmux" || return 1
+  out="$(DRY_RUN=true "$TEEUP" install tmux 2>&1)"
+  assert_contains "$out" "Would execute: mise -C / install tmux@$(lock_version tmux)" || return 1
+  assert_not_contains "$out" "brew install tmux" || return 1
   cleanup_test_env
 }
 
@@ -64,15 +65,15 @@ test_shim_is_generated_for_tmux() {
   cleanup_test_env
 }
 
-# M8: pkg_install skips installing tmux when any tmux is already on PATH, so
-# a pre-existing 2.x tmux would get an XDG config it can never read while
+# M8: mise_tool_install keeps a tmux the user put in ~/.local/bin, so a
+# pre-existing 2.x tmux would get an XDG config it can never read while
 # teeup's "Installed" message implies it took effect.
 test_configure_warns_when_the_installed_tmux_predates_xdg_support() {
   setup
   unset TEEUP_TEST_MISSING
-  mock_command_script tmux <<'EOF2'
-[ "$1" = "-V" ] && echo "tmux 2.8"
-EOF2
+  mkdir -p "$TEST_HOME/.local/bin"
+  printf '#!/usr/bin/env bash\n[ "$1" = "-V" ] && echo "tmux 2.8"\n' > "$TEST_HOME/.local/bin/tmux"
+  chmod +x "$TEST_HOME/.local/bin/tmux"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure tmux 2>&1)"
   assert_contains "$out" "tmux 2.8 does not read $CONF on its own (tmux 3.1 or newer does)" || return 1
@@ -83,9 +84,9 @@ EOF2
 test_configure_is_silent_about_the_version_when_tmux_is_current() {
   setup
   unset TEEUP_TEST_MISSING
-  mock_command_script tmux <<'EOF2'
-[ "$1" = "-V" ] && echo "tmux 3.3a"
-EOF2
+  mkdir -p "$TEST_HOME/.local/bin"
+  printf '#!/usr/bin/env bash\n[ "$1" = "-V" ] && echo "tmux 3.3a"\n' > "$TEST_HOME/.local/bin/tmux"
+  chmod +x "$TEST_HOME/.local/bin/tmux"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure tmux 2>&1)"
   assert_not_contains "$out" "does not read" || return 1
@@ -95,12 +96,44 @@ EOF2
 test_configure_never_guesses_at_an_unparsable_version() {
   setup
   unset TEEUP_TEST_MISSING
-  mock_command_script tmux <<'EOF2'
-[ "$1" = "-V" ] && echo "tmux next-3.4"
-EOF2
+  mkdir -p "$TEST_HOME/.local/bin"
+  printf '#!/usr/bin/env bash\n[ "$1" = "-V" ] && echo "tmux next-3.4"\n' > "$TEST_HOME/.local/bin/tmux"
+  chmod +x "$TEST_HOME/.local/bin/tmux"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure tmux 2>&1)"
   assert_not_contains "$out" "does not read" || return 1
+  cleanup_test_env
+}
+
+test_install_is_not_applicable_when_mise_is_skipped() {
+  setup
+  local out
+  out="$(TEEUP_SKIP=mise DRY_RUN=false "$TEEUP" install tmux 2>&1)" || true
+  assert_contains "$out" "tmux comes from mise, which is skipped on this machine (TEEUP_SKIP)." || return 1
+  "$TEEUP" has tmux && { echo "tmux must not be marked installed"; return 1; }
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew install tmux" || return 1
+  cleanup_test_env
+}
+
+# The lazy round trip through mise: the shim asks, the install links
+# ~/.local/bin/tmux, the link runs, and the next call needs no teeup at all.
+test_shim_round_trip_installs_tmux_through_mise_and_runs_it() {
+  setup
+  export TEEUP_NO_GUM=1
+  local shims="$TEST_HOME/.local/state/teeup/shims" out
+  DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null 2>&1
+  assert_file_exists "$shims/tmux" || return 1
+  export PATH="$MOCK_BIN:$TEST_HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$shims"
+  export TEEUP_TEST_MISSING=""
+  hide_host_commands tmux
+  out="$(printf 'y\n' | TEEUP_TEST_TTY=yes DRY_RUN=false "$shims/tmux" new -s work 2>&1)"
+  assert_contains "$out" "tmux is provided by capability tmux. Install now?" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install tmux@$(lock_version tmux)" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew install tmux" || return 1
+  assert_contains "$out" "tmux ran: new -s work" || return 1
+  [[ -L "$TEST_HOME/.local/bin/tmux" ]] || { echo "the link must be in ~/.local/bin"; return 1; }
+  "$TEEUP" has tmux || { echo "tmux must be marked installed"; return 1; }
+  assert_equals "$TEST_HOME/.local/bin/tmux" "$(command -v tmux)" "the link comes before the shim" || return 1
   cleanup_test_env
 }
 
@@ -133,4 +166,6 @@ run_test "shim is generated for tmux" test_shim_is_generated_for_tmux
 run_test "configure warns when the installed tmux predates XDG support" test_configure_warns_when_the_installed_tmux_predates_xdg_support
 run_test "configure is silent about the version when tmux is current" test_configure_is_silent_about_the_version_when_tmux_is_current
 run_test "configure never guesses at an unparsable version" test_configure_never_guesses_at_an_unparsable_version
+run_test "install is not applicable when mise is skipped" test_install_is_not_applicable_when_mise_is_skipped
+run_test "shim round trip installs tmux through mise and runs it" test_shim_round_trip_installs_tmux_through_mise_and_runs_it
 print_summary

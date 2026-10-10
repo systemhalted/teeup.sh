@@ -4,3 +4,7 @@
 # exports and `teeup theme set` overrides, and a --theme line here would win
 # over both.
 copy_config_once "$TEEUP_CAP_DIR/config/bat/config" "$(user_config_dir)/bat/config"
+
+# `teeup configure cli-tools` is the repair path for the mise half: it
+# installs a missing pinned version again and repairs its link.
+mise_tools_repair "$TEEUP_CAP"

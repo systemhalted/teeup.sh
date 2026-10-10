@@ -28,7 +28,8 @@ test_install_gets_starship() {
   export TEEUP_TEST_MISSING="starship"
   local out
   out="$(DRY_RUN=true "$TEEUP" install starship 2>&1)"
-  assert_contains "$out" "Would execute: brew install starship" || return 1
+  assert_contains "$out" "Would execute: mise -C / install starship@$(lock_version starship)" || return 1
+  assert_not_contains "$out" "brew install starship" || return 1
   cleanup_test_env
 }
 

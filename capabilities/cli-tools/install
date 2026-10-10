@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# package:command pairs, because the package name and the binary differ for
-# half of them and pkg_install skips whatever is already on PATH.
+# Two sources (#112). The package manager installs what teeup itself needs
+# (jq), what mise has no package for (tree, wget, curl, gnupg) and btop,
+# which has no macOS build upstream, as package:command pairs, because the
+# package name and the binary differ and pkg_install skips whatever is
+# already on PATH. Every other tool comes from mise at the version in
+# share/teeup/tools.lock, linked into ~/.local/bin (mise_tools).
 #
-# The pairs live in the capability metadata, not here. They are the same facts
-# `teeup doctor` needs -- it has to ask what install asked, or it reports a
-# failure on a machine where the system's own curl satisfied the package and
-# Homebrew was deliberately skipped. Writing them in two places is how those
-# two came to disagree; there is one list now and both read it.
+# Both lists live in the capability metadata, not here: they are the facts
+# `teeup doctor` needs, and it has to ask what install asked.
 #
-# lazygit belongs to the git capability and gh to github: packages= drives the
-# generic update and remove verbs, so every package has exactly one owner.
+# lazygit and delta belong to the git capability and gh to github: every
+# package and every mise tool has exactly one owner.
 failed=""
 for pair in $(cap_meta_get "$TEEUP_CAP" package_commands); do
   pkg="${pair%%:*}"
@@ -17,8 +18,11 @@ for pair in $(cap_meta_get "$TEEUP_CAP" package_commands); do
   pkg_install "$pkg" "$cmd" || failed="$failed $pkg"
 done
 
-# One missing port on a MacPorts machine must not abort the core tier; the
-# shell layer guards on each tool and `teeup doctor` will report the gap.
+# One missing port or tool must not abort the core tier; the shell layer
+# guards on each tool and `teeup doctor` reports the gap.
 if [[ -n "$failed" ]]; then
   warn "Could not install:$failed. Install them by hand, or re-run: teeup install cli-tools"
+fi
+if ! mise_tools_apply "$TEEUP_CAP"; then
+  warn "Some of the tools that come from mise are missing (the lines above say which). Fix the cause, then run: teeup configure cli-tools"
 fi

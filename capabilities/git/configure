@@ -12,6 +12,10 @@ git_quote() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\
 
 git_dir="$(user_config_dir)/git"
 
+# delta, git-lfs and lazygit first: the pager choice below asks whether
+# delta is there, and `teeup configure git` is their repair path.
+mise_tools_repair "$TEEUP_CAP"
+
 name="$(answers_get TEEUP_NAME)"
 email="$(answers_get TEEUP_EMAIL)"
 if [[ -z "$name" || -z "$email" ]]; then

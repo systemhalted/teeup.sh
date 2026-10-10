@@ -249,52 +249,12 @@ test_candidates_map_bash_completion_on_homebrew() {
   cleanup_test_env
 }
 
-# `tldr` itself is not a MacPorts port; tealdeer is the only candidate,
-# because its binary is named `tldr`, which is what cli-tools's tldr:tldr
-# package:command pair checks for on PATH. tlrc is deliberately not a
-# fallback here: see test_pkg_install_does_not_claim_success_on_a_failed_
-# tealdeer below for why.
-test_candidates_map_tldr_to_tealdeer_only_on_macports() {
-  setup
-  export TEEUP_PACKAGE_MANAGER=macports
-  assert_equals "tealdeer" "$(package_candidates tldr)" || return 1
-  cleanup_test_env
-}
-
 # `github-cli` is not a real MacPorts port (only `gh` is); the mapping must
 # not offer it as a fallback.
 test_candidates_map_gh_to_just_gh_on_macports() {
   setup
   export TEEUP_PACKAGE_MANAGER=macports
   assert_equals "gh" "$(package_candidates gh)" || return 1
-  cleanup_test_env
-}
-
-# tlrc's binary is `tlrc`, not `tldr`, so it can never satisfy the
-# `tldr:tldr` package:command pair cli-tools installs it under: adding it as
-# a fallback would let a failed tealdeer install still report success while
-# leaving the user without a `tldr` command, and the next run would find
-# tlrc already installed and stay silent about the gap forever. A failed
-# tealdeer must surface pkg_install's honest "unable to install" warning
-# instead.
-test_pkg_install_does_not_claim_success_on_a_failed_tealdeer() {
-  setup
-  export TEEUP_PACKAGE_MANAGER=macports
-  export TEEUP_TEST_MISSING=tldr
-  mock_command port 0 ""
-  mock_command_script sudo <<'EOF2'
-case "$1 $2 ${3:-}" in
-  "port install tealdeer") exit 1 ;;
-  *) exit 0 ;;
-esac
-EOF2
-  DRY_RUN=false
-  local rc=0 out
-  out="$(pkg_install tldr tldr 2>&1)" || rc=$?
-  assert_failure "$rc" "a failed tealdeer must not be reported as a successful install" || return 1
-  assert_contains "$out" "Failed to install 'tealdeer' with MacPorts; trying the next candidate." || return 1
-  assert_contains "$out" "Unable to install 'tldr' with MacPorts." || return 1
-  assert_not_contains "$out" "Installed" "nothing was actually installed" || return 1
   cleanup_test_env
 }
 
@@ -666,9 +626,7 @@ run_test "pkg_install calls brew when missing" test_pkg_install_calls_brew_when_
 run_test "pkg_install real-run wording is unchanged" test_pkg_install_real_run_wording_is_unchanged
 run_test "pkg_install uses sudo port on macports" test_pkg_install_uses_sudo_port_on_macports
 run_test "candidates map bash-completion" test_candidates_map_bash_completion_on_homebrew
-run_test "candidates map tldr to tealdeer only on macports" test_candidates_map_tldr_to_tealdeer_only_on_macports
 run_test "candidates map gh to just gh on macports" test_candidates_map_gh_to_just_gh_on_macports
-run_test "pkg_install does not claim success on a failed tealdeer" test_pkg_install_does_not_claim_success_on_a_failed_tealdeer
 run_test "pkg_installed announces the backend it asks" test_pkg_installed_announces_the_backend_it_asks
 run_test "pkg_installed announces macports too" test_pkg_installed_announces_macports_too
 run_test "pkg_install have short-circuit does not announce" test_pkg_install_have_short_circuit_does_not_announce

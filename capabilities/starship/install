@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
-# The prompt itself. capabilities/zsh/default/init runs `starship init zsh`
-# whenever the binary is on PATH, so there is no wiring step.
-pkg_install starship starship
+# The prompt itself, from mise at the version in share/teeup/tools.lock and
+# linked into ~/.local/bin. capabilities/zsh/default/init runs
+# `starship init zsh` whenever the binary is on PATH, so there is no wiring
+# step.
+if cap_skipped mise; then
+  not_applicable "Starship comes from mise, which is skipped on this machine (TEEUP_SKIP)."
+fi
+mise_tools_apply "$TEEUP_CAP"
