@@ -224,6 +224,7 @@ test_mise_tools_migration_links_the_tools_and_keeps_the_homebrew_copies() {
   local bin="$TEST_HOME/.local/bin" conf="$TEST_HOME/.config/mise/conf.d/teeup.toml"
   migration_run "$MISE_TOOLS_MIGRATION" >/dev/null 2>&1 || { echo "the migration failed"; return 1; }
   [[ -L "$bin/rg" && -L "$bin/tldr" && -L "$bin/nvim" ]] || { echo "core and lazy tools are linked"; return 1; }
+  assert_equals "$TEEUP_MISE_TOOLS_DIR/rg" "$(readlink "$bin/rg")" "the .local/bin link points at teeup's own entry" || return 1
   [[ ! -e "$bin/delta" && ! -L "$bin/delta" ]] || { echo "git is not installed here, so its tools are not"; return 1; }
   assert_contains "$(cat "$conf")" "\"ripgrep\" = \"$(lock_version ripgrep)\"" || return 1
   assert_contains "$(cat "$conf")" "\"aqua:neovim/neovim\" = \"$(lock_version neovim)\"" || return 1
@@ -241,7 +242,7 @@ test_mise_tools_migration_dry_run_changes_nothing() {
   local out
   out="$(DRY_RUN=true migration_run "$MISE_TOOLS_MIGRATION" 2>&1)"
   assert_contains "$out" "Would execute: mise -C / install ripgrep@$(lock_version ripgrep)" || return 1
-  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -e "$TEST_HOME/.config/mise/conf.d/teeup.toml" ]] || { echo "dry run changed the disk"; return 1; }
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -e "$TEEUP_MISE_TOOLS_DIR" && ! -e "$TEST_HOME/.config/mise/conf.d/teeup.toml" ]] || { echo "dry run changed the disk"; return 1; }
   [[ ! -e "$MARKS/$MISE_TOOLS_MIGRATION" ]] || { echo "dry run marked the migration"; return 1; }
   cleanup_test_env
 }

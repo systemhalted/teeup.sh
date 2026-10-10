@@ -825,13 +825,47 @@ test_mise_tools_check_fails_a_dangling_link_and_its_fix_repairs_it() {
   mise_tools_apply widget >/dev/null 2>&1
   rm -rf "$HOME/.local/share/mise/installs/ripgrep/15.2.0"
   doctor_metadata_check widget >/dev/null 2>&1
-  assert_contains "$(cat "$REPORT")" "which is gone (mise uninstall and mise prune remove it)" || return 1
+  assert_contains "$(cat "$REPORT")" "$TEEUP_MISE_TOOLS_DIR/rg points at $HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg, which is gone (mise uninstall and mise prune remove it)" || return 1
   assert_contains "$(cat "$REPORT")" "teeup configure widget" || return 1
   # What `teeup configure widget` runs for a capability with mise tools.
   mise_tools_repair widget >/dev/null 2>&1
   : > "$REPORT"
   doctor_metadata_check widget >/dev/null 2>&1
   assert_equals "" "$(cat "$REPORT")" "the printed fix clears the finding" || return 1
+  cleanup_test_env
+}
+
+# teeup's ~/.local/bin link is there, but the entry it points at in teeup's
+# own directory is gone.
+test_mise_tools_check_fails_a_missing_inner_entry_and_its_fix_repairs_it() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mise_tools_apply widget >/dev/null 2>&1
+  rm -f "$TEEUP_MISE_TOOLS_DIR/rg"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_contains "$(cat "$REPORT")" "$HOME/.local/bin/rg points at $TEEUP_MISE_TOOLS_DIR/rg, which is missing, so rg does not run." || return 1
+  assert_contains "$(cat "$REPORT")" "teeup configure widget" || return 1
+  mise_tools_repair widget >/dev/null 2>&1
+  : > "$REPORT"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_equals "" "$(cat "$REPORT")" "the printed fix clears the finding" || return 1
+  cleanup_test_env
+}
+
+# A tool in TEEUP_MISE_EXEC_SCRIPT_TOOLS has a script as teeup's own entry.
+test_mise_tools_check_passes_an_exec_script_tool() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  # shellcheck disable=SC2034  # read by lib/mise.sh
+  TEEUP_MISE_EXEC_SCRIPT_TOOLS="ripgrep"
+  mise_tools_apply widget >/dev/null 2>&1
+  [[ -f "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "fixture: rg's entry is a script"; return 1; }
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "rg is ripgrep 15.2.0 through mise." || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
   cleanup_test_env
 }
 
@@ -888,8 +922,9 @@ test_mise_tools_check_leaves_a_foreign_file_alone() {
   cleanup_test_env
 }
 
-# A symlink into mise's installs directory that teeup did not record is the
-# user's own, so doctor names it as such instead of judging its version.
+# A symlink straight into mise's installs directory, rather than to teeup's
+# own entry, is the user's own, so doctor names it as such instead of
+# judging its version.
 test_mise_tools_check_leaves_a_user_symlink_into_mise_alone() {
   setup
   doctor_tools_fixture
@@ -1069,6 +1104,8 @@ run_test "metadata check accepts an app installed without its cask" test_metadat
 run_test "mise_tools check passes a linked, pinned tool" test_mise_tools_check_passes_a_linked_pinned_tool
 run_test "mise_tools check fails a missing link" test_mise_tools_check_fails_a_missing_link
 run_test "mise_tools check fails a dangling link, and its fix repairs it" test_mise_tools_check_fails_a_dangling_link_and_its_fix_repairs_it
+run_test "mise_tools check fails a missing inner entry, and its fix repairs it" test_mise_tools_check_fails_a_missing_inner_entry_and_its_fix_repairs_it
+run_test "mise_tools check passes an exec script tool" test_mise_tools_check_passes_an_exec_script_tool
 run_test "mise_tools check fails a link to another version" test_mise_tools_check_fails_a_link_to_another_version
 run_test "mise_tools check notes an old Homebrew copy" test_mise_tools_check_notes_an_old_homebrew_copy
 run_test "mise_tools check notes an old MacPorts copy" test_mise_tools_check_notes_an_old_macports_copy

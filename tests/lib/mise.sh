@@ -901,12 +901,15 @@ test_tool_install_installs_the_pinned_version_then_links_the_which_result() {
   setup
   tools_fixture
   mock_mise_tools
-  local link="$TEST_HOME/.local/bin/rg" bin="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out
+  local link="$TEST_HOME/.local/bin/rg" inner bin="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out
+  assert_equals "$TEEUP_STATE_DIR/tools" "$TEEUP_MISE_TOOLS_DIR" "teeup's own directory is in its state directory" || return 1
+  inner="$TEEUP_MISE_TOOLS_DIR/rg"
   out="$(mise_tool_install ripgrep rg 2>&1)" || { echo "install failed: $out"; return 1; }
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.2.0" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / which --tool ripgrep@15.2.0 rg" || return 1
-  [[ -L "$link" ]] || { echo "rg must be a symlink"; return 1; }
-  assert_equals "$bin" "$(readlink "$link")" || return 1
+  [[ -L "$link" && -L "$inner" ]] || { echo "rg and teeup's own entry must both be symlinks"; return 1; }
+  assert_equals "$inner" "$(readlink "$link")" "the .local/bin link points at teeup's own entry" || return 1
+  assert_equals "$bin" "$(readlink "$inner")" "teeup's own entry points at the pinned binary" || return 1
   assert_equals "rg 15.2.0" "$("$link" --version)" "the link runs the binary itself" || return 1
   assert_contains "$out" "Linked rg to ripgrep 15.2.0 (mise)" || return 1
   : > "$MOCK_LOG"
@@ -922,7 +925,7 @@ test_tool_install_follows_a_command_and_a_backend_that_differ_from_the_tool() {
   mock_mise_tools
   mise_tool_install tealdeer tldr >/dev/null 2>&1 || return 1
   mise_tool_install neovim nvim >/dev/null 2>&1 || return 1
-  assert_equals "$TEST_HOME/.local/share/mise/installs/tealdeer/1.9.0/bin/tldr" "$(readlink "$TEST_HOME/.local/bin/tldr")" || return 1
+  assert_equals "$TEST_HOME/.local/share/mise/installs/tealdeer/1.9.0/bin/tldr" "$(readlink "$TEEUP_MISE_TOOLS_DIR/tldr")" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / install aqua:neovim/neovim@0.12.6" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / which --tool aqua:neovim/neovim@0.12.6 nvim" || return 1
   [[ -L "$TEST_HOME/.local/bin/nvim" ]] || { echo "nvim is the link, not neovim"; return 1; }
@@ -946,6 +949,7 @@ test_tool_install_keeps_a_file_or_link_teeup_did_not_write() {
   assert_contains "$out" "Keeping $TEST_HOME/.local/bin/tldr" || return 1
   assert_equals "/bin/sh" "$(readlink "$TEST_HOME/.local/bin/tldr")" "a foreign symlink is kept too" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "install" "nothing is installed for a command that stays foreign" || return 1
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/tldr" ]] || { echo "no entry of teeup's own for a command that stays foreign"; return 1; }
   cleanup_test_env
 }
 
@@ -955,7 +959,7 @@ test_tool_install_repairs_a_link_left_dangling_by_mise_uninstall() {
   mock_mise_tools
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
   rm -rf "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0"
-  [[ -L "$TEST_HOME/.local/bin/rg" && ! -e "$TEST_HOME/.local/bin/rg" ]] || { echo "fixture: the link must dangle"; return 1; }
+  [[ -L "$TEEUP_MISE_TOOLS_DIR/rg" && ! -e "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "fixture: teeup's own entry must dangle"; return 1; }
   : > "$MOCK_LOG"
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.2.0" || return 1
@@ -963,15 +967,37 @@ test_tool_install_repairs_a_link_left_dangling_by_mise_uninstall() {
   cleanup_test_env
 }
 
+# teeup's ~/.local/bin link is still there, but the entry it points at in
+# teeup's own directory is gone (the state directory was cleared, say).
+test_tool_install_repairs_a_missing_inner_entry() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  rm -f "$TEEUP_MISE_TOOLS_DIR/rg"
+  local out
+  out="$(mise_tool_install ripgrep rg 2>&1)" || { echo "install failed: $out"; return 1; }
+  assert_contains "$out" "Linked rg to ripgrep 15.2.0 (mise)" || return 1
+  assert_equals "rg 15.2.0" "$("$TEST_HOME/.local/bin/rg" --version)" "the link runs again" || return 1
+  cleanup_test_env
+}
+
+# A lock bump re-points teeup's own entry; the ~/.local/bin link already
+# points at that entry and is left as it is.
 test_tool_install_relinks_when_the_lock_moves() {
   setup
   tools_fixture
   mock_mise_tools
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
-  sed 's/^ripgrep 15.2.0$/ripgrep 15.3.0/' "$TEEUP_TOOLS_LOCK" > "$TEST_HOME/lock.new"
-  mv "$TEST_HOME/lock.new" "$TEEUP_TOOLS_LOCK"
+  bump_lock ripgrep 15.3.0
+  mise -C / install ripgrep@15.3.0 >/dev/null 2>&1
+  local out
+  out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)" || return 1
+  assert_contains "$out" "Would execute: ln -sfn $TEST_HOME/.local/share/mise/installs/ripgrep/15.3.0/bin/rg $TEEUP_MISE_TOOLS_DIR/rg" || return 1
+  assert_not_contains "$out" "$TEST_HOME/.local/bin/rg" "the ~/.local/bin link is not touched" || return 1
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
-  assert_equals "$TEST_HOME/.local/share/mise/installs/ripgrep/15.3.0/bin/rg" "$(readlink "$TEST_HOME/.local/bin/rg")" || return 1
+  assert_equals "$TEST_HOME/.local/share/mise/installs/ripgrep/15.3.0/bin/rg" "$(readlink "$TEEUP_MISE_TOOLS_DIR/rg")" || return 1
+  assert_equals "$TEEUP_MISE_TOOLS_DIR/rg" "$(readlink "$TEST_HOME/.local/bin/rg")" || return 1
   assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the old version stays for mise prune" || return 1
   cleanup_test_env
 }
@@ -1002,7 +1028,12 @@ test_tool_install_dry_run_installs_and_links_nothing() {
   out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)"
   assert_contains "$out" "Would execute: mise -C / install ripgrep@15.2.0" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / install" "the install only previews" || return 1
-  [[ ! -e "$TEST_HOME/.local/share/mise/installs" && ! -e "$TEST_HOME/.local/bin/rg" ]] || { echo "dry run changed the disk"; return 1; }
+  [[ ! -e "$TEST_HOME/.local/share/mise/installs" && ! -e "$TEST_HOME/.local/bin/rg" && ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "dry run changed the disk"; return 1; }
+  # With the version already installed, a dry run previews both links.
+  mise -C / install ripgrep@15.2.0 >/dev/null 2>&1
+  out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)"
+  assert_contains "$out" "Would execute: ln -sfn $TEEUP_MISE_TOOLS_DIR/rg $TEST_HOME/.local/bin/rg" || return 1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" && ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "dry run changed the disk"; return 1; }
   cleanup_test_env
 }
 
@@ -1015,30 +1046,33 @@ test_tool_install_reports_a_failed_install() {
   assert_equals "1" "$rc" || return 1
   assert_contains "$out" "mise could not install ripgrep 15.2.0, so rg is missing." || return 1
   [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "no link to a version that is not there"; return 1; }
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "no entry of teeup's own either"; return 1; }
   cleanup_test_env
 }
 
 # A path with a space, a dollar sign and a quote in it, through both the
 # symlink and the exec script (the fallback for a tool that cannot run from
-# a link).
+# a link). The script is teeup's own entry; ~/.local/bin links to it.
 test_tool_install_writes_a_script_for_a_tool_that_needs_one_under_an_odd_home() {
   setup
   tools_fixture
   mock_mise_tools
   export HOME="$TEST_HOME/h o\$m'e"
   mkdir -p "$HOME"
+  TEEUP_MISE_TOOLS_DIR="$HOME/tools dir"
+  # shellcheck disable=SC2034  # read by lib/mise.sh
   TEEUP_MISE_EXEC_SCRIPT_TOOLS="neovim"
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
   assert_equals "rg ran: a b" "$("$HOME/.local/bin/rg" a b)" || return 1
   mise_tool_install neovim nvim >/dev/null 2>&1 || return 1
-  local script="$HOME/.local/bin/nvim"
-  [[ -f "$script" && ! -L "$script" ]] || { echo "nvim must be a script, not a link"; return 1; }
+  local script="$TEEUP_MISE_TOOLS_DIR/nvim" link="$HOME/.local/bin/nvim"
+  [[ -f "$script" && ! -L "$script" ]] || { echo "teeup's own nvim must be a script, not a link"; return 1; }
+  [[ -L "$link" ]] || { echo "the .local/bin nvim is a symlink for a script tool too"; return 1; }
+  assert_equals "$script" "$(readlink "$link")" || return 1
   assert_equals "$TEEUP_MISE_TOOL_MARKER" "$(sed -n 2p "$script")" || return 1
-  assert_equals "nvim ran: x y z" "$("$script" x y z)" || return 1
-  mise_tool_link_owned "$script" || { echo "teeup owns its script"; return 1; }
+  assert_equals "nvim ran: x y z" "$("$link" x y z)" || return 1
+  mise_tool_link_owned "$link" || { echo "teeup owns its link"; return 1; }
   assert_contains "$(mise_tool_install neovim nvim 2>&1)" "Already linked: nvim" || return 1
-  # shellcheck disable=SC2034  # read by lib/mise.sh in the next test
-  TEEUP_MISE_EXEC_SCRIPT_TOOLS=""
   cleanup_test_env
 }
 
@@ -1051,6 +1085,7 @@ test_tool_remove_deletes_only_a_teeup_link() {
   local out
   out="$(mise_tool_remove ripgrep rg false 2>&1)" || { echo "remove failed: $out"; return 1; }
   [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the link must go"; return 1; }
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "teeup's own entry and its empty directory must go"; return 1; }
   assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "without packages the install stays" || return 1
   out="$(mise_tool_remove tealdeer tldr false 2>&1)" || return 1
   assert_contains "$out" "Keeping $TEST_HOME/.local/bin/tldr: it was not written by teeup." || return 1
@@ -1059,14 +1094,16 @@ test_tool_remove_deletes_only_a_teeup_link() {
 }
 
 # A symlink the user made into mise's own installs directory (from a
-# `mise use -g`, say) is still the user's: only a command on teeup's
-# mise-links record is teeup's to replace or remove.
+# `mise use -g`, say) is still the user's: only a link to teeup's own
+# directory is teeup's to replace or remove, and the version it runs is not
+# teeup's to uninstall.
 test_tool_keeps_a_user_symlink_into_the_mise_installs_dir() {
   setup
   tools_fixture
   mock_mise_tools
-  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/14.0.0/bin/rg" out rc=0
-  mkdir -p "${mine%/*}" "$TEST_HOME/.local/bin"
+  mise -C / install ripgrep@15.2.0 >/dev/null 2>&1
+  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out rc=0
+  mkdir -p "$TEST_HOME/.local/bin"
   printf '#!/bin/sh\necho mine\n' > "$mine"
   chmod 755 "$mine"
   ln -s "$mine" "$TEST_HOME/.local/bin/rg"
@@ -1074,51 +1111,51 @@ test_tool_keeps_a_user_symlink_into_the_mise_installs_dir() {
   assert_success "$rc" || return 1
   assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup" || return 1
   assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "install keeps the user's link" || return 1
+  : > "$MOCK_LOG"
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup." || return 1
+  assert_contains "$out" "Keeping ripgrep 15.2.0: teeup did not link rg, so it leaves the version installed." || return 1
+  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "remove keeps the user's link" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the version stays installed" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  cleanup_test_env
+}
+
+# The user deleted teeup's link, then made one of their own under the same
+# name: that one is theirs, wherever it points.
+test_tool_a_user_link_made_after_teeup_s_is_gone_is_the_user_s() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  rm -f "$TEST_HOME/.local/bin/rg"
+  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out
+  ln -s "$mine" "$TEST_HOME/.local/bin/rg"
+  mise_tool_link_owned "$TEST_HOME/.local/bin/rg" && { echo "the user's link is not teeup's"; return 1; }
+  out="$(mise_tool_install ripgrep rg 2>&1)" || return 1
+  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup" || return 1
   out="$(mise_tool_remove ripgrep rg false 2>&1)" || return 1
   assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup." || return 1
-  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "remove keeps the user's link" || return 1
+  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "both keep the user's link" || return 1
   cleanup_test_env
 }
 
-test_tool_install_records_its_link_and_remove_forgets_it() {
+test_tool_remove_dry_run_touches_nothing() {
   setup
   tools_fixture
   mock_mise_tools
-  local record="$TEEUP_STATE_DIR/mise-links"
-  DRY_RUN=true mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
-  [[ ! -e "$record" ]] || { echo "a dry run must not record a link"; return 1; }
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
-  mise_tool_install tealdeer tldr >/dev/null 2>&1 || return 1
-  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
-  assert_equals "$(printf 'rg\ntldr')" "$(cat "$record")" "each link is recorded once" || return 1
-  DRY_RUN=true mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
-  assert_equals "$(printf 'rg\ntldr')" "$(cat "$record")" "a dry run keeps the record" || return 1
-  mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
-  assert_equals "tldr" "$(cat "$record")" "the removed link leaves the record" || return 1
-  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the teeup link must go"; return 1; }
-  cleanup_test_env
-}
-
-# The user deleted or replaced a teeup link before `teeup remove`: the record
-# must still drop the command, or a symlink the user makes later under the
-# same name would count as teeup's.
-test_tool_remove_forgets_a_link_that_is_gone_or_replaced() {
-  setup
-  tools_fixture
-  mock_mise_tools
-  local record="$TEEUP_STATE_DIR/mise-links"
-  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
-  mise_tool_install tealdeer tldr >/dev/null 2>&1 || return 1
-  rm -f "$TEST_HOME/.local/bin/rg"
-  DRY_RUN=true mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
-  assert_equals "$(printf 'rg\ntldr')" "$(cat "$record")" "a dry run keeps the record" || return 1
-  mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
-  assert_equals "tldr" "$(cat "$record")" "a link that is gone leaves the record" || return 1
-  rm -f "$TEST_HOME/.local/bin/tldr"
-  printf '#!/bin/sh\n' > "$TEST_HOME/.local/bin/tldr"
-  mise_tool_remove tealdeer tldr false >/dev/null 2>&1 || return 1
-  assert_equals "" "$(cat "$record")" "a link the user replaced leaves the record" || return 1
-  [[ -f "$TEST_HOME/.local/bin/tldr" ]] || { echo "the user's file must stay"; return 1; }
+  local out
+  out="$(DRY_RUN=true mise_tool_remove ripgrep rg true 2>&1)" || return 1
+  assert_contains "$out" "Would execute: rm -f $TEST_HOME/.local/bin/rg" || return 1
+  assert_contains "$out" "Would execute: mise -C / uninstall ripgrep@15.2.0" || return 1
+  assert_contains "$out" "Would execute: rm -f $TEEUP_MISE_TOOLS_DIR/rg" || return 1
+  out="$(DRY_RUN=true mise_tool_remove ripgrep rg false 2>&1)" || return 1
+  assert_contains "$out" "Would execute: rm -f $TEEUP_MISE_TOOLS_DIR/rg" || return 1
+  assert_equals "$TEEUP_MISE_TOOLS_DIR/rg" "$(readlink "$TEST_HOME/.local/bin/rg")" "the link stays" || return 1
+  [[ -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "teeup's own entry stays"; return 1; }
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the version stays" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
   cleanup_test_env
 }
 
@@ -1127,18 +1164,30 @@ test_tool_remove_with_packages_uninstalls_the_pinned_version() {
   tools_fixture
   mock_mise_tools
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
-  local out rc=0
-  out="$(DRY_RUN=true mise_tool_remove ripgrep rg true 2>&1)" || rc=$?
-  assert_contains "$out" "Would execute: mise -C / uninstall ripgrep@15.2.0" || return 1
-  [[ -L "$TEST_HOME/.local/bin/rg" ]] || { echo "dry run removed the link"; return 1; }
   mise_tool_remove ripgrep rg true >/dev/null 2>&1 || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
   [[ ! -e "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" ]] || { echo "the pinned version must go"; return 1; }
-  rc=0
-  mise_tool_install ripgrep rg >/dev/null 2>&1
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "teeup's own entry goes after the uninstall"; return 1; }
+  cleanup_test_env
+}
+
+# A failed `mise uninstall` keeps teeup's own entry, so the retry still
+# knows teeup used the tool, uninstalls it, and only then deletes the entry.
+test_tool_remove_keeps_the_inner_entry_until_the_uninstall_succeeds() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  local out rc=0
   out="$(MOCK_MISE_FAIL_UNINSTALL=ripgrep mise_tool_remove ripgrep rg true 2>&1)" || rc=$?
   assert_equals "1" "$rc" || return 1
   assert_contains "$out" "Run: mise uninstall ripgrep@15.2.0" || return 1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the link goes anyway"; return 1; }
+  [[ -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "teeup's own entry stays for the retry"; return 1; }
+  : > "$MOCK_LOG"
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "the retry failed: $out"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" "the retry uninstalls" || return 1
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "teeup's own entry goes once the uninstall worked"; return 1; }
   cleanup_test_env
 }
 
@@ -1351,32 +1400,9 @@ test_tool_remove_with_packages_uninstalls_the_retained_pin() {
   cleanup_test_env
 }
 
-# Task 3 (PR #119 Codex round 3): a command whose ~/.local/bin link teeup
-# never wrote (the user's own symlink into the pinned install, say) is not
-# teeup's to uninstall either: `mise uninstall` must not run for it, even
-# though the pinned version really is installed and really is what the link
-# runs.
-test_tool_remove_with_packages_keeps_a_foreign_links_version() {
-  setup
-  tools_fixture
-  mock_mise_tools
-  mise -C / install ripgrep@15.2.0 >/dev/null 2>&1
-  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg"
-  mkdir -p "$TEST_HOME/.local/bin"
-  ln -s "$mine" "$TEST_HOME/.local/bin/rg"
-  local out
-  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
-  assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup." || return 1
-  assert_contains "$out" "Keeping ripgrep 15.2.0: teeup did not link rg, so it leaves the version installed." || return 1
-  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "the user's link stays" || return 1
-  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the version stays installed" || return 1
-  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
-  cleanup_test_env
-}
-
-# The record (not just the live link) decides ownership: the user deleted
-# teeup's link, but the command is still on teeup's mise-links record, so the
-# version it names is still teeup's to uninstall.
+# teeup's own entry (not the ~/.local/bin link) says teeup used the tool:
+# the user deleted teeup's link, but the version it ran is still teeup's to
+# uninstall.
 test_tool_remove_with_packages_uninstalls_when_the_teeup_link_is_gone() {
   setup
   tools_fixture
@@ -1501,10 +1527,11 @@ run_test "conf keeps a skipped capability's old pin" test_conf_keeps_a_skipped_c
 run_test "conf warns once when MISE_GLOBAL_CONFIG_FILE is set" test_conf_warns_once_when_mise_global_config_file_is_set
 run_test "conf says nothing about MISE_GLOBAL_CONFIG_FILE with nothing to pin" test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin
 run_test "tool remove with packages uninstalls the retained pin" test_tool_remove_with_packages_uninstalls_the_retained_pin
-run_test "tool remove with packages keeps a foreign link's version" test_tool_remove_with_packages_keeps_a_foreign_links_version
 run_test "tool remove with packages uninstalls when the teeup link is gone" test_tool_remove_with_packages_uninstalls_when_the_teeup_link_is_gone
 run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
 run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_a_user_symlink_into_the_mise_installs_dir
-run_test "tool install records its link and remove forgets it" test_tool_install_records_its_link_and_remove_forgets_it
-run_test "tool remove forgets a link that is gone or replaced" test_tool_remove_forgets_a_link_that_is_gone_or_replaced
+run_test "tool a user link made after teeup's is gone is the user's" test_tool_a_user_link_made_after_teeup_s_is_gone_is_the_user_s
+run_test "tool install repairs a missing inner entry" test_tool_install_repairs_a_missing_inner_entry
+run_test "tool remove dry run touches nothing" test_tool_remove_dry_run_touches_nothing
+run_test "tool remove keeps the inner entry until the uninstall succeeds" test_tool_remove_keeps_the_inner_entry_until_the_uninstall_succeeds
 print_summary

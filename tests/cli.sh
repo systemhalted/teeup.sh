@@ -1399,12 +1399,14 @@ test_update_relinks_a_lazy_tool_whose_lock_version_changed() {
   printf 'mise_tools="ripgrep:rg"\n' >> "$TEEUP_CAPS_DIR/search/capability"
   printf '#!/usr/bin/env bash\nmise_tools_apply "$TEEUP_CAP"\n' > "$TEEUP_CAPS_DIR/search/install"
   "$TEEUP" install search >/dev/null 2>&1
-  local installs="$TEST_HOME/.local/share/mise/installs/ripgrep" link="$TEST_HOME/.local/bin/rg" out
-  assert_equals "$installs/15.2.0/bin/rg" "$(readlink "$link")" "fixture: linked at the first version" || return 1
+  local installs="$TEST_HOME/.local/share/mise/installs/ripgrep" link="$TEST_HOME/.local/bin/rg" inner="$TEST_HOME/.local/state/teeup/tools/rg" out
+  assert_equals "$inner" "$(readlink "$link")" "fixture: ~/.local/bin links to teeup's own entry" || return 1
+  assert_equals "$installs/15.2.0/bin/rg" "$(readlink "$inner")" "fixture: linked at the first version" || return 1
   printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
   out="$("$TEEUP" update 2>&1)"
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.3.0" || return 1
-  assert_equals "$installs/15.3.0/bin/rg" "$(readlink "$link")" || return 1
+  assert_equals "$installs/15.3.0/bin/rg" "$(readlink "$inner")" || return 1
+  assert_equals "$inner" "$(readlink "$link")" "the ~/.local/bin link stays as it was" || return 1
   assert_dir_exists "$installs/15.2.0" "the old version stays for mise prune" || return 1
   assert_contains "$(cat "$TEST_HOME/.config/mise/conf.d/teeup.toml")" '"ripgrep" = "15.3.0"' || return 1
   assert_not_contains "$out" "configure:search" "update still leaves a lazy capability's configure alone" || return 1
@@ -1428,7 +1430,7 @@ test_update_reports_a_pinned_tool_that_would_not_install() {
   assert_failure "$rc" || return 1
   assert_contains "$out" "mise could not install ripgrep 15.3.0" || return 1
   assert_contains "$out" "teeup update finished, with the problems above." || return 1
-  assert_equals "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$(readlink "$TEST_HOME/.local/bin/rg")" "the working version stays linked" || return 1
+  assert_equals "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$(readlink "$TEST_HOME/.local/state/teeup/tools/rg")" "the working version stays linked" || return 1
   cleanup_test_env
 }
 

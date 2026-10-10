@@ -571,66 +571,79 @@ _mise_tool_script() {
   printf '#!/bin/sh\n%s\nexec '\''%s'\'' "$@"\n' "$TEEUP_MISE_TOOL_MARKER" "$quoted"
 }
 
-# The commands whose ~/.local/bin link teeup wrote, one per line. A symlink
-# into mise's installs directory says nothing about who made it (a user's
-# `mise use -g` setup can make the same one), so ownership is this record.
-_mise_links_file() {
-  printf '%s/mise-links\n' "$TEEUP_STATE_DIR"
+# teeup's own directory for its mise tools: one entry per command, a
+# symlink to the pinned binary (or, for a tool in
+# TEEUP_MISE_EXEC_SCRIPT_TOOLS, the exec script above). Only teeup writes
+# here. ~/.local/bin/<command> is a symlink to the entry, so who owns the
+# ~/.local/bin path is a fact on disk: it is teeup's exactly when it points
+# here. A symlink straight into mise's installs directory says nothing about
+# who made it (a user's `mise use -g` setup can make the same one), so it is
+# the user's. That also covers such a link from before the two-hop layout:
+# that layout never shipped in a release, so no migration takes it over.
+TEEUP_MISE_TOOLS_DIR="${TEEUP_MISE_TOOLS_DIR:-$TEEUP_STATE_DIR/tools}"
+
+# _mise_tool_inner <command> -> teeup's own entry for <command>.
+_mise_tool_inner() {
+  printf '%s/%s\n' "$TEEUP_MISE_TOOLS_DIR" "$1"
 }
 
-# _mise_link_recorded <command> -> 0 when teeup's record lists <command>.
-_mise_link_recorded() {
-  local file
-  file="$(_mise_links_file)"
-  [[ -f "$file" ]] && grep -qxF "$1" "$file"
-}
-
-# _mise_link_record <command>: adds <command> to the record. A dry run
-# writes nothing.
-_mise_link_record() {
-  local file
-  if [[ "$DRY_RUN" == "true" ]] || _mise_link_recorded "$1"; then
-    return 0
-  fi
-  file="$(_mise_links_file)"
-  mkdir -p "${file%/*}" && printf '%s\n' "$1" >> "$file"
-}
-
-# _mise_link_forget <command>: drops <command> from the record. A dry run
-# writes nothing.
-_mise_link_forget() {
-  local file
-  if [[ "$DRY_RUN" == "true" ]] || ! _mise_link_recorded "$1"; then
-    return 0
-  fi
-  file="$(_mise_links_file)"
-  { grep -vxF "$1" "$file" || true; } > "$file.new" && mv "$file.new" "$file"
-}
-
-# mise_tool_link_owned <path> -> 0 when teeup wrote <path>: a symlink into
-# mise's installs directory (dangling or not) for a command on teeup's
-# mise-links record, or a script carrying the marker on its second line.
-# Anything else at the path is the user's.
+# mise_tool_link_owned <path> -> 0 when <path> (~/.local/bin/<command>) is
+# teeup's: a symlink whose target is exactly teeup's own entry for
+# <command>, dangling or not. Anything else at the path is the user's.
 mise_tool_link_owned() {
-  local path="$1" installs target
-  installs="$(mise_installs_dir)/"
-  if [[ -L "$path" ]]; then
-    if ! _mise_link_recorded "${path##*/}"; then
-      return 1
-    fi
-    target="$(readlink "$path")"
-    case "$target" in
-      "$installs"*) return 0 ;;
-    esac
+  local path="$1"
+  [[ -L "$path" && "$(readlink "$path")" == "$(_mise_tool_inner "${path##*/}")" ]]
+}
+
+# mise_tool_used <command> -> 0 when teeup uses the tool behind <command>:
+# its own entry exists (dangling or not), or ~/.local/bin/<command> is
+# teeup's link. This, not a record, decides whether `teeup remove
+# --packages` may uninstall the version.
+mise_tool_used() {
+  local inner
+  inner="$(_mise_tool_inner "$1")"
+  if [[ -e "$inner" || -L "$inner" ]]; then
+    return 0
+  fi
+  mise_tool_link_owned "$HOME/.local/bin/$1"
+}
+
+# mise_tool_versions <tool> -> the version(s) of <tool> teeup uses, one per
+# line: the version conf.d/teeup.toml pins, then the lock's when it differs.
+# They differ when a bumped pin's download failed and the old pin was
+# carried forward (mise_tools_conf_write). Without a conf.d line, the lock's
+# version alone. Fails when the lock has no line for <tool>. A caller checks
+# which of them mise actually has installed.
+mise_tool_versions() {
+  local tool="$1" version spec conf_version
+  version="$(tools_lock_version "$tool")" || return 1
+  spec="$(tools_lock_spec "$tool")"
+  conf_version="$(_mise_tools_conf_version "$spec")"
+  if [[ -n "$conf_version" && "$conf_version" != "$version" ]]; then
+    printf '%s\n' "$conf_version"
+  fi
+  printf '%s\n' "$version"
+}
+
+# _mise_tool_inner_remove <command>: deletes teeup's own entry for
+# <command>, and teeup's directory once it is empty. A dry run only says so.
+_mise_tool_inner_remove() {
+  local inner
+  inner="$(_mise_tool_inner "$1")"
+  if [[ ! -e "$inner" && ! -L "$inner" ]]; then
+    return 0
+  fi
+  if ! run_cmd rm -f "$inner"; then
+    warn "Could not remove $inner. Fix its permissions and try again."
     return 1
   fi
-  if [[ -f "$path" ]] && sed -n 2p "$path" 2>/dev/null | grep -qxF "$TEEUP_MISE_TOOL_MARKER"; then
-    return 0
+  if [[ "$DRY_RUN" != "true" ]]; then
+    rmdir "$TEEUP_MISE_TOOLS_DIR" 2>/dev/null || true
   fi
-  return 1
 }
 
-# mise_tool_link_is <path> <bin> -> 0 when <path> already runs <bin>.
+# mise_tool_link_is <path> <bin> -> 0 when <path> (teeup's own entry for a
+# command) already runs <bin>.
 mise_tool_link_is() {
   local path="$1" bin="$2"
   if [[ -L "$path" ]]; then
@@ -645,15 +658,17 @@ mise_tool_link_is() {
 
 # mise_tool_install <tool> <command>
 # Installs <tool> at the version share/teeup/tools.lock pins (only when that
-# version is not installed yet), asks mise where its <command> is, and points
-# ~/.local/bin/<command> at it. A call then runs the binary directly, with no
-# mise process in between. A file at the link path that teeup did not create
-# is kept, with a warning, as mise_wrapper_write does. The previous version
+# version is not installed yet), asks mise where its <command> is, points
+# teeup's own entry for <command> at it, and links ~/.local/bin/<command> to
+# that entry. A call then runs the binary directly, with no mise process in
+# between. A lock bump re-points only the entry. A file or link at the
+# ~/.local/bin path that is not teeup's is kept, with a warning, as
+# mise_wrapper_write does, and no entry is made for it. The previous version
 # stays installed; `mise prune` removes it once nothing pins it.
 # TEEUP_CAP names the capability in the repair hints when it is set.
 # 0 linked, already linked, kept, or previewed; 1 <command> is missing.
 mise_tool_install() {
-  local tool="$1" command="$2" version spec link bin owner
+  local tool="$1" command="$2" version spec link inner bin owner
   _mise_plain_names mise_tool_install "$tool" "$command" || return 1
   if ! version="$(tools_lock_version "$tool")"; then
     err "mise_tool_install: $tool has no line in $TEEUP_TOOLS_LOCK"
@@ -661,6 +676,7 @@ mise_tool_install() {
   fi
   spec="$(tools_lock_spec "$tool")"
   link="$HOME/.local/bin/$command"
+  inner="$(_mise_tool_inner "$command")"
   owner="${TEEUP_CAP:-<capability>}"
   if [[ -e "$link" || -L "$link" ]] && ! mise_tool_link_owned "$link"; then
     warn "Keeping $link: it was not written by teeup, so $command is not the pinned $tool $version. Remove it, then run: teeup configure $owner"
@@ -689,56 +705,62 @@ mise_tool_install() {
     warn "mise installed $tool $version, but it has no $command, so $link was not written."
     return 1
   fi
-  if mise_tool_link_is "$link" "$bin"; then
+  if mise_tool_link_is "$inner" "$bin" && mise_tool_link_owned "$link"; then
     log "Already linked: $command ($tool $version)"
     return 0
   fi
-  if [[ ! -d "$HOME/.local/bin" ]]; then
-    run_cmd mkdir -p "$HOME/.local/bin" || return 1
-  fi
-  if _mise_tool_wants_script "$tool"; then
-    # write_managed_file refuses to write through a symlink.
-    if [[ -L "$link" ]]; then
-      run_cmd rm -f "$link" || return 1
+  if ! mise_tool_link_is "$inner" "$bin"; then
+    if [[ ! -d "$TEEUP_MISE_TOOLS_DIR" ]]; then
+      run_cmd mkdir -p "$TEEUP_MISE_TOOLS_DIR" || return 1
     fi
-    _mise_tool_script "$bin" | write_managed_file "$link" "$command, which runs $tool $version" || return 1
-    if [[ "$DRY_RUN" != "true" ]]; then
-      chmod 755 "$link"
+    if _mise_tool_wants_script "$tool"; then
+      # write_managed_file refuses to write through a symlink.
+      if [[ -L "$inner" ]]; then
+        run_cmd rm -f "$inner" || return 1
+      fi
+      _mise_tool_script "$bin" | write_managed_file "$inner" "$command, which runs $tool $version" || return 1
+      if [[ "$DRY_RUN" != "true" ]]; then
+        chmod 755 "$inner"
+      fi
+    elif ! run_cmd ln -sfn "$bin" "$inner"; then
+      warn "Could not link $inner to $bin. Fix the permissions of $TEEUP_MISE_TOOLS_DIR, then run: teeup configure $owner"
+      return 1
     fi
-  elif ! run_cmd ln -sfn "$bin" "$link"; then
-    warn "Could not link $link to $bin. Fix the permissions of $HOME/.local/bin, then run: teeup configure $owner"
-    return 1
   fi
-  if ! _mise_link_record "$command"; then
-    warn "Linked $command, but could not record it in $(_mise_links_file), so teeup will treat $link as yours."
+  if ! mise_tool_link_owned "$link"; then
+    if [[ ! -d "$HOME/.local/bin" ]]; then
+      run_cmd mkdir -p "$HOME/.local/bin" || return 1
+    fi
+    if ! run_cmd ln -sfn "$inner" "$link"; then
+      warn "Could not link $link to $inner. Fix the permissions of $HOME/.local/bin, then run: teeup configure $owner"
+      return 1
+    fi
   fi
   ok_unless_dry "Linked $command to $tool $version (mise)"
 }
 
 # mise_tool_remove <tool> <command> [true|false]
-# Removes ~/.local/bin/<command> when teeup wrote it; a foreign file stays,
-# with a warning. With true (`teeup remove`, `teeup uninstall --packages`)
-# it also uninstalls the version teeup actually linked: conf.d still holds
-# that version's pin (cap_remove calls this before it rewrites conf.d
-# without the capability), which can differ from the lock's current version
-# when a bumped pin's download failed and the old one was carried forward
-# (mise_tools_conf_write). Both are uninstalled when they differ and are
-# both actually installed. `mise uninstall` never runs for a command teeup
-# did not link, even when it is the pinned version that runs: a file or
-# link at the path that is not teeup's (or, for a missing path, is not on
-# teeup's mise-links record at all) means the version is not teeup's to take
-# away either. A path that is simply missing but still on the record (teeup
-# linked it; the user deleted the link) is still teeup's. The conf.d file
-# itself is the caller's to rewrite (cap_remove does it once per
-# capability).
+# Removes ~/.local/bin/<command> when it is teeup's link; a foreign file or
+# link stays, with a warning. Without packages, teeup's own entry for
+# <command> goes too. With true (`teeup remove`, `teeup uninstall
+# --packages`) it also uninstalls the version(s) teeup uses
+# (mise_tool_versions) that mise has installed, and deletes the entry only
+# after that worked: on a failure the entry stays, so a retry still knows
+# teeup used the tool. `mise uninstall` never runs for a tool teeup does not
+# use (mise_tool_used): with a foreign file at the path and no entry of
+# teeup's own, the version is not teeup's to take away. The conf.d file is
+# the caller's to rewrite (cap_remove does it once per capability).
 # 0 removed or nothing to do; 1 something that should be gone is still there.
 mise_tool_remove() {
-  local tool="$1" command="$2" with_packages="${3:-false}" link version spec conf_version versions v rc=0 owns=false
+  local tool="$1" command="$2" with_packages="${3:-false}" link version spec v rc=0 used=false
   _mise_plain_names mise_tool_remove "$tool" "$command" || return 1
   link="$HOME/.local/bin/$command"
+  # Asked before the link goes: an owned link is one way teeup used it.
+  if mise_tool_used "$command"; then
+    used=true
+  fi
   if [[ -e "$link" || -L "$link" ]]; then
     if mise_tool_link_owned "$link"; then
-      owns=true
       if ! run_cmd rm -f "$link"; then
         warn "Could not remove $link. Fix its permissions and try again."
         return 1
@@ -747,51 +769,37 @@ mise_tool_remove() {
         warn "$link is still there. Remove it and try again."
         return 1
       fi
-      _mise_link_forget "$command" || warn "Could not drop $command from $(_mise_links_file)."
       ok_unless_dry "Removed the link: $command"
     else
       warn "Keeping $link: it was not written by teeup."
-      # The user replaced teeup's link: the command is no longer teeup's.
-      _mise_link_forget "$command" || warn "Could not drop $command from $(_mise_links_file)."
     fi
-  else
-    # Ask the record before forgetting it: teeup owns the version named
-    # below exactly when it owned the link that is now gone.
-    if _mise_link_recorded "$command"; then
-      owns=true
-    fi
-    # The user deleted teeup's link: drop it from the record too, so a link
-    # the user makes later under the same name is not taken for teeup's.
-    _mise_link_forget "$command" || warn "Could not drop $command from $(_mise_links_file)."
   fi
   if [[ "$with_packages" != "true" ]]; then
-    return 0
+    _mise_tool_inner_remove "$command"
+    return $?
   fi
   if ! version="$(tools_lock_version "$tool")"; then
     log "$TEEUP_TOOLS_LOCK has no line for $tool, so no pinned version of it is uninstalled."
-    return 0
+    _mise_tool_inner_remove "$command"
+    return $?
   fi
-  if [[ "$owns" != "true" ]]; then
+  if [[ "$used" != "true" ]]; then
     log "Keeping $tool $version: teeup did not link $command, so it leaves the version installed."
     return 0
   fi
   spec="$(tools_lock_spec "$tool")"
-  conf_version="$(_mise_tools_conf_version "$spec")"
-  versions="$version"
-  if [[ -n "$conf_version" && "$conf_version" != "$version" ]]; then
-    versions="$conf_version $version"
-  fi
   if ! have mise; then
     if [[ "$DRY_RUN" == "true" ]]; then
-      for v in $versions; do
+      for v in $(mise_tool_versions "$tool"); do
         run_cmd mise -C / uninstall "$spec@$v"
       done
-      return 0
+      _mise_tool_inner_remove "$command"
+      return $?
     fi
     warn "mise is not on PATH, so $tool $version stays installed. Once mise is back, run: mise uninstall $spec@$version"
     return 1
   fi
-  for v in $versions; do
+  for v in $(mise_tool_versions "$tool"); do
     if ! mise -C / where "$spec@$v" >/dev/null 2>&1; then
       log "Not installed through mise, so nothing to uninstall: $tool $v"
       continue
@@ -803,7 +811,10 @@ mise_tool_remove() {
     fi
     ok_unless_dry "Uninstalled $tool $v (mise)"
   done
-  return $rc
+  if [[ $rc -ne 0 ]]; then
+    return $rc
+  fi
+  _mise_tool_inner_remove "$command"
 }
 
 # mise_tools_apply <capability>

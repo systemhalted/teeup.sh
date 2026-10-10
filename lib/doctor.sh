@@ -218,16 +218,18 @@ _doctor_package_command() {
 
 # _doctor_mise_tools_check <capability>
 # The mise_tools half of the metadata check (#112). Each command's link in
-# ~/.local/bin exists, runs the version share/teeup/tools.lock pins, comes
-# first on PATH and runs. A dangling link (after `mise uninstall` or
-# `mise prune`) and a missing one are failures whose fix is
-# `teeup configure <cap>`. A copy of the tool the package manager still has
+# ~/.local/bin points at teeup's own entry (TEEUP_MISE_TOOLS_DIR), the entry
+# runs the version share/teeup/tools.lock pins (a link into that install, or
+# the exec script for a tool in TEEUP_MISE_EXEC_SCRIPT_TOOLS), the command
+# comes first on PATH and runs. A missing link, a missing entry and an entry
+# left dangling (after `mise uninstall` or `mise prune`) are failures whose
+# fix is `teeup configure <cap>`. A copy of the tool the package manager still has
 # from before is a notice with the command that removes it; teeup does not
 # remove it itself. MISE_GLOBAL_CONFIG_FILE makes mise ignore conf.d/teeup.toml
 # altogether (lib/mise.sh's mise_tools_conf_write warns about this too, each
 # time it writes); this says so once per run rather than once per capability.
 _doctor_mise_tools_check() {
-  local cap="$1" pair tool command_name link version spec bin found candidate conf_file
+  local cap="$1" pair tool command_name link inner version spec bin found candidate conf_file
   if [[ -n "${MISE_GLOBAL_CONFIG_FILE:-}" && "$TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED" != "true" ]] &&
     [[ -n "$(cap_meta_get "$cap" mise_tools)" ]]; then
     conf_file="$(mise_tools_conf_file)"
@@ -240,6 +242,7 @@ _doctor_mise_tools_check() {
     tool="${pair%%:*}"
     command_name="${pair#*:}"
     link="$HOME/.local/bin/$command_name"
+    inner="$TEEUP_MISE_TOOLS_DIR/$command_name"
     version="$(tools_lock_version "$tool" || true)"
     spec="$(tools_lock_spec "$tool" || true)"
     if cap_skipped mise; then
@@ -248,13 +251,15 @@ _doctor_mise_tools_check() {
       _doctor_report_failure "$cap" "$link is missing, so $command_name is not the $tool $version that teeup pins." "teeup configure $cap"
     elif ! mise_tool_link_owned "$link"; then
       doctor_warn "$link was not written by teeup, so teeup leaves it alone, and $command_name may not be $tool $version."
-    elif [[ -L "$link" && ! -e "$link" ]]; then
-      _doctor_report_failure "$cap" "$link points at $(readlink "$link"), which is gone (mise uninstall and mise prune remove it), so $command_name does not run." "teeup configure $cap"
+    elif [[ ! -e "$inner" && ! -L "$inner" ]]; then
+      _doctor_report_failure "$cap" "$link points at $inner, which is missing, so $command_name does not run." "teeup configure $cap"
+    elif [[ -L "$inner" && ! -e "$inner" ]]; then
+      _doctor_report_failure "$cap" "$inner points at $(readlink "$inner"), which is gone (mise uninstall and mise prune remove it), so $command_name does not run." "teeup configure $cap"
     elif ! have mise; then
       _doctor_report_unknown "$cap" "mise is not on PATH, so teeup could not check that $link is $tool $version." "teeup install mise"
     elif ! bin="$(mise -C / which --tool "$spec@$version" "$command_name" 2>/dev/null)" || [[ -z "$bin" ]]; then
       _doctor_report_failure "$cap" "$tool $version is not installed through mise, so $link runs another version." "teeup configure $cap"
-    elif ! mise_tool_link_is "$link" "$bin"; then
+    elif ! mise_tool_link_is "$inner" "$bin"; then
       _doctor_report_failure "$cap" "$link does not run $tool $version, the version teeup pins." "teeup configure $cap"
     else
       # bin/teeup puts ~/.local/bin first on its own PATH (local_bin_on_path),

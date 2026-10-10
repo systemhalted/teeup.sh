@@ -446,6 +446,7 @@ test_cap_remove_takes_the_links_and_with_packages_the_pinned_installs() {
   cap_remove search false >/dev/null 2>&1 || rc=$?
   assert_success "$rc" "a capability with only mise tools has something to undo" || return 1
   [[ ! -e "$link" && ! -L "$link" ]] || { echo "the link goes"; return 1; }
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "teeup's own entry and its directory go"; return 1; }
   [[ ! -e "$conf" ]] || { echo "nothing is pinned any more, so the conf.d file goes"; return 1; }
   assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" "without packages the install stays" || return 1
   state_done check cap-search && { echo "the marker is cleared"; return 1; }
@@ -467,6 +468,9 @@ test_cap_remove_keeps_the_marker_when_a_mise_uninstall_fails() {
   MOCK_MISE_FAIL_UNINSTALL=ripgrep cap_remove search true >/dev/null 2>&1 || rc=$?
   assert_equals "1" "$rc" || return 1
   state_done check cap-search || { echo "a retry must still find it"; return 1; }
+  [[ -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "teeup's own entry stays, so the retry still uninstalls"; return 1; }
+  cap_remove search true >/dev/null 2>&1 || { echo "the retry failed"; return 1; }
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR/rg" && ! -L "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "the retry deletes the entry"; return 1; }
   cleanup_test_env
 }
 
