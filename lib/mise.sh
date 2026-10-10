@@ -718,11 +718,16 @@ mise_tool_install() {
 # mise_tool_remove <tool> <command> [true|false]
 # Removes ~/.local/bin/<command> when teeup wrote it; a foreign file stays,
 # with a warning. With true (`teeup remove`, `teeup uninstall --packages`)
-# it also uninstalls the pinned version. The conf.d file is the caller's to
+# it also uninstalls the version teeup actually linked: conf.d still holds
+# that version's pin (cap_remove calls this before it rewrites conf.d
+# without the capability), which can differ from the lock's current version
+# when a bumped pin's download failed and the old one was carried forward
+# (mise_tools_conf_write). Both are uninstalled when they differ and are
+# both actually installed. The conf.d file itself is the caller's to
 # rewrite (cap_remove does it once per capability).
 # 0 removed or nothing to do; 1 something that should be gone is still there.
 mise_tool_remove() {
-  local tool="$1" command="$2" with_packages="${3:-false}" link version spec
+  local tool="$1" command="$2" with_packages="${3:-false}" link version spec conf_version versions v rc=0
   _mise_plain_names mise_tool_remove "$tool" "$command" || return 1
   link="$HOME/.local/bin/$command"
   if [[ -e "$link" || -L "$link" ]]; then
@@ -755,23 +760,34 @@ mise_tool_remove() {
     return 0
   fi
   spec="$(tools_lock_spec "$tool")"
+  conf_version="$(_mise_tools_conf_version "$spec")"
+  versions="$version"
+  if [[ -n "$conf_version" && "$conf_version" != "$version" ]]; then
+    versions="$conf_version $version"
+  fi
   if ! have mise; then
     if [[ "$DRY_RUN" == "true" ]]; then
-      run_cmd mise -C / uninstall "$spec@$version"
+      for v in $versions; do
+        run_cmd mise -C / uninstall "$spec@$v"
+      done
       return 0
     fi
     warn "mise is not on PATH, so $tool $version stays installed. Once mise is back, run: mise uninstall $spec@$version"
     return 1
   fi
-  if ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
-    log "Not installed through mise, so nothing to uninstall: $tool $version"
-    return 0
-  fi
-  if ! run_cmd mise -C / uninstall "$spec@$version"; then
-    warn "Could not uninstall $tool $version through mise. Run: mise uninstall $spec@$version"
-    return 1
-  fi
-  ok_unless_dry "Uninstalled $tool $version (mise)"
+  for v in $versions; do
+    if ! mise -C / where "$spec@$v" >/dev/null 2>&1; then
+      log "Not installed through mise, so nothing to uninstall: $tool $v"
+      continue
+    fi
+    if ! run_cmd mise -C / uninstall "$spec@$v"; then
+      warn "Could not uninstall $tool $v through mise. Run: mise uninstall $spec@$v"
+      rc=1
+      continue
+    fi
+    ok_unless_dry "Uninstalled $tool $v (mise)"
+  done
+  return $rc
 }
 
 # mise_tools_apply <capability>

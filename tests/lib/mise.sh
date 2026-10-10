@@ -1328,6 +1328,29 @@ test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin() {
   cleanup_test_env
 }
 
+# Task 2 (PR #119 Codex round 3): a lock version that bumps but whose
+# download fails keeps the OLD pin in conf.d (the carry-forward above). If
+# `teeup remove --packages` then uninstalled the lock's new version, it would
+# uninstall a version that was never installed and leave the one actually
+# linked on disk. It must uninstall the version teeup's own conf.d still
+# names.
+test_tool_remove_with_packages_uninstalls_the_retained_pin() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  mise_tools_sync >/dev/null 2>&1 || { echo "the first sync failed"; return 1; }
+  bump_lock ripgrep 15.3.0
+  MOCK_MISE_FAIL_INSTALL=ripgrep mise_tools_sync >/dev/null 2>&1 || true
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "the old pin stayed; the new version never installed" || return 1
+  local out
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" "the version actually linked is uninstalled" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall ripgrep@15.3.0" "a version that was never installed is not uninstalled" || return 1
+  [[ ! -e "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" ]] || { echo "the pinned version must go"; return 1; }
+  cleanup_test_env
+}
+
 test_local_bin_on_path_moves_a_later_entry_to_the_front() {
   setup
   # This PATH has no /bin, where macOS keeps rm, so it is restored before
@@ -1438,6 +1461,7 @@ run_test "conf keeps the old pin when the new version fails to install" test_con
 run_test "conf keeps a skipped capability's old pin" test_conf_keeps_a_skipped_capability_s_old_pin
 run_test "conf warns once when MISE_GLOBAL_CONFIG_FILE is set" test_conf_warns_once_when_mise_global_config_file_is_set
 run_test "conf says nothing about MISE_GLOBAL_CONFIG_FILE with nothing to pin" test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin
+run_test "tool remove with packages uninstalls the retained pin" test_tool_remove_with_packages_uninstalls_the_retained_pin
 run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
 run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_a_user_symlink_into_the_mise_installs_dir
 run_test "tool install records its link and remove forgets it" test_tool_install_records_its_link_and_remove_forgets_it
