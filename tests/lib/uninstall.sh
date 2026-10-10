@@ -650,6 +650,7 @@ test_capabilities_unlink_mise_tools_and_name_the_mise_uninstall_to_run() {
   uninstall_capabilities >/dev/null 2>&1
   [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the link goes"; return 1; }
   [[ ! -e "$conf" ]] || { echo "the conf.d file goes"; return 1; }
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "teeup's own entries and their directory go"; return 1; }
   assert_contains "$_UNINSTALL_REMOVED" "search's links in $TEST_HOME/.local/bin: rg" || return 1
   assert_contains "$_UNINSTALL_REMOVED" "the pinned tool list teeup wrote for mise ($conf)" || return 1
   assert_contains "$_UNINSTALL_KEPT" "mise tools: ripgrep@15.2.0. Remove them later with: mise uninstall ripgrep@15.2.0" || return 1
@@ -672,6 +673,53 @@ test_capabilities_uninstall_mise_tools_when_asked() {
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
   assert_contains "$_UNINSTALL_REMOVED" "search's mise tools: ripgrep@15.2.0" || return 1
   assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall" || return 1
+  cleanup_test_env
+}
+
+# A pin bump whose download failed leaves conf.d on the old version, which
+# is the one teeup still links. The summary names what teeup actually leaves
+# installed, as mise_tool_remove decides it: both versions when both are on
+# disk, and the printed fix removes them.
+test_capabilities_name_the_mise_versions_teeup_leaves_installed() {
+  setup
+  tool_cap_fixture
+  printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
+  MOCK_MISE_FAIL_INSTALL=ripgrep mise_tools_sync >/dev/null 2>&1 || true
+  assert_contains "$(cat "$TEST_HOME/.config/mise/conf.d/teeup.toml")" '"ripgrep" = "15.2.0"' "fixture: the old pin stays" || return 1
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_KEPT" "mise tools: ripgrep@15.2.0. Remove them later with: mise uninstall ripgrep@15.2.0" || return 1
+  cleanup_test_env
+}
+
+test_capabilities_name_both_mise_versions_when_both_are_installed() {
+  setup
+  tool_cap_fixture
+  printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
+  MOCK_MISE_FAIL_INSTALL=ripgrep mise_tools_sync >/dev/null 2>&1 || true
+  mise -C / install ripgrep@15.3.0 >/dev/null 2>&1
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_REMOVED" "search's mise tools: ripgrep@15.2.0 ripgrep@15.3.0" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.3.0" || return 1
+  cleanup_test_env
+}
+
+# A user's own link, with no entry of teeup's, is not teeup's tool: the
+# summary neither claims its version as removed nor tells the user to
+# uninstall it.
+test_capabilities_leave_a_user_s_mise_tool_out_of_the_summary() {
+  setup
+  tool_cap_fixture
+  rm -f "$TEST_HOME/.local/bin/rg" "$TEEUP_MISE_TOOLS_DIR/rg"
+  ln -s "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" "$TEST_HOME/.local/bin/rg"
+  : > "$MOCK_LOG"
+  _UNINSTALL_PACKAGES=true
+  uninstall_capabilities >/dev/null 2>&1
+  assert_not_contains "$_UNINSTALL_REMOVED" "mise tools" || return 1
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall" || return 1
+  [[ -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the user's link stays"; return 1; }
   cleanup_test_env
 }
 
@@ -1440,6 +1488,9 @@ run_test "capabilities name what the tools made for themselves" test_capabilitie
 run_test "capabilities uninstall packages when asked" test_capabilities_uninstall_packages_when_asked
 run_test "capabilities unlink mise tools and name the mise uninstall to run" test_capabilities_unlink_mise_tools_and_name_the_mise_uninstall_to_run
 run_test "capabilities uninstall mise tools when asked" test_capabilities_uninstall_mise_tools_when_asked
+run_test "capabilities name the mise versions teeup leaves installed" test_capabilities_name_the_mise_versions_teeup_leaves_installed
+run_test "capabilities name both mise versions when both are installed" test_capabilities_name_both_mise_versions_when_both_are_installed
+run_test "capabilities leave a user's mise tool out of the summary" test_capabilities_leave_a_user_s_mise_tool_out_of_the_summary
 run_test "capabilities decide each of the seven remove refuses" test_capabilities_decide_each_of_the_seven_remove_refuses
 run_test "capabilities refuse what a failed dependent still needs" test_capabilities_refuse_what_a_failed_dependent_still_needs
 run_test "capabilities keep the zsh the login shell runs" test_capabilities_keep_the_zsh_the_login_shell_runs

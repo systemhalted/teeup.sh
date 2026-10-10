@@ -721,20 +721,27 @@ EOF
   uninstall_note kept "Secrets in your login Keychain ($names). Delete them with: $cmds"
 }
 
-# _uninstall_mise_specs <name> -> "<spec>@<version> ..." for each of
-# <name>'s mise tools that mise has installed, for a summary line and a
-# `mise uninstall` that works as printed. Without mise every pinned spec is
-# listed, since nothing can say otherwise.
+# _uninstall_mise_specs <name> -> "<spec>@<version> ..." for each version
+# of <name>'s mise tools that teeup uses and leaves installed, for a summary
+# line and a `mise uninstall` that works as printed. The versions are the
+# ones mise_tool_remove uninstalls (mise_tool_versions), for the tools it
+# would uninstall (mise_tool_used), so a tool linked by the user is not
+# named. Without mise every such version is listed, since nothing can say
+# otherwise. Asked before cap_remove, which deletes what this reads.
 _uninstall_mise_specs() {
-  local name="$1" pair tool version spec out=""
+  local name="$1" pair tool spec v out=""
   for pair in $(cap_meta_get "$name" mise_tools); do
     tool="${pair%%:*}"
-    version="$(tools_lock_version "$tool")" || continue
-    spec="$(tools_lock_spec "$tool")"
-    if have mise && ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
+    if ! mise_tool_used "${pair#*:}"; then
       continue
     fi
-    out="${out:+$out }$spec@$version"
+    spec="$(tools_lock_spec "$tool")" || continue
+    for v in $(mise_tool_versions "$tool"); do
+      if have mise && ! mise -C / where "$spec@$v" >/dev/null 2>&1; then
+        continue
+      fi
+      out="${out:+$out }$spec@$v"
+    done
   done
   printf '%s\n' "$out"
 }
