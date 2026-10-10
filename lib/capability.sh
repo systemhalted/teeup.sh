@@ -169,7 +169,7 @@ cap_install_verbs() {
 
 # cap_check -> lints every capability; prints one problem per line.
 cap_check() {
-  local problems=0 name dir tier provides p verb tpl base other d seen
+  local problems=0 name dir tier provides p verb tpl base other d seen pairs tool cmd seen_tools
   for name in $(cap_list); do
     dir="$(cap_dir "$name")"
     tier="$(cap_meta_get "$name" tier)"
@@ -215,6 +215,28 @@ cap_check() {
         *) echo "$name: package_commands entry '$p' is not <package>:<command>"; problems=$((problems + 1)) ;;
       esac
     done
+    # mise_tools= (#112): <tool>:<command> pairs installed through mise at
+    # the version share/teeup/tools.lock pins and linked as
+    # ~/.local/bin/<command>. Both halves become file names and mise
+    # arguments, so both must be plain names. A tool with no lock line would
+    # install nothing, and a capability that does not require mise could run
+    # before mise is installed, or outlive it in `teeup uninstall`.
+    pairs="$(cap_meta_get "$name" mise_tools)"
+    for p in $pairs; do
+      if ! [[ "$p" =~ ^[A-Za-z0-9][A-Za-z0-9_.+-]*:[A-Za-z0-9][A-Za-z0-9_.+-]*$ ]]; then
+        echo "$name: mise_tools entry '$p' is not <tool>:<command>"; problems=$((problems + 1))
+        continue
+      fi
+      if ! tools_lock_version "${p%%:*}" >/dev/null; then
+        echo "$name: mise_tools names ${p%%:*}, which has no line in $TEEUP_TOOLS_LOCK"; problems=$((problems + 1))
+      fi
+    done
+    if [[ -n "$pairs" ]]; then
+      case " $(cap_meta_get "$name" requires) " in
+        *" mise "*) ;;
+        *) echo "$name: has mise_tools but does not require mise"; problems=$((problems + 1)) ;;
+      esac
+    fi
     # apps= is ";"-separated (names contain spaces); an entry becomes
     # "<name>.app" under /Applications and an argument to `open -a`.
     case "$(cap_meta_get "$name" apps)" in
@@ -271,6 +293,34 @@ cap_check() {
           echo "$name: provides $p, which $other already provides"; problems=$((problems + 1))
           ;;
         *) seen="$seen$p=$name " ;;
+      esac
+    done
+  done
+  # One owner per mise command and per mise tool: two capabilities linking
+  # the same ~/.local/bin/<command> would overwrite each other, and removing
+  # one would uninstall the other's tool.
+  seen=" "
+  seen_tools=" "
+  for name in $(cap_list); do
+    for p in $(cap_meta_get "$name" mise_tools); do
+      case "$p" in *?:?*) ;; *) continue ;; esac
+      tool="${p%%:*}"
+      cmd="${p#*:}"
+      case "$seen" in
+        *" $cmd="*)
+          other="${seen#*" $cmd="}"
+          other="${other%% *}"
+          echo "$name: mise_tools command $cmd is also in $other"; problems=$((problems + 1))
+          ;;
+        *) seen="$seen$cmd=$name " ;;
+      esac
+      case "$seen_tools" in
+        *" $tool="*)
+          other="${seen_tools#*" $tool="}"
+          other="${other%% *}"
+          echo "$name: mise_tools tool $tool is also in $other"; problems=$((problems + 1))
+          ;;
+        *) seen_tools="$seen_tools$tool=$name " ;;
       esac
     done
   done

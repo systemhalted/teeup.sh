@@ -36,6 +36,20 @@ setup() {
   printf 'gamma\n' > "$TEEUP_CAPS_DIR/daily.list"
 }
 
+# tools_fixture: a lock of the test's own and a mise capability for the
+# requires check to find.
+tools_fixture() {
+  TEEUP_TOOLS_LOCK="$TEST_HOME/tools.lock"
+  printf 'ripgrep 15.2.0\nfd 10.5.0\n' > "$TEEUP_TOOLS_LOCK"
+  make_cap mise lazy "" ""
+}
+
+# make_tool_cap <name> <mise_tools> [requires, default mise]
+make_tool_cap() {
+  make_cap "$1" lazy "${3-mise}" ""
+  printf 'mise_tools="%s"\n' "$2" >> "$TEEUP_CAPS_DIR/$1/capability"
+}
+
 test_list_and_exists() {
   setup
   assert_equals "alpha beta gamma lazyone" "$(cap_list | tr '\n' ' ' | sed 's/ $//')" || return 1
@@ -420,6 +434,79 @@ EOF2
   cleanup_test_env
 }
 
+test_check_accepts_well_formed_mise_tools() {
+  setup
+  tools_fixture
+  make_tool_cap search "ripgrep:rg fd:fd"
+  local out rc=0
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_success "$rc" "a well-formed mise_tools must pass: $out" || return 1
+  cleanup_test_env
+}
+
+test_check_rejects_a_bad_mise_tools_pair() {
+  setup
+  tools_fixture
+  make_tool_cap search "ripgrep rg: :fd ripgrep:r/g"
+  local out rc=0
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "search: mise_tools entry 'ripgrep' is not <tool>:<command>" || return 1
+  assert_contains "$out" "search: mise_tools entry 'rg:' is not <tool>:<command>" || return 1
+  assert_contains "$out" "search: mise_tools entry ':fd' is not <tool>:<command>" || return 1
+  assert_contains "$out" "search: mise_tools entry 'ripgrep:r/g' is not <tool>:<command>" || return 1
+  cleanup_test_env
+}
+
+test_check_rejects_a_mise_tool_without_a_lock_line() {
+  setup
+  tools_fixture
+  make_tool_cap search "ripgrep:rg bat:bat"
+  local out rc=0
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "search: mise_tools names bat, which has no line in $TEEUP_TOOLS_LOCK" || return 1
+  assert_not_contains "$out" "names ripgrep" || return 1
+  cleanup_test_env
+}
+
+test_check_rejects_a_mise_command_or_tool_in_two_capabilities() {
+  setup
+  tools_fixture
+  make_tool_cap finder "fd:rg"
+  make_tool_cap other "ripgrep:rga"
+  make_tool_cap search "ripgrep:rg"
+  local out rc=0
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "search: mise_tools command rg is also in finder" || return 1
+  assert_contains "$out" "search: mise_tools tool ripgrep is also in other" || return 1
+  cleanup_test_env
+}
+
+test_check_requires_mise_for_mise_tools() {
+  setup
+  tools_fixture
+  make_tool_cap search "ripgrep:rg" ""
+  local out rc=0
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "search: has mise_tools but does not require mise" || return 1
+  cleanup_test_env
+}
+
+# What `./bin/teeup commands --check` runs in CI, against the shipped tree
+# and the shipped lock, without running bin/teeup.
+test_check_passes_on_the_shipped_tree() {
+  setup
+  TEEUP_CAPS_DIR="$TEEUP_PATH/capabilities"
+  TEEUP_TOOLS_LOCK="$TEEUP_PATH/share/teeup/tools.lock"
+  local out rc=0
+  out="$(cap_check 2>&1)" || rc=$?
+  assert_success "$rc" "the shipped capabilities must lint clean: $out" || return 1
+  cleanup_test_env
+}
+
 echo "lib/capability.sh"
 run_test "list and exists" test_list_and_exists
 run_test "meta get with default" test_meta_get_with_default
@@ -452,4 +539,10 @@ run_test "cap_remove with packages runs the script then uninstalls" test_cap_rem
 run_test "cap_remove without packages keeps them and tells the script" test_cap_remove_without_packages_keeps_them_and_tells_the_script
 run_test "cap_remove reads packages from the metadata only" test_cap_remove_reads_packages_from_the_metadata_only
 run_test "cap_remove reports a failed script and a failed uninstall" test_cap_remove_reports_a_failed_script_and_a_failed_uninstall
+run_test "check accepts well-formed mise_tools" test_check_accepts_well_formed_mise_tools
+run_test "check rejects a bad mise_tools pair" test_check_rejects_a_bad_mise_tools_pair
+run_test "check rejects a mise tool without a lock line" test_check_rejects_a_mise_tool_without_a_lock_line
+run_test "check rejects a mise command or tool in two capabilities" test_check_rejects_a_mise_command_or_tool_in_two_capabilities
+run_test "check requires mise for mise_tools" test_check_requires_mise_for_mise_tools
+run_test "check passes on the shipped tree" test_check_passes_on_the_shipped_tree
 print_summary
