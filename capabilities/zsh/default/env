@@ -220,8 +220,10 @@ if [ -z "$_teeup_editor" ]; then
   fi
   unset _teeup_nvim
 fi
+# Matched on the command, so a full or quoted path (".../bin/emacsclient" -c)
+# counts too.
 case "$_teeup_editor" in
-  emacsclient*)
+  emacsclient*|*/emacsclient|*/emacsclient[\ \"\']*)
     # An empty ALTERNATE_EDITOR makes emacsclient start the daemon itself.
     ALTERNATE_EDITOR="${ALTERNATE_EDITOR:-}"
     export ALTERNATE_EDITOR

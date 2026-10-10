@@ -967,6 +967,23 @@ test_default_env_editor_accepts_a_quoted_path_with_spaces() {
   cleanup_test_env
 }
 
+# emacsclient starts the daemon itself only when ALTERNATE_EDITOR is empty,
+# and an answer may name it by a full or quoted path.
+test_default_env_editor_sets_alternate_editor_for_an_emacsclient_path() {
+  setup
+  require_zsh || return 1
+  local root="$TEST_HOME/root" app="$TEST_HOME/Emacs App/bin" zsh_bin out
+  mkdir -p "$root" "$TEST_HOME/.config/teeup"
+  make_emacsclient "$app"
+  printf 'TEEUP_EDITOR="\\"%s/emacsclient\\" -c"\n' "$app" > "$TEST_HOME/.config/teeup/answers"
+  zsh_bin="$(command -v zsh)"
+  out="$(TEEUP_TEST_PREFIX_ROOT="$root" PATH="$MOCK_BIN" "$zsh_bin" -f -c "unset EDITOR VISUAL SUDO_EDITOR TEEUP_EDITOR_AUTO SSH_CONNECTION SSH_TTY ALTERNATE_EDITOR
+. '$TEEUP_PATH/capabilities/zsh/default/env'
+print -r -- \"\${ALTERNATE_EDITOR+set}|\$EDITOR\"" 2>/dev/null)"
+  assert_equals "set|\"$app/emacsclient\" -c" "$out" || return 1
+  cleanup_test_env
+}
+
 test_env_survives_errexit_without_nvim() {
   setup
   require_zsh || return 1
@@ -1117,6 +1134,7 @@ run_test "default env editor keeps an inherited editor" test_default_env_editor_
 run_test "default env editor lets the machine file pin win" test_default_env_editor_lets_the_machine_file_pin_win
 run_test "default env editor skips an answer whose command is missing" test_default_env_editor_skips_an_answer_whose_command_is_missing
 run_test "default env editor accepts a quoted path with spaces" test_default_env_editor_accepts_a_quoted_path_with_spaces
+run_test "default env editor sets ALTERNATE_EDITOR for an emacsclient path" test_default_env_editor_sets_alternate_editor_for_an_emacsclient_path
 run_test "default env prefers the user's own machine file over the repo's" test_default_env_prefers_the_users_own_machine_file_over_the_repos
 run_test "rc exports appearance and sources the theme env" test_rc_exports_appearance_and_sources_the_theme_env
 run_test "rc reports light when defaults exits non-zero" test_rc_reports_light_when_defaults_exits_nonzero
