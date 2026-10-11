@@ -104,6 +104,25 @@ test_refuses_root() {
   cleanup_test_env
 }
 
+test_refuses_an_unwritable_config_parent() {
+  setup
+  local bad="$TEST_HOME/locked-config"
+  mkdir -p "$bad"
+  chmod 555 "$bad"
+  export XDG_CONFIG_HOME="$bad"
+  local rc=0 out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")" || rc=$?
+  chmod u+w "$bad"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "teeup cannot write to the folders it needs" || return 1
+  assert_contains "$out" "$bad is not writable" || return 1
+  assert_contains "$out" "ls -lde $bad" || return 1
+  assert_contains "$out" "chmod u+w $bad" || return 1
+  assert_not_contains "$out" "Starting:" "bootstrap must stop before running any capability" || return 1
+  [[ ! -e "$bad/teeup" ]] || { echo "bootstrap wrote into the locked config dir"; return 1; }
+  cleanup_test_env
+}
+
 test_unknown_flag_exits_2() {
   setup
   local rc=0
@@ -910,6 +929,7 @@ test_wizard_does_not_ask_for_a_pinned_editor() {
 echo "bootstrap"
 run_test "refuses non-macOS" test_refuses_non_macos
 run_test "refuses root" test_refuses_root
+run_test "refuses an unwritable config parent" test_refuses_an_unwritable_config_parent
 run_test "unknown flag exits 2" test_unknown_flag_exits_2
 run_test "dry run walks core tier in order" test_dry_run_walks_core_tier_in_order
 run_test "the theme is rendered once" test_the_theme_is_rendered_once

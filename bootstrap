@@ -47,6 +47,9 @@ started="$(date +%s)"
 # --- 0. preflight -----------------------------------------------------------
 is_macos || die "teeup targets macOS only (uname -s reports $(uname -s))."
 [[ "$(id -u)" -ne 0 ]] || die "Run bootstrap as your user, not root."
+if ! writable_report="$(writable_dirs_check)"; then
+  die "$(printf 'teeup cannot write to the folders it needs:\n%s' "$writable_report")"
+fi
 if [[ "$DRY_RUN" == "true" ]]; then
   log "Dry run: nothing will be changed."
 else
