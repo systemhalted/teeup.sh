@@ -115,6 +115,41 @@ is_teeup_checkout() {
   [ -e "$1/.git" ] && [ -f "$1/bootstrap" ] && [ -f "$1/bin/teeup" ]
 }
 
+# check_data_home_writable -> prints the problem (and the command that fixes
+# it) when $HOME/.local/share, or its nearest existing ancestor, is not
+# safely writable; prints nothing and returns 0 when it is fine. That is
+# where clone_teeup's `mkdir -p "$(dirname "$dest")"` writes, and a bare
+# mkdir error part way through a MacBook's ./bootstrap (2026-10-11) is the
+# reason this runs before the clone. install.sh runs before the clone, so it
+# cannot source lib/core.sh; this is a small, self-contained copy of the
+# same check (writable_dirs_check, lib/core.sh) -- kept in the same words on
+# purpose, so tests/install.sh can check the two stay aligned.
+check_data_home_writable() {
+  local dir owner
+  dir="$HOME/.local/share"
+  while [ ! -e "$dir" ]; do
+    dir="$(dirname "$dir")"
+  done
+  if [ ! -d "$dir" ]; then
+    echo "$dir exists and is not a directory. Move it aside, then try again."
+    return 1
+  fi
+  if [ ! -O "$dir" ]; then
+    owner="$(stat -c '%U' "$dir" 2>/dev/null || stat -f '%Su' "$dir" 2>/dev/null || true)"
+    printf '%s is owned by %s, not you. Run: sudo chown -R "$(id -un)":staff %s\n' "$dir" "${owner:-someone else}" "$dir"
+    return 1
+  fi
+  if [ ! -w "$dir" ]; then
+    if [ "$dir" = "$HOME" ]; then
+      printf 'Your home folder %s does not allow new folders. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
+    else
+      printf '%s is not writable. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
+    fi
+    return 1
+  fi
+  return 0
+}
+
 # run_bootstrap <dest> [args...]: replace this script with the checkout's
 # ./bootstrap, its prompts reading from the terminal.
 run_bootstrap() {
@@ -129,7 +164,7 @@ run_bootstrap() {
 
 main() {
   local repo="${TEEUP_INSTALL_REPO:-https://github.com/systemhalted/teeup.sh}"
-  local dest="$HOME/.local/share/teeup" dry=false arg
+  local dest="$HOME/.local/share/teeup" dry=false arg writable_problem
   for arg in "$@"; do
     if [ "$arg" = "--dry-run" ]; then dry=true; fi
   done
@@ -147,6 +182,8 @@ main() {
   if [ -e "$dest" ]; then
     die "$dest exists and is not a git checkout of teeup. Move it aside, then run the installer again."
   fi
+
+  writable_problem="$(check_data_home_writable)" || die "$writable_problem"
 
   install_clt "$dry"
   clone_teeup "$repo" "$dest" "$dry"

@@ -164,6 +164,37 @@ test_root_is_refused() {
   cleanup_test_env
 }
 
+test_an_unwritable_data_home_stops_before_the_clone() {
+  setup
+  # $HOME/.local/share does not exist yet, but $HOME/.local does and is
+  # locked, so the ancestor walk stops there.
+  local locked="$HOME/.local"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export TEEUP_INSTALL_REPO="$TEST_HOME/no-such-origin.git"
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  chmod u+w "$locked"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$locked is not writable" || return 1
+  assert_contains "$out" "ls -lde $locked" || return 1
+  assert_contains "$out" "chmod u+w $locked" || return 1
+  [[ ! -e "$DEST" ]] || { echo "cloned into a locked data home"; return 1; }
+  cleanup_test_env
+}
+
+# tests/bootstrap.sh and tests/lib/core.sh exercise writable_dirs_check
+# (lib/core.sh) directly; this only checks the two copies describe the same
+# problem and the same fix in the same words, since install.sh cannot
+# source lib/core.sh and keeps its own small copy.
+test_data_home_check_matches_the_bootstrap_wording() {
+  local cap="$TEEUP_PATH/lib/core.sh" s
+  for s in "is not writable" "does not allow new folders" "ls -lde" "chmod u+w" "sudo chown -R"; do
+    grep -qF "$s" "$cap" || { echo "lib/core.sh no longer says: $s"; return 1; }
+    grep -qF "$s" "$INSTALLER" || { echo "install.sh no longer says: $s"; return 1; }
+  done
+}
+
 test_a_mac_is_required() {
   setup
   mock_command uname 0 "Linux"
@@ -292,6 +323,8 @@ run_test "an existing checkout is not cloned again" test_an_existing_checkout_is
 run_test "an existing directory that is not a checkout is refused" test_an_existing_directory_that_is_not_a_checkout_is_refused
 run_test "an unrelated git checkout is refused" test_an_unrelated_git_checkout_is_refused
 run_test "root is refused" test_root_is_refused
+run_test "an unwritable data home stops before the clone" test_an_unwritable_data_home_stops_before_the_clone
+run_test "data home check matches the bootstrap wording" test_data_home_check_matches_the_bootstrap_wording
 run_test "a Mac is required" test_a_mac_is_required
 run_test "missing CLT installs through softwareupdate" test_missing_clt_installs_through_softwareupdate
 run_test "missing CLT without a label waits for the dialog" test_missing_clt_without_a_label_waits_for_the_dialog
