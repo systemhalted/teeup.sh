@@ -179,7 +179,7 @@ test_an_unwritable_data_home_stops_before_the_clone() {
   chmod u+w "$locked"
   assert_failure "$rc" || return 1
   assert_contains "$out" "$locked refuses new folders" || return 1
-  assert_contains "$out" "ls -lde $locked to see its permissions and ACLs" || return 1
+  assert_contains "$out" "ls -lde -- $locked to see its permissions and ACLs" || return 1
   [[ ! -e "$DEST" ]] || { echo "cloned into a locked data home"; return 1; }
   cleanup_test_env
 }
@@ -201,7 +201,7 @@ EOF2
   assert_failure "$rc" || return 1
   assert_contains "$out" "$HOME/.local refuses new folders" || return 1
   assert_contains "$out" "Operation not permitted" || return 1
-  assert_contains "$out" "ls -lde $HOME/.local to see its permissions and ACLs" || return 1
+  assert_contains "$out" "ls -lde -- $HOME/.local to see its permissions and ACLs" || return 1
   [[ ! -e "$DEST" ]] || { echo "cloned despite the ACL refusal"; return 1; }
   cleanup_test_env
 }
@@ -222,7 +222,7 @@ EOF2
   out="$(run_installer 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "$HOME/.local refuses new files (mktemp: cannot create file: Operation not permitted)" || return 1
-  assert_contains "$out" "ls -lde $HOME/.local to see its permissions and ACLs" || return 1
+  assert_contains "$out" "ls -lde -- $HOME/.local to see its permissions and ACLs" || return 1
   [[ -z "$(ls -A "$HOME/.local" 2>/dev/null)" ]] || { echo "a probe was left behind"; return 1; }
   [[ ! -e "$DEST" ]] || { echo "cloned despite the file-probe refusal"; return 1; }
   cleanup_test_env
@@ -239,8 +239,7 @@ test_a_dangling_data_home_symlink_stops_before_the_clone() {
   local out rc=0
   out="$(run_installer 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
-  assert_contains "$out" "$HOME/.local/share is a symlink to $HOME/gone, which does not exist" || return 1
-  assert_contains "$out" "Create $HOME/gone, or remove the link." || return 1
+  assert_contains "$out" "$HOME/.local/share is a symlink that cannot be resolved (its target $HOME/gone is missing, or the links form a loop). Fix or remove the link." || return 1
   [[ ! -e "$DEST" ]] || { echo "cloned despite the dangling symlink"; return 1; }
   cleanup_test_env
 }
@@ -276,7 +275,7 @@ test_a_tricky_home_quotes_the_fix_command() {
   out="$(run_installer 2>&1)" || rc=$?
   chmod u+w "$HOME/.local"
   assert_failure "$rc" || return 1
-  assert_contains "$out" "ls -lde $expected" || return 1
+  assert_contains "$out" "ls -lde -- $expected" || return 1
   [[ ! -e "$DEST" ]] || { echo "cloned despite the locked ancestor"; return 1; }
   cleanup_test_env
 }
@@ -291,6 +290,96 @@ test_dry_run_does_not_probe_the_data_home() {
   cleanup_test_env
 }
 
+# #1: there is no ownership test-hook in a standalone POSIX script (the
+# sandbox has no way to really hand $HOME/.local to another user), so the
+# "owned by someone else" chown wording is proven non-recursive and
+# group-aware in tests/lib/core.sh instead (the same message text, kept
+# aligned by test_data_home_check_matches_the_bootstrap_wording below);
+# this only has to carry the test for #2.
+
+# #2: a probe teeup creates must never be left behind silently -- a
+# cleanup that itself fails is reported, not swallowed as success.
+test_a_probe_cleanup_failure_stops_before_the_clone() {
+  setup
+  mkdir -p "$HOME/.local"
+  mock_command_script rmdir <<'EOF2'
+echo "rmdir: cannot remove: Operation not permitted" >&2
+exit 1
+EOF2
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$HOME/.local: teeup created" || return 1
+  assert_contains "$out" "but could not remove it. Remove it by hand: rm -rf -- " || return 1
+  [[ ! -e "$DEST" ]] || { echo "cloned despite the cleanup failure"; return 1; }
+  cleanup_test_env
+}
+
+# #7: a directory can be writable but not searchable (mode 0200) --
+# nothing can be created inside it either way, so a dry run must require
+# -x too, not just -w.
+test_dry_run_requires_both_w_and_x() {
+  setup
+  mkdir -p "$HOME/.local"
+  chmod 200 "$HOME/.local"
+  local out rc=0
+  out="$(run_installer --dry-run 2>&1)" || rc=$?
+  chmod u+rwx "$HOME/.local"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$HOME/.local is not writable" || return 1
+  assert_contains "$out" "chmod u+wx -- $HOME/.local" || return 1
+  cleanup_test_env
+}
+
+# #12: before any other work, a dangling or looping $dest must be treated
+# as an existing collision, same as a real non-checkout directory would
+# be -- otherwise -e "$dest" and -e "$dest/.git" are both false for it,
+# and the installer would start installing the Command Line Tools before
+# git clone finally fails on it.
+test_a_dangling_dest_symlink_is_an_existing_collision() {
+  setup
+  mkdir -p "$(dirname "$DEST")"
+  ln -s "$TEST_HOME/nowhere" "$DEST"
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$DEST is a symlink, and not to a teeup checkout" || return 1
+  [[ ! -e "$HOME/bootstrap.out" ]] || { echo "bootstrap ran despite the dangling symlink"; return 1; }
+  cleanup_test_env
+}
+
+test_a_dangling_dest_symlink_is_caught_in_a_dry_run_too() {
+  setup
+  mkdir -p "$(dirname "$DEST")"
+  ln -s "$TEST_HOME/nowhere" "$DEST"
+  local out rc=0
+  out="$(run_installer --dry-run 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$DEST is a symlink, and not to a teeup checkout" || return 1
+  cleanup_test_env
+}
+
+# A symlink at $dest that resolves to a real directory, but not a teeup
+# checkout, is also the new symlink collision -- #12 names this case
+# explicitly, so it is reported uniformly with the dangling and looping
+# cases, not left to the older "exists and is not a git checkout" message
+# (which is for a real, non-symlink directory at $dest).
+test_a_dest_symlink_to_a_non_checkout_directory_is_also_a_collision() {
+  setup
+  mkdir -p "$(dirname "$DEST")" "$TEST_HOME/elsewhere"
+  : > "$TEST_HOME/elsewhere/notes.txt"
+  ln -s "$TEST_HOME/elsewhere" "$DEST"
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$DEST is a symlink, and not to a teeup checkout" || return 1
+  cleanup_test_env
+}
+
+# (test_an_existing_directory_that_is_not_a_checkout_is_refused, above,
+# already proves a real, non-symlink directory at $dest keeps that older
+# message -- the new check is specific to $dest being a symlink.)
+
 # tests/bootstrap.sh and tests/lib/core.sh exercise writable_dirs_check
 # (lib/core.sh) directly; this only checks the two copies describe the same
 # problem and the same fix in the same words, since install.sh cannot
@@ -299,8 +388,9 @@ test_data_home_check_matches_the_bootstrap_wording() {
   local cap="$TEEUP_PATH/lib/core.sh" s
   for s in "is not writable" "does not allow new folders" "refuses new folders" \
            "refuses new files" "does not let you create" "its permissions and ACLs" \
-           "ls -lde" "chmod u+w" "sudo chown -R" "is a symlink to" \
-           "which does not exist" "or remove the link"; do
+           "ls -lde --" "chmod u+wx --" "sudo chown --" "\$(id -gn)" \
+           "is a symlink that cannot be resolved" "Fix or remove the link" \
+           "could not remove it"; do
     grep -qF "$s" "$cap" || { echo "lib/core.sh no longer says: $s"; return 1; }
     grep -qF "$s" "$INSTALLER" || { echo "install.sh no longer says: $s"; return 1; }
   done
@@ -441,6 +531,11 @@ run_test "a dangling data home symlink stops before the clone" test_a_dangling_d
 run_test "a file blocking the data home ancestor stops before the clone" test_a_file_blocking_the_data_home_ancestor_stops_before_the_clone
 run_test "a tricky home quotes the fix command" test_a_tricky_home_quotes_the_fix_command
 run_test "dry run does not probe the data home" test_dry_run_does_not_probe_the_data_home
+run_test "a probe cleanup failure stops before the clone" test_a_probe_cleanup_failure_stops_before_the_clone
+run_test "dry run requires both w and x" test_dry_run_requires_both_w_and_x
+run_test "a dangling dest symlink is an existing collision" test_a_dangling_dest_symlink_is_an_existing_collision
+run_test "a dangling dest symlink is caught in a dry run too" test_a_dangling_dest_symlink_is_caught_in_a_dry_run_too
+run_test "a dest symlink to a non-checkout directory is also a collision" test_a_dest_symlink_to_a_non_checkout_directory_is_also_a_collision
 run_test "data home check matches the bootstrap wording" test_data_home_check_matches_the_bootstrap_wording
 run_test "a Mac is required" test_a_mac_is_required
 run_test "missing CLT installs through softwareupdate" test_missing_clt_installs_through_softwareupdate
