@@ -167,7 +167,9 @@ test_root_is_refused() {
 test_an_unwritable_data_home_stops_before_the_clone() {
   setup
   # $HOME/.local/share does not exist yet, but $HOME/.local does and is
-  # locked, so the ancestor walk stops there.
+  # locked, so the ancestor walk stops there. A non-dry run's write test is
+  # the real mktemp probe, not -w, so a real EACCES there reads as "refuses
+  # new folders", not "is not writable".
   local locked="$HOME/.local"
   mkdir -p "$locked"
   chmod 555 "$locked"
@@ -176,9 +178,8 @@ test_an_unwritable_data_home_stops_before_the_clone() {
   out="$(run_installer 2>&1)" || rc=$?
   chmod u+w "$locked"
   assert_failure "$rc" || return 1
-  assert_contains "$out" "$locked is not writable" || return 1
-  assert_contains "$out" "ls -lde $locked" || return 1
-  assert_contains "$out" "chmod u+w $locked" || return 1
+  assert_contains "$out" "$locked refuses new folders" || return 1
+  assert_contains "$out" "ls -lde $locked to see its permissions and ACLs" || return 1
   [[ ! -e "$DEST" ]] || { echo "cloned into a locked data home"; return 1; }
   cleanup_test_env
 }
@@ -222,7 +223,8 @@ test_dry_run_does_not_probe_the_data_home() {
 test_data_home_check_matches_the_bootstrap_wording() {
   local cap="$TEEUP_PATH/lib/core.sh" s
   for s in "is not writable" "does not allow new folders" "refuses new folders" \
-           "its permissions and ACLs" "ls -lde" "chmod u+w" "sudo chown -R"; do
+           "does not let you create" "its permissions and ACLs" "ls -lde" \
+           "chmod u+w" "sudo chown -R"; do
     grep -qF "$s" "$cap" || { echo "lib/core.sh no longer says: $s"; return 1; }
     grep -qF "$s" "$INSTALLER" || { echo "install.sh no longer says: $s"; return 1; }
   done

@@ -265,6 +265,7 @@ test_writable_dirs_check_reports_a_locked_directory() {
   source "$TEEUP_PATH/lib/core.sh"
   mkdir -p "$XDG_CONFIG_HOME"
   chmod 555 "$XDG_CONFIG_HOME"
+  export DRY_RUN=true
   local out rc=0
   out="$(writable_dirs_check)" || rc=$?
   chmod u+w "$XDG_CONFIG_HOME"
@@ -299,6 +300,7 @@ test_writable_dirs_check_names_a_locked_ancestor_other_than_home() {
   mkdir -p "$level1"
   export XDG_CONFIG_HOME="$level1/.config"
   chmod 555 "$level1"
+  export DRY_RUN=true
   local out rc=0
   out="$(writable_dirs_check)" || rc=$?
   chmod u+w "$level1"
@@ -326,6 +328,7 @@ test_writable_dirs_check_also_checks_an_existing_teeup_config_dir() {
   source "$TEEUP_PATH/lib/core.sh"
   mkdir -p "$TEEUP_CONFIG_DIR"
   chmod 555 "$TEEUP_CONFIG_DIR"
+  export DRY_RUN=true
   local out rc=0
   out="$(writable_dirs_check)" || rc=$?
   chmod u+w "$TEEUP_CONFIG_DIR"
@@ -337,19 +340,149 @@ test_writable_dirs_check_also_checks_an_existing_teeup_config_dir() {
 # A sandbox cannot actually hand a directory to another user, so the owner
 # branch is exercised through _is_mine's test-only hook instead (see
 # lib/core.sh): TEEUP_TEST_NOT_MINE pretends a path belongs to someone else,
-# and TEEUP_TEST_PATH_OWNER controls the name the message shows.
+# and TEEUP_TEST_PATH_OWNER controls the name the message shows. Ownership
+# alone must never fail a check (P1), so the directory is also made
+# genuinely unwritable (chmod 555) -- otherwise the write test passes and
+# this would report nothing at all, by design.
 test_writable_dirs_check_reports_an_owner_mismatch() {
   setup_test_env
   source "$TEEUP_PATH/lib/core.sh"
   mkdir -p "$XDG_CONFIG_HOME"
+  chmod 555 "$XDG_CONFIG_HOME"
+  export DRY_RUN=true
   export TEEUP_TEST_NOT_MINE="$XDG_CONFIG_HOME"
   export TEEUP_TEST_PATH_OWNER="root"
   local out rc=0
   out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$XDG_CONFIG_HOME"
   assert_equals "1" "$rc" || return 1
   assert_contains "$out" "$XDG_CONFIG_HOME is owned by root, not you" || return 1
   assert_contains "$out" "sudo chown -R" || return 1
   unset TEEUP_TEST_NOT_MINE TEEUP_TEST_PATH_OWNER
+  cleanup_test_env
+}
+
+# P1: ownership never fails a folder by itself. A non-existent path whose
+# nearest existing ancestor is owned by someone else but still accepts a
+# new folder from this user (group-writable, an ACL, whatever) must pass
+# with no complaint at all.
+test_writable_check_one_passes_when_an_ancestor_is_not_mine_but_writable() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local base="$HOME/shared" child
+  mkdir -p "$base"
+  child="$base/data"
+  export TEEUP_TEST_NOT_MINE="$base"
+  local out rc=0
+  out="$(_writable_check_one "$child")" || rc=$?
+  unset TEEUP_TEST_NOT_MINE
+  assert_equals "0" "$rc" "ownership alone must not fail a writable ancestor" || return 1
+  assert_equals "" "$out" || return 1
+  cleanup_test_env
+}
+
+# When that same ancestor is also genuinely unwritable, the fix must never
+# be a recursive chown of it -- only a plain (non-recursive) chown of the
+# new folder itself, in the example command.
+test_writable_check_one_ancestor_not_mine_and_not_writable_has_no_recursive_chown() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local base="$HOME/shared" child
+  mkdir -p "$base"
+  chmod 555 "$base"
+  child="$base/data"
+  export DRY_RUN=true
+  export TEEUP_TEST_NOT_MINE="$base"
+  export TEEUP_TEST_PATH_OWNER="root"
+  local out rc=0
+  out="$(_writable_check_one "$child")" || rc=$?
+  chmod u+w "$base"
+  unset TEEUP_TEST_NOT_MINE TEEUP_TEST_PATH_OWNER
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$base does not let you create $child" || return 1
+  assert_contains "$out" "sudo chown" || return 1
+  assert_not_contains "$out" "chown -R" "an ancestor must never get a recursive chown" || return 1
+  cleanup_test_env
+}
+
+test_writable_check_one_ancestor_not_mine_names_the_override_var() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local base="$HOME/shared" child
+  mkdir -p "$base"
+  chmod 555 "$base"
+  child="$base/data"
+  export DRY_RUN=true
+  export TEEUP_TEST_NOT_MINE="$base"
+  local out rc=0
+  out="$(_writable_check_one "$child" "XDG_DATA_HOME")" || rc=$?
+  chmod u+w "$base"
+  unset TEEUP_TEST_NOT_MINE
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "point XDG_DATA_HOME elsewhere" || return 1
+  cleanup_test_env
+}
+
+# P2: TEEUP_STATE_DIR and TEEUP_CONFIG_DIR are checked using their actual,
+# effective values -- not just derived again from the XDG roots -- so an
+# override away from the XDG default still gets its real write target
+# checked.
+test_writable_dirs_check_also_checks_an_overridden_teeup_state_dir() {
+  setup_test_env
+  local locked="$TEST_HOME/locked-state"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export TEEUP_STATE_DIR="$locked/teeup"
+  source "$TEEUP_PATH/lib/core.sh"
+  export DRY_RUN=true
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$locked"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$locked is not writable" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_also_checks_an_overridden_teeup_config_dir() {
+  setup_test_env
+  local locked="$TEST_HOME/locked-config-override"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export TEEUP_CONFIG_DIR="$locked/teeup"
+  source "$TEEUP_PATH/lib/core.sh"
+  export DRY_RUN=true
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$locked"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$locked is not writable" || return 1
+  cleanup_test_env
+}
+
+# P3: a dangling symlink at the checked path itself must be reported
+# outright, not silently treated as "does not exist" and walked past.
+test_writable_dirs_check_reports_a_dangling_symlink() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  ln -s "$HOME/does-not-exist-target" "$XDG_CONFIG_HOME"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$XDG_CONFIG_HOME is a symlink to $HOME/does-not-exist-target, which does not exist" || return 1
+  assert_contains "$out" "Create $HOME/does-not-exist-target, or remove the link." || return 1
+  cleanup_test_env
+}
+
+# P3: a dangling symlink at any step of the ancestor walk (not just the
+# checked path's own leaf) must also be reported, not walked past.
+test_writable_dirs_check_reports_a_dangling_symlink_in_the_ancestor_walk() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  ln -s "$HOME/gone" "$XDG_CONFIG_HOME"
+  local out rc=0
+  out="$(_writable_check_one "$XDG_CONFIG_HOME/teeup/sub")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$XDG_CONFIG_HOME is a symlink to $HOME/gone, which does not exist" || return 1
   cleanup_test_env
 }
 
@@ -423,6 +556,13 @@ run_test "writable_dirs_check names a locked ancestor other than home" test_writ
 run_test "writable_dirs_check reports a file where a directory belongs" test_writable_dirs_check_reports_a_file_where_a_directory_belongs
 run_test "writable_dirs_check also checks an existing teeup config dir" test_writable_dirs_check_also_checks_an_existing_teeup_config_dir
 run_test "writable_dirs_check reports an owner mismatch" test_writable_dirs_check_reports_an_owner_mismatch
+run_test "writable_check_one passes when an ancestor is not mine but writable" test_writable_check_one_passes_when_an_ancestor_is_not_mine_but_writable
+run_test "writable_check_one ancestor not mine and not writable has no recursive chown" test_writable_check_one_ancestor_not_mine_and_not_writable_has_no_recursive_chown
+run_test "writable_check_one ancestor not mine names the override var" test_writable_check_one_ancestor_not_mine_names_the_override_var
+run_test "writable_dirs_check also checks an overridden TEEUP_STATE_DIR" test_writable_dirs_check_also_checks_an_overridden_teeup_state_dir
+run_test "writable_dirs_check also checks an overridden TEEUP_CONFIG_DIR" test_writable_dirs_check_also_checks_an_overridden_teeup_config_dir
+run_test "writable_dirs_check reports a dangling symlink" test_writable_dirs_check_reports_a_dangling_symlink
+run_test "writable_dirs_check reports a dangling symlink in the ancestor walk" test_writable_dirs_check_reports_a_dangling_symlink_in_the_ancestor_walk
 run_test "writable_dirs_check reports an ACL-style refusal" test_writable_dirs_check_reports_an_acl_style_refusal
 run_test "writable_dirs_check skips the probe when dry run" test_writable_dirs_check_skips_the_probe_when_dry_run
 print_summary

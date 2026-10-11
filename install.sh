@@ -125,44 +125,73 @@ is_teeup_checkout() {
 # self-contained copy of the same check (writable_dirs_check, lib/core.sh)
 # -- kept in the same words on purpose, so tests/install.sh can check the
 # two stay aligned.
+#
+# Order, deliberately (same reasoning as writable_dirs_check, lib/core.sh):
+# the write test decides first -- the real mktemp -d probe outside a dry
+# run (since -w only asks access(2), and an ACL or a privacy rule can pass
+# that while a real mkdir still fails), plain -w under one. Ownership is
+# consulted only once that fails, and only to choose the fix: a folder
+# someone else owns but that still took the probe is left alone --
+# ownership must never fail a folder by itself. A `sudo chown -R` is
+# offered only when $HOME/.local/share itself is the one that exists and
+# is owned by someone else, never for an ancestor above it.
 check_data_home_writable() {
-  local dry="$1" dir owner probe
-  dir="$HOME/.local/share"
+  local dry="$1" path dir owner probe reason=""
+  path="$HOME/.local/share"
+  dir="$path"
   while [ ! -e "$dir" ]; do
     dir="$(dirname "$dir")"
   done
-  if [ ! -d "$dir" ]; then
-    echo "$dir exists and is not a directory. Move it aside, then try again."
+  if [ "$dir" = "$path" ]; then
+    if [ ! -d "$dir" ]; then
+      echo "$dir exists and is not a directory. Move it aside, then try again."
+      return 1
+    fi
+  fi
+  if [ "$dry" != "true" ]; then
+    if probe="$(mktemp -d "$dir/.teeup-write-probe.XXXXXX" 2>&1)"; then
+      rmdir "$probe" 2>/dev/null || true
+    else
+      reason="probe"
+    fi
+  else
+    [ -w "$dir" ] || reason="perm"
+  fi
+  [ -n "$reason" ] || return 0
+
+  if [ -O "$dir" ]; then
+    if [ "$dir" = "$HOME" ]; then
+      if [ "$reason" = "probe" ]; then
+        printf 'Your home folder %s does not allow new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir"
+      else
+        printf 'Your home folder %s does not allow new folders. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
+      fi
+    else
+      if [ "$reason" = "probe" ]; then
+        printf '%s refuses new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir"
+      else
+        printf '%s is not writable. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
+      fi
+    fi
     return 1
   fi
-  if [ ! -O "$dir" ]; then
+
+  if [ "$dir" = "$path" ]; then
     owner="$(stat -c '%U' "$dir" 2>/dev/null || stat -f '%Su' "$dir" 2>/dev/null || true)"
     printf '%s is owned by %s, not you. Run: sudo chown -R "$(id -un)":staff %s\n' "$dir" "${owner:-someone else}" "$dir"
     return 1
   fi
-  if [ ! -w "$dir" ]; then
-    if [ "$dir" = "$HOME" ]; then
-      printf 'Your home folder %s does not allow new folders. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
-    else
-      printf '%s is not writable. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
-    fi
-    return 1
+
+  # $dir is an ancestor of $HOME/.local/share, not the path itself, and
+  # not mine: never offer a recursive chown of it.
+  if [ "$dir" = "$HOME" ]; then
+    printf 'Your home folder %s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s).\n' \
+      "$dir" "$path" "$dir" "$path" "$path" "$path"
+  else
+    printf '%s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s).\n' \
+      "$dir" "$path" "$dir" "$path" "$path" "$path"
   fi
-  # -w only asks access(2), which an ACL or a privacy rule can pass while a
-  # real mkdir still fails -- the MacBook Air that prompted this check. A
-  # dry run only reads everywhere else, so this is skipped then too.
-  if [ "$dry" != "true" ]; then
-    probe="$(mktemp -d "$dir/.teeup-write-probe.XXXXXX" 2>&1)" || {
-      if [ "$dir" = "$HOME" ]; then
-        printf 'Your home folder %s does not allow new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir"
-      else
-        printf '%s refuses new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir"
-      fi
-      return 1
-    }
-    rmdir "$probe" 2>/dev/null || true
-  fi
-  return 0
+  return 1
 }
 
 # run_bootstrap <dest> [args...]: replace this script with the checkout's

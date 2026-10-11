@@ -147,7 +147,9 @@ The one-line installer stops with a message in these cases:
 | "softwareupdate could not install" or "The Command Line Tools are still missing" | Run `xcode-select --install`, complete the dialog, and then run the installer again. |
 | "git clone ... failed" | The network can re-sign HTTPS, which git does not trust before teeup builds its certificate bundle. Run the installer on a different network. |
 | "Run the installer as your own user" | Do not use `sudo` for the installer. The installer asks for your password when it needs it. |
-| "is not writable" or "does not allow new folders" | A folder teeup writes to (or the nearest existing folder above it) is not writable. The message names the exact folder and shows the command that fixes it: `chmod u+w` if you own the folder, or `sudo chown -R` if someone else does. Run the installer or `./bootstrap` again after. |
+| "is not writable", "does not allow new folders", or "refuses new folders" | A folder teeup writes to (or the nearest existing folder above it) failed a test create. The message names the exact folder. If you own it: `ls -lde` it, then `chmod u+w` it. If it is the exact folder teeup asked for and someone else owns it: `sudo chown -R` it. Run the installer or `./bootstrap` again after. |
+| "does not let you create" | The exact folder teeup asked for does not exist yet, and a folder above it belongs to someone else. teeup never suggests a recursive `chown` of a shared folder above your own; create the named folder yourself with the right owner (the message shows an example command), or point the setting it names somewhere you already own. |
+| "is a symlink to ..., which does not exist" | A folder teeup writes to, or a folder above it, is a broken symlink. Create the link's target, or remove the link. Run the installer or `./bootstrap` again after. |
 
 If the installer shows "Waiting for the Command Line Tools installer to finish", complete Apple's dialog. The installer continues when the tools are installed.
 

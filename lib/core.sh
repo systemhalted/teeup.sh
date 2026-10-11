@@ -168,12 +168,24 @@ macos_major() { sw_vers -productVersion 2>/dev/null | awk -F. '{print $1}'; }
 # teeup's own subdirectory of this one.
 user_config_dir() { printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}"; }
 
-# _nearest_existing_ancestor <path> -> walks up dirname until something is
-# there. That is the directory `mkdir -p <path>` would actually create under,
-# so its permissions are what decide whether the create would work.
-_nearest_existing_ancestor() {
-  local p="$1"
+# _nearest_existing_ancestor_or_symlink <path> -> walks up dirname until
+# something is there, prints that path, and returns 0; that is the
+# directory `mkdir -p <path>` would actually create under, so its
+# permissions are what decide whether the create would work. A dangling
+# symlink anywhere along the way (the checked path itself, or an ancestor
+# the walk passes through) is reported instead of walked past -- `-e` is
+# false for one too, so without this it would read as "does not exist" and
+# the walk would continue straight past it into whatever the link used to
+# point at: prints the problem line instead and returns 1.
+_nearest_existing_ancestor_or_symlink() {
+  local p="$1" linktarget
   while [[ ! -e "$p" ]]; do
+    if [[ -L "$p" ]]; then
+      linktarget="$(readlink "$p")"
+      printf '%s is a symlink to %s, which does not exist. Create %s, or remove the link.\n' \
+        "$p" "$linktarget" "$linktarget"
+      return 1
+    fi
     p="$(dirname "$p")"
   done
   printf '%s\n' "$p"
@@ -210,79 +222,137 @@ _path_owner() {
   stat -c '%U' "$1" 2>/dev/null || stat -f '%Su' "$1" 2>/dev/null || true
 }
 
-# _writable_check_one <path> -> prints one line naming <path> (or, when it
-# does not exist yet, the nearest existing ancestor that mkdir -p would
-# create it under) and what is wrong with it, with a command that fixes it.
-# Prints nothing and returns 0 when <path> is fine. The last check actually
-# creates and removes a directory there (unless DRY_RUN), because the owner
-# and -w checks above only ask access(2), and an ACL or a privacy rule can
-# pass that while a real mkdir still fails.
+# _writable_check_one <path> [override_var] -> prints one line naming
+# <path> (or, when it does not exist yet, the nearest existing ancestor
+# that mkdir -p would create it under) and what is wrong with it, with a
+# command that fixes it. <override_var> is the env var (if any, e.g.
+# XDG_DATA_HOME) a message can point someone at instead, when the fix is
+# "put it somewhere else you already own." Prints nothing and returns 0
+# when <path> is fine.
+#
+# Order, deliberately: (1) a dangling symlink at <path> or along the walk
+# to an ancestor, or an existing <path> that is not a directory, always
+# fails outright. (2) the write test decides whether anything is wrong at
+# all: outside DRY_RUN, a real mktemp -d probe (because -w only asks
+# access(2), and a macOS ACL or a privacy rule can pass that while a real
+# mkdir still fails -- the MacBook Air that prompted this check); under
+# DRY_RUN, which must not write anything, plain -w. (3) only once that
+# fails does ownership matter, and only to choose the fix text: a folder
+# someone else owns but that still took the probe (or passes -w) is left
+# alone entirely -- ownership must never fail a folder by itself, and
+# teeup must never suggest a recursive chown of a folder above the user's
+# own. A `sudo chown -R` is offered only for the exact path teeup asked
+# for, not an ancestor it would merely create something under.
 _writable_check_one() {
-  local path="$1" target="$1" owner why=""
-  if [[ ! -e "$path" ]]; then
-    target="$(_nearest_existing_ancestor "$path")"
+  local path="$1" override_var="${2:-}" target owner why="" reason="" probe
+
+  target="$(_nearest_existing_ancestor_or_symlink "$path")" || {
+    printf '%s\n' "$target"
+    return 1
+  }
+
+  if [[ "$target" == "$path" ]]; then
+    if [[ ! -d "$path" ]]; then
+      printf '%s exists and is not a directory. Move it aside, then try again.\n' "$path"
+      return 1
+    fi
+  else
     why=", so teeup cannot create $path there"
-  elif [[ ! -d "$path" ]]; then
-    printf '%s exists and is not a directory. Move it aside, then try again.\n' "$path"
+  fi
+
+  if [[ "$DRY_RUN" != "true" ]]; then
+    if probe="$(mktemp -d "$target/.teeup-write-probe.XXXXXX" 2>&1)"; then
+      rmdir "$probe" 2>/dev/null || true
+    else
+      reason="probe"
+    fi
+  else
+    [[ -w "$target" ]] || reason="perm"
+  fi
+  [[ -n "$reason" ]] || return 0
+
+  if _is_mine "$target"; then
+    if [[ "$target" == "$HOME" ]]; then
+      if [[ "$reason" == "probe" ]]; then
+        printf 'Your home folder %s does not allow new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
+          "$target" "$probe" "$why" "$target"
+      else
+        printf 'Your home folder %s does not allow new folders%s. Run: ls -lde %s, then: chmod u+w %s\n' \
+          "$target" "$why" "$target" "$target"
+      fi
+    else
+      if [[ "$reason" == "probe" ]]; then
+        printf '%s refuses new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
+          "$target" "$probe" "$why" "$target"
+      else
+        printf '%s is not writable%s. Run: ls -lde %s, then: chmod u+w %s\n' \
+          "$target" "$why" "$target" "$target"
+      fi
+    fi
     return 1
   fi
-  if ! _is_mine "$target"; then
+
+  if [[ "$target" == "$path" ]]; then
     owner="$(_path_owner "$target")"
     printf '%s is owned by %s, not you%s. Run: sudo chown -R "$(id -un)":staff %s\n' \
       "$target" "${owner:-someone else}" "$why" "$target"
     return 1
   fi
-  if [[ ! -w "$target" ]]; then
-    if [[ "$target" == "$HOME" ]]; then
-      printf 'Your home folder %s does not allow new folders%s. Run: ls -lde %s, then: chmod u+w %s\n' \
-        "$target" "$why" "$target" "$target"
+
+  # target is an ancestor, not the path itself, and not mine: never offer
+  # a recursive chown of it -- that folder likely holds more than this one
+  # user's things. Only the new folder teeup would create gets a chown,
+  # and only a plain one.
+  if [[ "$target" == "$HOME" ]]; then
+    if [[ -n "$override_var" ]]; then
+      printf 'Your home folder %s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s), or point %s elsewhere.\n' \
+        "$target" "$path" "$target" "$path" "$path" "$path" "$override_var"
     else
-      printf '%s is not writable%s. Run: ls -lde %s, then: chmod u+w %s\n' \
-        "$target" "$why" "$target" "$target"
+      printf 'Your home folder %s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s).\n' \
+        "$target" "$path" "$target" "$path" "$path" "$path"
     fi
-    return 1
+  else
+    if [[ -n "$override_var" ]]; then
+      printf '%s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s), or point %s elsewhere.\n' \
+        "$target" "$path" "$target" "$path" "$path" "$path" "$override_var"
+    else
+      printf '%s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s).\n' \
+        "$target" "$path" "$target" "$path" "$path" "$path"
+    fi
   fi
-  # -w only asks access(2), which a macOS ACL (deny add_subdirectory) or a
-  # privacy rule can pass while the actual create still fails -- the MacBook
-  # Air that prompted this check. Skipped under DRY_RUN: it only reads
-  # everywhere else, and a probe directory is a write.
-  if [[ "$DRY_RUN" != "true" ]]; then
-    local probe
-    probe="$(mktemp -d "$target/.teeup-write-probe.XXXXXX" 2>&1)" || {
-      if [[ "$target" == "$HOME" ]]; then
-        printf 'Your home folder %s does not allow new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
-          "$target" "$probe" "$why" "$target"
-      else
-        printf '%s refuses new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
-          "$target" "$probe" "$why" "$target"
-      fi
-      return 1
-    }
-    rmdir "$probe" 2>/dev/null || true
-  fi
-  return 0
+  return 1
 }
 
 # writable_dirs_check -> prints one line per directory teeup writes into
-# that is not safely writable (wrong type, owned by someone else, not
+# that is not safely writable (a dangling symlink, wrong type, not
 # writable, or refusing an actual mkdir -- or, when it does not exist yet,
-# whichever existing ancestor mkdir -p would create it under). Honours
+# whichever existing ancestor mkdir -p would create it under; see
+# _writable_check_one for why ownership alone never fails one). Honours
 # DRY_RUN: the mkdir probe, the only step that writes anything, is skipped
 # then. bootstrap's preflight calls this before anything else runs.
-# Returns 1 when any line was printed.
+# Also checks the effective TEEUP_STATE_DIR and TEEUP_CONFIG_DIR (as
+# lib/core.sh, above, initialised them), whether or not they exist: a
+# machine with either overridden away from its XDG default would otherwise
+# never have its real write target checked. Identical paths are checked
+# once. Returns 1 when any line was printed.
 writable_dirs_check() {
-  local rc=0 path
+  local rc=0 path p v seen=" "
   for path in \
-    "${XDG_CONFIG_HOME:-$HOME/.config}" \
-    "${XDG_STATE_HOME:-$HOME/.local/state}" \
-    "${XDG_DATA_HOME:-$HOME/.local/share}" \
-    "$HOME/.local/bin"
+    "${XDG_CONFIG_HOME:-$HOME/.config}:XDG_CONFIG_HOME" \
+    "${XDG_STATE_HOME:-$HOME/.local/state}:XDG_STATE_HOME" \
+    "${XDG_DATA_HOME:-$HOME/.local/share}:XDG_DATA_HOME" \
+    "$HOME/.local/bin:" \
+    "$TEEUP_STATE_DIR:TEEUP_STATE_DIR" \
+    "$TEEUP_CONFIG_DIR:TEEUP_CONFIG_DIR"
   do
-    _writable_check_one "$path" || rc=1
+    p="${path%%:*}"
+    v="${path#*:}"
+    case "$seen" in
+      *" $p "*) continue ;;
+    esac
+    seen="$seen$p "
+    _writable_check_one "$p" "$v" || rc=1
   done
-  if [[ -e "$TEEUP_CONFIG_DIR" ]]; then
-    _writable_check_one "$TEEUP_CONFIG_DIR" || rc=1
-  fi
   return "$rc"
 }
 
