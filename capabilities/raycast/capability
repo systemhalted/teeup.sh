@@ -1,0 +1,9 @@
+summary="Raycast launcher"
+group=apps
+tier=lazy
+requires="package-manager"
+provides=""
+packages=""
+casks="raycast"
+apps="Raycast"
+interactive=false
