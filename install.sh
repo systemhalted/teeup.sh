@@ -127,19 +127,26 @@ is_teeup_checkout() {
 # two stay aligned.
 #
 # Order, deliberately (same reasoning as writable_dirs_check, lib/core.sh):
-# the write test decides first -- the real mktemp -d probe outside a dry
-# run (since -w only asks access(2), and an ACL or a privacy rule can pass
-# that while a real mkdir still fails), plain -w under one. Ownership is
-# consulted only once that fails, and only to choose the fix: a folder
-# someone else owns but that still took the probe is left alone --
-# ownership must never fail a folder by itself. A `sudo chown -R` is
-# offered only when $HOME/.local/share itself is the one that exists and
-# is owned by someone else, never for an ancestor above it.
+# a dangling symlink at the path itself, or at any ancestor the walk passes
+# through, is reported outright, never walked past. Then the write test
+# decides -- the real mktemp -d probe outside a dry run (since -w only
+# asks access(2), and an ACL or a privacy rule can pass that while a real
+# mkdir still fails), plain -w under one. Ownership is consulted only once
+# that fails, and only to choose the fix: a folder someone else owns but
+# that still took the probe is left alone -- ownership must never fail a
+# folder by itself. A `sudo chown -R` is offered only when
+# $HOME/.local/share itself is the one that exists and is owned by someone
+# else, never for an ancestor above it.
 check_data_home_writable() {
-  local dry="$1" path dir owner probe reason=""
+  local dry="$1" path dir owner probe reason="" linktarget
   path="$HOME/.local/share"
   dir="$path"
   while [ ! -e "$dir" ]; do
+    if [ -L "$dir" ]; then
+      linktarget="$(readlink "$dir")"
+      printf '%s is a symlink to %s, which does not exist. Create %s, or remove the link.\n' "$dir" "$linktarget" "$linktarget"
+      return 1
+    fi
     dir="$(dirname "$dir")"
   done
   if [ "$dir" = "$path" ]; then

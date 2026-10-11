@@ -459,6 +459,57 @@ test_writable_dirs_check_also_checks_an_overridden_teeup_config_dir() {
   cleanup_test_env
 }
 
+# Round 2, item 2: $HOME itself is also checked (dev-dirs creates ~/Work
+# there, and zsh writes dotfiles directly into it), not just the XDG roots
+# and the TEEUP_*_DIR overrides under it. A locked $HOME with its XDG
+# children already created and writable must still fail, naming $HOME with
+# the home-folder wording.
+test_writable_dirs_check_also_checks_home_itself() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  mkdir -p "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "${XDG_DATA_HOME:-$HOME/.local/share}" "$HOME/.local/bin"
+  export DRY_RUN=true
+  chmod 555 "$HOME"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$HOME"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "Your home folder $HOME does not allow new folders" || return 1
+  cleanup_test_env
+}
+
+# Round 2, item 2: MISE_CONFIG_DIR, when set, is checked too (mise/configure
+# writes there), named by that var in the closing clause when its ancestor
+# is both not mine and not writable.
+test_writable_dirs_check_also_checks_mise_config_dir_when_set() {
+  setup_test_env
+  local locked="$TEST_HOME/locked-mise"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export MISE_CONFIG_DIR="$locked/mise"
+  source "$TEEUP_PATH/lib/core.sh"
+  export DRY_RUN=true
+  export TEEUP_TEST_NOT_MINE="$locked"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$locked"
+  unset TEEUP_TEST_NOT_MINE
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$locked does not let you create $MISE_CONFIG_DIR" || return 1
+  assert_contains "$out" "point MISE_CONFIG_DIR elsewhere" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_skips_mise_config_dir_when_unset() {
+  setup_test_env
+  unset MISE_CONFIG_DIR
+  source "$TEEUP_PATH/lib/core.sh"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  assert_equals "0" "$rc" "an unset MISE_CONFIG_DIR must not be checked" || return 1
+  cleanup_test_env
+}
+
 # P3: a dangling symlink at the checked path itself must be reported
 # outright, not silently treated as "does not exist" and walked past.
 test_writable_dirs_check_reports_a_dangling_symlink() {
@@ -561,6 +612,9 @@ run_test "writable_check_one ancestor not mine and not writable has no recursive
 run_test "writable_check_one ancestor not mine names the override var" test_writable_check_one_ancestor_not_mine_names_the_override_var
 run_test "writable_dirs_check also checks an overridden TEEUP_STATE_DIR" test_writable_dirs_check_also_checks_an_overridden_teeup_state_dir
 run_test "writable_dirs_check also checks an overridden TEEUP_CONFIG_DIR" test_writable_dirs_check_also_checks_an_overridden_teeup_config_dir
+run_test "writable_dirs_check also checks HOME itself" test_writable_dirs_check_also_checks_home_itself
+run_test "writable_dirs_check also checks MISE_CONFIG_DIR when set" test_writable_dirs_check_also_checks_mise_config_dir_when_set
+run_test "writable_dirs_check skips MISE_CONFIG_DIR when unset" test_writable_dirs_check_skips_mise_config_dir_when_unset
 run_test "writable_dirs_check reports a dangling symlink" test_writable_dirs_check_reports_a_dangling_symlink
 run_test "writable_dirs_check reports a dangling symlink in the ancestor walk" test_writable_dirs_check_reports_a_dangling_symlink_in_the_ancestor_walk
 run_test "writable_dirs_check reports an ACL-style refusal" test_writable_dirs_check_reports_an_acl_style_refusal

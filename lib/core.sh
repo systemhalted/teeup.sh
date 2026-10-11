@@ -333,11 +333,17 @@ _writable_check_one() {
 # Also checks the effective TEEUP_STATE_DIR and TEEUP_CONFIG_DIR (as
 # lib/core.sh, above, initialised them), whether or not they exist: a
 # machine with either overridden away from its XDG default would otherwise
-# never have its real write target checked. Identical paths are checked
-# once. Returns 1 when any line was printed.
+# never have its real write target checked; $HOME itself (dev-dirs creates
+# ~/Work there, and zsh writes dotfiles directly into it); and
+# $MISE_CONFIG_DIR, when it is set and non-empty (capabilities/mise/configure
+# writes there). This deliberately does not try to enumerate every write
+# target of every capability -- just the handful outside a capability's own
+# config/state/data tree. Identical paths are checked once. Returns 1 when
+# any line was printed.
 writable_dirs_check() {
   local rc=0 path p v seen=" "
   for path in \
+    "$HOME:" \
     "${XDG_CONFIG_HOME:-$HOME/.config}:XDG_CONFIG_HOME" \
     "${XDG_STATE_HOME:-$HOME/.local/state}:XDG_STATE_HOME" \
     "${XDG_DATA_HOME:-$HOME/.local/share}:XDG_DATA_HOME" \
@@ -353,6 +359,12 @@ writable_dirs_check() {
     seen="$seen$p "
     _writable_check_one "$p" "$v" || rc=1
   done
+  if [[ -n "${MISE_CONFIG_DIR:-}" ]]; then
+    case "$seen" in
+      *" $MISE_CONFIG_DIR "*) ;;
+      *) _writable_check_one "$MISE_CONFIG_DIR" "MISE_CONFIG_DIR" || rc=1 ;;
+    esac
+  fi
   return "$rc"
 }
 

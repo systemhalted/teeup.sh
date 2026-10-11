@@ -206,6 +206,23 @@ EOF2
   cleanup_test_env
 }
 
+# A dangling symlink at $HOME/.local/share -e is false for one too, so
+# without a dedicated check the ancestor walk would read it as "does not
+# exist" and walk straight past it to $HOME/.local, instead of reporting
+# the broken link itself.
+test_a_dangling_data_home_symlink_stops_before_the_clone() {
+  setup
+  mkdir -p "$HOME/.local"
+  ln -s "$HOME/gone" "$HOME/.local/share"
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$HOME/.local/share is a symlink to $HOME/gone, which does not exist" || return 1
+  assert_contains "$out" "Create $HOME/gone, or remove the link." || return 1
+  [[ ! -e "$DEST" ]] || { echo "cloned despite the dangling symlink"; return 1; }
+  cleanup_test_env
+}
+
 test_dry_run_does_not_probe_the_data_home() {
   setup
   mock_command mktemp 1 "boom"
@@ -224,7 +241,8 @@ test_data_home_check_matches_the_bootstrap_wording() {
   local cap="$TEEUP_PATH/lib/core.sh" s
   for s in "is not writable" "does not allow new folders" "refuses new folders" \
            "does not let you create" "its permissions and ACLs" "ls -lde" \
-           "chmod u+w" "sudo chown -R"; do
+           "chmod u+w" "sudo chown -R" "is a symlink to" "which does not exist" \
+           "or remove the link"; do
     grep -qF "$s" "$cap" || { echo "lib/core.sh no longer says: $s"; return 1; }
     grep -qF "$s" "$INSTALLER" || { echo "install.sh no longer says: $s"; return 1; }
   done
@@ -360,6 +378,7 @@ run_test "an unrelated git checkout is refused" test_an_unrelated_git_checkout_i
 run_test "root is refused" test_root_is_refused
 run_test "an unwritable data home stops before the clone" test_an_unwritable_data_home_stops_before_the_clone
 run_test "an ACL-denied data home stops before the clone" test_an_acl_denied_data_home_stops_before_the_clone
+run_test "a dangling data home symlink stops before the clone" test_a_dangling_data_home_symlink_stops_before_the_clone
 run_test "dry run does not probe the data home" test_dry_run_does_not_probe_the_data_home
 run_test "data home check matches the bootstrap wording" test_data_home_check_matches_the_bootstrap_wording
 run_test "a Mac is required" test_a_mac_is_required
