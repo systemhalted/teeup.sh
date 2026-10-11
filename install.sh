@@ -138,7 +138,7 @@ is_teeup_checkout() {
 # $HOME/.local/share itself is the one that exists and is owned by someone
 # else, never for an ancestor above it.
 check_data_home_writable() {
-  local dry="$1" path dir owner probe reason="" linktarget
+  local dry="$1" path dir owner probe reason="" linktarget dir_q path_q
   path="$HOME/.local/share"
   dir="$path"
   while [ ! -e "$dir" ]; do
@@ -154,6 +154,11 @@ check_data_home_writable() {
       echo "$dir exists and is not a directory. Move it aside, then try again."
       return 1
     fi
+  else
+    if [ ! -d "$dir" ]; then
+      printf '%s is a file, not a folder, so teeup cannot create %s. Move it aside, then try again.\n' "$dir" "$path"
+      return 1
+    fi
   fi
   if [ "$dry" != "true" ]; then
     if probe="$(mktemp -d "$dir/.teeup-write-probe.XXXXXX" 2>&1)"; then
@@ -166,18 +171,21 @@ check_data_home_writable() {
   fi
   [ -n "$reason" ] || return 0
 
+  printf -v dir_q '%q' "$dir"
+  printf -v path_q '%q' "$path"
+
   if [ -O "$dir" ]; then
     if [ "$dir" = "$HOME" ]; then
       if [ "$reason" = "probe" ]; then
-        printf 'Your home folder %s does not allow new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir"
+        printf 'Your home folder %s does not allow new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
       else
-        printf 'Your home folder %s does not allow new folders. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
+        printf 'Your home folder %s does not allow new folders. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir_q" "$dir_q"
       fi
     else
       if [ "$reason" = "probe" ]; then
-        printf '%s refuses new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir"
+        printf '%s refuses new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
       else
-        printf '%s is not writable. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
+        printf '%s is not writable. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir_q" "$dir_q"
       fi
     fi
     return 1
@@ -185,7 +193,7 @@ check_data_home_writable() {
 
   if [ "$dir" = "$path" ]; then
     owner="$(stat -c '%U' "$dir" 2>/dev/null || stat -f '%Su' "$dir" 2>/dev/null || true)"
-    printf '%s is owned by %s, not you. Run: sudo chown -R "$(id -un)":staff %s\n' "$dir" "${owner:-someone else}" "$dir"
+    printf '%s is owned by %s, not you. Run: sudo chown -R "$(id -un)":staff %s\n' "$dir" "${owner:-someone else}" "$dir_q"
     return 1
   fi
 
@@ -193,10 +201,10 @@ check_data_home_writable() {
   # not mine: never offer a recursive chown of it.
   if [ "$dir" = "$HOME" ]; then
     printf 'Your home folder %s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s).\n' \
-      "$dir" "$path" "$dir" "$path" "$path" "$path"
+      "$dir" "$path" "$dir_q" "$path" "$path_q" "$path_q"
   else
     printf '%s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s).\n' \
-      "$dir" "$path" "$dir" "$path" "$path" "$path"
+      "$dir" "$path" "$dir_q" "$path" "$path_q" "$path_q"
   fi
   return 1
 }

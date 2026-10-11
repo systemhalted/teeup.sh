@@ -323,6 +323,118 @@ test_writable_dirs_check_reports_a_file_where_a_directory_belongs() {
   cleanup_test_env
 }
 
+# Round 3, item 1: when the checked path does not exist yet, and the
+# nearest existing ancestor the walk stops at is a plain file rather than
+# a directory, mkdir -p cannot create anything under it; that must be
+# reported outright, before any write test, in both a real and a dry run.
+test_writable_check_one_reports_a_file_blocking_an_ancestor() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  : > "$HOME/blocker"
+  local out rc=0
+  out="$(_writable_check_one "$HOME/blocker/sub")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$HOME/blocker is a file, not a folder, so teeup cannot create $HOME/blocker/sub. Move it aside, then try again." || return 1
+  cleanup_test_env
+}
+
+test_writable_check_one_reports_a_file_blocking_an_ancestor_under_dry_run() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  : > "$HOME/blocker2"
+  export DRY_RUN=true
+  local out rc=0
+  out="$(_writable_check_one "$HOME/blocker2/sub")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$HOME/blocker2 is a file, not a folder, so teeup cannot create $HOME/blocker2/sub. Move it aside, then try again." || return 1
+  cleanup_test_env
+}
+
+# Round 3, item 2: every path inside a "Run: ..." command is shell-quoted
+# with printf %q, so a folder with a space or a metacharacter in its name
+# can be pasted straight into a terminal. Compares against the same %q
+# computation rather than a hardcoded literal, so the exact escaping style
+# bash chooses does not matter.
+test_writable_check_one_quotes_the_fix_command_for_a_tricky_path() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local tricky="$HOME/weird \$name"
+  mkdir -p "$tricky"
+  chmod 555 "$tricky"
+  export DRY_RUN=true
+  local expected
+  printf -v expected '%q' "$tricky"
+  local out rc=0
+  out="$(_writable_check_one "$tricky")" || rc=$?
+  chmod u+w "$tricky"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "ls -lde $expected" || return 1
+  assert_contains "$out" "chmod u+w $expected" || return 1
+  cleanup_test_env
+}
+
+test_writable_check_one_quotes_the_chown_dash_r_target() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local tricky="$HOME/weird \$owned"
+  mkdir -p "$tricky"
+  chmod 555 "$tricky"
+  export DRY_RUN=true
+  export TEEUP_TEST_NOT_MINE="$tricky"
+  export TEEUP_TEST_PATH_OWNER="root"
+  local expected
+  printf -v expected '%q' "$tricky"
+  local out rc=0
+  out="$(_writable_check_one "$tricky")" || rc=$?
+  chmod u+w "$tricky"
+  unset TEEUP_TEST_NOT_MINE TEEUP_TEST_PATH_OWNER
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "sudo chown -R \"\$(id -un)\":staff $expected" || return 1
+  cleanup_test_env
+}
+
+test_writable_check_one_quotes_the_ancestor_example_command() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local base="$HOME/weird base" child
+  mkdir -p "$base"
+  chmod 555 "$base"
+  child="$base/data"
+  export DRY_RUN=true
+  export TEEUP_TEST_NOT_MINE="$base"
+  local expected_base expected_child
+  printf -v expected_base '%q' "$base"
+  printf -v expected_child '%q' "$child"
+  local out rc=0
+  out="$(_writable_check_one "$child")" || rc=$?
+  chmod u+w "$base"
+  unset TEEUP_TEST_NOT_MINE
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "ls -lde $expected_base" || return 1
+  assert_contains "$out" "sudo mkdir -p $expected_child" || return 1
+  cleanup_test_env
+}
+
+# Round 3, item 3: writable_dirs_check passes each path and its override
+# var as two separate values now, not "path:var" in one string, so a
+# colon inside the path itself survives intact.
+test_writable_dirs_check_handles_a_colon_in_the_path() {
+  setup_test_env
+  local locked="$TEST_HOME/locked:parent"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export XDG_CONFIG_HOME="$locked/sub:with:colons"
+  source "$TEEUP_PATH/lib/core.sh"
+  export DRY_RUN=true
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$locked"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$locked is not writable" || return 1
+  assert_contains "$out" "so teeup cannot create $XDG_CONFIG_HOME there" || return 1
+  cleanup_test_env
+}
+
 test_writable_dirs_check_also_checks_an_existing_teeup_config_dir() {
   setup_test_env
   source "$TEEUP_PATH/lib/core.sh"
@@ -605,6 +717,12 @@ run_test "writable_dirs_check reports a locked directory" test_writable_dirs_che
 run_test "writable_dirs_check names the home folder itself" test_writable_dirs_check_names_the_home_folder_itself
 run_test "writable_dirs_check names a locked ancestor other than home" test_writable_dirs_check_names_a_locked_ancestor_other_than_home
 run_test "writable_dirs_check reports a file where a directory belongs" test_writable_dirs_check_reports_a_file_where_a_directory_belongs
+run_test "writable_check_one reports a file blocking an ancestor" test_writable_check_one_reports_a_file_blocking_an_ancestor
+run_test "writable_check_one reports a file blocking an ancestor under dry run" test_writable_check_one_reports_a_file_blocking_an_ancestor_under_dry_run
+run_test "writable_check_one quotes the fix command for a tricky path" test_writable_check_one_quotes_the_fix_command_for_a_tricky_path
+run_test "writable_check_one quotes the chown -R target" test_writable_check_one_quotes_the_chown_dash_r_target
+run_test "writable_check_one quotes the ancestor example command" test_writable_check_one_quotes_the_ancestor_example_command
+run_test "writable_dirs_check handles a colon in the path" test_writable_dirs_check_handles_a_colon_in_the_path
 run_test "writable_dirs_check also checks an existing teeup config dir" test_writable_dirs_check_also_checks_an_existing_teeup_config_dir
 run_test "writable_dirs_check reports an owner mismatch" test_writable_dirs_check_reports_an_owner_mismatch
 run_test "writable_check_one passes when an ancestor is not mine but writable" test_writable_check_one_passes_when_an_ancestor_is_not_mine_but_writable

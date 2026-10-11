@@ -231,20 +231,28 @@ _path_owner() {
 # when <path> is fine.
 #
 # Order, deliberately: (1) a dangling symlink at <path> or along the walk
-# to an ancestor, or an existing <path> that is not a directory, always
-# fails outright. (2) the write test decides whether anything is wrong at
-# all: outside DRY_RUN, a real mktemp -d probe (because -w only asks
-# access(2), and a macOS ACL or a privacy rule can pass that while a real
-# mkdir still fails -- the MacBook Air that prompted this check); under
-# DRY_RUN, which must not write anything, plain -w. (3) only once that
-# fails does ownership matter, and only to choose the fix text: a folder
-# someone else owns but that still took the probe (or passes -w) is left
-# alone entirely -- ownership must never fail a folder by itself, and
-# teeup must never suggest a recursive chown of a folder above the user's
-# own. A `sudo chown -R` is offered only for the exact path teeup asked
-# for, not an ancestor it would merely create something under.
+# to an ancestor, or an existing thing that is not a directory -- <path>
+# itself, or (just as fatal, since mkdir -p cannot create anything under a
+# file) the ancestor the walk stopped at -- always fails outright, before
+# any write test, dry run or not. (2) the write test decides whether
+# anything else is wrong at all: outside DRY_RUN, a real mktemp -d probe
+# (because -w only asks access(2), and a macOS ACL or a privacy rule can
+# pass that while a real mkdir still fails -- the MacBook Air that
+# prompted this check); under DRY_RUN, which must not write anything,
+# plain -w. (3) only once that fails does ownership matter, and only to
+# choose the fix text: a folder someone else owns but that still took the
+# probe (or passes -w) is left alone entirely -- ownership must never fail
+# a folder by itself, and teeup must never suggest a recursive chown of a
+# folder above the user's own. A `sudo chown -R` is offered only for the
+# exact path teeup asked for, not an ancestor it would merely create
+# something under.
+#
+# Every path inside a "Run: ..." command is shell-quoted with printf %q
+# (the prose naming the folder is not) so a folder with a space or a
+# metacharacter in its name can be pasted straight into a terminal.
 _writable_check_one() {
   local path="$1" override_var="${2:-}" target owner why="" reason="" probe
+  local target_q path_q
 
   target="$(_nearest_existing_ancestor_or_symlink "$path")" || {
     printf '%s\n' "$target"
@@ -258,6 +266,11 @@ _writable_check_one() {
     fi
   else
     why=", so teeup cannot create $path there"
+    if [[ ! -d "$target" ]]; then
+      printf '%s is a file, not a folder, so teeup cannot create %s. Move it aside, then try again.\n' \
+        "$target" "$path"
+      return 1
+    fi
   fi
 
   if [[ "$DRY_RUN" != "true" ]]; then
@@ -271,22 +284,25 @@ _writable_check_one() {
   fi
   [[ -n "$reason" ]] || return 0
 
+  printf -v target_q '%q' "$target"
+  printf -v path_q '%q' "$path"
+
   if _is_mine "$target"; then
     if [[ "$target" == "$HOME" ]]; then
       if [[ "$reason" == "probe" ]]; then
         printf 'Your home folder %s does not allow new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
-          "$target" "$probe" "$why" "$target"
+          "$target" "$probe" "$why" "$target_q"
       else
         printf 'Your home folder %s does not allow new folders%s. Run: ls -lde %s, then: chmod u+w %s\n' \
-          "$target" "$why" "$target" "$target"
+          "$target" "$why" "$target_q" "$target_q"
       fi
     else
       if [[ "$reason" == "probe" ]]; then
         printf '%s refuses new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
-          "$target" "$probe" "$why" "$target"
+          "$target" "$probe" "$why" "$target_q"
       else
         printf '%s is not writable%s. Run: ls -lde %s, then: chmod u+w %s\n' \
-          "$target" "$why" "$target" "$target"
+          "$target" "$why" "$target_q" "$target_q"
       fi
     fi
     return 1
@@ -295,7 +311,7 @@ _writable_check_one() {
   if [[ "$target" == "$path" ]]; then
     owner="$(_path_owner "$target")"
     printf '%s is owned by %s, not you%s. Run: sudo chown -R "$(id -un)":staff %s\n' \
-      "$target" "${owner:-someone else}" "$why" "$target"
+      "$target" "${owner:-someone else}" "$why" "$target_q"
     return 1
   fi
 
@@ -306,18 +322,18 @@ _writable_check_one() {
   if [[ "$target" == "$HOME" ]]; then
     if [[ -n "$override_var" ]]; then
       printf 'Your home folder %s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s), or point %s elsewhere.\n' \
-        "$target" "$path" "$target" "$path" "$path" "$path" "$override_var"
+        "$target" "$path" "$target_q" "$path" "$path_q" "$path_q" "$override_var"
     else
       printf 'Your home folder %s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s).\n' \
-        "$target" "$path" "$target" "$path" "$path" "$path"
+        "$target" "$path" "$target_q" "$path" "$path_q" "$path_q"
     fi
   else
     if [[ -n "$override_var" ]]; then
       printf '%s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s), or point %s elsewhere.\n' \
-        "$target" "$path" "$target" "$path" "$path" "$path" "$override_var"
+        "$target" "$path" "$target_q" "$path" "$path_q" "$path_q" "$override_var"
     else
       printf '%s does not let you create %s. Run: ls -lde %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p %s && sudo chown "$(id -un)":staff %s).\n' \
-        "$target" "$path" "$target" "$path" "$path" "$path"
+        "$target" "$path" "$target_q" "$path" "$path_q" "$path_q"
     fi
   fi
   return 1
@@ -340,24 +356,39 @@ _writable_check_one() {
 # target of every capability -- just the handful outside a capability's own
 # config/state/data tree. Identical paths are checked once. Returns 1 when
 # any line was printed.
+#
+# Paths and their override var, as two parallel arrays rather than one
+# "path:var" string: a path is free to contain a colon (a theme name, a
+# machine's own choice of XDG_CONFIG_HOME), and splitting on ":" would cut
+# it off.
 writable_dirs_check() {
-  local rc=0 path p v seen=" "
-  for path in \
-    "$HOME:" \
-    "${XDG_CONFIG_HOME:-$HOME/.config}:XDG_CONFIG_HOME" \
-    "${XDG_STATE_HOME:-$HOME/.local/state}:XDG_STATE_HOME" \
-    "${XDG_DATA_HOME:-$HOME/.local/share}:XDG_DATA_HOME" \
-    "$HOME/.local/bin:" \
-    "$TEEUP_STATE_DIR:TEEUP_STATE_DIR" \
-    "$TEEUP_CONFIG_DIR:TEEUP_CONFIG_DIR"
-  do
-    p="${path%%:*}"
-    v="${path#*:}"
+  local rc=0 seen=" " i n p
+  local -a _wdc_paths=(
+    "$HOME"
+    "${XDG_CONFIG_HOME:-$HOME/.config}"
+    "${XDG_STATE_HOME:-$HOME/.local/state}"
+    "${XDG_DATA_HOME:-$HOME/.local/share}"
+    "$HOME/.local/bin"
+    "$TEEUP_STATE_DIR"
+    "$TEEUP_CONFIG_DIR"
+  )
+  local -a _wdc_vars=(
+    ""
+    "XDG_CONFIG_HOME"
+    "XDG_STATE_HOME"
+    "XDG_DATA_HOME"
+    ""
+    "TEEUP_STATE_DIR"
+    "TEEUP_CONFIG_DIR"
+  )
+  n=${#_wdc_paths[@]}
+  for ((i = 0; i < n; i++)); do
+    p="${_wdc_paths[i]}"
     case "$seen" in
       *" $p "*) continue ;;
     esac
     seen="$seen$p "
-    _writable_check_one "$p" "$v" || rc=1
+    _writable_check_one "$p" "${_wdc_vars[i]}" || rc=1
   done
   if [[ -n "${MISE_CONFIG_DIR:-}" ]]; then
     case "$seen" in

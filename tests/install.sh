@@ -223,6 +223,42 @@ test_a_dangling_data_home_symlink_stops_before_the_clone() {
   cleanup_test_env
 }
 
+# $HOME/.local exists as a plain file, so mkdir -p could never create
+# $HOME/.local/share under it; that must be reported outright, before any
+# write test.
+test_a_file_blocking_the_data_home_ancestor_stops_before_the_clone() {
+  setup
+  : > "$HOME/.local"
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$HOME/.local is a file, not a folder, so teeup cannot create $HOME/.local/share. Move it aside, then try again." || return 1
+  [[ ! -e "$DEST" ]] || { echo "cloned despite the blocking file"; return 1; }
+  cleanup_test_env
+}
+
+# Round 3, item 2: every path inside a "Run: ..." command is shell-quoted
+# with printf %q, so a $HOME with a space or a metacharacter in it (a real
+# possibility: macOS usernames can contain spaces) can be pasted straight
+# into a terminal. A space, a $ and a quote in HOME, same as the piped
+# install test above.
+test_a_tricky_home_quotes_the_fix_command() {
+  setup
+  export HOME="$TEST_HOME/it's a \$home"
+  mkdir -p "$HOME/.local"
+  chmod 555 "$HOME/.local"
+  DEST="$HOME/.local/share/teeup"
+  local expected
+  printf -v expected '%q' "$HOME/.local"
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  chmod u+w "$HOME/.local"
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "ls -lde $expected" || return 1
+  [[ ! -e "$DEST" ]] || { echo "cloned despite the locked ancestor"; return 1; }
+  cleanup_test_env
+}
+
 test_dry_run_does_not_probe_the_data_home() {
   setup
   mock_command mktemp 1 "boom"
@@ -379,6 +415,8 @@ run_test "root is refused" test_root_is_refused
 run_test "an unwritable data home stops before the clone" test_an_unwritable_data_home_stops_before_the_clone
 run_test "an ACL-denied data home stops before the clone" test_an_acl_denied_data_home_stops_before_the_clone
 run_test "a dangling data home symlink stops before the clone" test_a_dangling_data_home_symlink_stops_before_the_clone
+run_test "a file blocking the data home ancestor stops before the clone" test_a_file_blocking_the_data_home_ancestor_stops_before_the_clone
+run_test "a tricky home quotes the fix command" test_a_tricky_home_quotes_the_fix_command
 run_test "dry run does not probe the data home" test_dry_run_does_not_probe_the_data_home
 run_test "data home check matches the bootstrap wording" test_data_home_check_matches_the_bootstrap_wording
 run_test "a Mac is required" test_a_mac_is_required
