@@ -183,13 +183,46 @@ test_an_unwritable_data_home_stops_before_the_clone() {
   cleanup_test_env
 }
 
+# -w alone cannot tell a real ACL refusal from a plain unwritable directory,
+# so check_data_home_writable also does a real mkdir-and-remove; a sandbox
+# cannot set up a real ACL, so mktemp is mocked to fail it.
+test_an_acl_denied_data_home_stops_before_the_clone() {
+  setup
+  # $HOME/.local exists and passes -O/-w, so the probe is what fails here,
+  # not an earlier check.
+  mkdir -p "$HOME/.local"
+  mock_command_script mktemp <<'EOF2'
+echo "mktemp: mkdtemp failed: Operation not permitted" >&2
+exit 1
+EOF2
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "$HOME/.local refuses new folders" || return 1
+  assert_contains "$out" "Operation not permitted" || return 1
+  assert_contains "$out" "ls -lde $HOME/.local to see its permissions and ACLs" || return 1
+  [[ ! -e "$DEST" ]] || { echo "cloned despite the ACL refusal"; return 1; }
+  cleanup_test_env
+}
+
+test_dry_run_does_not_probe_the_data_home() {
+  setup
+  mock_command mktemp 1 "boom"
+  local out rc=0
+  out="$(run_installer --dry-run 2>&1)" || rc=$?
+  assert_equals "0" "$rc" "$out" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mktemp" "a dry run must not probe with mktemp" || return 1
+  cleanup_test_env
+}
+
 # tests/bootstrap.sh and tests/lib/core.sh exercise writable_dirs_check
 # (lib/core.sh) directly; this only checks the two copies describe the same
 # problem and the same fix in the same words, since install.sh cannot
 # source lib/core.sh and keeps its own small copy.
 test_data_home_check_matches_the_bootstrap_wording() {
   local cap="$TEEUP_PATH/lib/core.sh" s
-  for s in "is not writable" "does not allow new folders" "ls -lde" "chmod u+w" "sudo chown -R"; do
+  for s in "is not writable" "does not allow new folders" "refuses new folders" \
+           "its permissions and ACLs" "ls -lde" "chmod u+w" "sudo chown -R"; do
     grep -qF "$s" "$cap" || { echo "lib/core.sh no longer says: $s"; return 1; }
     grep -qF "$s" "$INSTALLER" || { echo "install.sh no longer says: $s"; return 1; }
   done
@@ -324,6 +357,8 @@ run_test "an existing directory that is not a checkout is refused" test_an_exist
 run_test "an unrelated git checkout is refused" test_an_unrelated_git_checkout_is_refused
 run_test "root is refused" test_root_is_refused
 run_test "an unwritable data home stops before the clone" test_an_unwritable_data_home_stops_before_the_clone
+run_test "an ACL-denied data home stops before the clone" test_an_acl_denied_data_home_stops_before_the_clone
+run_test "dry run does not probe the data home" test_dry_run_does_not_probe_the_data_home
 run_test "data home check matches the bootstrap wording" test_data_home_check_matches_the_bootstrap_wording
 run_test "a Mac is required" test_a_mac_is_required
 run_test "missing CLT installs through softwareupdate" test_missing_clt_installs_through_softwareupdate

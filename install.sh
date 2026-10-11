@@ -115,17 +115,18 @@ is_teeup_checkout() {
   [ -e "$1/.git" ] && [ -f "$1/bootstrap" ] && [ -f "$1/bin/teeup" ]
 }
 
-# check_data_home_writable -> prints the problem (and the command that fixes
-# it) when $HOME/.local/share, or its nearest existing ancestor, is not
-# safely writable; prints nothing and returns 0 when it is fine. That is
-# where clone_teeup's `mkdir -p "$(dirname "$dest")"` writes, and a bare
-# mkdir error part way through a MacBook's ./bootstrap (2026-10-11) is the
-# reason this runs before the clone. install.sh runs before the clone, so it
-# cannot source lib/core.sh; this is a small, self-contained copy of the
-# same check (writable_dirs_check, lib/core.sh) -- kept in the same words on
-# purpose, so tests/install.sh can check the two stay aligned.
+# check_data_home_writable <dry:true|false> -> prints the problem (and the
+# command that fixes it) when $HOME/.local/share, or its nearest existing
+# ancestor, is not safely writable; prints nothing and returns 0 when it is
+# fine. That is where clone_teeup's `mkdir -p "$(dirname "$dest")"` writes,
+# and a bare mkdir error part way through a MacBook's ./bootstrap
+# (2026-10-11) is the reason this runs before the clone. install.sh runs
+# before the clone, so it cannot source lib/core.sh; this is a small,
+# self-contained copy of the same check (writable_dirs_check, lib/core.sh)
+# -- kept in the same words on purpose, so tests/install.sh can check the
+# two stay aligned.
 check_data_home_writable() {
-  local dir owner
+  local dry="$1" dir owner probe
   dir="$HOME/.local/share"
   while [ ! -e "$dir" ]; do
     dir="$(dirname "$dir")"
@@ -146,6 +147,20 @@ check_data_home_writable() {
       printf '%s is not writable. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir" "$dir"
     fi
     return 1
+  fi
+  # -w only asks access(2), which an ACL or a privacy rule can pass while a
+  # real mkdir still fails -- the MacBook Air that prompted this check. A
+  # dry run only reads everywhere else, so this is skipped then too.
+  if [ "$dry" != "true" ]; then
+    probe="$(mktemp -d "$dir/.teeup-write-probe.XXXXXX" 2>&1)" || {
+      if [ "$dir" = "$HOME" ]; then
+        printf 'Your home folder %s does not allow new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir"
+      else
+        printf '%s refuses new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir"
+      fi
+      return 1
+    }
+    rmdir "$probe" 2>/dev/null || true
   fi
   return 0
 }
@@ -183,7 +198,7 @@ main() {
     die "$dest exists and is not a git checkout of teeup. Move it aside, then run the installer again."
   fi
 
-  writable_problem="$(check_data_home_writable)" || die "$writable_problem"
+  writable_problem="$(check_data_home_writable "$dry")" || die "$writable_problem"
 
   install_clt "$dry"
   clone_teeup "$repo" "$dest" "$dry"

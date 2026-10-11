@@ -353,6 +353,49 @@ test_writable_dirs_check_reports_an_owner_mismatch() {
   cleanup_test_env
 }
 
+# -w can pass (access(2)) while a real create still fails under an ACL or a
+# privacy rule, so writable_dirs_check also does a real mkdir-and-remove.
+# A sandbox cannot set up a real ACL refusal, so mktemp is mocked to refuse
+# only the config dir's probe template; the other three checks still run
+# their own (real) probe and pass, proving the refusal is reported for the
+# one directory, not a global mktemp failure.
+test_writable_dirs_check_reports_an_acl_style_refusal() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  mkdir -p "$XDG_CONFIG_HOME"
+  cat > "$MOCK_BIN/mktemp" <<EOF2
+#!/usr/bin/env bash
+case "\$*" in
+  *"$XDG_CONFIG_HOME/.teeup-write-probe."*)
+    echo "mktemp: mkdtemp failed: Operation not permitted" >&2
+    exit 1
+    ;;
+esac
+exec /usr/bin/mktemp "\$@"
+EOF2
+  chmod +x "$MOCK_BIN/mktemp"
+  local out rc=0
+  out="$(DRY_RUN=false writable_dirs_check)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$XDG_CONFIG_HOME refuses new folders" || return 1
+  assert_contains "$out" "Operation not permitted" || return 1
+  assert_contains "$out" "ls -lde $XDG_CONFIG_HOME to see its permissions and ACLs" || return 1
+  [[ -z "$(ls -A "$XDG_CONFIG_HOME" 2>/dev/null)" ]] || { echo "a probe directory was left behind"; return 1; }
+  cleanup_test_env
+}
+
+test_writable_dirs_check_skips_the_probe_when_dry_run() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  mock_command mktemp 1 "boom"
+  local out rc=0
+  out="$(DRY_RUN=true writable_dirs_check)" || rc=$?
+  assert_equals "0" "$rc" "a dry run must still pass" || return 1
+  assert_equals "" "$out" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mktemp" "a dry run must not probe with mktemp" || return 1
+  cleanup_test_env
+}
+
 echo "lib/core.sh"
 run_test "paths default to XDG under HOME" test_paths_default_to_xdg
 run_test "run_cmd dry run prints and skips" test_run_cmd_dry_run_prints_and_skips
@@ -380,4 +423,6 @@ run_test "writable_dirs_check names a locked ancestor other than home" test_writ
 run_test "writable_dirs_check reports a file where a directory belongs" test_writable_dirs_check_reports_a_file_where_a_directory_belongs
 run_test "writable_dirs_check also checks an existing teeup config dir" test_writable_dirs_check_also_checks_an_existing_teeup_config_dir
 run_test "writable_dirs_check reports an owner mismatch" test_writable_dirs_check_reports_an_owner_mismatch
+run_test "writable_dirs_check reports an ACL-style refusal" test_writable_dirs_check_reports_an_acl_style_refusal
+run_test "writable_dirs_check skips the probe when dry run" test_writable_dirs_check_skips_the_probe_when_dry_run
 print_summary

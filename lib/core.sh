@@ -213,7 +213,10 @@ _path_owner() {
 # _writable_check_one <path> -> prints one line naming <path> (or, when it
 # does not exist yet, the nearest existing ancestor that mkdir -p would
 # create it under) and what is wrong with it, with a command that fixes it.
-# Prints nothing and returns 0 when <path> is fine.
+# Prints nothing and returns 0 when <path> is fine. The last check actually
+# creates and removes a directory there (unless DRY_RUN), because the owner
+# and -w checks above only ask access(2), and an ACL or a privacy rule can
+# pass that while a real mkdir still fails.
 _writable_check_one() {
   local path="$1" target="$1" owner why=""
   if [[ ! -e "$path" ]]; then
@@ -239,14 +242,33 @@ _writable_check_one() {
     fi
     return 1
   fi
+  # -w only asks access(2), which a macOS ACL (deny add_subdirectory) or a
+  # privacy rule can pass while the actual create still fails -- the MacBook
+  # Air that prompted this check. Skipped under DRY_RUN: it only reads
+  # everywhere else, and a probe directory is a write.
+  if [[ "$DRY_RUN" != "true" ]]; then
+    local probe
+    probe="$(mktemp -d "$target/.teeup-write-probe.XXXXXX" 2>&1)" || {
+      if [[ "$target" == "$HOME" ]]; then
+        printf 'Your home folder %s does not allow new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
+          "$target" "$probe" "$why" "$target"
+      else
+        printf '%s refuses new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
+          "$target" "$probe" "$why" "$target"
+      fi
+      return 1
+    }
+    rmdir "$probe" 2>/dev/null || true
+  fi
   return 0
 }
 
 # writable_dirs_check -> prints one line per directory teeup writes into
-# that is not safely writable (wrong type, owned by someone else, or not
-# writable -- or, when it does not exist yet, whichever existing ancestor
-# mkdir -p would create it under). Read-only, so it is safe to call under
-# DRY_RUN too; bootstrap's preflight calls it before anything else runs.
+# that is not safely writable (wrong type, owned by someone else, not
+# writable, or refusing an actual mkdir -- or, when it does not exist yet,
+# whichever existing ancestor mkdir -p would create it under). Honours
+# DRY_RUN: the mkdir probe, the only step that writes anything, is skipped
+# then. bootstrap's preflight calls this before anything else runs.
 # Returns 1 when any line was printed.
 writable_dirs_check() {
   local rc=0 path
