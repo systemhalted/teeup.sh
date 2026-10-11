@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **`EDITOR` and `VISUAL` stuck at `vim`.** `~/.zshenv` reads the shell layer before macOS adds `/usr/local/bin` to `PATH`, so the shell did not find `emacsclient` there and selected `vim`. The layer now adds `/usr/local/bin` itself. It also records the editor that it selected, and a later pass selects again when the value did not change.
+- **`./bootstrap` and the installer stop early, naming the folder and the fix, when a folder teeup writes to is not writable.** On a MacBook Air, `./bootstrap` died part way through the wizard with a bare `mkdir: ... Permission denied`.
 
 
 ## [0.3.0-beta] - 2026-10-07

@@ -27,7 +27,7 @@ The installer does three things:
 2. It clones teeup into `~/.local/share/teeup` and checks out the newest release.
 3. It runs `./bootstrap` in the checkout.
 
-The installer stops if the Mac does not run macOS, or if you run it as root. If `~/.local/share/teeup` is a teeup checkout already, the installer runs its `./bootstrap` again. If the directory exists but is not a git checkout, the installer stops and changes nothing.
+The installer stops if the Mac does not run macOS, or if you run it as root. If `~/.local/share/teeup` is a teeup checkout already, the installer runs its `./bootstrap` again. If the directory exists but is not a git checkout, the installer stops and changes nothing. It also stops, naming the folder and the fix, when `~/.local/share` is not writable.
 
 To give options to `./bootstrap`, put them after `bash -s --`:
 
