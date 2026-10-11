@@ -116,8 +116,8 @@ test_refuses_an_unwritable_config_parent() {
   assert_equals "1" "$rc" || return 1
   assert_contains "$out" "teeup cannot write to the folders it needs" || return 1
   assert_contains "$out" "$bad is not writable" || return 1
-  assert_contains "$out" "ls -lde $bad" || return 1
-  assert_contains "$out" "chmod u+w $bad" || return 1
+  assert_contains "$out" "ls -lde -- $bad" || return 1
+  assert_contains "$out" "chmod u+wx -- $bad" || return 1
   assert_not_contains "$out" "Starting:" "bootstrap must stop before running any capability" || return 1
   [[ ! -e "$bad/teeup" ]] || { echo "bootstrap wrote into the locked config dir"; return 1; }
   cleanup_test_env
@@ -146,7 +146,7 @@ EOF2
   assert_contains "$out" "teeup cannot write to the folders it needs" || return 1
   assert_contains "$out" "$XDG_CONFIG_HOME refuses new folders" || return 1
   assert_contains "$out" "Operation not permitted" || return 1
-  assert_contains "$out" "ls -lde $XDG_CONFIG_HOME to see its permissions and ACLs" || return 1
+  assert_contains "$out" "ls -lde -- $XDG_CONFIG_HOME to see its permissions and ACLs" || return 1
   assert_not_contains "$out" "Starting:" "bootstrap must stop before running any capability" || return 1
   cleanup_test_env
 }

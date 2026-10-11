@@ -271,8 +271,8 @@ test_writable_dirs_check_reports_a_locked_directory() {
   chmod u+w "$XDG_CONFIG_HOME"
   assert_equals "1" "$rc" || return 1
   assert_contains "$out" "$XDG_CONFIG_HOME is not writable" || return 1
-  assert_contains "$out" "ls -lde $XDG_CONFIG_HOME" || return 1
-  assert_contains "$out" "chmod u+w $XDG_CONFIG_HOME" || return 1
+  assert_contains "$out" "ls -lde -- $XDG_CONFIG_HOME" || return 1
+  assert_contains "$out" "chmod u+wx -- $XDG_CONFIG_HOME" || return 1
   cleanup_test_env
 }
 
@@ -368,12 +368,15 @@ test_writable_check_one_quotes_the_fix_command_for_a_tricky_path() {
   out="$(_writable_check_one "$tricky")" || rc=$?
   chmod u+w "$tricky"
   assert_equals "1" "$rc" || return 1
-  assert_contains "$out" "ls -lde $expected" || return 1
-  assert_contains "$out" "chmod u+w $expected" || return 1
+  assert_contains "$out" "ls -lde -- $expected" || return 1
+  assert_contains "$out" "chmod u+wx -- $expected" || return 1
   cleanup_test_env
 }
 
-test_writable_check_one_quotes_the_chown_dash_r_target() {
+# #1: the chown fix is never recursive, and never assumes the user's group
+# is "staff" (not universal on a network macOS account, and wrong on
+# Linux) -- it names the user's own group with $(id -gn).
+test_writable_check_one_quotes_the_chown_target() {
   setup_test_env
   source "$TEEUP_PATH/lib/core.sh"
   local tricky="$HOME/weird \$owned"
@@ -389,7 +392,9 @@ test_writable_check_one_quotes_the_chown_dash_r_target() {
   chmod u+w "$tricky"
   unset TEEUP_TEST_NOT_MINE TEEUP_TEST_PATH_OWNER
   assert_equals "1" "$rc" || return 1
-  assert_contains "$out" "sudo chown -R \"\$(id -un)\":staff $expected" || return 1
+  assert_contains "$out" "sudo chown -- \"\$(id -un)\":\"\$(id -gn)\" $expected" || return 1
+  assert_not_contains "$out" "chown -R" "the exact path's own chown must never be recursive either" || return 1
+  assert_not_contains "$out" ":staff" "the fix must never assume the user's group is staff" || return 1
   cleanup_test_env
 }
 
@@ -410,8 +415,8 @@ test_writable_check_one_quotes_the_ancestor_example_command() {
   chmod u+w "$base"
   unset TEEUP_TEST_NOT_MINE
   assert_equals "1" "$rc" || return 1
-  assert_contains "$out" "ls -lde $expected_base" || return 1
-  assert_contains "$out" "sudo mkdir -p $expected_child" || return 1
+  assert_contains "$out" "ls -lde -- $expected_base" || return 1
+  assert_contains "$out" "sudo mkdir -p -- $expected_child && sudo chown -- \"\$(id -un)\":\"\$(id -gn)\" $expected_child" || return 1
   cleanup_test_env
 }
 
@@ -436,7 +441,7 @@ EOF2
   out="$(_writable_check_one "$target")" || rc=$?
   assert_equals "1" "$rc" || return 1
   assert_contains "$out" "$target refuses new files (mktemp: cannot create file: Operation not permitted)" || return 1
-  assert_contains "$out" "ls -lde $target to see its permissions and ACLs" || return 1
+  assert_contains "$out" "ls -lde -- $target to see its permissions and ACLs" || return 1
   [[ -z "$(ls -A "$target" 2>/dev/null)" ]] || { echo "a probe was left behind"; return 1; }
   cleanup_test_env
 }
@@ -550,7 +555,8 @@ test_writable_dirs_check_reports_an_owner_mismatch() {
   chmod u+w "$XDG_CONFIG_HOME"
   assert_equals "1" "$rc" || return 1
   assert_contains "$out" "$XDG_CONFIG_HOME is owned by root, not you" || return 1
-  assert_contains "$out" "sudo chown -R" || return 1
+  assert_contains "$out" "sudo chown -- \"\$(id -un)\":\"\$(id -gn)\"" || return 1
+  assert_not_contains "$out" "chown -R" || return 1
   unset TEEUP_TEST_NOT_MINE TEEUP_TEST_PATH_OWNER
   cleanup_test_env
 }
@@ -712,8 +718,7 @@ test_writable_dirs_check_reports_a_dangling_symlink() {
   local out rc=0
   out="$(writable_dirs_check)" || rc=$?
   assert_equals "1" "$rc" || return 1
-  assert_contains "$out" "$XDG_CONFIG_HOME is a symlink to $HOME/does-not-exist-target, which does not exist" || return 1
-  assert_contains "$out" "Create $HOME/does-not-exist-target, or remove the link." || return 1
+  assert_contains "$out" "$XDG_CONFIG_HOME is a symlink that cannot be resolved (its target $HOME/does-not-exist-target is missing, or the links form a loop). Fix or remove the link." || return 1
   cleanup_test_env
 }
 
@@ -726,7 +731,7 @@ test_writable_dirs_check_reports_a_dangling_symlink_in_the_ancestor_walk() {
   local out rc=0
   out="$(_writable_check_one "$XDG_CONFIG_HOME/teeup/sub")" || rc=$?
   assert_equals "1" "$rc" || return 1
-  assert_contains "$out" "$XDG_CONFIG_HOME is a symlink to $HOME/gone, which does not exist" || return 1
+  assert_contains "$out" "$XDG_CONFIG_HOME is a symlink that cannot be resolved (its target $HOME/gone is missing, or the links form a loop). Fix or remove the link." || return 1
   cleanup_test_env
 }
 
@@ -756,7 +761,7 @@ EOF2
   assert_equals "1" "$rc" || return 1
   assert_contains "$out" "$XDG_CONFIG_HOME refuses new folders" || return 1
   assert_contains "$out" "Operation not permitted" || return 1
-  assert_contains "$out" "ls -lde $XDG_CONFIG_HOME to see its permissions and ACLs" || return 1
+  assert_contains "$out" "ls -lde -- $XDG_CONFIG_HOME to see its permissions and ACLs" || return 1
   [[ -z "$(ls -A "$XDG_CONFIG_HOME" 2>/dev/null)" ]] || { echo "a probe directory was left behind"; return 1; }
   cleanup_test_env
 }
@@ -770,6 +775,177 @@ test_writable_dirs_check_skips_the_probe_when_dry_run() {
   assert_equals "0" "$rc" "a dry run must still pass" || return 1
   assert_equals "" "$out" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "mktemp" "a dry run must not probe with mktemp" || return 1
+  cleanup_test_env
+}
+
+# #2: a probe teeup creates must never be left behind silently -- if
+# removing it fails (an ACL that permits create but denies delete,
+# another process in the way, whatever), that is itself reported, not
+# swallowed as if the check had passed.
+test_writable_check_one_reports_a_dir_probe_cleanup_failure() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local target="$HOME/cleanupcheck"
+  mkdir -p "$target"
+  mock_command_script rmdir <<'EOF2'
+echo "rmdir: cannot remove: Operation not permitted" >&2
+exit 1
+EOF2
+  local out rc=0
+  out="$(_writable_check_one "$target")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$target: teeup created" || return 1
+  assert_contains "$out" "but could not remove it. Remove it by hand: rm -rf -- " || return 1
+  cleanup_test_env
+}
+
+test_writable_check_one_reports_a_file_probe_cleanup_failure() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local target="$HOME/filecleanupcheck"
+  mkdir -p "$target"
+  # Only the plain `rm -f <probe>` call (the file probe's own cleanup) is
+  # mocked to fail; cleanup_test_env's own `rm -rf` falls through to the
+  # real rm, so nothing it needs to delete is left behind.
+  mock_command_script rm <<'EOF2'
+if [ "$1" = "-f" ]; then
+  echo "rm: cannot remove: Operation not permitted" >&2
+  exit 1
+fi
+exec /usr/bin/rm "$@"
+EOF2
+  local out rc=0
+  out="$(_writable_check_one "$target")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$target: teeup created" || return 1
+  assert_contains "$out" "but could not remove it. Remove it by hand: rm -rf -- " || return 1
+  cleanup_test_env
+}
+
+# #4: when the log file itself already exists, that exact file (not its
+# directory) is what run_logged appends to, so it must be checked
+# directly -- a writable existing file in a directory that would
+# otherwise look locked must still pass, and a read-only existing file in
+# an otherwise writable directory must still fail.
+test_writable_check_log_passes_a_writable_existing_file_in_a_locked_directory() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local dir="$TEST_HOME/lockeddir" log_file
+  mkdir -p "$dir"
+  log_file="$dir/bootstrap.log"
+  : > "$log_file"
+  chmod 555 "$dir"
+  local out rc=0
+  out="$(_writable_check_log "$log_file")" || rc=$?
+  chmod u+w "$dir"
+  assert_equals "0" "$rc" "a writable existing log file must pass even in a directory that looks locked" || return 1
+  assert_equals "" "$out" || return 1
+  cleanup_test_env
+}
+
+test_writable_check_log_fails_a_read_only_existing_file() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local log_file="$TEST_HOME/readonly.log"
+  : > "$log_file"
+  chmod 444 "$log_file"
+  local out rc=0
+  out="$(_writable_check_log "$log_file")" || rc=$?
+  chmod u+w "$log_file"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$log_file is not writable" || return 1
+  assert_contains "$out" "chmod u+w -- $log_file" || return 1
+  cleanup_test_env
+}
+
+test_writable_check_log_accepts_dev_null() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local out rc=0
+  out="$(_writable_check_log /dev/null)" || rc=$?
+  assert_equals "0" "$rc" "/dev/null must always be an acceptable log target" || return 1
+  cleanup_test_env
+}
+
+test_writable_check_log_rejects_a_directory() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local log_file="$TEST_HOME/logs-as-a-dir"
+  mkdir -p "$log_file"
+  local out rc=0
+  out="$(_writable_check_log "$log_file")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$log_file exists and is not a regular file" || return 1
+  cleanup_test_env
+}
+
+# #7: a directory can be writable but not searchable (mode 0200) --
+# nothing can be created inside it either way, so a dry run must require
+# -x too, not just -w, and the suggested fix must restore both.
+test_writable_check_one_requires_both_w_and_x_under_dry_run() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local target="$HOME/writableonly"
+  mkdir -p "$target"
+  chmod 200 "$target"
+  export DRY_RUN=true
+  local out rc=0
+  out="$(_writable_check_one "$target")" || rc=$?
+  chmod u+rwx "$target"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$target is not writable" || return 1
+  assert_contains "$out" "chmod u+wx -- $target" || return 1
+  cleanup_test_env
+}
+
+# #9: deduplication compares whole paths in an indexed array now, not
+# whether one path's text is a substring of a space-joined record of
+# every path checked so far -- a path containing a space (HOME, here)
+# must never cause a different, locked path to be wrongly skipped as
+# "already seen" just because it happens to be a prefix of that space-
+# joined string.
+test_writable_dirs_check_dedup_does_not_skip_a_path_containing_a_space() {
+  setup_test_env
+  local locked="$TEST_HOME/base"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export HOME="$TEST_HOME/base child"
+  mkdir -p "$HOME"
+  export XDG_CONFIG_HOME="$locked"
+  source "$TEEUP_PATH/lib/core.sh"
+  export DRY_RUN=true
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$locked"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$locked is not writable" || return 1
+  cleanup_test_env
+}
+
+# #10: a trailing slash makes both -e and -L report false for a path that
+# is actually a file or a dangling symlink (the kernel requires a
+# directory before a trailing slash resolves at all), so without
+# stripping it first, the check would read the trailing-slash form as
+# "does not exist yet", fall back to its parent, and wrongly pass.
+test_writable_check_one_strips_a_trailing_slash_to_find_a_file_blocker() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  : > "$HOME/blocker3"
+  local out rc=0
+  out="$(_writable_check_one "$HOME/blocker3/")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$HOME/blocker3 exists and is not a directory" || return 1
+  cleanup_test_env
+}
+
+test_writable_check_one_strips_a_trailing_slash_to_find_a_dangling_symlink() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  ln -s "$HOME/gone-trailing" "$HOME/blocker4"
+  local out rc=0
+  out="$(_writable_check_one "$HOME/blocker4/")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$HOME/blocker4 is a symlink that cannot be resolved" || return 1
   cleanup_test_env
 }
 
@@ -801,7 +977,7 @@ run_test "writable_dirs_check reports a file where a directory belongs" test_wri
 run_test "writable_check_one reports a file blocking an ancestor" test_writable_check_one_reports_a_file_blocking_an_ancestor
 run_test "writable_check_one reports a file blocking an ancestor under dry run" test_writable_check_one_reports_a_file_blocking_an_ancestor_under_dry_run
 run_test "writable_check_one quotes the fix command for a tricky path" test_writable_check_one_quotes_the_fix_command_for_a_tricky_path
-run_test "writable_check_one quotes the chown -R target" test_writable_check_one_quotes_the_chown_dash_r_target
+run_test "writable_check_one quotes the chown target" test_writable_check_one_quotes_the_chown_target
 run_test "writable_check_one quotes the ancestor example command" test_writable_check_one_quotes_the_ancestor_example_command
 run_test "writable_check_one reports a file probe failure" test_writable_check_one_reports_a_file_probe_failure
 run_test "writable_dirs_check checks the default log dir" test_writable_dirs_check_checks_the_default_log_dir
@@ -822,4 +998,14 @@ run_test "writable_dirs_check reports a dangling symlink" test_writable_dirs_che
 run_test "writable_dirs_check reports a dangling symlink in the ancestor walk" test_writable_dirs_check_reports_a_dangling_symlink_in_the_ancestor_walk
 run_test "writable_dirs_check reports an ACL-style refusal" test_writable_dirs_check_reports_an_acl_style_refusal
 run_test "writable_dirs_check skips the probe when dry run" test_writable_dirs_check_skips_the_probe_when_dry_run
+run_test "writable_check_one reports a dir probe cleanup failure" test_writable_check_one_reports_a_dir_probe_cleanup_failure
+run_test "writable_check_one reports a file probe cleanup failure" test_writable_check_one_reports_a_file_probe_cleanup_failure
+run_test "writable_check_log passes a writable existing file in a locked directory" test_writable_check_log_passes_a_writable_existing_file_in_a_locked_directory
+run_test "writable_check_log fails a read-only existing file" test_writable_check_log_fails_a_read_only_existing_file
+run_test "writable_check_log accepts /dev/null" test_writable_check_log_accepts_dev_null
+run_test "writable_check_log rejects a directory" test_writable_check_log_rejects_a_directory
+run_test "writable_check_one requires both w and x under dry run" test_writable_check_one_requires_both_w_and_x_under_dry_run
+run_test "writable_dirs_check dedup does not skip a path containing a space" test_writable_dirs_check_dedup_does_not_skip_a_path_containing_a_space
+run_test "writable_check_one strips a trailing slash to find a file blocker" test_writable_check_one_strips_a_trailing_slash_to_find_a_file_blocker
+run_test "writable_check_one strips a trailing slash to find a dangling symlink" test_writable_check_one_strips_a_trailing_slash_to_find_a_dangling_symlink
 print_summary
