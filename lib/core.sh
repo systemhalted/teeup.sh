@@ -238,8 +238,10 @@ _path_owner() {
 # anything else is wrong at all: outside DRY_RUN, a real mktemp -d probe
 # (because -w only asks access(2), and a macOS ACL or a privacy rule can
 # pass that while a real mkdir still fails -- the MacBook Air that
-# prompted this check); under DRY_RUN, which must not write anything,
-# plain -w. (3) only once that fails does ownership matter, and only to
+# prompted this check), then, only if that passed, a second real probe
+# with a plain file (some ACLs and sandboxing rules allow one but not the
+# other); under DRY_RUN, which must not write anything, plain -w. (3)
+# only once that fails does ownership matter, and only to
 # choose the fix text: a folder someone else owns but that still took the
 # probe (or passes -w) is left alone entirely -- ownership must never fail
 # a folder by itself, and teeup must never suggest a recursive chown of a
@@ -276,6 +278,14 @@ _writable_check_one() {
   if [[ "$DRY_RUN" != "true" ]]; then
     if probe="$(mktemp -d "$target/.teeup-write-probe.XXXXXX" 2>&1)"; then
       rmdir "$probe" 2>/dev/null || true
+      # A directory probe passing does not prove a plain file can be
+      # created there too -- some ACLs and sandboxing rules distinguish
+      # the two. Same rule either way: never leave the probe behind.
+      if probe="$(mktemp "$target/.teeup-write-probe.XXXXXX" 2>&1)"; then
+        rm -f "$probe" 2>/dev/null || true
+      else
+        reason="file"
+      fi
     else
       reason="probe"
     fi
@@ -289,21 +299,29 @@ _writable_check_one() {
 
   if _is_mine "$target"; then
     if [[ "$target" == "$HOME" ]]; then
-      if [[ "$reason" == "probe" ]]; then
-        printf 'Your home folder %s does not allow new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
-          "$target" "$probe" "$why" "$target_q"
-      else
-        printf 'Your home folder %s does not allow new folders%s. Run: ls -lde %s, then: chmod u+w %s\n' \
-          "$target" "$why" "$target_q" "$target_q"
-      fi
+      case "$reason" in
+        probe)
+          printf 'Your home folder %s does not allow new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
+            "$target" "$probe" "$why" "$target_q" ;;
+        file)
+          printf 'Your home folder %s does not allow new files (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
+            "$target" "$probe" "$why" "$target_q" ;;
+        *)
+          printf 'Your home folder %s does not allow new folders%s. Run: ls -lde %s, then: chmod u+w %s\n' \
+            "$target" "$why" "$target_q" "$target_q" ;;
+      esac
     else
-      if [[ "$reason" == "probe" ]]; then
-        printf '%s refuses new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
-          "$target" "$probe" "$why" "$target_q"
-      else
-        printf '%s is not writable%s. Run: ls -lde %s, then: chmod u+w %s\n' \
-          "$target" "$why" "$target_q" "$target_q"
-      fi
+      case "$reason" in
+        probe)
+          printf '%s refuses new folders (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
+            "$target" "$probe" "$why" "$target_q" ;;
+        file)
+          printf '%s refuses new files (%s)%s. Run: ls -lde %s to see its permissions and ACLs.\n' \
+            "$target" "$probe" "$why" "$target_q" ;;
+        *)
+          printf '%s is not writable%s. Run: ls -lde %s, then: chmod u+w %s\n' \
+            "$target" "$why" "$target_q" "$target_q" ;;
+      esac
     fi
     return 1
   fi
@@ -350,12 +368,16 @@ _writable_check_one() {
 # lib/core.sh, above, initialised them), whether or not they exist: a
 # machine with either overridden away from its XDG default would otherwise
 # never have its real write target checked; $HOME itself (dev-dirs creates
-# ~/Work there, and zsh writes dotfiles directly into it); and
-# $MISE_CONFIG_DIR, when it is set and non-empty (capabilities/mise/configure
-# writes there). This deliberately does not try to enumerate every write
-# target of every capability -- just the handful outside a capability's own
-# config/state/data tree. Identical paths are checked once. Returns 1 when
-# any line was printed.
+# ~/Work there, and zsh writes dotfiles directly into it); $MISE_CONFIG_DIR,
+# when it is set and non-empty (capabilities/mise/configure writes there);
+# and the log directory -- dirname "$TEEUP_LOG_FILE" when bootstrap has set
+# one (it does, before this runs), else the same default run_logged falls
+# back to, "$TEEUP_STATE_DIR/logs" -- so a `mkdir -p` failure deep inside
+# run_logged's own log write, much later and far from any preflight
+# message, cannot happen either. This deliberately does not try to
+# enumerate every write target of every capability -- just the handful
+# outside a capability's own config/state/data tree. Identical paths are
+# checked once. Returns 1 when any line was printed.
 #
 # Paths and their override var, as two parallel arrays rather than one
 # "path:var" string: a path is free to contain a colon (a theme name, a
@@ -396,6 +418,16 @@ writable_dirs_check() {
       *) _writable_check_one "$MISE_CONFIG_DIR" "MISE_CONFIG_DIR" || rc=1 ;;
     esac
   fi
+  local log_dir
+  if [[ -n "${TEEUP_LOG_FILE:-}" ]]; then
+    log_dir="$(dirname "$TEEUP_LOG_FILE")"
+  else
+    log_dir="$TEEUP_STATE_DIR/logs"
+  fi
+  case "$seen" in
+    *" $log_dir "*) ;;
+    *) _writable_check_one "$log_dir" "TEEUP_LOG_FILE" || rc=1 ;;
+  esac
   return "$rc"
 }
 

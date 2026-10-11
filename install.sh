@@ -163,6 +163,14 @@ check_data_home_writable() {
   if [ "$dry" != "true" ]; then
     if probe="$(mktemp -d "$dir/.teeup-write-probe.XXXXXX" 2>&1)"; then
       rmdir "$probe" 2>/dev/null || true
+      # A directory probe passing does not prove a plain file can be
+      # created there too -- some ACLs and sandboxing rules distinguish
+      # the two. Same rule either way: never leave the probe behind.
+      if probe="$(mktemp "$dir/.teeup-write-probe.XXXXXX" 2>&1)"; then
+        rm -f "$probe" 2>/dev/null || true
+      else
+        reason="file"
+      fi
     else
       reason="probe"
     fi
@@ -178,12 +186,16 @@ check_data_home_writable() {
     if [ "$dir" = "$HOME" ]; then
       if [ "$reason" = "probe" ]; then
         printf 'Your home folder %s does not allow new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
+      elif [ "$reason" = "file" ]; then
+        printf 'Your home folder %s does not allow new files (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
       else
         printf 'Your home folder %s does not allow new folders. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir_q" "$dir_q"
       fi
     else
       if [ "$reason" = "probe" ]; then
         printf '%s refuses new folders (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
+      elif [ "$reason" = "file" ]; then
+        printf '%s refuses new files (%s). Run: ls -lde %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
       else
         printf '%s is not writable. Run: ls -lde %s, then: chmod u+w %s\n' "$dir" "$dir_q" "$dir_q"
       fi

@@ -415,6 +415,87 @@ test_writable_check_one_quotes_the_ancestor_example_command() {
   cleanup_test_env
 }
 
+# Round 4, item 1: a directory probe passing does not prove a plain file
+# can be created too -- some ACLs and sandboxing rules distinguish the
+# two. mktemp is mocked generically (any `-d ...` call is the real thing;
+# anything else, the file-form probe, fails), so this works for whichever
+# target _writable_check_one resolves to.
+test_writable_check_one_reports_a_file_probe_failure() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local target="$HOME/filecheck"
+  mkdir -p "$target"
+  mock_command_script mktemp <<'EOF2'
+if [ "$1" = "-d" ]; then
+  exec /usr/bin/mktemp "$@"
+fi
+echo "mktemp: cannot create file: Operation not permitted" >&2
+exit 1
+EOF2
+  local out rc=0
+  out="$(_writable_check_one "$target")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$target refuses new files (mktemp: cannot create file: Operation not permitted)" || return 1
+  assert_contains "$out" "ls -lde $target to see its permissions and ACLs" || return 1
+  [[ -z "$(ls -A "$target" 2>/dev/null)" ]] || { echo "a probe was left behind"; return 1; }
+  cleanup_test_env
+}
+
+# Round 4, item 2: writable_dirs_check also checks the log directory --
+# dirname "$TEEUP_LOG_FILE" when it is set, else the same default
+# run_logged itself falls back to.
+test_writable_dirs_check_checks_the_default_log_dir() {
+  setup_test_env
+  local locked="$TEST_HOME/locked-logs"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export TEEUP_STATE_DIR="$locked/state"
+  source "$TEEUP_PATH/lib/core.sh"
+  export DRY_RUN=true
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$locked"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$locked is not writable" || return 1
+  assert_contains "$out" "so teeup cannot create $TEEUP_STATE_DIR/logs there" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_checks_teeup_log_file_dirname_when_set() {
+  setup_test_env
+  local locked="$TEST_HOME/locked-logfile"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export TEEUP_LOG_FILE="$locked/logs/bootstrap.log"
+  source "$TEEUP_PATH/lib/core.sh"
+  export DRY_RUN=true
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$locked"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$locked is not writable" || return 1
+  assert_contains "$out" "so teeup cannot create $locked/logs there" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_names_teeup_log_file_in_the_closing_clause() {
+  setup_test_env
+  local locked="$TEST_HOME/locked-logfile2"
+  mkdir -p "$locked"
+  chmod 555 "$locked"
+  export TEEUP_LOG_FILE="$locked/logs/bootstrap.log"
+  source "$TEEUP_PATH/lib/core.sh"
+  export DRY_RUN=true
+  export TEEUP_TEST_NOT_MINE="$locked"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$locked"
+  unset TEEUP_TEST_NOT_MINE
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "point TEEUP_LOG_FILE elsewhere" || return 1
+  cleanup_test_env
+}
+
 # Round 3, item 3: writable_dirs_check passes each path and its override
 # var as two separate values now, not "path:var" in one string, so a
 # colon inside the path itself survives intact.
@@ -722,6 +803,10 @@ run_test "writable_check_one reports a file blocking an ancestor under dry run" 
 run_test "writable_check_one quotes the fix command for a tricky path" test_writable_check_one_quotes_the_fix_command_for_a_tricky_path
 run_test "writable_check_one quotes the chown -R target" test_writable_check_one_quotes_the_chown_dash_r_target
 run_test "writable_check_one quotes the ancestor example command" test_writable_check_one_quotes_the_ancestor_example_command
+run_test "writable_check_one reports a file probe failure" test_writable_check_one_reports_a_file_probe_failure
+run_test "writable_dirs_check checks the default log dir" test_writable_dirs_check_checks_the_default_log_dir
+run_test "writable_dirs_check checks TEEUP_LOG_FILE dirname when set" test_writable_dirs_check_checks_teeup_log_file_dirname_when_set
+run_test "writable_dirs_check names TEEUP_LOG_FILE in the closing clause" test_writable_dirs_check_names_teeup_log_file_in_the_closing_clause
 run_test "writable_dirs_check handles a colon in the path" test_writable_dirs_check_handles_a_colon_in_the_path
 run_test "writable_dirs_check also checks an existing teeup config dir" test_writable_dirs_check_also_checks_an_existing_teeup_config_dir
 run_test "writable_dirs_check reports an owner mismatch" test_writable_dirs_check_reports_an_owner_mismatch
