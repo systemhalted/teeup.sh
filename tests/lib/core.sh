@@ -812,7 +812,7 @@ if [ "$1" = "-f" ]; then
   echo "rm: cannot remove: Operation not permitted" >&2
   exit 1
 fi
-exec /usr/bin/rm "$@"
+exec /bin/rm "$@"
 EOF2
   local out rc=0
   out="$(_writable_check_one "$target")" || rc=$?
