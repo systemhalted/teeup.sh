@@ -168,6 +168,102 @@ macos_major() { sw_vers -productVersion 2>/dev/null | awk -F. '{print $1}'; }
 # teeup's own subdirectory of this one.
 user_config_dir() { printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}"; }
 
+# _nearest_existing_ancestor <path> -> walks up dirname until something is
+# there. That is the directory `mkdir -p <path>` would actually create under,
+# so its permissions are what decide whether the create would work.
+_nearest_existing_ancestor() {
+  local p="$1"
+  while [[ ! -e "$p" ]]; do
+    p="$(dirname "$p")"
+  done
+  printf '%s\n' "$p"
+}
+
+# _is_mine <path> -> true when the current user owns <path>. Bash's -O test
+# reads this straight from the filesystem, so it cannot be fooled by
+# anything a test mocks on `id` or `stat` (several suites already rely on
+# `id -un` answering a fixed test uid, see tests/helper.sh mock_macos_base).
+# TEEUP_TEST_NOT_MINE is a test-only hook (same idea as TEEUP_TEST_MISSING in
+# `have`, above): a space-separated list of paths a test wants to pretend
+# belong to someone else, since a sandboxed test has no way to actually hand
+# a directory to another user.
+_is_mine() {
+  case " ${TEEUP_TEST_NOT_MINE:-} " in
+    *" $1 "*) return 1 ;;
+  esac
+  [[ -O "$1" ]]
+}
+
+# _path_owner <path> -> the name of whoever owns <path>, for the message a
+# problem prints -- never the decision itself (_is_mine owns that). GNU stat
+# is probed first on purpose, same idiom as _file_mode in lib/files.sh: GNU's
+# -f means something else and fails only after printing to stderr, while
+# BSD's -c fails cleanly. TEEUP_TEST_PATH_OWNER is the display-side partner
+# of TEEUP_TEST_NOT_MINE: real stat would report the true (and, in a
+# sandbox, always matching) owner, not the someone-else name a test wants
+# the message to show.
+_path_owner() {
+  if [[ -n "${TEEUP_TEST_PATH_OWNER:-}" ]]; then
+    printf '%s\n' "$TEEUP_TEST_PATH_OWNER"
+    return
+  fi
+  stat -c '%U' "$1" 2>/dev/null || stat -f '%Su' "$1" 2>/dev/null || true
+}
+
+# _writable_check_one <path> -> prints one line naming <path> (or, when it
+# does not exist yet, the nearest existing ancestor that mkdir -p would
+# create it under) and what is wrong with it, with a command that fixes it.
+# Prints nothing and returns 0 when <path> is fine.
+_writable_check_one() {
+  local path="$1" target="$1" owner why=""
+  if [[ ! -e "$path" ]]; then
+    target="$(_nearest_existing_ancestor "$path")"
+    why=", so teeup cannot create $path there"
+  elif [[ ! -d "$path" ]]; then
+    printf '%s exists and is not a directory. Move it aside, then try again.\n' "$path"
+    return 1
+  fi
+  if ! _is_mine "$target"; then
+    owner="$(_path_owner "$target")"
+    printf '%s is owned by %s, not you%s. Run: sudo chown -R "$(id -un)":staff %s\n' \
+      "$target" "${owner:-someone else}" "$why" "$target"
+    return 1
+  fi
+  if [[ ! -w "$target" ]]; then
+    if [[ "$target" == "$HOME" ]]; then
+      printf 'Your home folder %s does not allow new folders%s. Run: ls -lde %s, then: chmod u+w %s\n' \
+        "$target" "$why" "$target" "$target"
+    else
+      printf '%s is not writable%s. Run: ls -lde %s, then: chmod u+w %s\n' \
+        "$target" "$why" "$target" "$target"
+    fi
+    return 1
+  fi
+  return 0
+}
+
+# writable_dirs_check -> prints one line per directory teeup writes into
+# that is not safely writable (wrong type, owned by someone else, or not
+# writable -- or, when it does not exist yet, whichever existing ancestor
+# mkdir -p would create it under). Read-only, so it is safe to call under
+# DRY_RUN too; bootstrap's preflight calls it before anything else runs.
+# Returns 1 when any line was printed.
+writable_dirs_check() {
+  local rc=0 path
+  for path in \
+    "${XDG_CONFIG_HOME:-$HOME/.config}" \
+    "${XDG_STATE_HOME:-$HOME/.local/state}" \
+    "${XDG_DATA_HOME:-$HOME/.local/share}" \
+    "$HOME/.local/bin"
+  do
+    _writable_check_one "$path" || rc=1
+  done
+  if [[ -e "$TEEUP_CONFIG_DIR" ]]; then
+    _writable_check_one "$TEEUP_CONFIG_DIR" || rc=1
+  fi
+  return "$rc"
+}
+
 format_duration() {
   local total="$1" hours minutes seconds
   hours=$((total / 3600))

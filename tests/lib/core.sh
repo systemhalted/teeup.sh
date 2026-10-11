@@ -250,6 +250,109 @@ test_have_hides_a_binary_by_absolute_path() {
   cleanup_test_env
 }
 
+test_writable_dirs_check_passes_on_a_normal_home() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  assert_equals "0" "$rc" "a normal sandboxed home must pass" || return 1
+  assert_equals "" "$out" "nothing should be printed when everything is fine" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_reports_a_locked_directory() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  mkdir -p "$XDG_CONFIG_HOME"
+  chmod 555 "$XDG_CONFIG_HOME"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$XDG_CONFIG_HOME"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$XDG_CONFIG_HOME is not writable" || return 1
+  assert_contains "$out" "ls -lde $XDG_CONFIG_HOME" || return 1
+  assert_contains "$out" "chmod u+w $XDG_CONFIG_HOME" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_names_the_home_folder_itself() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  # Nothing under $HOME exists yet, so every check's ancestor walk lands on
+  # $HOME itself.
+  chmod 555 "$HOME"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$HOME"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "Your home folder $HOME does not allow new folders" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_names_a_locked_ancestor_other_than_home() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  # $HOME itself stays writable; only an intermediate directory below it is
+  # locked, so the ancestor walk for the config dir lands there instead of
+  # on $HOME, and the other three checks (still under plain $HOME) pass.
+  local level1="$HOME/locked-level"
+  mkdir -p "$level1"
+  export XDG_CONFIG_HOME="$level1/.config"
+  chmod 555 "$level1"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$level1"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$level1 is not writable" || return 1
+  assert_contains "$out" "so teeup cannot create $XDG_CONFIG_HOME there" || return 1
+  assert_not_contains "$out" "home folder" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_reports_a_file_where_a_directory_belongs() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  mkdir -p "$(dirname "$XDG_STATE_HOME")"
+  : > "$XDG_STATE_HOME"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$XDG_STATE_HOME exists and is not a directory" || return 1
+  cleanup_test_env
+}
+
+test_writable_dirs_check_also_checks_an_existing_teeup_config_dir() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  mkdir -p "$TEEUP_CONFIG_DIR"
+  chmod 555 "$TEEUP_CONFIG_DIR"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  chmod u+w "$TEEUP_CONFIG_DIR"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$TEEUP_CONFIG_DIR is not writable" || return 1
+  cleanup_test_env
+}
+
+# A sandbox cannot actually hand a directory to another user, so the owner
+# branch is exercised through _is_mine's test-only hook instead (see
+# lib/core.sh): TEEUP_TEST_NOT_MINE pretends a path belongs to someone else,
+# and TEEUP_TEST_PATH_OWNER controls the name the message shows.
+test_writable_dirs_check_reports_an_owner_mismatch() {
+  setup_test_env
+  source "$TEEUP_PATH/lib/core.sh"
+  mkdir -p "$XDG_CONFIG_HOME"
+  export TEEUP_TEST_NOT_MINE="$XDG_CONFIG_HOME"
+  export TEEUP_TEST_PATH_OWNER="root"
+  local out rc=0
+  out="$(writable_dirs_check)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "$XDG_CONFIG_HOME is owned by root, not you" || return 1
+  assert_contains "$out" "sudo chown -R" || return 1
+  unset TEEUP_TEST_NOT_MINE TEEUP_TEST_PATH_OWNER
+  cleanup_test_env
+}
+
 echo "lib/core.sh"
 run_test "paths default to XDG under HOME" test_paths_default_to_xdg
 run_test "run_cmd dry run prints and skips" test_run_cmd_dry_run_prints_and_skips
@@ -270,4 +373,11 @@ run_test "have honours TEEUP_TEST_MISSING hook" test_have_honours_test_missing_h
 run_test "have hides a binary by absolute path" test_have_hides_a_binary_by_absolute_path
 run_test "user_config_dir follows XDG" test_user_config_dir_follows_xdg
 run_test "ok_unless_dry is silent when dry and unchanged otherwise" test_ok_unless_dry_is_silent_when_dry_and_unchanged_otherwise
+run_test "writable_dirs_check passes on a normal home" test_writable_dirs_check_passes_on_a_normal_home
+run_test "writable_dirs_check reports a locked directory" test_writable_dirs_check_reports_a_locked_directory
+run_test "writable_dirs_check names the home folder itself" test_writable_dirs_check_names_the_home_folder_itself
+run_test "writable_dirs_check names a locked ancestor other than home" test_writable_dirs_check_names_a_locked_ancestor_other_than_home
+run_test "writable_dirs_check reports a file where a directory belongs" test_writable_dirs_check_reports_a_file_where_a_directory_belongs
+run_test "writable_dirs_check also checks an existing teeup config dir" test_writable_dirs_check_also_checks_an_existing_teeup_config_dir
+run_test "writable_dirs_check reports an owner mismatch" test_writable_dirs_check_reports_an_owner_mismatch
 print_summary
