@@ -104,6 +104,74 @@ test_refuses_root() {
   cleanup_test_env
 }
 
+test_refuses_an_unwritable_config_parent() {
+  setup
+  local bad="$TEST_HOME/locked-config"
+  mkdir -p "$bad"
+  chmod 555 "$bad"
+  export XDG_CONFIG_HOME="$bad"
+  local rc=0 out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")" || rc=$?
+  chmod u+w "$bad"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "teeup cannot write to the folders it needs" || return 1
+  assert_contains "$out" "$bad is not writable" || return 1
+  assert_contains "$out" "ls -lde -- $bad" || return 1
+  assert_contains "$out" "chmod u+wx -- $bad" || return 1
+  assert_not_contains "$out" "Starting:" "bootstrap must stop before running any capability" || return 1
+  [[ ! -e "$bad/teeup" ]] || { echo "bootstrap wrote into the locked config dir"; return 1; }
+  cleanup_test_env
+}
+
+# -w alone cannot tell a real ACL refusal from a plain unwritable directory
+# (both pass access(2) differently), so writable_dirs_check also does a real
+# mkdir-and-remove; this run is not a dry run (DRY_RUN=false, no --dry-run),
+# so that probe actually runs, and mktemp is mocked to fail it everywhere, as
+# a sandbox has no way to set up a real macOS ACL.
+test_an_acl_denied_directory_stops_bootstrap_before_the_wizard() {
+  setup
+  export DRY_RUN=false
+  # An existing, writable config dir distinct from $HOME, so its own probe
+  # failure reads as "refuses new folders", not the home-folder wording that
+  # a missing (ancestor-walked-to-$HOME) directory would get.
+  mkdir -p "$TEST_HOME/writable-config"
+  export XDG_CONFIG_HOME="$TEST_HOME/writable-config"
+  mock_command_script mktemp <<'EOF2'
+echo "mktemp: mkdtemp failed: Operation not permitted" >&2
+exit 1
+EOF2
+  local rc=0 out
+  out="$("$BOOT" 2>&1 <<<"$WIZARD_INPUT")" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "teeup cannot write to the folders it needs" || return 1
+  assert_contains "$out" "$XDG_CONFIG_HOME refuses new folders" || return 1
+  assert_contains "$out" "Operation not permitted" || return 1
+  assert_contains "$out" "ls -lde -- $XDG_CONFIG_HOME to see its permissions and ACLs" || return 1
+  assert_not_contains "$out" "Starting:" "bootstrap must stop before running any capability" || return 1
+  cleanup_test_env
+}
+
+# Round 4, item 2: writable_dirs_check also checks the log directory, and
+# bootstrap's preflight runs after TEEUP_LOG_FILE is set but before
+# anything appends to it (run_logged, the first thing that does, is not
+# reached until a capability runs), so an unwritable log directory is
+# this die, never a bare mkdir error out of run_logged later.
+test_an_unwritable_log_dir_stops_bootstrap_with_the_preflight_message() {
+  setup
+  local log_dir="$TEST_HOME/.local/state/teeup/logs"
+  mkdir -p "$log_dir"
+  chmod 555 "$log_dir"
+  local rc=0 out
+  out="$("$BOOT" --dry-run 2>&1 <<<"$WIZARD_INPUT")" || rc=$?
+  chmod u+w "$log_dir"
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$out" "teeup cannot write to the folders it needs" || return 1
+  assert_contains "$out" "$log_dir is not writable" || return 1
+  assert_not_contains "$out" "mkdir:" "bootstrap must not leak a bare mkdir error" || return 1
+  assert_not_contains "$out" "Starting:" "bootstrap must stop before running any capability" || return 1
+  cleanup_test_env
+}
+
 test_unknown_flag_exits_2() {
   setup
   local rc=0
@@ -910,6 +978,9 @@ test_wizard_does_not_ask_for_a_pinned_editor() {
 echo "bootstrap"
 run_test "refuses non-macOS" test_refuses_non_macos
 run_test "refuses root" test_refuses_root
+run_test "refuses an unwritable config parent" test_refuses_an_unwritable_config_parent
+run_test "an ACL-denied directory stops bootstrap before the wizard" test_an_acl_denied_directory_stops_bootstrap_before_the_wizard
+run_test "an unwritable log dir stops bootstrap with the preflight message" test_an_unwritable_log_dir_stops_bootstrap_with_the_preflight_message
 run_test "unknown flag exits 2" test_unknown_flag_exits_2
 run_test "dry run walks core tier in order" test_dry_run_walks_core_tier_in_order
 run_test "the theme is rendered once" test_the_theme_is_rendered_once

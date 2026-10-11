@@ -115,6 +115,125 @@ is_teeup_checkout() {
   [ -e "$1/.git" ] && [ -f "$1/bootstrap" ] && [ -f "$1/bin/teeup" ]
 }
 
+# check_data_home_writable <dry:true|false> -> prints the problem (and a
+# command to inspect or fix it) when $HOME/.local/share, or its nearest
+# existing ancestor, is not safely writable; prints nothing and returns 0
+# when it is fine. That is where clone_teeup's `mkdir -p "$(dirname
+# "$dest")"` writes, and a bare mkdir error part way through a MacBook's
+# ./bootstrap (2026-10-11) is the reason this runs before the clone.
+# install.sh runs before the clone, so it cannot source lib/core.sh; this
+# is a small, self-contained copy of the same check (writable_dirs_check,
+# lib/core.sh) -- kept in the same words on purpose, so tests/install.sh
+# can check the two stay aligned.
+#
+# Order, deliberately (same reasoning as writable_dirs_check, lib/core.sh):
+# a symlink that cannot be resolved, at the path itself or at any ancestor
+# the walk passes through, is reported outright, never walked past. Then
+# the write test decides -- the real mktemp -d probe outside a dry run
+# (since -w only asks access(2), and an ACL or a privacy rule can pass
+# that while a real mkdir still fails), -w and -x under one (a directory
+# that is writable but not searchable cannot have anything created inside
+# it either). Every probe this makes is removed before returning, and a
+# cleanup that itself fails is reported rather than ignored. Ownership is
+# consulted only once the write test fails, and only to choose the fix: a
+# folder someone else owns but that still took the probe is left alone --
+# ownership must never fail a folder by itself. A plain (non-recursive)
+# `chown` naming the user's own group is offered only when
+# $HOME/.local/share itself is the one that exists and is owned by someone
+# else, never for an ancestor above it, and never a recursive one.
+check_data_home_writable() {
+  local dry="$1" path dir owner probe reason="" linktarget dir_q path_q probe_q
+  path="$HOME/.local/share"
+  dir="$path"
+  while [ ! -e "$dir" ]; do
+    if [ -L "$dir" ]; then
+      linktarget="$(readlink "$dir")"
+      printf '%s is a symlink that cannot be resolved (its target %s is missing, or the links form a loop). Fix or remove the link.\n' "$dir" "$linktarget"
+      return 1
+    fi
+    dir="$(dirname "$dir")"
+  done
+  if [ "$dir" = "$path" ]; then
+    if [ ! -d "$dir" ]; then
+      echo "$dir exists and is not a directory. Move it aside, then try again."
+      return 1
+    fi
+  else
+    if [ ! -d "$dir" ]; then
+      printf '%s is a file, not a folder, so teeup cannot create %s. Move it aside, then try again.\n' "$dir" "$path"
+      return 1
+    fi
+  fi
+
+  printf -v dir_q '%q' "$dir"
+  printf -v path_q '%q' "$path"
+
+  if [ "$dry" != "true" ]; then
+    if probe="$(mktemp -d "$dir/.teeup-write-probe.XXXXXX" 2>&1)"; then
+      if ! rmdir "$probe" 2>/dev/null; then
+        printf -v probe_q '%q' "$probe"
+        printf '%s: teeup created %s but could not remove it. Remove it by hand: rm -rf -- %s\n' "$dir" "$probe" "$probe_q"
+        return 1
+      fi
+      # A directory probe passing does not prove a plain file can be
+      # created there too -- some ACLs and sandboxing rules distinguish
+      # the two.
+      if probe="$(mktemp "$dir/.teeup-write-probe.XXXXXX" 2>&1)"; then
+        if ! rm -f "$probe" 2>/dev/null; then
+          printf -v probe_q '%q' "$probe"
+          printf '%s: teeup created %s but could not remove it. Remove it by hand: rm -rf -- %s\n' "$dir" "$probe" "$probe_q"
+          return 1
+        fi
+      else
+        reason="file"
+      fi
+    else
+      reason="probe"
+    fi
+  else
+    [ -w "$dir" ] && [ -x "$dir" ] || reason="perm"
+  fi
+  [ -n "$reason" ] || return 0
+
+  if [ -O "$dir" ]; then
+    if [ "$dir" = "$HOME" ]; then
+      if [ "$reason" = "probe" ]; then
+        printf 'Your home folder %s does not allow new folders (%s). Run: ls -lde -- %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
+      elif [ "$reason" = "file" ]; then
+        printf 'Your home folder %s does not allow new files (%s). Run: ls -lde -- %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
+      else
+        printf 'Your home folder %s does not allow new folders. Run: ls -lde -- %s, then: chmod u+wx -- %s\n' "$dir" "$dir_q" "$dir_q"
+      fi
+    else
+      if [ "$reason" = "probe" ]; then
+        printf '%s refuses new folders (%s). Run: ls -lde -- %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
+      elif [ "$reason" = "file" ]; then
+        printf '%s refuses new files (%s). Run: ls -lde -- %s to see its permissions and ACLs.\n' "$dir" "$probe" "$dir_q"
+      else
+        printf '%s is not writable. Run: ls -lde -- %s, then: chmod u+wx -- %s\n' "$dir" "$dir_q" "$dir_q"
+      fi
+    fi
+    return 1
+  fi
+
+  if [ "$dir" = "$path" ]; then
+    owner="$(stat -c '%U' "$dir" 2>/dev/null || stat -f '%Su' "$dir" 2>/dev/null || true)"
+    printf '%s is owned by %s, not you. Run: sudo chown -- "$(id -un)":"$(id -gn)" %s\n' "$dir" "${owner:-someone else}" "$dir_q"
+    return 1
+  fi
+
+  # $dir is an ancestor of $HOME/.local/share, not the path itself, and
+  # not mine: never offer a recursive chown of it.
+  if [ "$dir" = "$HOME" ]; then
+    printf 'Your home folder %s does not let you create %s. Run: ls -lde -- %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p -- %s && sudo chown -- "$(id -un)":"$(id -gn)" %s).\n' \
+      "$dir" "$path" "$dir_q" "$path" "$path_q" "$path_q"
+  else
+    printf '%s does not let you create %s. Run: ls -lde -- %s to see its permissions and ACLs. Create %s yourself with the right owner (for example: sudo mkdir -p -- %s && sudo chown -- "$(id -un)":"$(id -gn)" %s).\n' \
+      "$dir" "$path" "$dir_q" "$path" "$path_q" "$path_q"
+  fi
+  return 1
+}
+
 # run_bootstrap <dest> [args...]: replace this script with the checkout's
 # ./bootstrap, its prompts reading from the terminal.
 run_bootstrap() {
@@ -129,13 +248,25 @@ run_bootstrap() {
 
 main() {
   local repo="${TEEUP_INSTALL_REPO:-https://github.com/systemhalted/teeup.sh}"
-  local dest="$HOME/.local/share/teeup" dry=false arg
+  local dest="$HOME/.local/share/teeup" dry=false arg writable_problem
   for arg in "$@"; do
     if [ "$arg" = "--dry-run" ]; then dry=true; fi
   done
 
   [ "$(uname -s)" = "Darwin" ] || die "teeup installs on macOS only; this system is $(uname -s)."
   [ "$(id -u)" -ne 0 ] || die "Run the installer as your own user, not as root."
+
+  # Before any other work: -e and -e "$dest/.git" below both follow a
+  # symlink to its target, so a dangling one, a loop, or one pointing at
+  # a real but non-checkout directory would otherwise slip past every
+  # check below (none of them is true for one), and the installer could
+  # start installing the Command Line Tools before `git clone` finally
+  # fails on it. is_teeup_checkout is false for all three of those, and
+  # true for a symlink that does resolve to a real checkout, so this only
+  # catches the symlink cases the checks below would miss.
+  if [ -L "$dest" ] && ! is_teeup_checkout "$dest"; then
+    die "$dest is a symlink, and not to a teeup checkout. Move it aside, then run the installer again."
+  fi
 
   if is_teeup_checkout "$dest"; then
     say "teeup is already installed at $dest. Running its ./bootstrap again, which repairs what is missing."
@@ -147,6 +278,8 @@ main() {
   if [ -e "$dest" ]; then
     die "$dest exists and is not a git checkout of teeup. Move it aside, then run the installer again."
   fi
+
+  writable_problem="$(check_data_home_writable "$dry")" || die "$writable_problem"
 
   install_clt "$dry"
   clone_teeup "$repo" "$dest" "$dry"
