@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Ollama without its app.** When the `ollama-app` cask cannot install (macOS 13, MacPorts), the `ollama` command still comes from mise, and teeup says to start the server with `ollama serve`. The formula fallback is gone.
 
 ### Fixed
+- **Ctrl-C stops the whole run.** Homebrew catches Ctrl-C and exits 1, so `teeup update` reported "Homebrew could not refresh its index." and carried on. `teeup` and `./bootstrap` now stop after the current command, with exit status 130, and run no later step.
 - **`EDITOR` and `VISUAL` stuck at `vim`.** `~/.zshenv` reads the shell layer before macOS adds `/usr/local/bin` to `PATH`, so the shell did not find `emacsclient` there and selected `vim`. The layer now adds `/usr/local/bin` itself. It also records the editor that it selected, and a later pass selects again when the value did not change.
 - **`./bootstrap` and the installer stop early, naming the folder and a command to inspect or fix it, when a folder teeup writes to is not writable.** On a MacBook Air, `./bootstrap` died part way through the wizard with a bare `mkdir: ... Permission denied`.
 

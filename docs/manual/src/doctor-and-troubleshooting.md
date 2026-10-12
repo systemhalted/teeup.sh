@@ -122,6 +122,7 @@ TEEUP_NO_GUM=1 ./bootstrap
 ### Ctrl-C at a prompt
 
 Ctrl-C stops the run, also at a prompt, but teeup keeps the answers that you gave.
+teeup lets the current command finish its cleanup, then stops with exit status 130 and runs no later step.
 Run `./bootstrap` again to continue from the point where it stopped.
 
 ### `teeup update` does not move the checkout
