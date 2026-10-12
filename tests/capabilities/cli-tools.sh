@@ -142,8 +142,8 @@ test_install_uses_the_package_manager_for_its_half_and_mise_for_the_rest() {
   assert_contains "$out" "Would execute: brew install gnupg" || return 1
   assert_not_contains "$out" "brew install ripgrep" || return 1
   assert_not_contains "$out" "brew install tldr" || return 1
-  assert_contains "$out" "Would execute: mise -C / install ripgrep@$(lock_version ripgrep)" || return 1
-  assert_contains "$out" "Would execute: mise -C / install tealdeer@$(lock_version tealdeer)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet ripgrep@$(lock_version ripgrep)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet tealdeer@$(lock_version tealdeer)" || return 1
   assert_contains "$out" "Would link $TEST_HOME/.local/bin/tldr to tealdeer $(lock_version tealdeer) (mise)" || return 1
   cleanup_test_env
 }
@@ -196,8 +196,8 @@ test_install_on_macports_gets_the_same_mise_tools() {
   local out
   out="$(DRY_RUN=true "$TEEUP" install cli-tools 2>&1)"
   assert_contains "$out" "Would execute: sudo port install jq" || return 1
-  assert_contains "$out" "Would execute: mise -C / install ripgrep@$(lock_version ripgrep)" || return 1
-  assert_contains "$out" "Would execute: mise -C / install tealdeer@$(lock_version tealdeer)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet ripgrep@$(lock_version ripgrep)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet tealdeer@$(lock_version tealdeer)" || return 1
   assert_not_contains "$out" "port install ripgrep" || return 1
   assert_not_contains "$out" "port install tealdeer" || return 1
   cleanup_test_env

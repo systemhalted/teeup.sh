@@ -56,7 +56,7 @@ test_install_dry_run_gets_the_pinned_neovim() {
   export TEEUP_TEST_MISSING="nvim"
   local out
   out="$(DRY_RUN=true "$TEEUP" install neovim 2>&1)"
-  assert_contains "$out" "[DRY-RUN] Would execute: mise -C / install aqua:neovim/neovim@$(lock_version neovim)" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: mise -C / install --quiet aqua:neovim/neovim@$(lock_version neovim)" || return 1
   assert_not_contains "$out" "brew install neovim" || return 1
   cleanup_test_env
 }
@@ -68,7 +68,7 @@ test_install_on_macports_still_uses_mise() {
   mock_command port 1 ""
   local out
   out="$(DRY_RUN=true "$TEEUP" install neovim 2>&1)"
-  assert_contains "$out" "[DRY-RUN] Would execute: mise -C / install aqua:neovim/neovim@$(lock_version neovim)" || return 1
+  assert_contains "$out" "[DRY-RUN] Would execute: mise -C / install --quiet aqua:neovim/neovim@$(lock_version neovim)" || return 1
   assert_not_contains "$out" "port install neovim" || return 1
   cleanup_test_env
 }

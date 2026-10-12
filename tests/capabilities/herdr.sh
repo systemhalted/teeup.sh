@@ -19,7 +19,7 @@ test_install_gets_the_pinned_herdr() {
   setup
   local out
   out="$(DRY_RUN=true "$TEEUP" install herdr 2>&1)"
-  assert_contains "$out" "Would execute: mise -C / install herdr@$(lock_version herdr)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet herdr@$(lock_version herdr)" || return 1
   assert_not_contains "$out" "brew install herdr" || return 1
   cleanup_test_env
 }
@@ -30,7 +30,7 @@ test_install_on_macports_still_uses_mise() {
   mock_command port 0 ""
   local out
   out="$(DRY_RUN=true "$TEEUP" install herdr 2>&1)"
-  assert_contains "$out" "Would execute: mise -C / install herdr@$(lock_version herdr)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet herdr@$(lock_version herdr)" || return 1
   assert_not_contains "$out" "port install herdr" || return 1
   cleanup_test_env
 }

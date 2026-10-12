@@ -696,7 +696,7 @@ test_capabilities_name_both_mise_versions_when_both_are_installed() {
   tool_cap_fixture
   printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
   MOCK_MISE_FAIL_INSTALL=ripgrep mise_tools_sync >/dev/null 2>&1 || true
-  mise -C / install ripgrep@15.3.0 >/dev/null 2>&1
+  mise -C / install --quiet ripgrep@15.3.0 >/dev/null 2>&1
   _UNINSTALL_PACKAGES=true
   uninstall_capabilities >/dev/null 2>&1
   assert_contains "$_UNINSTALL_REMOVED" "search's mise tools: ripgrep@15.2.0 ripgrep@15.3.0" || return 1

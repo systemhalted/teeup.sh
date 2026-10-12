@@ -21,7 +21,7 @@ test_install_gets_the_cask_and_the_pinned_command() {
   local out
   out="$(DRY_RUN=true "$TEEUP" install ollama 2>&1)"
   assert_contains "$out" "Would execute: brew install --cask ollama-app" || return 1
-  assert_contains "$out" "Would execute: mise -C / install ollama@$(lock_version ollama)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet ollama@$(lock_version ollama)" || return 1
   assert_not_contains "$out" "brew install ollama" || return 1
   assert_not_contains "$out" "ollama pull llama3.2" || return 1
   cleanup_test_env
@@ -43,7 +43,7 @@ EOF2
   out="$(DRY_RUN=false "$TEEUP" install ollama 2>&1)"
   assert_contains "$out" "The ollama-app cask did not install (it needs macOS 14 or newer; this Mac is on macOS 13)." || return 1
   assert_contains "$out" "start the server with: ollama serve" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ollama@$(lock_version ollama)" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install --quiet ollama@$(lock_version ollama)" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "brew install ollama" "the formula fallback is gone" || return 1
   "$TEEUP" has ollama || { echo "ollama must be marked installed"; return 1; }
   cleanup_test_env
@@ -76,7 +76,7 @@ test_install_on_macports_uses_mise_and_no_port() {
   mock_command port 0 ""
   local out
   out="$(DRY_RUN=true "$TEEUP" install ollama 2>&1)"
-  assert_contains "$out" "Would execute: mise -C / install ollama@$(lock_version ollama)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet ollama@$(lock_version ollama)" || return 1
   assert_not_contains "$out" "port install ollama" || return 1
   assert_not_contains "$out" "--cask" || return 1
   cleanup_test_env

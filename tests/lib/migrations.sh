@@ -241,7 +241,7 @@ test_mise_tools_migration_dry_run_changes_nothing() {
   state_done mark cap-cli-tools
   local out
   out="$(DRY_RUN=true migration_run "$MISE_TOOLS_MIGRATION" 2>&1)"
-  assert_contains "$out" "Would execute: mise -C / install ripgrep@$(lock_version ripgrep)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet ripgrep@$(lock_version ripgrep)" || return 1
   [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -e "$TEEUP_MISE_TOOLS_DIR" && ! -e "$TEST_HOME/.config/mise/conf.d/teeup.toml" ]] || { echo "dry run changed the disk"; return 1; }
   [[ ! -e "$MARKS/$MISE_TOOLS_MIGRATION" ]] || { echo "dry run marked the migration"; return 1; }
   cleanup_test_env

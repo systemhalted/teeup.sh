@@ -905,7 +905,7 @@ test_tool_install_installs_the_pinned_version_then_links_the_which_result() {
   assert_equals "$TEEUP_STATE_DIR/tools" "$TEEUP_MISE_TOOLS_DIR" "teeup's own directory is in its state directory" || return 1
   inner="$TEEUP_MISE_TOOLS_DIR/rg"
   out="$(mise_tool_install ripgrep rg 2>&1)" || { echo "install failed: $out"; return 1; }
-  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.2.0" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install --quiet ripgrep@15.2.0" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / which --tool ripgrep@15.2.0 rg" || return 1
   [[ -L "$link" && -L "$inner" ]] || { echo "rg and teeup's own entry must both be symlinks"; return 1; }
   assert_equals "$inner" "$(readlink "$link")" "the .local/bin link points at teeup's own entry" || return 1
@@ -926,7 +926,7 @@ test_tool_install_follows_a_command_and_a_backend_that_differ_from_the_tool() {
   mise_tool_install tealdeer tldr >/dev/null 2>&1 || return 1
   mise_tool_install neovim nvim >/dev/null 2>&1 || return 1
   assert_equals "$TEST_HOME/.local/share/mise/installs/tealdeer/1.9.0/bin/tldr" "$(readlink "$TEEUP_MISE_TOOLS_DIR/tldr")" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install aqua:neovim/neovim@0.12.6" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install --quiet aqua:neovim/neovim@0.12.6" || return 1
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / which --tool aqua:neovim/neovim@0.12.6 nvim" || return 1
   [[ -L "$TEST_HOME/.local/bin/nvim" ]] || { echo "nvim is the link, not neovim"; return 1; }
   [[ ! -e "$TEST_HOME/.local/bin/neovim" && ! -e "$TEST_HOME/.local/bin/tealdeer" ]] || { echo "the tool name is not a command"; return 1; }
@@ -962,7 +962,7 @@ test_tool_install_repairs_a_link_left_dangling_by_mise_uninstall() {
   [[ -L "$TEEUP_MISE_TOOLS_DIR/rg" && ! -e "$TEEUP_MISE_TOOLS_DIR/rg" ]] || { echo "fixture: teeup's own entry must dangle"; return 1; }
   : > "$MOCK_LOG"
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.2.0" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install --quiet ripgrep@15.2.0" || return 1
   [[ -e "$TEST_HOME/.local/bin/rg" ]] || { echo "the link must resolve again"; return 1; }
   cleanup_test_env
 }
@@ -990,7 +990,7 @@ test_tool_install_relinks_when_the_lock_moves() {
   mock_mise_tools
   mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
   bump_lock ripgrep 15.3.0
-  mise -C / install ripgrep@15.3.0 >/dev/null 2>&1
+  mise -C / install --quiet ripgrep@15.3.0 >/dev/null 2>&1
   local out
   out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)" || return 1
   assert_contains "$out" "Would execute: ln -sfn $TEST_HOME/.local/share/mise/installs/ripgrep/15.3.0/bin/rg $TEEUP_MISE_TOOLS_DIR/rg" || return 1
@@ -1013,7 +1013,7 @@ test_tool_install_without_mise_fails_but_a_dry_run_previews() {
   rc=0
   out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)" || rc=$?
   assert_success "$rc" "a first bootstrap previews cli-tools before mise exists" || return 1
-  assert_contains "$out" "Would execute: mise -C / install ripgrep@15.2.0" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet ripgrep@15.2.0" || return 1
   assert_contains "$out" "Would link $TEST_HOME/.local/bin/rg to ripgrep 15.2.0 (mise)" || return 1
   [[ ! -e "$TEST_HOME/.local/bin/rg" ]] || { echo "nothing is linked"; return 1; }
   unset TEEUP_TEST_MISSING
@@ -1026,11 +1026,11 @@ test_tool_install_dry_run_installs_and_links_nothing() {
   mock_mise_tools
   local out
   out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)"
-  assert_contains "$out" "Would execute: mise -C / install ripgrep@15.2.0" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet ripgrep@15.2.0" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "mise -C / install" "the install only previews" || return 1
   [[ ! -e "$TEST_HOME/.local/share/mise/installs" && ! -e "$TEST_HOME/.local/bin/rg" && ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "dry run changed the disk"; return 1; }
   # With the version already installed, a dry run previews both links.
-  mise -C / install ripgrep@15.2.0 >/dev/null 2>&1
+  mise -C / install --quiet ripgrep@15.2.0 >/dev/null 2>&1
   out="$(DRY_RUN=true mise_tool_install ripgrep rg 2>&1)"
   assert_contains "$out" "Would execute: ln -sfn $TEEUP_MISE_TOOLS_DIR/rg $TEST_HOME/.local/bin/rg" || return 1
   [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" && ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "dry run changed the disk"; return 1; }
@@ -1101,7 +1101,7 @@ test_tool_keeps_a_user_symlink_into_the_mise_installs_dir() {
   setup
   tools_fixture
   mock_mise_tools
-  mise -C / install ripgrep@15.2.0 >/dev/null 2>&1
+  mise -C / install --quiet ripgrep@15.2.0 >/dev/null 2>&1
   local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out rc=0
   mkdir -p "$TEST_HOME/.local/bin"
   printf '#!/bin/sh\necho mine\n' > "$mine"
@@ -1405,7 +1405,7 @@ test_conf_keeps_a_skipped_capability_s_pin_when_the_new_version_is_installed() {
   mise_tools_sync >/dev/null 2>&1 || return 1
   assert_contains "$(cat "$CONF")" '"aqua:neovim/neovim" = "0.12.6"' || return 1
   bump_lock neovim 0.13.0
-  mise -C / install aqua:neovim/neovim@0.13.0 || return 1
+  mise -C / install --quiet aqua:neovim/neovim@0.13.0 || return 1
   TEEUP_SKIP=editor mise_tools_sync >/dev/null 2>&1 || return 1
   assert_contains "$(cat "$CONF")" '"aqua:neovim/neovim" = "0.12.6"' "the skipped capability keeps its pin" || return 1
   assert_not_contains "$(cat "$CONF")" "0.13.0" || return 1

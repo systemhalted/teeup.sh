@@ -761,7 +761,10 @@ mise_tool_install() {
   fi
   if ! have mise; then
     if [[ "$DRY_RUN" == "true" ]]; then
-      run_cmd mise -C / install "$spec@$version"
+      # --quiet: mise warns "installed but not activated" because the pin is
+      # written to conf.d/teeup.toml only after the install succeeds (decision
+      # 5); teeup prints its own "Linked" line. Errors still show.
+      run_cmd mise -C / install --quiet "$spec@$version"
       printf "%b %s\n" "🔍" "[DRY-RUN] Would link $link to $tool $version (mise)"
       return 0
     fi
@@ -769,7 +772,7 @@ mise_tool_install() {
     return 1
   fi
   if ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
-    if ! run_cmd mise -C / install "$spec@$version"; then
+    if ! run_cmd mise -C / install --quiet "$spec@$version"; then
       warn "mise could not install $tool $version, so $command is missing. Fix the cause above, then run: teeup configure $owner"
       return 1
     fi
