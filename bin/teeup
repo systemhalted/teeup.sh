@@ -17,6 +17,8 @@ unset _self _dir
 
 # shellcheck source=lib/all.sh
 source "$TEEUP_PATH/lib/all.sh"
+# Ctrl-C stops the whole run once the current command returns (lib/core.sh).
+trap _teeup_interrupted INT
 answers_load
 # The links mise_tool_install writes must win over an older package-manager
 # copy here too, as they do in every shell the zsh layer starts.

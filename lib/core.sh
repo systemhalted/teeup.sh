@@ -16,6 +16,23 @@ warn() { printf "%b %s\n" "⚠️" "$*" >&2; }
 err()  { printf "%b %s\n" "❌" "$*" >&2; }
 die()  { err "$@"; exit 1; }
 
+# _teeup_interrupted: the SIGINT trap bin/teeup and bootstrap install
+# (`trap _teeup_interrupted INT`). Ctrl-C signals the whole foreground
+# process group, but Homebrew and many other tools catch SIGINT, clean up
+# and exit 1, so bash would see an ordinary failure and go on to the next
+# step. bash runs this trap once the current command returns, so that
+# command still gets to clean up, and then teeup stops with status 130.
+# Only those two entry points install it: a capability script is a fresh
+# `bash -eu` and keeps the default, and an exec (teeup lazy-run) resets it.
+_teeup_interrupted() {
+  if [[ -n "${_TEEUP_RUN_LOG_TMP:-}" ]]; then
+    rm -rf "$_TEEUP_RUN_LOG_TMP"
+  fi
+  printf '\n' >&2
+  err "Stopped (Ctrl-C)."
+  exit 130
+}
+
 # ok_unless_dry <message>
 # The one mechanism every capability uses to report a mutation: silent under
 # DRY_RUN=true (run_cmd's own "[DRY-RUN] Would execute: ..." line already told
@@ -132,6 +149,8 @@ run_logged() {
   elif [[ -n "$TEEUP_LOG_FILE" && "${TEEUP_RUN_LOG_CAPTURED:-false}" != "true" ]]; then
     local fifo_dir out_fifo err_fifo out_tee_pid err_tee_pid
     fifo_dir="$(mktemp -d)"
+    # For _teeup_interrupted, which exits before the rm below.
+    _TEEUP_RUN_LOG_TMP="$fifo_dir"
     out_fifo="$fifo_dir/stdout"
     err_fifo="$fifo_dir/stderr"
     mkfifo "$out_fifo" "$err_fifo"
@@ -142,6 +161,7 @@ run_logged() {
     TEEUP_RUN_LOG_CAPTURED=true "$@" </dev/null > "$out_fifo" 2> "$err_fifo" || rc=$?
     wait "$out_tee_pid" "$err_tee_pid" || true
     rm -rf "$fifo_dir"
+    _TEEUP_RUN_LOG_TMP=""
   else
     "$@" </dev/null || rc=$?
   fi

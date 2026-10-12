@@ -301,6 +301,16 @@ hide_host_commands() {
   export TEEUP_TEST_MISSING
 }
 
+# run_in_new_group <command...>
+# Runs <command> as the leader of a process group of its own, with SIGINT at
+# its default. A suite started in the background inherits SIGINT ignored, and
+# a shell cannot trap a signal that was ignored when it started. A mock that
+# runs `kill -INT 0` then signals that group and nothing else, the way Ctrl-C
+# in a terminal signals the foreground group.
+run_in_new_group() {
+  perl -e '$SIG{INT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV or die "exec $ARGV[0]: $!\n"' "$@"
+}
+
 # A modern Apple Silicon Mac with CLT present and Homebrew missing.
 mock_macos_base() {
   mock_command_script uname <<'EOF2'

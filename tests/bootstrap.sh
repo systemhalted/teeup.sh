@@ -1002,6 +1002,49 @@ test_ctrl_c_in_capability_stops_bootstrap() {
   assert_equals 130 "$rc" "Ctrl-C in capability must stop bootstrap with 130" || return 1
   cleanup_test_env
 }
+
+# A real (DRY_RUN=false) bootstrap over fixture capabilities: the three that
+# bootstrap runs by name, then alpha and beta as the core tier. alpha's
+# install runs a command that, like brew, catches SIGINT and exits 1, after
+# sending SIGINT to the whole process group, as Ctrl-C in a terminal does.
+# alpha's script then carries on by itself; bootstrap must still stop.
+test_ctrl_c_during_a_capability_script_stops_bootstrap() {
+  setup
+  export DRY_RUN=false
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps"
+  local name
+  for name in xcode-clt package-manager teeup-runtime alpha beta; do
+    mkdir -p "$TEEUP_CAPS_DIR/$name"
+    printf 'summary="Fixture %s"\ngroup=system\ntier=core\nrequires=""\nprovides=""\ninteractive=false\n' "$name" > "$TEEUP_CAPS_DIR/$name/capability"
+    printf '#!/usr/bin/env bash\necho "install:%s"\n' "$name" > "$TEEUP_CAPS_DIR/$name/install"
+    printf '#!/usr/bin/env bash\necho "configure:%s"\n' "$name" > "$TEEUP_CAPS_DIR/$name/configure"
+  done
+  cat > "$TEEUP_CAPS_DIR/alpha/install" <<'EOF2'
+#!/usr/bin/env bash
+echo "install:alpha"
+bash -c 'trap "exit 1" INT; kill -INT 0; exit 1' || true
+echo "install:alpha carried on"
+EOF2
+  chmod +x "$TEEUP_CAPS_DIR"/*/install "$TEEUP_CAPS_DIR"/*/configure
+  printf 'alpha\nbeta\n' > "$TEEUP_CAPS_DIR/core.list"
+  : > "$TEEUP_CAPS_DIR/daily.list"
+  mkdir -p "$TEST_HOME/.config/teeup"
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\nTEEUP_NAME="Ada"\nTEEUP_EMAIL="ada@example.com"\nTEEUP_DAILY="no"\n' > "$TEST_HOME/.config/teeup/answers"
+  local rc=0 out
+  out="$(run_in_new_group "$BOOT" </dev/null 2>&1)" || rc=$?
+  assert_equals 130 "$rc" "Ctrl-C must stop bootstrap with status 130" || return 1
+  assert_contains "$out" "Stopped (Ctrl-C)." || return 1
+  assert_contains "$out" "install:alpha" || return 1
+  assert_not_contains "$out" "configure:alpha" "alpha's configure must not start" || return 1
+  assert_not_contains "$out" "install:beta" "the next capability must not start" || return 1
+  assert_not_contains "$out" "Bootstrap finished" || return 1
+  if (source "$TEEUP_PATH/lib/all.sh"; state_done check cap-alpha); then
+    echo "an interrupted capability must not be marked done"
+    return 1
+  fi
+  cleanup_test_env
+}
+run_test "Ctrl-C during a capability script stops bootstrap" test_ctrl_c_during_a_capability_script_stops_bootstrap
 run_test "a second bootstrap changes nothing" test_a_second_bootstrap_changes_nothing
 run_test "Ctrl-C in capability stops bootstrap" test_ctrl_c_in_capability_stops_bootstrap
 run_test "dry run touches nothing" test_dry_run_touches_nothing
