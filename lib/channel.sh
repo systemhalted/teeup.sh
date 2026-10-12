@@ -156,3 +156,30 @@ channel_sync() {
   fi
   return 0
 }
+
+# channel_version <dir> -> the version for `teeup version`. On a release
+# commit, or outside a git checkout, it is the version file as is
+# ("0.3.0-beta"). Anywhere else it also says how far past that release the
+# checkout is, and where: "0.3.0-beta+6 (main, 3c4b7b4)". A checkout whose
+# release tag is missing gives "0.3.0-beta (main, 3c4b7b4)".
+channel_version() {
+  local dir="$1" ver sha where ref n=""
+  ver="$(cat "$dir/version" 2>/dev/null || echo dev)"
+  if ! command -v git >/dev/null 2>&1 ||
+    ! sha="$(git -C "$dir" rev-parse --short HEAD 2>/dev/null)"; then
+    printf '%s\n' "$ver"
+    return 0
+  fi
+  for ref in "$CHANNEL_RELEASES/v$ver" "refs/tags/v$ver"; do
+    git -C "$dir" rev-parse -q --verify "$ref^{commit}" >/dev/null 2>&1 || continue
+    git -C "$dir" merge-base --is-ancestor "$ref" HEAD 2>/dev/null || continue
+    n="$(git -C "$dir" rev-list --count "$ref..HEAD")"
+    break
+  done
+  if [[ "$n" == "0" ]]; then
+    printf '%s\n' "$ver"
+    return 0
+  fi
+  where="$(git -C "$dir" symbolic-ref --short -q HEAD || echo detached)"
+  printf '%s%s (%s, %s)\n' "$ver" "${n:++$n}" "$where" "$sha"
+}

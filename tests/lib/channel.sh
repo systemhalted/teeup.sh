@@ -300,6 +300,71 @@ EOF2
 }
 
 echo "lib/channel.sh"
+# make_version_fixture: a repository whose version file says 1.0.0 at the
+# release tag v1.0.0 and at the two commits after it, as a real release
+# does until the next one.
+make_version_fixture() {
+  WORK="$TEST_HOME/versioned"
+  tgit init -q "$WORK"
+  git -C "$WORK" symbolic-ref HEAD refs/heads/main
+  fixture_commit "1.0.0"
+  tgit -C "$WORK" tag -a v1.0.0 -m "v1.0.0"
+  tgit -C "$WORK" commit -q --allow-empty -m "after 1"
+  tgit -C "$WORK" commit -q --allow-empty -m "after 2"
+}
+
+test_version_on_a_release_is_the_version_alone() {
+  setup
+  make_version_fixture
+  git -C "$WORK" checkout -q --detach v1.0.0
+  assert_equals "1.0.0" "$(channel_version "$WORK")" || return 1
+  cleanup_test_env
+}
+
+test_version_past_a_release_names_the_branch_and_commit() {
+  setup
+  make_version_fixture
+  local sha
+  sha="$(git -C "$WORK" rev-parse --short HEAD)"
+  assert_equals "1.0.0+2 (main, $sha)" "$(channel_version "$WORK")" || return 1
+  git -C "$WORK" checkout -q --detach HEAD~1
+  sha="$(git -C "$WORK" rev-parse --short HEAD)"
+  assert_equals "1.0.0+1 (detached, $sha)" "$(channel_version "$WORK")" || return 1
+  cleanup_test_env
+}
+
+# channel_fetch keeps releases in refs/teeup/releases; a checkout that has
+# only those (its own refs/tags is empty) still counts from the release.
+test_version_counts_from_the_fetched_release() {
+  setup
+  make_version_fixture
+  git -C "$WORK" update-ref "$CHANNEL_RELEASES/v1.0.0" "$(git -C "$WORK" rev-parse v1.0.0)"
+  git -C "$WORK" tag -d v1.0.0 >/dev/null
+  local sha
+  sha="$(git -C "$WORK" rev-parse --short HEAD)"
+  assert_equals "1.0.0+2 (main, $sha)" "$(channel_version "$WORK")" || return 1
+  cleanup_test_env
+}
+
+test_version_without_the_release_tag_names_the_commit() {
+  setup
+  make_version_fixture
+  git -C "$WORK" tag -d v1.0.0 >/dev/null
+  local sha
+  sha="$(git -C "$WORK" rev-parse --short HEAD)"
+  assert_equals "1.0.0 (main, $sha)" "$(channel_version "$WORK")" || return 1
+  cleanup_test_env
+}
+
+test_version_outside_a_checkout_is_the_file() {
+  setup
+  mkdir -p "$TEST_HOME/plain"
+  printf '1.0.0\n' > "$TEST_HOME/plain/version"
+  assert_equals "1.0.0" "$(channel_version "$TEST_HOME/plain")" || return 1
+  assert_equals "dev" "$(channel_version "$TEST_HOME/nowhere")" || return 1
+  cleanup_test_env
+}
+
 run_test "a withdrawn release tag is not chosen" test_a_withdrawn_release_tag_is_not_chosen
 run_test "a local-only tag survives an update" test_a_local_only_tag_survives_an_update
 run_test "a machine on a withdrawn release stays until the next one" test_a_machine_on_a_withdrawn_release_stays_until_the_next_one
@@ -318,4 +383,9 @@ run_test "main keeps a local main with its own commits" test_main_keeps_a_local_
 run_test "a dry run changes nothing" test_dry_run_changes_nothing
 run_test "a fetch failure returns 1" test_a_fetch_failure_returns_1
 run_test "a certificate failure names the CA bundle" test_a_certificate_failure_names_the_ca_bundle
+run_test "version on a release is the version alone" test_version_on_a_release_is_the_version_alone
+run_test "version past a release names the branch and commit" test_version_past_a_release_names_the_branch_and_commit
+run_test "version counts from the fetched release" test_version_counts_from_the_fetched_release
+run_test "version without the release tag names the commit" test_version_without_the_release_tag_names_the_commit
+run_test "version outside a checkout is the file" test_version_outside_a_checkout_is_the_file
 print_summary

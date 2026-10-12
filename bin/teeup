@@ -1502,7 +1502,7 @@ cmd_secret() {
 
 cmd_status() {
   local total=0 installed=0 unsupported=0 name tier shims="" f envs
-  echo "teeup $(cat "$TEEUP_PATH/version" 2>/dev/null || echo dev) at $TEEUP_PATH"
+  echo "teeup $(channel_version "$TEEUP_PATH") at $TEEUP_PATH"
   echo "Package manager: $(pkg_backend)"
   if answers_exist; then echo "Answers: $(answers_file)"; else echo "Answers: missing (run ./bootstrap)"; fi
   for name in $(cap_list); do
@@ -1630,7 +1630,7 @@ case "$verb" in
   commands) cmd_commands "$@" ;;
   dev) cmd_dev "$@" ;;
   migrate) cmd_migrate "$@" ;;
-  version) cat "$TEEUP_PATH/version" 2>/dev/null || echo dev ;;
+  version) channel_version "$TEEUP_PATH" ;;
   help|-h|--help) usage ;;
   *)
     err "Unknown verb: $verb"

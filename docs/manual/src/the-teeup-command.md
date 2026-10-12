@@ -56,7 +56,7 @@ Run `teeup list` to see all capabilities.
 | `teeup doctor` | Check the installed items and show how to fix the problems. The command exits 0 when the machine is healthy, 1 when it finds problems, and 2 when it cannot check an item. |
 | `teeup doctor <capability>` | Check one capability. |
 | `teeup has <capability>` | Exit 0 when the capability is installed, for use in scripts and menus. |
-| `teeup version` | Print the teeup version. |
+| `teeup version` | Print the teeup version. On a release, this is the version only, for example `0.3.0-beta`. After a release, it also shows the number of commits after the release, the branch and the commit, for example `0.3.0-beta+6 (main, 3c4b7b4)`. |
 
 ## Settings and secrets
 
