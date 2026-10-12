@@ -1967,6 +1967,72 @@ EOF2
   cleanup_test_env
 }
 
+# Ctrl-C during "Updating Homebrew..." on a real Mac: brew catches SIGINT,
+# cleans up and exits 1, not by the signal, so teeup used to read it as an
+# ordinary failure and carry on. The mock does the same to the whole process
+# group, as the terminal would.
+test_update_stops_when_ctrl_c_interrupts_brew_update() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  mock_command_script brew <<'EOF2'
+case "$1" in
+  update) trap 'exit 1' INT; kill -INT 0; exit 1 ;;
+esac
+exit 0
+EOF2
+  : > "$MOCK_LOG"
+  local rc=0 out
+  out="$(run_in_new_group "$TEEUP" update 2>&1)" || rc=$?
+  assert_equals 130 "$rc" "Ctrl-C must stop teeup update with status 130" || return 1
+  assert_contains "$out" "Stopped (Ctrl-C)." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew update" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "brew upgrade" "no step may run after Ctrl-C" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "mise " "no step may run after Ctrl-C" || return 1
+  assert_not_contains "$out" "could not refresh its index" "Ctrl-C is not a failed refresh" || return 1
+  assert_not_contains "$out" "configure:alpha" "no capability may be configured after Ctrl-C" || return 1
+  cleanup_test_env
+}
+
+test_update_carries_on_when_brew_update_fails_without_ctrl_c() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  mock_command_script brew <<'EOF2'
+case "$1" in
+  update) exit 1 ;;
+esac
+exit 0
+EOF2
+  : > "$MOCK_LOG"
+  local rc=0 out
+  out="$(run_in_new_group "$TEEUP" update 2>&1)" || rc=$?
+  assert_equals 1 "$rc" "a failed refresh still fails the update" || return 1
+  assert_contains "$out" "Homebrew could not refresh its index." || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "the update carries on" || return 1
+  assert_contains "$out" "configure:alpha" "the update carries on" || return 1
+  assert_not_contains "$out" "Stopped (Ctrl-C)." || return 1
+  cleanup_test_env
+}
+
+# lazy-run execs the real command, so Ctrl-C in that command is the
+# command's own: teeup's handler must not survive the exec.
+test_lazy_run_leaves_ctrl_c_to_the_command_it_execs() {
+  setup
+  mock_command_script frob <<'EOF2'
+kill -INT $$
+echo "frob outlived Ctrl-C"
+EOF2
+  local rc=0 out
+  out="$(run_in_new_group "$TEEUP" lazy-run lazyone frob 2>&1)" || rc=$?
+  assert_equals 130 "$rc" "frob must die of SIGINT, as it would on its own" || return 1
+  assert_not_contains "$out" "frob outlived Ctrl-C" || return 1
+  assert_not_contains "$out" "Stopped (Ctrl-C)." "teeup is no longer running once it execs" || return 1
+  cleanup_test_env
+}
+
 test_config_reads_and_explains_the_update_channel() {
   setup
   seed_config_answers
@@ -3147,6 +3213,9 @@ run_test "update channel flag warns about a machine pin" test_update_channel_fla
 run_test "update refuses a channel flag with a capability" test_update_refuses_a_channel_flag_with_a_capability
 run_test "update channel flag dry run writes nothing" test_update_channel_flag_dry_run_writes_nothing
 run_test "update tells a main user that it now follows releases" test_update_tells_a_main_user_that_it_now_follows_releases
+run_test "update stops when Ctrl-C interrupts brew update" test_update_stops_when_ctrl_c_interrupts_brew_update
+run_test "update carries on when brew update fails without Ctrl-C" test_update_carries_on_when_brew_update_fails_without_ctrl_c
+run_test "lazy-run leaves Ctrl-C to the command it execs" test_lazy_run_leaves_ctrl_c_to_the_command_it_execs
 run_test "config reads and explains the update channel" test_config_reads_and_explains_the_update_channel
 run_test "update one capability upgrades its packages and configures" test_update_one_capability_upgrades_its_packages_and_configures
 run_test "update one capability refuses what it cannot update" test_update_one_capability_refuses_what_it_cannot_update
