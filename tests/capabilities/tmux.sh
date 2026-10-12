@@ -20,7 +20,7 @@ test_install_gets_tmux() {
   setup
   local out
   out="$(DRY_RUN=true "$TEEUP" install tmux 2>&1)"
-  assert_contains "$out" "Would execute: mise -C / install tmux@$(lock_version tmux)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet tmux@$(lock_version tmux)" || return 1
   assert_not_contains "$out" "brew install tmux" || return 1
   cleanup_test_env
 }
@@ -128,7 +128,7 @@ test_shim_round_trip_installs_tmux_through_mise_and_runs_it() {
   hide_host_commands tmux
   out="$(printf 'y\n' | TEEUP_TEST_TTY=yes DRY_RUN=false "$shims/tmux" new -s work 2>&1)"
   assert_contains "$out" "tmux is provided by capability tmux. Install now?" || return 1
-  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install tmux@$(lock_version tmux)" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install --quiet tmux@$(lock_version tmux)" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "brew install tmux" || return 1
   assert_contains "$out" "tmux ran: new -s work" || return 1
   [[ -L "$TEST_HOME/.local/bin/tmux" ]] || { echo "the link must be in ~/.local/bin"; return 1; }

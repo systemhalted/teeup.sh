@@ -53,9 +53,9 @@ test_install_gets_git_delta_lfs_and_lazygit() {
   assert_not_contains "$out" "brew install git-delta" || return 1
   assert_not_contains "$out" "brew install git-lfs" || return 1
   assert_not_contains "$out" "brew install lazygit" || return 1
-  assert_contains "$out" "Would execute: mise -C / install delta@$(lock_version delta)" || return 1
-  assert_contains "$out" "Would execute: mise -C / install git-lfs@$(lock_version git-lfs)" || return 1
-  assert_contains "$out" "Would execute: mise -C / install lazygit@$(lock_version lazygit)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet delta@$(lock_version delta)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet git-lfs@$(lock_version git-lfs)" || return 1
+  assert_contains "$out" "Would execute: mise -C / install --quiet lazygit@$(lock_version lazygit)" || return 1
   cleanup_test_env
 }
 

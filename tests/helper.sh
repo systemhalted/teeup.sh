@@ -181,11 +181,13 @@ spec_dir() {
 }
 case "$1" in
   install)
-    if [ "${MOCK_MISE_FAIL_INSTALL:-}" = "${2%@*}" ]; then
-      echo "mise ERROR failed to install $2" >&2
+    s="$2"
+    [ "$s" = "--quiet" ] && s="$3"
+    if [ "${MOCK_MISE_FAIL_INSTALL:-}" = "${s%@*}" ]; then
+      echo "mise ERROR failed to install $s" >&2
       exit 1
     fi
-    mkdir -p "$(spec_dir "$2")/bin"
+    mkdir -p "$(spec_dir "$s")/bin"
     ;;
   where)
     d="$(spec_dir "$2")"

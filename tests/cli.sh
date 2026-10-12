@@ -1404,7 +1404,7 @@ test_update_relinks_a_lazy_tool_whose_lock_version_changed() {
   assert_equals "$installs/15.2.0/bin/rg" "$(readlink "$inner")" "fixture: linked at the first version" || return 1
   printf 'ripgrep 15.3.0\n' > "$TEEUP_TOOLS_LOCK"
   out="$("$TEEUP" update 2>&1)"
-  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install ripgrep@15.3.0" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / install --quiet ripgrep@15.3.0" || return 1
   assert_equals "$installs/15.3.0/bin/rg" "$(readlink "$inner")" || return 1
   assert_equals "$inner" "$(readlink "$link")" "the ~/.local/bin link stays as it was" || return 1
   assert_dir_exists "$installs/15.2.0" "the old version stays for mise prune" || return 1
