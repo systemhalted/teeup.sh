@@ -17,8 +17,8 @@ Some applications need a minimum macOS version: AeroSpace and Google Chrome need
 Run the installer in Terminal. Use `curl` or `wget`:
 
 ```sh
-curl -fsSL https://teeup.systemhalted.in/install.sh | bash
-wget -qO- https://teeup.systemhalted.in/install.sh | bash
+curl -fsSL https://teeup.systemhalted.in/install.sh | bash && exec zsh -l
+wget -qO- https://teeup.systemhalted.in/install.sh | bash && exec zsh -l
 ```
 
 The installer does three things:
@@ -26,6 +26,8 @@ The installer does three things:
 1. If the Xcode Command Line Tools are missing, it installs them with `softwareupdate`. It asks for your password for `sudo`. If `softwareupdate` does not find the tools, Apple's installer opens, and the script waits until you complete it.
 2. It clones teeup into `~/.local/share/teeup` and checks out the newest release.
 3. It runs `./bootstrap` in the checkout.
+
+When the installer is done, `exec zsh -l` replaces the shell with one that has teeup's settings, so the `teeup` command works at once.
 
 The installer stops if the Mac does not run macOS, or if you run it as root. If `~/.local/share/teeup` is a teeup checkout already, the installer runs its `./bootstrap` again. If the directory exists but is not a git checkout, the installer stops and changes nothing. It also stops, naming the folder and a command to inspect or fix it, when `~/.local/share` is not writable.
 

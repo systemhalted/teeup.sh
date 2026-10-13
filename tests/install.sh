@@ -516,6 +516,128 @@ test_clt_marker_and_label_match_the_capability() {
   cleanup_test_env
 }
 
+# mock_proxy_network: git clone fails with the error a re-signing proxy
+# causes unless GIT_SSL_CAINFO names a bundle. The bundle git was given is
+# copied to $HOME/used-bundle.pem, so a test can read it after the installer
+# deletes it. Every other git call goes to the real git.
+mock_proxy_network() {
+  local real_git
+  real_git="$(command -v git)"
+  mock_command_script git <<EOF2
+if [ "\$1" = "clone" ]; then
+  if [ -z "\${GIT_SSL_CAINFO:-}" ]; then
+    echo "fatal: unable to access 'https://github.com/systemhalted/teeup.sh/': SSL certificate problem: self signed certificate in certificate chain" >&2
+    exit 128
+  fi
+  cp "\$GIT_SSL_CAINFO" "\$HOME/used-bundle.pem"
+fi
+exec "$real_git" "\$@"
+EOF2
+}
+
+# mock_company_keychain <trusted:yes|no>: security and plutil as on a Mac
+# whose System keychain holds the company root (hash AAAA...) and a second
+# certificate nobody trusts (hash BBBB...). With "no", there are no admin
+# trust settings at all, and trust-settings-export fails as it does then.
+mock_company_keychain() {
+  local trusted="$1" a b
+  a="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  b="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+  mock_command_script security <<EOF2
+case "\$1" in
+  trust-settings-export)
+    [ "$trusted" = "yes" ] || { echo "SecTrustSettingsCreateExternalRepresentation: No Trust Settings were found." >&2; exit 1; }
+    printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+      '<plist version="1.0"><dict><key>trustList</key><dict>' \
+      '<key>$a</key><dict><key>trustSettings</key><array/></dict>' \
+      '</dict></dict></plist>' > "\$3"
+    ;;
+  find-certificate)
+    case "\$*" in
+      *SystemRootCertificates*)
+        printf '%s\n' '-----BEGIN CERTIFICATE-----' 'APPLE-ROOT' '-----END CERTIFICATE-----' ;;
+      *)
+        printf '%s\n' 'SHA-1 hash: $a' '-----BEGIN CERTIFICATE-----' 'COMPANY-ROOT' '-----END CERTIFICATE-----' \
+          'SHA-1 hash: $b' '-----BEGIN CERTIFICATE-----' 'UNTRUSTED' '-----END CERTIFICATE-----' ;;
+    esac
+    ;;
+esac
+EOF2
+  mock_command_script plutil <<'EOF2'
+cp "$5" "$4"
+EOF2
+}
+
+# no_temporary_bundle -> fails when the installer left a teeup-ca file in TMPDIR.
+no_temporary_bundle() {
+  local f
+  for f in "${TMPDIR:-/tmp}"/teeup-ca*; do
+    [[ -e "$f" ]] && { echo "the temporary bundle was left behind: $f"; return 1; }
+  done
+  return 0
+}
+
+test_a_proxy_network_clones_with_the_company_certificates() {
+  setup
+  mock_proxy_network
+  mock_company_keychain yes
+  local out rc=0 bundle
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_equals "0" "$rc" "$out" || return 1
+  assert_contains "$out" "SSL certificate problem" "git's own error is shown" || return 1
+  assert_contains "$out" "This network re-signs HTTPS. Cloning again with the certificates an administrator trusts in the System keychain." || return 1
+  bundle="$(cat "$HOME/used-bundle.pem")"
+  assert_contains "$bundle" "APPLE-ROOT" "the public roots" || return 1
+  assert_contains "$bundle" "COMPANY-ROOT" "the trusted company root" || return 1
+  assert_not_contains "$bundle" "UNTRUSTED" "a certificate without admin trust is left out" || return 1
+  assert_contains "$(cat "$HOME/bootstrap.out")" "version=0.2.0-beta" || return 1
+  no_temporary_bundle || return 1
+  cleanup_test_env
+}
+
+test_a_proxy_network_without_a_trusted_root_says_how_to_trust_it() {
+  setup
+  mock_proxy_network
+  mock_company_keychain no
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "no company certificate is trusted in the System keychain" || return 1
+  assert_contains "$out" "sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <certificate file>" || return 1
+  [[ ! -e "$DEST" ]] || { echo "a failed install left a checkout"; return 1; }
+  [[ ! -e "$HOME/bootstrap.out" ]] || { echo "bootstrap ran"; return 1; }
+  no_temporary_bundle || return 1
+  cleanup_test_env
+}
+
+test_a_clone_failure_without_a_certificate_error_stops() {
+  setup
+  export TEEUP_INSTALL_REPO="$TEST_HOME/no-such-repo.git"
+  mock_company_keychain yes
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "git clone of $TEST_HOME/no-such-repo.git failed." || return 1
+  assert_not_contains "$out" "re-signs HTTPS" "no certificate retry" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "security" "the keychain is not read" || return 1
+  cleanup_test_env
+}
+
+# install.sh repeats the two awk programs of lib/certs.sh, because it runs
+# before teeup is on disk. The two copies must agree, up to the line that
+# names the input files.
+test_certificate_filters_match_lib_certs() {
+  setup
+  local prog lib inst
+  for prog in "awk 'BEGIN { RS = \"<\" }" 'awk -v hashes="$hashes"'; do
+    lib="$(awk -v start="$prog" 'index($0, start) { on = 1 } on && /^  '"'"' / { exit } on { print }' "$TEEUP_PATH/lib/certs.sh")"
+    inst="$(awk -v start="$prog" 'index($0, start) { on = 1 } on && /^  '"'"' / { exit } on { print }' "$INSTALLER")"
+    [[ -n "$lib" ]] || { echo "lib/certs.sh no longer has: $prog"; return 1; }
+    assert_equals "$lib" "$inst" "install.sh's copy of: $prog" || return 1
+  done
+  cleanup_test_env
+}
+
 echo "install.sh"
 run_test "fresh install checks out the newest release and bootstraps" test_fresh_install_checks_out_the_newest_release_and_bootstraps
 run_test "piped install passes its arguments to bootstrap" test_piped_install_passes_its_arguments_to_bootstrap
@@ -543,4 +665,8 @@ run_test "missing CLT without a label waits for the dialog" test_missing_clt_wit
 run_test "a cancelled CLT dialog stops the wait" test_a_cancelled_clt_dialog_stops_the_wait
 run_test "dry run writes nothing" test_dry_run_writes_nothing
 run_test "CLT marker and label match the capability" test_clt_marker_and_label_match_the_capability
+run_test "a proxy network clones with the company certificates" test_a_proxy_network_clones_with_the_company_certificates
+run_test "a proxy network without a trusted root says how to trust it" test_a_proxy_network_without_a_trusted_root_says_how_to_trust_it
+run_test "a clone failure without a certificate error stops" test_a_clone_failure_without_a_certificate_error_stops
+run_test "certificate filters match lib/certs.sh" test_certificate_filters_match_lib_certs
 print_summary

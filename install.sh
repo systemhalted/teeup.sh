@@ -82,22 +82,144 @@ install_clt() {
   say "Xcode Command Line Tools installed."
 }
 
+# Company certificates. On a network whose proxy re-signs HTTPS, git does
+# not trust the proxy's certificate: bootstrap builds teeup's bundle for that
+# (lib/certs.sh), but only after the clone. So when the clone fails on a
+# certificate, the installer builds a bundle the same way, for that one
+# clone. The two awk programs are copies of the ones in lib/certs.sh, because
+# the installer runs before the checkout exists; tests/install.sh checks that
+# they stay the same.
+
+# trusted_hashes <trust xml> -> the SHA-1 hashes of the certificates the
+# administrator trust settings trust as a root (see _ca_bundle_trusted_hashes
+# in lib/certs.sh, which explains the parse).
+trusted_hashes() {
+  awk 'BEGIN { RS = "<" }
+    NR == 1 { next }
+    {
+      tag = $0; sub(/>.*/, "", tag)
+      text = $0; sub(/^[^>]*>/, "", text); gsub(/[ \t\r\n]/, "", text)
+    }
+    tag == "key" && cur == "" && length(text) == 40 && text !~ /[^0-9A-Fa-f]/ {
+      cur = toupper(text); cdepth = depth; entries = 0; bare = 0; trust = 0; deny = 0
+      next
+    }
+    tag == "dict" {
+      depth++
+      if (cur != "" && depth == cdepth + 2) { entries++; has_result = 0 }
+      next
+    }
+    tag == "dict/" {
+      if (cur != "" && depth == cdepth + 1) { entries++; bare++ }
+      next
+    }
+    tag == "/dict" {
+      if (cur != "" && depth == cdepth + 2 && !has_result) bare++
+      depth--
+      if (cur != "" && depth == cdepth) {
+        if (!deny && (trust || bare > 0 || entries == 0)) print cur
+        cur = ""
+      }
+      next
+    }
+    tag == "key" && cur != "" && text == "kSecTrustSettingsResult" { want_result = 1; next }
+    tag == "integer" && want_result {
+      want_result = 0; has_result = 1
+      if (text == 3) deny = 1
+      else if (text == 1 || text == 2) trust = 1
+      next
+    }
+    tag !~ /^\// { want_result = 0 }
+  ' "$1"
+}
+
+# select_certs <hashes file> <records> -> the PEM blocks in <records> (from
+# `security find-certificate -a -Z -p`) whose SHA-1 hash is in <hashes file>.
+select_certs() {
+  local hashes="$1" records="$2" work
+  work="$(dirname "$hashes")"
+  awk -v hashes="$hashes" '
+    BEGIN {
+      while ((getline hash < hashes) > 0) { wanted[toupper(hash)] = 1 }
+      close(hashes)
+    }
+    /^SHA-1 hash: / {
+      hash = toupper(substr($0, 13))
+      selected = (hash in wanted)
+      next
+    }
+    selected && /^-----BEGIN CERTIFICATE-----$/ { in_cert = 1 }
+    selected && in_cert { print }
+    selected && /^-----END CERTIFICATE-----$/ { matched[hash] = 1; in_cert = 0; selected = 0 }
+    END {
+      for (hash in wanted) if (!(hash in matched)) print hash > missing
+    }
+  ' missing="$work/missing" "$records"
+}
+
+# make_ca_bundle <file> -> 0 with <file> holding Apple's public roots and the
+# System keychain certificates an administrator trusts as roots. 1 when no
+# certificate is trusted that way, or an export fails. Only certificates with
+# an administrator trust setting are added: the System keychain also holds
+# certificates that nobody chose to trust.
+make_ca_bundle() {
+  local out="$1" work
+  work="$(mktemp -d "${TMPDIR:-/tmp}/teeup-ca.XXXXXX")" || return 1
+  if security trust-settings-export -d "$work/trust.plist" >/dev/null 2>&1 &&
+    plutil -convert xml1 -o "$work/trust.xml" "$work/trust.plist" >/dev/null 2>&1 &&
+    trusted_hashes "$work/trust.xml" > "$work/hashes" && [ -s "$work/hashes" ] &&
+    security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > "$out" 2>/dev/null &&
+    security find-certificate -a -Z -p /Library/Keychains/System.keychain > "$work/records" 2>/dev/null &&
+    select_certs "$work/hashes" "$work/records" > "$work/admin.pem" &&
+    grep -q '^-----BEGIN CERTIFICATE-----$' "$work/admin.pem" &&
+    cat "$work/admin.pem" >> "$out"; then
+    rm -rf "$work"
+    return 0
+  fi
+  rm -rf "$work"
+  rm -f "$out"
+  return 1
+}
+
+# clone_with_company_certs <repo> <dest> <git error output>: called after a
+# failed clone. When git's error names a certificate, build the bundle and
+# clone once more with it; otherwise, or when that fails too, stop.
+clone_with_company_certs() {
+  local repo="$1" dest="$2" errors="$3" bundle
+  printf '%s\n' "$errors" >&2
+  case "$errors" in
+    *certificate*|*CERTIFICATE*|*Certificate*) ;;
+    *) die "git clone of $repo failed." ;;
+  esac
+  bundle="$(mktemp "${TMPDIR:-/tmp}/teeup-ca-bundle.XXXXXX")" || die "git clone of $repo failed."
+  if ! make_ca_bundle "$bundle"; then
+    rm -f "$bundle"
+    warn "This network re-signs HTTPS, and no company certificate is trusted in the System keychain."
+    die "Ask your IT team to install the company root certificate, or trust it yourself: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <certificate file>. Then run the installer again. More: https://teeup.systemhalted.in/company-certificates.html"
+  fi
+  say "This network re-signs HTTPS. Cloning again with the certificates an administrator trusts in the System keychain."
+  if ! GIT_SSL_CAINFO="$bundle" git clone --quiet "$repo" "$dest"; then
+    rm -f "$bundle"
+    die "git clone of $repo failed with the company certificates too. More: https://teeup.systemhalted.in/company-certificates.html"
+  fi
+  rm -f "$bundle"
+}
+
 # clone_teeup <repo> <dest> <dry-run:true|false>
 # Clones <repo>, then checks out the newest release: the nearest v<digit>
 # tag behind origin/main, the same rule lib/channel.sh uses for
 # `teeup update`. An older tag further back loses to a nearer one, even
 # when its version number is higher.
 clone_teeup() {
-  local repo="$1" dest="$2" dry="$3" tag
+  local repo="$1" dest="$2" dry="$3" tag errors
   if [ "$dry" = "true" ]; then
     say "[DRY-RUN] Would execute: git clone $repo $dest"
     say "[DRY-RUN] Would check out the newest release tag on main."
     return 0
   fi
   mkdir -p "$(dirname "$dest")"
-  if ! git clone --quiet "$repo" "$dest"; then
-    warn "On a network that re-signs HTTPS, git does not trust the company certificate until teeup builds its bundle."
-    die "git clone of $repo failed. Run the installer on another network, or clone by hand: https://teeup.systemhalted.in/getting-started.html"
+  if ! errors="$(git clone --quiet "$repo" "$dest" 2>&1)"; then
+    clone_with_company_certs "$repo" "$dest" "$errors"
   fi
   tag="$(git -C "$dest" describe --tags --abbrev=0 --match 'v[0-9]*' origin/main 2>/dev/null || true)"
   if [ -z "$tag" ]; then
