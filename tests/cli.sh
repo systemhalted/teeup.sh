@@ -255,9 +255,16 @@ test_help_lists_verbs() {
   cleanup_test_env
 }
 
+# expected_version -> what `teeup version` prints for this checkout. The
+# test checkout is rarely on a release commit, so the output names the
+# commit too (tests/lib/channel.sh covers each form).
+expected_version() {
+  bash -c 'source "$1/lib/channel.sh"; channel_version "$1"' _ "$TEEUP_PATH"
+}
+
 test_teeup_path_derives_from_location() {
   setup
-  assert_equals "$(cat "$TEEUP_PATH/version")" "$(TEEUP_PATH=/nonexistent "$TEEUP" version)" || return 1
+  assert_equals "$(expected_version)" "$(TEEUP_PATH=/nonexistent "$TEEUP" version)" || return 1
   cleanup_test_env
 }
 
@@ -306,7 +313,7 @@ test_data_verbs_keep_stdout_clean_with_a_shadowed_machine_file() {
   expected_themes="$(for d in "$TEEUP_PATH"/themes/*/; do basename "$d"; done | sort)"
 
   out="$("$TEEUP" version 2>"$errfile")"
-  assert_equals "$(cat "$TEEUP_PATH/version")" "$out" "version stdout" || return 1
+  assert_equals "$(expected_version)" "$out" "version stdout" || return 1
   assert_contains "$(cat "$errfile")" "also exists and is ignored" "version stderr" || return 1
 
   out="$("$TEEUP" theme current 2>"$errfile")"
