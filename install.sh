@@ -223,7 +223,7 @@ clone_with_company_certs() {
   if [ "$rc" -eq 2 ]; then
     rm -f "$bundle"
     warn "This network re-signs HTTPS, and no company certificate is trusted in the System keychain."
-    die "Ask your IT team to install the company root certificate, or trust it yourself: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <certificate file>. Then run the installer again. More: https://teeup.systemhalted.in/company-certificates.html"
+    die "Ask your IT team to install the company root certificate, or trust it yourself: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/company-root.cer (use the path of your certificate file). Then run the installer again. More: https://teeup.systemhalted.in/company-certificates.html"
   elif [ "$rc" -ne 0 ]; then
     rm -f "$bundle"
     die "This network re-signs HTTPS, and the installer could not make a certificate bundle (see above). More: https://teeup.systemhalted.in/company-certificates.html"
@@ -387,16 +387,30 @@ check_data_home_writable() {
   return 1
 }
 
-# run_bootstrap <dest> [args...]: replace this script with the checkout's
-# ./bootstrap, its prompts reading from the terminal.
+# run_bootstrap <dest> [args...]: run the checkout's ./bootstrap, its
+# prompts reading from the terminal. When it succeeds in a terminal, replace
+# this script with a zsh login shell, so the shell the user typed the
+# one-liner into gets teeup's PATH and settings. That step lives here, not in
+# the one-liner (`| bash && exec zsh -l`): a pipe reports bash's status, not
+# curl's, so a failed or partial download would still start the new shell.
+# Only when stdout is a terminal, so a captured run (a test, a CI job) never
+# starts an interactive shell.
 run_bootstrap() {
-  local dest="$1"
+  local dest="$1" rc=0
   shift
   cd "$dest"
   if have_tty; then
-    exec ./bootstrap "$@" < /dev/tty
+    ./bootstrap "$@" < /dev/tty || rc=$?
+  else
+    ./bootstrap "$@" || rc=$?
   fi
-  exec ./bootstrap "$@"
+  [ "$rc" -eq 0 ] || exit "$rc"
+  case " $* " in *" --dry-run "*) exit 0 ;; esac
+  if [ -t 1 ] && have_tty && command -v zsh >/dev/null 2>&1; then
+    say "Starting a new zsh with teeup's settings."
+    exec zsh -l < /dev/tty
+  fi
+  exit 0
 }
 
 main() {

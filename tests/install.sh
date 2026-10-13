@@ -30,7 +30,8 @@ fixture_commit() {
 
 # make_fixture: a bare origin whose main carries v2.0.0 (old and unrelated),
 # v0.1.0, v0.2.0 and one untagged commit after it. Its bootstrap writes the
-# checked-out version, its arguments and where it ran to $HOME/bootstrap.out.
+# checked-out version, its arguments and where it ran to $HOME/bootstrap.out,
+# and exits with $FAKE_BOOTSTRAP_RC (0 when unset).
 make_fixture() {
   ORIGIN="$TEST_HOME/origin.git"
   WORK="$TEST_HOME/work"
@@ -45,6 +46,7 @@ make_fixture() {
   printf 'pwd=%s\n' "$(pwd)"
   for a in "$@"; do printf 'arg=%s\n' "$a"; done
 } > "$HOME/bootstrap.out"
+exit "${FAKE_BOOTSTRAP_RC:-0}"
 EOF2
   chmod +x "$WORK/bootstrap"
   mkdir -p "$WORK/bin"
@@ -608,7 +610,7 @@ test_a_proxy_network_without_a_trusted_root_says_how_to_trust_it() {
   out="$(run_installer 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
   assert_contains "$out" "no company certificate is trusted in the System keychain" || return 1
-  assert_contains "$out" "sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <certificate file>" || return 1
+  assert_contains "$out" "sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/company-root.cer" || return 1
   [[ ! -e "$DEST" ]] || { echo "a failed install left a checkout"; return 1; }
   [[ ! -e "$HOME/bootstrap.out" ]] || { echo "bootstrap ran"; return 1; }
   no_temporary_bundle || return 1
@@ -658,6 +660,30 @@ test_certificate_filters_match_lib_certs() {
   cleanup_test_env
 }
 
+# The installer, not the one-liner, starts the new zsh, so a failed bootstrap
+# (or a failed download) never replaces the user's shell. A captured run has
+# no terminal on stdout, so it never starts one either.
+test_a_failed_bootstrap_keeps_its_status_and_starts_no_shell() {
+  setup
+  mock_command zsh 0 ""
+  local out rc=0
+  out="$(FAKE_BOOTSTRAP_RC=3 run_installer 2>&1)" || rc=$?
+  assert_equals "3" "$rc" "$out" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "zsh" "no new shell after a failure" || return 1
+  cleanup_test_env
+}
+
+test_a_captured_run_starts_no_shell() {
+  setup
+  mock_command zsh 0 ""
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_equals "0" "$rc" "$out" || return 1
+  assert_file_exists "$HOME/bootstrap.out" "bootstrap ran" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "zsh" "stdout is not a terminal" || return 1
+  cleanup_test_env
+}
+
 echo "install.sh"
 run_test "fresh install checks out the newest release and bootstraps" test_fresh_install_checks_out_the_newest_release_and_bootstraps
 run_test "piped install passes its arguments to bootstrap" test_piped_install_passes_its_arguments_to_bootstrap
@@ -689,5 +715,7 @@ run_test "a proxy network clones with the company certificates" test_a_proxy_net
 run_test "a proxy network without a trusted root says how to trust it" test_a_proxy_network_without_a_trusted_root_says_how_to_trust_it
 run_test "a failed trust export names the step, not the certificate" test_a_failed_trust_export_names_the_step_not_the_certificate
 run_test "a clone failure without a certificate error stops" test_a_clone_failure_without_a_certificate_error_stops
+run_test "a failed bootstrap keeps its status and starts no shell" test_a_failed_bootstrap_keeps_its_status_and_starts_no_shell
+run_test "a captured run starts no shell" test_a_captured_run_starts_no_shell
 run_test "certificate filters match lib/certs.sh" test_certificate_filters_match_lib_certs
 print_summary

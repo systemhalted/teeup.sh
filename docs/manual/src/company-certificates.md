@@ -36,15 +36,17 @@ Before teeup makes its bundle, curl does not trust the company certificate, so t
 1. Make sure that the company root certificate is in the System keychain and is trusted. Usually your IT team installs it. If it is not there, get the certificate file from your IT team, and trust it:
 
    ```sh
-   sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <certificate file>
+   sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/company-root.cer
    ```
 
-2. Make a temporary certificate file that has the Apple public roots and the company root certificate. Replace `<certificate name>` with the name of the company root certificate, as Keychain Access shows it. Then give the file to curl:
+   Replace `~/Downloads/company-root.cer` with the path of your certificate file.
+
+2. Make a temporary certificate file that has the Apple public roots and the company root certificate. Replace `Company Root` with the name of the company root certificate, as Keychain Access shows it. Then give the file to curl:
 
    ```sh
    security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > "$TMPDIR/teeup-ca.pem"
-   security find-certificate -c "<certificate name>" -p /Library/Keychains/System.keychain >> "$TMPDIR/teeup-ca.pem"
-   curl --cacert "$TMPDIR/teeup-ca.pem" -fsSL https://teeup.systemhalted.in/install.sh | bash && exec zsh -l
+   security find-certificate -c "Company Root" -p /Library/Keychains/System.keychain >> "$TMPDIR/teeup-ca.pem"
+   curl --cacert "$TMPDIR/teeup-ca.pem" -fsSL https://teeup.systemhalted.in/install.sh | bash
    ```
 
    Do not add all of the System keychain to the file. Applications keep certificates there that nobody chose to trust.
