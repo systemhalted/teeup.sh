@@ -535,18 +535,23 @@ exec "$real_git" "\$@"
 EOF2
 }
 
-# mock_company_keychain <trusted:yes|no>: security and plutil as on a Mac
-# whose System keychain holds the company root (hash AAAA...) and a second
-# certificate nobody trusts (hash BBBB...). With "no", there are no admin
-# trust settings at all, and trust-settings-export fails as it does then.
+# mock_company_keychain <trusted:yes|no|broken>: security and plutil as on
+# a Mac whose System keychain holds the company root (hash AAAA...) and a
+# second certificate nobody trusts (hash BBBB...). With "no", there are no
+# admin trust settings at all, and security says so as macOS does. With
+# "broken", the trust settings list the root but their export fails.
 mock_company_keychain() {
   local trusted="$1" a b
   a="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
   b="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
   mock_command_script security <<EOF2
 case "\$1" in
+  dump-trust-settings)
+    [ "$trusted" != "no" ] || { echo "SecTrustSettingsCopyCertificates: No Trust Settings were found."; exit 1; }
+    printf '%s\n' 'Number of trusted certs = 1' 'Cert 0: Company Root'
+    ;;
   trust-settings-export)
-    [ "$trusted" = "yes" ] || { echo "SecTrustSettingsCreateExternalRepresentation: No Trust Settings were found." >&2; exit 1; }
+    [ "$trusted" = "yes" ] || { echo "SecTrustSettingsCreateExternalRepresentation: error" >&2; exit 1; }
     printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
       '<plist version="1.0"><dict><key>trustList</key><dict>' \
       '<key>$a</key><dict><key>trustSettings</key><array/></dict>' \
@@ -610,6 +615,21 @@ test_a_proxy_network_without_a_trusted_root_says_how_to_trust_it() {
   cleanup_test_env
 }
 
+test_a_failed_trust_export_names_the_step_not_the_certificate() {
+  setup
+  mock_proxy_network
+  mock_company_keychain broken
+  local out rc=0
+  out="$(run_installer 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Could not export the administrator certificate trust settings." || return 1
+  assert_contains "$out" "the installer could not make a certificate bundle" || return 1
+  assert_not_contains "$out" "add-trusted-cert" "the certificate is trusted already" || return 1
+  [[ ! -e "$DEST" ]] || { echo "a failed install left a checkout"; return 1; }
+  no_temporary_bundle || return 1
+  cleanup_test_env
+}
+
 test_a_clone_failure_without_a_certificate_error_stops() {
   setup
   export TEEUP_INSTALL_REPO="$TEST_HOME/no-such-repo.git"
@@ -667,6 +687,7 @@ run_test "dry run writes nothing" test_dry_run_writes_nothing
 run_test "CLT marker and label match the capability" test_clt_marker_and_label_match_the_capability
 run_test "a proxy network clones with the company certificates" test_a_proxy_network_clones_with_the_company_certificates
 run_test "a proxy network without a trusted root says how to trust it" test_a_proxy_network_without_a_trusted_root_says_how_to_trust_it
+run_test "a failed trust export names the step, not the certificate" test_a_failed_trust_export_names_the_step_not_the_certificate
 run_test "a clone failure without a certificate error stops" test_a_clone_failure_without_a_certificate_error_stops
 run_test "certificate filters match lib/certs.sh" test_certificate_filters_match_lib_certs
 print_summary

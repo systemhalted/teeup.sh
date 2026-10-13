@@ -158,44 +158,75 @@ select_certs() {
 }
 
 # make_ca_bundle <file> -> 0 with <file> holding Apple's public roots and the
-# System keychain certificates an administrator trusts as roots. 1 when no
-# certificate is trusted that way, or an export fails. Only certificates with
-# an administrator trust setting are added: the System keychain also holds
-# certificates that nobody chose to trust.
+# System keychain certificates an administrator trusts as roots; 2 when no
+# certificate is trusted that way; 1 when a step fails, after a warning that
+# names it. Only certificates with an administrator trust setting are added:
+# the System keychain also holds certificates that nobody chose to trust.
+# The steps and their order are those of lib/certs.sh
+# (ca_bundle_admin_roots_present, then _ca_bundle_stage).
 make_ca_bundle() {
-  local out="$1" work
-  work="$(mktemp -d "${TMPDIR:-/tmp}/teeup-ca.XXXXXX")" || return 1
-  if security trust-settings-export -d "$work/trust.plist" >/dev/null 2>&1 &&
-    plutil -convert xml1 -o "$work/trust.xml" "$work/trust.plist" >/dev/null 2>&1 &&
-    trusted_hashes "$work/trust.xml" > "$work/hashes" && [ -s "$work/hashes" ] &&
-    security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > "$out" 2>/dev/null &&
-    security find-certificate -a -Z -p /Library/Keychains/System.keychain > "$work/records" 2>/dev/null &&
-    select_certs "$work/hashes" "$work/records" > "$work/admin.pem" &&
-    grep -q '^-----BEGIN CERTIFICATE-----$' "$work/admin.pem" &&
-    cat "$work/admin.pem" >> "$out"; then
-    rm -rf "$work"
-    return 0
+  local out="$1" work output rc=0
+  output="$(security dump-trust-settings -d 2>&1)" || rc=$?
+  # With no admin trust settings at all, macOS prints "No Trust Settings
+  # were found." and exits 1: an answer, not a failure.
+  if printf '%s\n' "$output" | grep -Eq '^Number of trusted certs = 0$|No Trust Settings were found'; then
+    return 2
   fi
+  if [ "$rc" -ne 0 ]; then
+    warn "Could not read the administrator certificate trust settings (security dump-trust-settings -d)."
+    return 1
+  fi
+  work="$(mktemp -d "${TMPDIR:-/tmp}/teeup-ca.XXXXXX")" ||
+    { warn "Could not create a temporary folder for the certificate bundle."; return 1; }
+  rc=0
+  _make_ca_bundle_in "$out" "$work" || rc=$?
   rm -rf "$work"
-  rm -f "$out"
-  return 1
+  [ "$rc" -eq 0 ] || rm -f "$out"
+  return "$rc"
+}
+
+# _make_ca_bundle_in <file> <work dir>: make_ca_bundle's steps.
+_make_ca_bundle_in() {
+  local out="$1" work="$2"
+  security trust-settings-export -d "$work/trust.plist" >/dev/null 2>&1 && [ -s "$work/trust.plist" ] ||
+    { warn "Could not export the administrator certificate trust settings."; return 1; }
+  plutil -convert xml1 -o "$work/trust.xml" "$work/trust.plist" >/dev/null 2>&1 &&
+    trusted_hashes "$work/trust.xml" > "$work/hashes" ||
+    { warn "Could not read the administrator certificate trust settings."; return 1; }
+  # Trust settings that trust nothing as a root (all Deny or Unspecified)
+  # are the same as having no company root.
+  [ -s "$work/hashes" ] || return 2
+  security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > "$out" 2>/dev/null &&
+    grep -q '^-----BEGIN CERTIFICATE-----$' "$out" ||
+    { warn "Could not export the macOS public roots."; return 1; }
+  security find-certificate -a -Z -p /Library/Keychains/System.keychain > "$work/records" 2>/dev/null &&
+    select_certs "$work/hashes" "$work/records" > "$work/admin.pem" ||
+    { warn "Could not export the certificates in the System keychain."; return 1; }
+  grep -q '^-----BEGIN CERTIFICATE-----$' "$work/admin.pem" ||
+    { warn "None of the administrator-trusted certificates is in the System keychain."; return 1; }
+  cat "$work/admin.pem" >> "$out" ||
+    { warn "Could not write the certificate bundle $out."; return 1; }
 }
 
 # clone_with_company_certs <repo> <dest> <git error output>: called after a
 # failed clone. When git's error names a certificate, build the bundle and
 # clone once more with it; otherwise, or when that fails too, stop.
 clone_with_company_certs() {
-  local repo="$1" dest="$2" errors="$3" bundle
+  local repo="$1" dest="$2" errors="$3" bundle rc=0
   printf '%s\n' "$errors" >&2
   case "$errors" in
     *certificate*|*CERTIFICATE*|*Certificate*) ;;
     *) die "git clone of $repo failed." ;;
   esac
   bundle="$(mktemp "${TMPDIR:-/tmp}/teeup-ca-bundle.XXXXXX")" || die "git clone of $repo failed."
-  if ! make_ca_bundle "$bundle"; then
+  make_ca_bundle "$bundle" || rc=$?
+  if [ "$rc" -eq 2 ]; then
     rm -f "$bundle"
     warn "This network re-signs HTTPS, and no company certificate is trusted in the System keychain."
     die "Ask your IT team to install the company root certificate, or trust it yourself: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <certificate file>. Then run the installer again. More: https://teeup.systemhalted.in/company-certificates.html"
+  elif [ "$rc" -ne 0 ]; then
+    rm -f "$bundle"
+    die "This network re-signs HTTPS, and the installer could not make a certificate bundle (see above). More: https://teeup.systemhalted.in/company-certificates.html"
   fi
   say "This network re-signs HTTPS. Cloning again with the certificates an administrator trusts in the System keychain."
   if ! GIT_SSL_CAINFO="$bundle" git clone --quiet "$repo" "$dest"; then
