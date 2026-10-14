@@ -31,7 +31,29 @@ To remove the bundle entirely, run `teeup remove ca-bundle`.
 
 ## Installing teeup on such a network
 
-Before teeup makes its bundle, curl and git do not trust the company certificate. On such a network, the one-line installer and `git clone` can fail with a certificate error. Run the installer on a different network, for example a phone hotspot. Or clone teeup by hand on a different network, and then run `./bootstrap` (see [Getting started](getting-started.md#the-first-run)). After `./bootstrap` makes the bundle, teeup works on the company network.
+Before teeup makes its bundle, curl does not trust the company certificate, so the one-line installer cannot download. Do these steps:
+
+1. Make sure that the company root certificate is in the System keychain and is trusted. Usually your IT team installs it. If it is not there, get the certificate file from your IT team, and trust it:
+
+   ```sh
+   sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/company-root.cer
+   ```
+
+   Replace `~/Downloads/company-root.cer` with the path of your certificate file.
+
+2. Make a temporary certificate file that has the Apple public roots and the company root certificate. Replace `Company Root` with the name of the company root certificate, as Keychain Access shows it. Then give the file to curl:
+
+   ```sh
+   security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > "$TMPDIR/teeup-ca.pem"
+   security find-certificate -c "Company Root" -p /Library/Keychains/System.keychain >> "$TMPDIR/teeup-ca.pem"
+   curl --cacert "$TMPDIR/teeup-ca.pem" -fsSL https://teeup.systemhalted.in/install.sh | bash
+   ```
+
+   Do not add all of the System keychain to the file. Applications keep certificates there that nobody chose to trust.
+
+If `git clone` fails with a certificate error, the installer makes a bundle and clones again. The bundle has the certificates that an administrator trusts in the System keychain. Then `./bootstrap` makes the teeup bundle, and teeup works on the company network. If no certificate is trusted, the installer stops and shows the `add-trusted-cert` command from step 1.
+
+You can also run the installer on a different network, for example a phone hotspot.
 
 ## Troubleshooting
 

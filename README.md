@@ -29,7 +29,7 @@ curl -fsSL https://teeup.systemhalted.in/install.sh | bash
 wget -qO- https://teeup.systemhalted.in/install.sh | bash
 ```
 
-The installer installs the Xcode Command Line Tools if they are missing. It clones teeup into `~/.local/share/teeup` at the newest release, then runs `./bootstrap` there. Options after `bash -s --` go to `./bootstrap`, for example `curl -fsSL https://teeup.systemhalted.in/install.sh | bash -s -- --skip-daily`.
+The installer installs the Xcode Command Line Tools if they are missing. It clones teeup into `~/.local/share/teeup` at the newest release, then runs `./bootstrap` there. When `./bootstrap` succeeds, the installer starts a new zsh login shell with teeup's settings, so `teeup` works at once. Options after `bash -s --` go to `./bootstrap`, for example `curl -fsSL https://teeup.systemhalted.in/install.sh | bash -s -- --skip-daily`.
 
 To read the installer before it runs, download it first:
 

@@ -391,6 +391,5 @@ ok "Bootstrap finished in $(format_duration $(( $(date +%s) - started )))."
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "This was a dry run: nothing was installed or written."
 else
-  echo "Open a new terminal (the zsh capability puts ~/.local/bin on PATH) and try: teeup status"
-  echo "In this shell, use the full path: $HOME/.local/bin/teeup status"
+  echo "To use teeup in this terminal, run: exec zsh -l (or open a new terminal). Then try: teeup status"
 fi

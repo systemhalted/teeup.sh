@@ -146,7 +146,7 @@ The one-line installer stops with a message in these cases:
 |---|---|
 | "is not a git checkout of teeup" | Move the directory `~/.local/share/teeup` aside. Then run the installer again. |
 | "softwareupdate could not install" or "The Command Line Tools are still missing" | Run `xcode-select --install`, complete the dialog, and then run the installer again. |
-| "git clone ... failed" | The network can re-sign HTTPS, which git does not trust before teeup builds its certificate bundle. Run the installer on a different network. |
+| "git clone ... failed" | If the message names a certificate, the network re-signs HTTPS, and no company certificate is trusted in the System keychain. See [Company certificates](company-certificates.md#installing-teeup-on-such-a-network). |
 | "Run the installer as your own user" | Do not use `sudo` for the installer. The installer asks for your password when it needs it. |
 | "is not writable", "does not allow new folders", or "refuses new folders" | A folder teeup writes to (or the nearest existing folder above it) failed a test create. The message names the exact folder and a command to inspect or fix it. If you own it: `ls -lde` it to see its permissions, then `chmod u+wx` it. If it is the exact folder teeup asked for and someone else owns it: a non-recursive `chown` naming your own user and group. Run the installer or `./bootstrap` again after. |
 | "does not let you create" | The exact folder teeup asked for does not exist yet, and a folder above it belongs to someone else. teeup never suggests a recursive `chown` of a shared folder above your own; create the named folder yourself with the right owner (the message shows an example command), or point the setting it names somewhere you already own. |
