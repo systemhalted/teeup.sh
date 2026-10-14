@@ -487,7 +487,7 @@ test_check_accepts_well_formed_mise_tools() {
 test_check_rejects_a_bad_mise_tools_pair() {
   setup
   tools_fixture
-  make_tool_cap search "ripgrep rg: :fd ripgrep:r/g"
+  make_tool_cap search "ripgrep rg: :fd ripgrep:r/g ripgrep:q/q"
   local out rc=0
   out="$(cap_check 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
@@ -495,6 +495,8 @@ test_check_rejects_a_bad_mise_tools_pair() {
   assert_contains "$out" "search: mise_tools entry 'rg:' is not <tool>:<command>" || return 1
   assert_contains "$out" "search: mise_tools entry ':fd' is not <tool>:<command>" || return 1
   assert_contains "$out" "search: mise_tools entry 'ripgrep:r/g' is not <tool>:<command>" || return 1
+  # A malformed pair is reported once, not again as a duplicate (#120).
+  assert_not_contains "$out" "is also in" || return 1
   cleanup_test_env
 }
 

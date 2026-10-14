@@ -52,6 +52,40 @@ TEEUP_DOCTOR_UNKNOWNS=0
 # gets that warning once per `teeup doctor` run, not once per capability.
 TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED=false
 
+# What the package manager has installed, read once per `teeup doctor` run by
+# _doctor_old_package_installed (#120), one name per line between newlines.
+# READ is false until the first read, then true, or failed when the list
+# could not be read (each check then asks the package manager on its own).
+TEEUP_DOCTOR_INSTALLED_PKGS=""
+TEEUP_DOCTOR_INSTALLED_PKGS_READ=false
+
+# _doctor_old_package_installed <package> -> true when the package manager
+# has <package>. The mise_tools check asks this for every tool that moved to
+# mise, about 18 of them; one `brew list --formula -1` (or `port -q installed
+# active`) answers all of them, where pkg_installed would ask once each.
+_doctor_old_package_installed() {
+  local pkg="$1" list
+  if [[ "$TEEUP_DOCTOR_INSTALLED_PKGS_READ" == "false" ]]; then
+    TEEUP_DOCTOR_INSTALLED_PKGS_READ=failed
+    _pkg_backend_resolve
+    case "$TEEUP_PKG_BACKEND" in
+      homebrew)
+        list="$(brew list --formula -1 2>/dev/null)" && TEEUP_DOCTOR_INSTALLED_PKGS_READ=true
+        ;;
+      macports)
+        list="$(port -q installed active 2>/dev/null)" && TEEUP_DOCTOR_INSTALLED_PKGS_READ=true
+        list="$(printf '%s\n' "$list" | awk '{ print $1 }')"
+        ;;
+    esac
+    TEEUP_DOCTOR_INSTALLED_PKGS=$'\n'"${list:-}"$'\n'
+  fi
+  if [[ "$TEEUP_DOCTOR_INSTALLED_PKGS_READ" == "true" ]]; then
+    [[ "$TEEUP_DOCTOR_INSTALLED_PKGS" == *$'\n'"$pkg"$'\n'* ]]
+    return
+  fi
+  pkg_installed "$pkg" >/dev/null 2>&1
+}
+
 doctor_ok() { ok "$*"; }
 doctor_warn() { warn "$*"; }
 
@@ -276,7 +310,7 @@ _doctor_mise_tools_check() {
     fi
     if doctor_backend_can_answer; then
       for candidate in $(mise_tool_old_packages "$tool"); do
-        if pkg_installed "$candidate" >/dev/null 2>&1; then
+        if _doctor_old_package_installed "$candidate"; then
           doctor_warn "$(pkg_backend_label) still has $candidate, an older copy of the $tool that teeup now installs through mise. teeup no longer upgrades it. Remove it with: $(mise_tool_old_package_uninstall "$candidate")"
         fi
       done

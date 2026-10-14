@@ -665,6 +665,18 @@ EOF2
   cleanup_test_env
 }
 
+test_capabilities_do_not_guess_installed_mise_versions_without_mise() {
+  setup
+  tool_cap_fixture
+  hide_host_commands mise
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$_UNINSTALL_KEPT" "mise is not on PATH, so teeup could not check which pinned versions are installed" || return 1
+  assert_contains "$_UNINSTALL_KEPT" "List them with: mise ls" || return 1
+  assert_not_contains "$_UNINSTALL_KEPT" "ripgrep@15.2.0" || return 1
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall" || return 1
+  cleanup_test_env
+}
+
 test_capabilities_uninstall_mise_tools_when_asked() {
   setup
   tool_cap_fixture
@@ -1550,6 +1562,7 @@ run_test "package inventory uses only marked capabilities for an installed teeup
 run_test "capabilities name what the tools made for themselves" test_capabilities_name_what_the_tools_made_for_themselves
 run_test "capabilities uninstall packages when asked" test_capabilities_uninstall_packages_when_asked
 run_test "capabilities unlink mise tools and name the mise uninstall to run" test_capabilities_unlink_mise_tools_and_name_the_mise_uninstall_to_run
+run_test "capabilities do not guess installed mise versions without mise" test_capabilities_do_not_guess_installed_mise_versions_without_mise
 run_test "capabilities uninstall mise tools when asked" test_capabilities_uninstall_mise_tools_when_asked
 run_test "capabilities name the mise versions teeup leaves installed" test_capabilities_name_the_mise_versions_teeup_leaves_installed
 run_test "capabilities name both mise versions when both are installed" test_capabilities_name_both_mise_versions_when_both_are_installed

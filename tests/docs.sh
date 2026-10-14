@@ -13,8 +13,9 @@ source "$TEEUP_PATH/lib/dev.sh"
 REPO="$(cd "$(dirname "$0")/.." && pwd -P)"
 SKILL="$REPO/share/agents/skills/teeup/SKILL.md"
 
-# Every capability with no remove script and no packages, casks or mise tools: the set
-# `teeup remove` refuses outright, because there is nothing for it to undo.
+# Every capability with no remove script and no packages, casks or mise
+# tools: the set `teeup remove` refuses outright, because there is nothing
+# for it to undo.
 nothing_to_remove() {
   local dir name packages casks tools
   for dir in "$REPO"/capabilities/*/; do

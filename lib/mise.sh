@@ -403,23 +403,54 @@ _mise_tools_conf_version() {
   printf '%s\n' "$content" | _mise_toml_version "$spec"
 }
 
-# _mise_toml_version <spec> < <toml> -> the version a `"<spec>" = "<v>"` or
-# `<spec> = "<v>"` line asks for (the first one), or nothing. teeup writes
-# the quoted form; `mise use -g` writes a plain name bare. A table value
-# (`<spec> = { version = ... }`) is not read.
+# _mise_toml_version <spec> < <toml> -> the version a `"<spec>" = "<v>"`,
+# `<spec> = "<v>"`, or `<spec> = { version = "<v>" }` line asks for (the
+# first one), or nothing. teeup writes the quoted string form; `mise use -g`
+# writes a plain name bare.
 _mise_toml_version() {
-  awk -v s="$1" '{
+  awk -v s="$1" '
+    function version_of(rest,   count, fields, i, field) {
+      sub(/^[ \t]*=[ \t]*/, "", rest)
+      if (rest ~ /^"/) {
+        sub(/^"/, "", rest)
+        sub(/".*$/, "", rest)
+        return rest
+      }
+      if (rest !~ /^\{/) return ""
+      sub(/^\{[ \t]*/, "", rest)
+      count = split(rest, fields, ",")
+      for (i = 1; i <= count; i++) {
+        field = fields[i]
+        sub(/^[ \t]+/, "", field)
+        if (field !~ /^version[ \t]*=[ \t]*"/) continue
+        sub(/^version[ \t]*=[ \t]*"/, "", field)
+        sub(/".*$/, "", field)
+        return field
+      }
+      return ""
+    }
+    {
       line = $0
       sub(/^[ \t]+/, "", line)
       if (index(line, "\"" s "\"") == 1) rest = substr(line, length(s) + 3)
       else if (index(line, s) == 1) rest = substr(line, length(s) + 1)
       else next
-      if (rest !~ /^[ \t]*=[ \t]*"/) next
-      sub(/^[ \t]*=[ \t]*"/, "", rest)
-      sub(/".*$/, "", rest)
-      print rest
-      exit
+      version = version_of(rest)
+      if (version != "") {
+        print version
+        exit
+      }
     }'
+}
+
+# _mise_version_request_matches <request> <version> -> 0 when an exact,
+# latest, or dotted-prefix request asks for <version>.
+_mise_version_request_matches() {
+  [[ "$1" == "latest" ]] && return 0
+  case "$2" in
+    "$1"|"$1".*) return 0 ;;
+  esac
+  return 1
 }
 
 # mise_tool_requested_elsewhere <spec> <version> -> the path of a mise
@@ -427,10 +458,11 @@ _mise_toml_version() {
 # fails when none does. `mise ls --all-sources --json <spec>` lists every
 # version with each config file that asks for it ("sources", each with a
 # "path"); --global refuses --all-sources, and from / only the global stack
-# is in reach anyway. A mise without --all-sources gets the global config
-# file read the way mise_global_state reads it.
+# is in reach anyway. A mise without --all-sources gets config.toml and the
+# user's conf.d files read directly. MISE_GLOBAL_CONFIG_FILE replaces that
+# stack with its one file, as it does in mise.
 mise_tool_requested_elsewhere() {
-  local spec="$1" version="$2" teeup_file rows config_file v
+  local spec="$1" version="$2" teeup_file rows config_dir config_file v
   teeup_file="$(mise_tools_conf_file)"
   if rows="$(mise -C / ls --all-sources --json "$spec" 2>/dev/null)"; then
     # A record's "version" comes before its "sources"; "requested_version"
@@ -456,14 +488,25 @@ mise_tool_requested_elsewhere() {
       END { exit !found }'
     return $?
   fi
-  config_file="${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml}"
-  if [[ -f "$config_file" ]]; then
+  if [[ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]]; then
+    config_file="$MISE_GLOBAL_CONFIG_FILE"
+    [[ -f "$config_file" ]] || return 1
     v="$(_mise_toml_version "$spec" < "$config_file")"
-    if [[ -n "$v" && "$v" == "$version" ]]; then
+    if [[ -n "$v" ]] && _mise_version_request_matches "$v" "$version"; then
       printf '%s\n' "$config_file"
       return 0
     fi
+    return 1
   fi
+  config_dir="${MISE_CONFIG_DIR:-$(user_config_dir)/mise}"
+  for config_file in "$config_dir/config.toml" "$config_dir"/conf.d/*.toml; do
+    [[ -f "$config_file" && "$config_file" != "$teeup_file" ]] || continue
+    v="$(_mise_toml_version "$spec" < "$config_file")"
+    if [[ -n "$v" ]] && _mise_version_request_matches "$v" "$version"; then
+      printf '%s\n' "$config_file"
+      return 0
+    fi
+  done
   return 1
 }
 
@@ -657,11 +700,18 @@ _mise_tool_inner() {
 }
 
 # mise_tool_link_owned <path> -> 0 when <path> (~/.local/bin/<command>) is
-# teeup's: a symlink whose target is exactly teeup's own entry for
-# <command>, dangling or not. Anything else at the path is the user's.
+# teeup's: a symlink whose target names teeup's own entry for <command>.
+# Relative targets are resolved from the link's directory. Anything else at
+# the path is the user's.
 mise_tool_link_owned() {
-  local path="$1"
-  [[ -L "$path" && "$(readlink "$path")" == "$(_mise_tool_inner "${path##*/}")" ]]
+  local path="$1" target target_dir
+  [[ -L "$path" ]] || return 1
+  target="$(readlink "$path")"
+  if [[ "$target" != /* ]]; then
+    target_dir="$(cd "$(dirname "$path")" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd)" || return 1
+    target="$target_dir/${target##*/}"
+  fi
+  [[ "$target" == "$(_mise_tool_inner "${path##*/}")" ]]
 }
 
 # mise_tool_used <command> -> 0 when teeup uses the tool behind <command>:
