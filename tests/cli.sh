@@ -1444,7 +1444,7 @@ test_update_reports_a_pinned_tool_that_would_not_install() {
 # Preflight ruling: a checkout that is not git (or has no git on PATH) keeps
 # today's behaviour -- formulae upgrade on every run, because the "only when
 # teeup moves" rule has no commit to compare against.
-test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout() {
+test_update_upgrades_formulae_when_git_is_missing() {
   setup
   mock_update_world
   printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
@@ -1452,6 +1452,25 @@ test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout() {
   : > "$MOCK_LOG"
   local out
   out="$(TEEUP_TEST_MISSING=git "$TEEUP" update 2>&1)" || true
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "without git there is no commit to compare, so formulae upgrade every run" || return 1
+  assert_not_contains "$out" "teeup is still on the same commit" || return 1
+  cleanup_test_env
+}
+
+# The other branch of _update_checkout (#120): git is there, but teeup runs
+# from a copy with no .git (a downloaded archive).
+test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout() {
+  setup
+  mock_update_world
+  printf 'packages="ripgrep"\n' >> "$TEEUP_CAPS_DIR/alpha/capability"
+  "$TEEUP" install alpha >/dev/null
+  local copy="$TEST_HOME/teeup-copy" out
+  mkdir -p "$copy"
+  (cd "$TEEUP_PATH" && tar cf - --exclude=./.git --exclude=./.shellenv --exclude=./docs .) | tar xf - -C "$copy"
+  [[ ! -e "$copy/.git" ]] || { echo "fixture: the copy has a .git"; return 1; }
+  : > "$MOCK_LOG"
+  out="$("$copy/bin/teeup" update 2>&1)" || true
+  assert_contains "$out" "$copy is not a git checkout; nothing to pull." || return 1
   assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --formula ripgrep" "a non-git checkout has no commit to compare, so formulae upgrade every run" || return 1
   assert_not_contains "$out" "teeup is still on the same commit" || return 1
   cleanup_test_env
@@ -3203,6 +3222,7 @@ run_test "update clears the retry once the upgrade succeeds" test_update_clears_
 run_test "update dry run leaves the retry record alone" test_update_dry_run_leaves_the_retry_record_alone
 run_test "update relinks a lazy tool whose lock version changed" test_update_relinks_a_lazy_tool_whose_lock_version_changed
 run_test "update reports a pinned tool that would not install" test_update_reports_a_pinned_tool_that_would_not_install
+run_test "update upgrades formulae when git is missing" test_update_upgrades_formulae_when_git_is_missing
 run_test "update upgrades formulae when teeup is not a git checkout" test_update_upgrades_formulae_when_teeup_is_not_a_git_checkout
 run_test "update upgrades packages before running migrations" test_update_upgrades_packages_before_running_migrations
 run_test "update runs migrations before configuring" test_update_runs_migrations_before_configuring

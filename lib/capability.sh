@@ -303,7 +303,8 @@ cap_check() {
   seen_tools=" "
   for name in $(cap_list); do
     for p in $(cap_meta_get "$name" mise_tools); do
-      case "$p" in *?:?*) ;; *) continue ;; esac
+      # A malformed pair is reported once, above; it takes no part here.
+      [[ "$p" =~ ^[A-Za-z0-9][A-Za-z0-9_.+-]*:[A-Za-z0-9][A-Za-z0-9_.+-]*$ ]] || continue
       tool="${p%%:*}"
       cmd="${p#*:}"
       case "$seen" in
