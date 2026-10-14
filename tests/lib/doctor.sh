@@ -51,7 +51,10 @@ mock_brew_formulas() {
   mock_command_script brew <<'EOF2'
 case "$1" in
   --version) echo "Homebrew 4.3.9" ;;
-  list) grep -qx "${3:-}" "$HOME/brew-formulas" ;;
+  list)
+    if [ "${3:-}" = "-1" ]; then grep -v '^$' "$HOME/brew-formulas" || true
+    else grep -qx "${3:-}" "$HOME/brew-formulas"; fi
+    ;;
 esac
 EOF2
 }
@@ -63,6 +66,7 @@ mock_port_ports() {
 case "$1" in
   version) echo "Version: 2.9.3" ;;
   installed) grep -qx "${2:-}" "$HOME/ports" && echo "  ${2} @1.0_0 (active)" ;;
+  -q) grep -v '^$' "$HOME/ports" | sed 's/.*/  & @1.0_0 (active)/' || true ;;
 esac
 EOF2
   export TEEUP_PACKAGE_MANAGER=macports
@@ -893,6 +897,21 @@ test_mise_tools_check_notes_an_old_homebrew_copy() {
   cleanup_test_env
 }
 
+# One list of what Homebrew has, not one `brew list` per tool (#120).
+test_mise_tools_check_reads_the_package_list_once() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas ripgrep
+  mise_tools_apply widget >/dev/null 2>&1
+  : > "$MOCK_LOG"
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "Remove it with: brew uninstall ripgrep" || return 1
+  assert_not_contains "$out" "brew uninstall tldr" "tldr is not installed" || return 1
+  assert_equals "1" "$(grep -c '^brew list' "$MOCK_LOG")" "$(cat "$MOCK_LOG")" || return 1
+  cleanup_test_env
+}
+
 test_mise_tools_check_notes_an_old_macports_copy() {
   setup
   doctor_tools_fixture
@@ -1109,6 +1128,7 @@ run_test "mise_tools check passes an exec script tool" test_mise_tools_check_pas
 run_test "mise_tools check fails a link to another version" test_mise_tools_check_fails_a_link_to_another_version
 run_test "mise_tools check notes an old Homebrew copy" test_mise_tools_check_notes_an_old_homebrew_copy
 run_test "mise_tools check notes an old MacPorts copy" test_mise_tools_check_notes_an_old_macports_copy
+run_test "mise_tools check reads the package list once" test_mise_tools_check_reads_the_package_list_once
 run_test "mise_tools check leaves a foreign file alone" test_mise_tools_check_leaves_a_foreign_file_alone
 run_test "mise_tools check leaves a user symlink into mise alone" test_mise_tools_check_leaves_a_user_symlink_into_mise_alone
 run_test "mise_tools check cannot verify without mise" test_mise_tools_check_cannot_verify_without_mise

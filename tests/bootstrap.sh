@@ -936,6 +936,18 @@ test_wizard_offers_nvim_when_emacs_is_skipped_this_run() {
   cleanup_test_env
 }
 
+# Neovim installs through mise; with either skipped, nvim will not exist (#120).
+test_wizard_offers_vim_when_neovim_is_skipped() {
+  setup
+  local out skip
+  for skip in mise neovim; do
+    out="$(TEEUP_SKIP="$skip" "$BOOT" --dry-run --skip-daily 2>&1 <<<"$WIZARD_INPUT")"
+    assert_equals "vim" "$(first_choice "$out" "Default editor")" "TEEUP_SKIP=$skip" || return 1
+    assert_equals "vim" "$(first_choice "$out" "Terminal editor")" "TEEUP_SKIP=$skip" || return 1
+  done
+  cleanup_test_env
+}
+
 test_wizard_offers_nvim_without_the_daily_emacs() {
   setup
   local out
@@ -1078,6 +1090,7 @@ run_test "the wizard does not ask the flavor without the daily tier" test_wizard
 run_test "the wizard does not ask for a pinned flavor" test_wizard_does_not_ask_for_a_pinned_flavor
 run_test "the wizard offers emacsclient with the daily Emacs" test_wizard_offers_emacsclient_with_the_daily_emacs
 run_test "the wizard offers nvim without the daily Emacs" test_wizard_offers_nvim_without_the_daily_emacs
+run_test "wizard offers vim when Neovim is skipped" test_wizard_offers_vim_when_neovim_is_skipped
 run_test "the wizard offers the terminal Emacs on MacPorts" test_wizard_offers_the_terminal_emacs_on_macports
 run_test "the wizard offers nvim when Emacs is skipped this run" test_wizard_offers_nvim_when_emacs_is_skipped_this_run
 run_test "the wizard offers the recorded editor first on a rerun" test_wizard_offers_the_recorded_editor_first_on_a_rerun

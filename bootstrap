@@ -226,7 +226,7 @@ wizard() {
     fi
   fi
   # The editors default to Emacs when this run sets the daily Emacs up, and
-  # to nvim otherwise. The shell layer reads both answers (env, editor
+  # to nvim otherwise (vim when Neovim will not be installed). The shell layer reads both answers (env, editor
   # section); teeup config set changes them later.
   effective_flavor="${flavor:-${pinned_flavor:-$(answers_get TEEUP_EMACS_FLAVOR starter)}}"
   # MacPorts installs the terminal-only emacs port, which cannot open the
@@ -246,6 +246,11 @@ wizard() {
       default_editor="emacsclient -t"
     fi
     default_terminal="emacsclient -t"
+  elif cap_skipped mise || cap_skipped neovim; then
+    # Neovim comes through mise, so with either one skipped there is no nvim
+    # to open; vim ships with macOS.
+    default_editor="vim"
+    default_terminal="vim"
   else
     default_editor="nvim"
     default_terminal="nvim"
