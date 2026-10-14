@@ -571,6 +571,8 @@ _UNINSTALL_GONE=" "
 # line that says how to remove them later.
 TEEUP_COLLECTED_PKGS=""
 TEEUP_COLLECTED_CASKS=""
+TEEUP_COLLECTED_MISE=""
+TEEUP_MISE_UNCHECKED=false
 
 # uninstall_is_installed -> 0 only when teeup has capability records. The
 # directory alone is not enough: a partial or already-removed state directory
@@ -724,13 +726,15 @@ EOF
 # _uninstall_mise_specs <name> -> "<spec>@<version> ..." for each version
 # of <name>'s mise tools that teeup uses and leaves installed, for a summary
 # line and a `mise uninstall` that works as printed. The versions are the
-# ones mise_tool_remove uninstalls (mise_tool_versions), for the tools it
-# would uninstall (mise_tool_used), so a tool linked by the user is not
-# named, and a version another mise config also asks for is left out as
-# mise_tool_remove leaves it installed. Without mise every such version is listed, since nothing can say
-# otherwise. Asked before cap_remove, which deletes what this reads.
+# installed ones mise_tool_remove uninstalls (mise_tool_versions), for the
+# tools it would uninstall (mise_tool_used), so a tool linked by the user is
+# not named, and a version another mise config also asks for is left out as
+# mise_tool_remove leaves it installed. Without mise, returns nothing because
+# installed versions cannot be checked. Asked before cap_remove, which
+# deletes what this reads.
 _uninstall_mise_specs() {
   local name="$1" pair tool spec v out=""
+  have mise || return 0
   for pair in $(cap_meta_get "$name" mise_tools); do
     tool="${pair%%:*}"
     if ! mise_tool_used "${pair#*:}"; then
@@ -738,7 +742,7 @@ _uninstall_mise_specs() {
     fi
     spec="$(tools_lock_spec "$tool")" || continue
     for v in $(mise_tool_versions "$tool"); do
-      if have mise && ! mise -C / where "$spec@$v" >/dev/null 2>&1; then
+      if ! mise -C / where "$spec@$v" >/dev/null 2>&1; then
         continue
       fi
       if mise_tool_requested_elsewhere "$spec" "$v" >/dev/null; then
@@ -752,10 +756,18 @@ _uninstall_mise_specs() {
 
 # _uninstall_remove_one <name>
 _uninstall_remove_one() {
-  local name="$1" rc=0 with="$_UNINSTALL_PACKAGES" names login tool_specs tool_cmds pair link_dir="$HOME/.local/bin"
+  local name="$1" rc=0 with="$_UNINSTALL_PACKAGES" names login tool_specs tool_cmds pair link_dir="$HOME/.local/bin" mise_unchecked=false
   names="$(cap_meta_get "$name" packages) $(cap_meta_get "$name" casks)"
   names="$(printf '%s' "$names" | awk '{$1=$1; print}')"
   # Asked before cap_remove: with packages, mise no longer has them after.
+  if ! have mise; then
+    for pair in $(cap_meta_get "$name" mise_tools); do
+      if mise_tool_used "${pair#*:}"; then
+        mise_unchecked=true
+        break
+      fi
+    done
+  fi
   tool_specs="$(_uninstall_mise_specs "$name")"
   # The login shell must survive. zsh's packages include zsh itself; when
   # the login shell is the package manager's zsh, uninstalling it would
@@ -804,6 +816,9 @@ _uninstall_remove_one() {
           TEEUP_COLLECTED_MISE="${TEEUP_COLLECTED_MISE:+$TEEUP_COLLECTED_MISE }$tool_specs"
         fi
       fi
+      if [[ "$mise_unchecked" == "true" && "$with" != "true" ]]; then
+        TEEUP_MISE_UNCHECKED=true
+      fi
       ;;
     2)
       # Nothing teeup tracks for it beyond its own record, which goes with
@@ -833,6 +848,7 @@ uninstall_capabilities() {
   TEEUP_COLLECTED_PKGS=""
   TEEUP_COLLECTED_CASKS=""
   TEEUP_COLLECTED_MISE=""
+  TEEUP_MISE_UNCHECKED=false
   conf="$(mise_tools_conf_file)"
   if [[ -f "$conf" ]]; then conf_had=true; fi
   had=" $(uninstall_caps | tr '\n' ' ')"
@@ -875,7 +891,9 @@ uninstall_capabilities() {
   if [[ -n "$TEEUP_COLLECTED_CASKS" ]]; then
     uninstall_note kept "Apps: $TEEUP_COLLECTED_CASKS. Remove them later with: brew uninstall --cask $TEEUP_COLLECTED_CASKS"
   fi
-  if [[ -n "$TEEUP_COLLECTED_MISE" ]]; then
+  if [[ "$TEEUP_MISE_UNCHECKED" == "true" ]]; then
+    uninstall_note kept "mise tools: mise is not on PATH, so teeup could not check which pinned versions are installed. List them with: mise ls"
+  elif [[ -n "$TEEUP_COLLECTED_MISE" ]]; then
     uninstall_note kept "mise tools: $TEEUP_COLLECTED_MISE. Remove them later with: mise uninstall $TEEUP_COLLECTED_MISE"
   fi
   # cap_remove rewrote conf.d after each capability; the last one with mise

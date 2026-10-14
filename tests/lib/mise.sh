@@ -524,11 +524,10 @@ test_wrapper_dry_run_creates_no_lazy_log() {
   cleanup_test_env
 }
 
-# When the wrapper runs as the command of an outer run_logged, TEEUP_RUN_LOG_CAPTURED=true
-# is already inherited and that outer tee already captures this process's
-# stdout and stderr. The wrapper must not also append or tee to
-# TEEUP_LOG_FILE itself, matching the same rule Task 1 enforces for nested
-# run_logged calls -- otherwise the transcript is duplicated.
+# When the wrapper runs as the command of an outer run_logged,
+# TEEUP_RUN_LOG_CAPTURED=true is already inherited and that outer tee already
+# captures this process's stdout and stderr. The wrapper must not also append
+# or tee to TEEUP_LOG_FILE itself, or the transcript is duplicated.
 test_wrapper_skips_its_own_log_under_an_outer_run_logged() {
   setup
   mise_wrapper_write ai-claude "Claude Code" claude claude >/dev/null
@@ -1093,7 +1092,20 @@ test_tool_remove_deletes_only_a_teeup_link() {
   cleanup_test_env
 }
 
-# A symlink the user made into mise's own installs directory (from a
+test_tool_remove_accepts_a_relative_link_to_teeup_s_entry() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  rm -f "$TEST_HOME/.local/bin/rg"
+  ln -s ../state/teeup/tools/rg "$TEST_HOME/.local/bin/rg"
+  mise_tool_remove ripgrep rg false >/dev/null 2>&1 || return 1
+  [[ ! -e "$TEST_HOME/.local/bin/rg" && ! -L "$TEST_HOME/.local/bin/rg" ]] || { echo "the relative outer link must go"; return 1; }
+  [[ ! -e "$TEEUP_MISE_TOOLS_DIR" ]] || { echo "teeup's own entry and its empty directory must go"; return 1; }
+  cleanup_test_env
+}
+
+# A relative symlink the user made into mise's own installs directory (from a
 # `mise use -g`, say) is still the user's: only a link to teeup's own
 # directory is teeup's to replace or remove, and the version it runs is not
 # teeup's to uninstall.
@@ -1102,20 +1114,20 @@ test_tool_keeps_a_user_symlink_into_the_mise_installs_dir() {
   tools_fixture
   mock_mise_tools
   mise -C / install --quiet ripgrep@15.2.0 >/dev/null 2>&1
-  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" out rc=0
+  local mine="$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0/bin/rg" target="../share/mise/installs/ripgrep/15.2.0/bin/rg" out rc=0
   mkdir -p "$TEST_HOME/.local/bin"
   printf '#!/bin/sh\necho mine\n' > "$mine"
   chmod 755 "$mine"
-  ln -s "$mine" "$TEST_HOME/.local/bin/rg"
+  ln -s "$target" "$TEST_HOME/.local/bin/rg"
   out="$(mise_tool_install ripgrep rg 2>&1)" || rc=$?
   assert_success "$rc" || return 1
   assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup" || return 1
-  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "install keeps the user's link" || return 1
+  assert_equals "$target" "$(readlink "$TEST_HOME/.local/bin/rg")" "install keeps the user's link" || return 1
   : > "$MOCK_LOG"
   out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
   assert_contains "$out" "Keeping $TEST_HOME/.local/bin/rg: it was not written by teeup." || return 1
   assert_contains "$out" "Keeping ripgrep 15.2.0: teeup did not link rg, so it leaves the version installed." || return 1
-  assert_equals "$mine" "$(readlink "$TEST_HOME/.local/bin/rg")" "remove keeps the user's link" || return 1
+  assert_equals "$target" "$(readlink "$TEST_HOME/.local/bin/rg")" "remove keeps the user's link" || return 1
   assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the version stays installed" || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
   cleanup_test_env
@@ -1451,12 +1463,9 @@ test_conf_says_nothing_about_mise_global_config_file_with_nothing_to_pin() {
   cleanup_test_env
 }
 
-# Task 2 (PR #119 Codex round 3): a lock version that bumps but whose
-# download fails keeps the OLD pin in conf.d (the carry-forward above). If
-# `teeup remove --packages` then uninstalled the lock's new version, it would
-# uninstall a version that was never installed and leave the one actually
-# linked on disk. It must uninstall the version teeup's own conf.d still
-# names.
+# A lock version that bumps but whose download fails keeps the old pin in
+# conf.d. Removing packages must uninstall that retained version, not the
+# lock's new version, which was never installed.
 test_tool_remove_with_packages_uninstalls_the_retained_pin() {
   setup
   tools_fixture
@@ -1518,9 +1527,11 @@ test_tool_remove_with_packages_uninstalls_a_version_only_teeup_asks_for() {
   state_done mark cap-search
   mise_tools_sync >/dev/null 2>&1 || return 1
   assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "fixture: teeup's conf.d asks for it" || return 1
-  printf '[tools]\nripgrep = "14.1.0"\n' > "$TEST_HOME/.config/mise/config.toml"
+  printf '[tools]\nripgrep = "1"\n' > "$TEST_HOME/.config/mise/config.toml"
+  export MOCK_MISE_NO_ALL_SOURCES=1
   local out
   out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  unset MOCK_MISE_NO_ALL_SOURCES
   assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" || return 1
   assert_not_contains "$out" "Keeping ripgrep" || return 1
   cleanup_test_env
@@ -1540,6 +1551,40 @@ test_tool_remove_with_packages_reads_the_user_s_config_without_all_sources() {
   assert_contains "$out" "Keeping neovim 0.12.6: $TEST_HOME/elsewhere/mise.toml also asks for it." || return 1
   assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
   unset MISE_GLOBAL_CONFIG_FILE MOCK_MISE_NO_ALL_SOURCES
+  cleanup_test_env
+}
+
+test_tool_remove_with_packages_reads_conf_d_tables_without_all_sources() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  local user_conf="$TEST_HOME/.config/mise/conf.d/work.toml" out
+  mkdir -p "${user_conf%/*}"
+  printf '[tools]\nripgrep = { version = "15" }\n' > "$user_conf"
+  export MOCK_MISE_NO_ALL_SOURCES=1
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  unset MOCK_MISE_NO_ALL_SOURCES
+  assert_contains "$out" "Keeping ripgrep 15.2.0: $user_conf also asks for it." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the matching dotted-prefix request keeps the version" || return 1
+  cleanup_test_env
+}
+
+test_tool_remove_with_packages_honours_latest_without_all_sources() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  local config="$TEST_HOME/.config/mise/config.toml" out
+  mkdir -p "${config%/*}"
+  printf '[tools]\nripgrep = "latest"\n' > "$config"
+  export MOCK_MISE_NO_ALL_SOURCES=1
+  out="$(mise_tool_remove ripgrep rg true 2>&1)" || { echo "remove failed: $out"; return 1; }
+  unset MOCK_MISE_NO_ALL_SOURCES
+  assert_contains "$out" "Keeping ripgrep 15.2.0: $config also asks for it." || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "latest keeps the installed version" || return 1
   cleanup_test_env
 }
 
@@ -1639,6 +1684,7 @@ run_test "tool install dry run installs and links nothing" test_tool_install_dry
 run_test "tool install reports a failed install" test_tool_install_reports_a_failed_install
 run_test "tool install writes a script for a tool that needs one, under an odd home" test_tool_install_writes_a_script_for_a_tool_that_needs_one_under_an_odd_home
 run_test "tool remove deletes only a teeup link" test_tool_remove_deletes_only_a_teeup_link
+run_test "tool remove accepts a relative link to teeup's entry" test_tool_remove_accepts_a_relative_link_to_teeup_s_entry
 run_test "tool remove with packages uninstalls the pinned version" test_tool_remove_with_packages_uninstalls_the_pinned_version
 run_test "apply installs every pair and writes the conf" test_apply_installs_every_pair_and_writes_the_conf
 run_test "apply finds a mise the package manager just installed" test_apply_finds_a_mise_the_package_manager_just_installed
@@ -1659,6 +1705,8 @@ run_test "tool remove with packages uninstalls when the teeup link is gone" test
 run_test "tool remove with packages keeps a version the user's config asks for" test_tool_remove_with_packages_keeps_a_version_the_user_s_config_asks_for
 run_test "tool remove with packages uninstalls a version only teeup asks for" test_tool_remove_with_packages_uninstalls_a_version_only_teeup_asks_for
 run_test "tool remove with packages reads the user's config without --all-sources" test_tool_remove_with_packages_reads_the_user_s_config_without_all_sources
+run_test "tool remove with packages reads conf.d tables without --all-sources" test_tool_remove_with_packages_reads_conf_d_tables_without_all_sources
+run_test "tool remove with packages honours latest without --all-sources" test_tool_remove_with_packages_honours_latest_without_all_sources
 run_test "local_bin_on_path moves a later entry to the front" test_local_bin_on_path_moves_a_later_entry_to_the_front
 run_test "tool keeps a user symlink into the mise installs dir" test_tool_keeps_a_user_symlink_into_the_mise_installs_dir
 run_test "tool a user link made after teeup's is gone is the user's" test_tool_a_user_link_made_after_teeup_s_is_gone_is_the_user_s
