@@ -431,7 +431,13 @@ doctor_metadata_check() {
     if app_installed "$app"; then
       doctor_ok "$app.app is installed."
     else
-      _doctor_report_failure "$cap" "$app.app is not installed." "teeup install $cap"
+      local cask
+      cask="$(cap_meta_get "$cap" casks)"
+      if [[ -n "$cask" ]] && cask_app_missing "$cap" "$cask" >/dev/null && cask_installed "$cask" >/dev/null 2>&1; then
+        _doctor_report_failure "$cap" "$app.app is missing, but Homebrew still lists the $cask cask. macOS may have removed the app (Gatekeeper's Move to Trash, or App Management)." "teeup install $cap"
+      else
+        _doctor_report_failure "$cap" "$app.app is not installed." "teeup install $cap"
+      fi
     fi
   done <<EOF_APPS
 $(cap_apps "$cap")

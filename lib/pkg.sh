@@ -383,9 +383,32 @@ EOF_APPS
   [[ "$found" == "true" ]]
 }
 
+# cask_app_missing <capability> <cask> -> the first app the capability
+# declares that is missing, when <cask> is the capability's only cask; prints
+# nothing and fails otherwise. With one cask, every app the capability
+# declares is that cask's, so a missing one means the cask's app is gone
+# while Homebrew still lists the cask. macOS does that: Gatekeeper's "Move to
+# Trash", or App Management undoing a terminal's change to /Applications
+# (a work VM, 2026-10-14).
+cask_app_missing() {
+  local cap="$1" cask="$2" app
+  [[ -n "$cap" && "$(cap_meta_get "$cap" casks)" == "$cask" ]] || return 1
+  while IFS= read -r app; do
+    [[ -n "$app" ]] || continue
+    if ! app_installed "$app"; then
+      printf '%s\n' "$app"
+      return 0
+    fi
+  done <<EOF_APPS
+$(cap_apps "$cap")
+EOF_APPS
+  return 1
+}
+
 # cask_install <cask>
 # On MacPorts machines GUI apps are skipped with a note rather than failing,
-# so a capability that is mostly CLI still installs its CLI half.
+# so a capability that is mostly CLI still installs its CLI half. A cask
+# Homebrew lists whose app is gone is reinstalled (cask_app_missing).
 cask_install() {
   _pkg_backend_resolve
   local cask="$1"
@@ -394,6 +417,17 @@ cask_install() {
     return 0
   fi
   if cask_installed "$cask"; then
+    local missing
+    if missing="$(cask_app_missing "${TEEUP_CAP:-}" "$cask")"; then
+      warn "Homebrew lists the $cask cask, but $missing.app is missing. macOS may have removed it (Gatekeeper's Move to Trash, or App Management). Reinstalling the cask."
+      run_cmd brew reinstall --cask "$cask" || return 1
+      if [[ "$DRY_RUN" != "true" ]] && ! app_installed "$missing"; then
+        warn "$missing.app is still missing after the reinstall. If macOS said it could not verify the app, click Done, not Move to Trash. If it said your terminal was prevented from modifying apps, allow the terminal in System Settings > Privacy & Security > App Management, then run: teeup install ${TEEUP_CAP}"
+        return 1
+      fi
+      ok_unless_dry "Reinstalled $cask (cask)"
+      return 0
+    fi
     log "Already installed: $cask (cask)"
     return 0
   fi

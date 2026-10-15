@@ -183,6 +183,19 @@ EOF2
   cleanup_test_env
 }
 
+test_metadata_check_names_macos_when_a_listed_cask_lost_its_app() {
+  setup
+  make_cap widget "" "widget-app" "Widget"
+  mock_command_script brew <<'EOF2'
+case "$1" in --version) echo "Homebrew 4.0.0" ;; list) exit 0 ;; *) exit 1 ;; esac
+EOF2
+  local out
+  out="$(doctor_metadata_check widget 2>&1)"
+  assert_contains "$out" "Widget.app is missing, but Homebrew still lists the widget-app cask." || return 1
+  assert_contains "$(cat "$REPORT")" "teeup install widget" || return 1
+  cleanup_test_env
+}
+
 # An app that does NOT come from a cask has to be checked on every backend:
 # nothing else would ever report it missing.
 test_metadata_check_requires_an_app_with_no_cask_behind_it() {
@@ -1135,4 +1148,5 @@ run_test "mise_tools check cannot verify without mise" test_mise_tools_check_can
 run_test "mise_tools check only warns when mise is skipped" test_mise_tools_check_only_warns_when_mise_is_skipped
 run_test "mise_tools check warns when another copy comes first" test_mise_tools_check_warns_when_another_copy_comes_first
 run_test "mise_tools check warns once about MISE_GLOBAL_CONFIG_FILE" test_mise_tools_check_warns_once_about_mise_global_config_file
+run_test "metadata check names macos when a listed cask lost its app" test_metadata_check_names_macos_when_a_listed_cask_lost_its_app
 print_summary

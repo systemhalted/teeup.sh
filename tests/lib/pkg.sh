@@ -593,6 +593,58 @@ EOF2
   cleanup_test_env
 }
 
+# 2026-10-14, a work VM: macOS removed Zed.app, Homebrew still listed the
+# cask, and `teeup install zed` only said "Already installed".
+test_cask_install_reinstalls_a_listed_cask_whose_app_is_gone() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1" in
+  list) exit 0 ;;
+  reinstall) mkdir -p "$TEEUP_APPS_DIR/WezTerm.app" ;;
+esac
+EOF2
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR"
+  local out rc=0
+  out="$(TEEUP_CAP=wezterm cask_install wezterm 2>&1)" || rc=$?
+  assert_equals "0" "$rc" "$out" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew reinstall --cask wezterm" || return 1
+  assert_contains "$out" "Homebrew lists the wezterm cask, but WezTerm.app is missing." || return 1
+  cleanup_test_env
+}
+
+test_cask_install_says_how_when_the_reinstalled_app_stays_gone() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1" in list) exit 0 ;; esac
+EOF2
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR"
+  local out rc=0
+  out="$(TEEUP_CAP=wezterm cask_install wezterm 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "WezTerm.app is still missing after the reinstall." || return 1
+  assert_contains "$out" "App Management" || return 1
+  cleanup_test_env
+}
+
+test_cask_install_leaves_a_listed_cask_with_its_app() {
+  setup
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1" in list) exit 0 ;; esac
+EOF2
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app"
+  local out
+  out="$(TEEUP_CAP=wezterm cask_install wezterm 2>&1)"
+  assert_contains "$out" "Already installed: wezterm (cask)" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "reinstall" || return 1
+  cleanup_test_env
+}
+
 # Outside a capability there are no apps to go by, so the cask installs.
 test_cask_install_outside_a_capability_still_installs() {
   setup
@@ -648,4 +700,7 @@ run_test "update and upgrade dry run change nothing" test_update_and_upgrade_dry
 run_test "cask install uses an app installed another way" test_cask_install_uses_an_app_installed_another_way
 run_test "cask install installs when the app is missing" test_cask_install_installs_when_the_app_is_missing
 run_test "cask install outside a capability still installs" test_cask_install_outside_a_capability_still_installs
+run_test "cask install reinstalls a listed cask whose app is gone" test_cask_install_reinstalls_a_listed_cask_whose_app_is_gone
+run_test "cask install says how when the reinstalled app stays gone" test_cask_install_says_how_when_the_reinstalled_app_stays_gone
+run_test "cask install leaves a listed cask with its app" test_cask_install_leaves_a_listed_cask_with_its_app
 print_summary

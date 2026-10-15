@@ -22,6 +22,9 @@ test_install_dry_run_gets_the_cask() {
 
 test_install_skips_an_installed_cask() {
   setup
+  # Listed by Homebrew and its app in place: nothing to do.
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/Obsidian.app"
   mock_command_script brew <<'EOF2'
 case "$1 ${2:-} ${3:-}" in "list --cask obsidian") exit 0 ;; list*) exit 1 ;; *) exit 0 ;; esac
 EOF2
