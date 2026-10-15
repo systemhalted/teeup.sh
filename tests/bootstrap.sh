@@ -353,7 +353,23 @@ mock_a_real_machine() {
 case "$1 ${2:-}" in
   "list --formula") [ -f "$BREWDB/f-$3" ] ;;
   "list --cask") [ -f "$BREWDB/c-${3##*/}" ] ;;
-  "install --cask") shift 2; for c in "$@"; do touch "$BREWDB/c-${c##*/}"; done ;;
+  "install --cask")
+    # A cask puts its app in place, as a real one does: teeup reinstalls a
+    # listed cask whose app is gone.
+    shift 2
+    for c in "$@"; do
+      touch "$BREWDB/c-${c##*/}"
+      for f in "$TEEUP_PATH"/capabilities/*/capability; do
+        grep -qx "casks=\"$c\"" "$f" || continue
+        rest="$(sed -n 's/^apps="\(.*\)"$/\1/p' "$f");"
+        while [ -n "$rest" ]; do
+          app="${rest%%;*}"; rest="${rest#*;}"
+          app="$(printf '%s' "$app" | sed 's/^ *//; s/ *$//')"
+          [ -n "$app" ] && mkdir -p "$HOME/Applications/$app.app"
+        done
+      done
+    done
+    ;;
   "install "*) shift; for p in "$@"; do touch "$BREWDB/f-$p"; done ;;
   *) : ;;
 esac
