@@ -561,6 +561,71 @@ EOF2
   cleanup_test_env
 }
 
+# 2026-10-15, a work Mac: Raycast.app was gone, Homebrew still listed the
+# cask, and one `brew upgrade --cask` for every cask failed on it.
+raycast_like_fixture() {
+  mock_command_script brew <<'EOF2'
+echo "brew $*" >> "$MOCK_LOG"
+case "$1 $2" in
+  "list --formula") exit 1 ;;
+  "list --cask") exit 0 ;;
+  "upgrade --cask") case " $* " in *" gone "*) exit 1 ;; esac; exit 0 ;;
+  "outdated --cask") case " $* " in *" gone "*) echo gone ;; esac; exit 0 ;;
+  "uninstall --cask") [ "$3" = "--force" ] && exit 0; exit 1 ;;
+esac
+exit 0
+EOF2
+  export TEEUP_CAPS_DIR="$TEST_HOME/caps" TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_CAPS_DIR/keep" "$TEEUP_CAPS_DIR/lost" "$TEEUP_APPS_DIR/Keep.app"
+  printf 'casks="keep"\napps="Keep"\n' > "$TEEUP_CAPS_DIR/keep/capability"
+  printf 'casks="gone"\napps="Gone"\n' > "$TEEUP_CAPS_DIR/lost/capability"
+  state_done mark cap-keep
+  state_done mark cap-lost
+  export TEEUP_PACKAGE_MANAGER=homebrew
+  unset TEEUP_PKG_BACKEND
+}
+
+test_upgrade_all_leaves_out_a_cask_whose_app_is_gone() {
+  setup
+  raycast_like_fixture
+  local out rc=0
+  out="$(pkg_upgrade_all 2>&1)" || rc=$?
+  assert_equals "0" "$rc" "$out" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew upgrade --cask keep" || return 1
+  assert_not_contains "$(grep 'upgrade --cask' "$MOCK_LOG")" "gone" "the cask whose app is gone stays out of the batch" || return 1
+  assert_contains "$out" "Gone.app is missing, so the gone cask is not upgraded." || return 1
+  assert_contains "$out" "teeup remove --packages lost" || return 1
+  cleanup_test_env
+}
+
+test_upgrade_all_names_only_the_casks_that_failed() {
+  setup
+  raycast_like_fixture
+  mkdir -p "$TEEUP_APPS_DIR/Gone.app"   # here, so it is in the batch, but brew fails on it
+  local out rc=0
+  out="$(pkg_upgrade_all 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Could not upgrade casks: gone" || return 1
+  assert_not_contains "$out" "Could not upgrade casks: keep" || return 1
+  cleanup_test_env
+}
+
+test_cask_uninstall_forces_a_cask_whose_app_is_gone() {
+  setup
+  raycast_like_fixture
+  local out rc=0
+  out="$(cask_uninstall gone lost 2>&1)" || rc=$?
+  assert_equals "0" "$rc" "$out" || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "brew uninstall --cask --force gone" || return 1
+  assert_contains "$out" "Gone.app is already gone" || return 1
+  : > "$MOCK_LOG"
+  rc=0
+  out="$(cask_uninstall keep keep 2>&1)" || rc=$?
+  assert_failure "$rc" "an app that is still here gets no --force" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "--force" || return 1
+  cleanup_test_env
+}
+
 echo "lib/pkg.sh"
 # 2026-09-29, a work Mac: `brew install --cask emacs-app` failed with "It
 # seems there is already an App at '/Applications/Emacs.app'". An app that is
@@ -703,4 +768,7 @@ run_test "cask install outside a capability still installs" test_cask_install_ou
 run_test "cask install reinstalls a listed cask whose app is gone" test_cask_install_reinstalls_a_listed_cask_whose_app_is_gone
 run_test "cask install says how when the reinstalled app stays gone" test_cask_install_says_how_when_the_reinstalled_app_stays_gone
 run_test "cask install leaves a listed cask with its app" test_cask_install_leaves_a_listed_cask_with_its_app
+run_test "upgrade all leaves out a cask whose app is gone" test_upgrade_all_leaves_out_a_cask_whose_app_is_gone
+run_test "upgrade all names only the casks that failed" test_upgrade_all_names_only_the_casks_that_failed
+run_test "cask uninstall forces a cask whose app is gone" test_cask_uninstall_forces_a_cask_whose_app_is_gone
 print_summary
