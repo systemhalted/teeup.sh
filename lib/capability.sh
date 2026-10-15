@@ -426,7 +426,7 @@ cap_remove() {
   fi
   if [[ "$with_packages" == "true" ]]; then
     for cask in $casks_meta; do
-      cask_uninstall "$cask" || failed=1
+      cask_uninstall "$cask" "$target" || failed=1
     done
     for pkg in $pkgs; do
       pkg_uninstall "$pkg" || failed=1

@@ -485,7 +485,7 @@ pkg_collect_installed_items() {
 # A failure warns and names the package manager; update carries on.
 pkg_upgrade_all() {
   _pkg_backend_resolve
-  local rc=0 name
+  local rc=0 name cask missing skipped="" upgrade_casks="" outdated
   TEEUP_COLLECTED_PKGS=""
   TEEUP_COLLECTED_CASKS=""
 
@@ -499,6 +499,19 @@ pkg_upgrade_all() {
     else
       pkg_collect_installed_items "$name"
     fi
+    # A listed cask whose app is gone fails `brew upgrade --cask` ("the App
+    # source ... is not there"), and with it the whole batch (a work Mac,
+    # 2026-10-15, after Raycast.app was removed). It stays out of the batch.
+    for cask in $(cap_meta_get "$name" casks); do
+      case " $TEEUP_COLLECTED_CASKS " in *" $cask "*) ;; *) continue ;; esac
+      if missing="$(cask_app_missing "$name" "$cask")"; then
+        skipped="$skipped $cask"
+        warn "$missing.app is missing, so the $cask cask is not upgraded. To put it back, run: teeup install $name. To remove it, run: teeup remove --packages $name"
+      fi
+    done
+  done
+  for cask in $TEEUP_COLLECTED_CASKS; do
+    case " $skipped " in *" $cask "*) ;; *) upgrade_casks="${upgrade_casks:+$upgrade_casks }$cask" ;; esac
   done
 
   case "$TEEUP_PKG_BACKEND" in
@@ -507,10 +520,22 @@ pkg_upgrade_all() {
         # shellcheck disable=SC2086
         run_cmd brew upgrade --formula $TEEUP_COLLECTED_PKGS || { warn "Could not upgrade formulas: $TEEUP_COLLECTED_PKGS"; rc=1; }
       fi
-      if [[ -n "$TEEUP_COLLECTED_CASKS" ]]; then
+      if [[ -n "$upgrade_casks" ]]; then
         # shellcheck disable=SC2086
-        run_cmd brew upgrade --cask $TEEUP_COLLECTED_CASKS || { warn "Could not upgrade casks: $TEEUP_COLLECTED_CASKS"; rc=1; }
+        if ! run_cmd brew upgrade --cask $upgrade_casks; then
+          # One failed cask fails the call while brew upgrades the rest, so
+          # name only what is still out of date.
+          # shellcheck disable=SC2086
+          if outdated="$(brew outdated --cask --quiet $upgrade_casks 2>/dev/null)"; then
+            outdated="$(printf '%s' "$outdated" | awk '{ printf "%s%s", sep, $1; sep = " " }')"
+            warn "Could not upgrade casks: ${outdated:-none is still out of date; see the output above}"
+          else
+            warn "Could not upgrade every cask of: $upgrade_casks. See the output above."
+          fi
+          rc=1
+        fi
       fi
+
       ok_unless_dry "Other Homebrew packages are left to you (run brew upgrade)."
       ;;
     macports)
@@ -578,7 +603,8 @@ pkg_uninstall() {
   return 0
 }
 
-# cask_uninstall <cask>
+# cask_uninstall <cask> [<capability>]: the capability lets a failed uninstall
+# of a cask whose app is already gone retry with --force (cask_app_missing).
 cask_uninstall() {
   local cask="$1"
   if ! casks_supported; then
@@ -589,6 +615,19 @@ cask_uninstall() {
     log "Not installed here, so nothing to uninstall: $cask (cask)"
     return 0
   fi
-  run_cmd brew uninstall --cask "$cask" || { warn "Could not uninstall the $cask cask."; return 1; }
+  if ! run_cmd brew uninstall --cask "$cask"; then
+    # With the app already gone, brew can fail on it and keep the cask
+    # listed; then teeup kept the capability as installed and upgraded the
+    # cask on every update (Raycast, a work Mac, 2026-10-15). --force drops
+    # the record of an app that is not there to remove.
+    local missing
+    if missing="$(cask_app_missing "${2:-}" "$cask")"; then
+      log "$missing.app is already gone, so teeup removes Homebrew's record of the $cask cask with --force."
+      run_cmd brew uninstall --cask --force "$cask" || { warn "Could not uninstall the $cask cask."; return 1; }
+    else
+      warn "Could not uninstall the $cask cask."
+      return 1
+    fi
+  fi
   ok_unless_dry "Uninstalled $cask (cask)"
 }
