@@ -12,9 +12,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-14 (Apple silicon, the oldest macOS tested), macos-26 (Apple
-        # silicon, current), macos-15-intel (Intel), ubuntu-latest (bash 5).
-        os: [macos-14, macos-26, macos-15-intel, ubuntu-latest]
+        # macos-15 (Apple silicon, the oldest macOS GitHub still runs: macos-14
+        # is retired on 2026-11-02), macos-26 (Apple silicon, current),
+        # macos-15-intel (Intel), ubuntu-latest (bash 5).
+        os: [macos-15, macos-26, macos-15-intel, ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v5
