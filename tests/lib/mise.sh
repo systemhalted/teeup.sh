@@ -1438,15 +1438,22 @@ test_conf_adopt_leaves_a_replaced_user_file_alone() {
   cleanup_test_env
 }
 
+# The first run after upgrading teeup has teeup.toml but no record of what
+# teeup wrote. Nothing can be told apart, so every line counts as teeup's:
+# nothing moves to config.toml, every tool stays pinned, and the record is
+# written for next time (Codex on #131: counting them all as the user's
+# dropped every pin from the file).
 test_conf_adopt_does_nothing_without_a_last_written_record() {
   setup
   tools_fixture
   mock_mise_tools
   mkdir -p "${CONF%/*}"
-  printf '%s\n[tools]\n"ripgrep" = "14.1.1"\n' "$TEEUP_MISE_CONF_MARKER" > "$CONF"
+  printf '%s\n[tools]\n"ripgrep" = "15.2.0"\n"tealdeer" = "1.9.0"\n' "$TEEUP_MISE_CONF_MARKER" > "$CONF"
   mise_tools_apply search >/dev/null 2>&1 || return 1
   [[ ! -e "$TEST_HOME/.config/mise/config.toml" ]] || { echo "there is no record, so nothing moves"; return 1; }
-  assert_not_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "the unknown existing choice is not overwritten" || return 1
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "ripgrep stays pinned" || return 1
+  assert_contains "$(cat "$CONF")" '"tealdeer" = "1.9.0"' "tealdeer stays pinned" || return 1
+  assert_file_exists "$(mise_tools_conf_record_file)" "the first write leaves a record" || return 1
   cleanup_test_env
 }
 

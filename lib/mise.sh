@@ -433,7 +433,7 @@ _mise_version_request_matches() {
 mise_tool_requested_elsewhere() {
   local spec="$1" version="$2" teeup_file rows config_dir config_file v
   teeup_file="$(mise_tools_conf_file)"
-  if mise_tool_conf_user_edit "$spec" "$version"; then
+  if mise_tool_conf_user_edit "$spec" "$version" keep; then
     return 0
   fi
   if rows="$(mise -C / ls --all-sources --json "$spec" 2>/dev/null)"; then
@@ -503,8 +503,13 @@ mise_tool_requested_elsewhere() {
   return 1
 }
 
-# mise_tool_conf_user_edit <spec> <version> -> teeup's conf.d path when its
-# request differs from the last body teeup wrote and asks for <version>.
+# mise_tool_conf_user_edit <spec> <version> [keep] -> teeup's conf.d path when
+# its request differs from the last body teeup wrote and asks for <version>.
+# Without a record (the first run after upgrading to a teeup that keeps one)
+# nothing can be told apart: with "keep" the request counts as the user's,
+# so removal leaves the version installed; without it the request counts as
+# teeup's own, so the first write keeps pinning every tool as before (Codex
+# on #131: treating them all as the user's dropped every pin from the file).
 # Adoption normally moves this request to config.toml. Remove can run first,
 # or adoption can fail, so it uses the record directly to keep the user's
 # installed version safe.
@@ -528,6 +533,7 @@ mise_tool_conf_user_edit() {
   # Before this version of teeup has written a record, it cannot prove that an
   # existing managed-file request is its own. Preserve it as the user's choice.
   if [[ ! -f "$record" ]]; then
+    [[ "${3:-}" == "keep" ]] || return 1
     printf '%s\n' "$file"
     return 0
   fi
