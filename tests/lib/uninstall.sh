@@ -1446,6 +1446,17 @@ test_teardown_removes_a_leftover_mise_tools_entry_with_the_state_dir() {
   cleanup_test_env
 }
 
+# lib/mise.sh records the exact conf.d/teeup.toml body at the state root.
+# CONTRIBUTING item 34 requires teardown to recognize and remove that file.
+test_teardown_removes_the_last_mise_tools_configuration_record() {
+  setup
+  teeup_runtime_home
+  printf '[tools]\nripgrep = "15.2.0"\n' > "$TEEUP_STATE_DIR/mise-teeup.toml.last"
+  uninstall_teardown >/dev/null 2>&1
+  [[ ! -e "$TEEUP_STATE_DIR" ]] || { echo "the state dir must go with the last mise configuration record"; return 1; }
+  cleanup_test_env
+}
+
 # Task 6 carry (Task 5's re-review observation): a ZDOTDIR changed since
 # install leaves the old zsh home files still recorded in stock, at a
 # directory uninstall_shell no longer looks at by default. They must still
@@ -1571,6 +1582,7 @@ run_test "capabilities leave a user's mise tool out of the summary" test_capabil
 run_test "capabilities leave a user link over teeup's entry out of the summary" test_capabilities_leave_a_user_link_over_teeup_s_entry_out_of_the_summary
 run_test "dry run teardown does not call the mise tools directory a leftover" test_dry_run_teardown_does_not_call_the_mise_tools_directory_a_leftover
 run_test "teardown removes a leftover mise tools entry with the state dir" test_teardown_removes_a_leftover_mise_tools_entry_with_the_state_dir
+run_test "teardown removes the last mise tools configuration record" test_teardown_removes_the_last_mise_tools_configuration_record
 run_test "capabilities decide each of the seven remove refuses" test_capabilities_decide_each_of_the_seven_remove_refuses
 run_test "capabilities refuse what a failed dependent still needs" test_capabilities_refuse_what_a_failed_dependent_still_needs
 run_test "capabilities keep the zsh the login shell runs" test_capabilities_keep_the_zsh_the_login_shell_runs

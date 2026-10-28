@@ -105,6 +105,12 @@ tools_fixture() {
   CONF="$TEST_HOME/.config/mise/conf.d/teeup.toml"
 }
 
+user_mise_choice() {
+  local spec="$1" version="$2" file="${3:-$TEST_HOME/.config/mise/config.toml}"
+  mkdir -p "${file%/*}"
+  printf '[tools]\n"%s" = "%s"\n' "$spec" "$version" > "$file"
+}
+
 # installed_fixture: tells mock_mise that every version the fixture lock
 # pins is installed, so mise_tools_conf_write pins it.
 installed_fixture() {
@@ -918,6 +924,26 @@ test_tool_install_installs_the_pinned_version_then_links_the_which_result() {
   cleanup_test_env
 }
 
+test_tool_install_links_the_user_s_global_mise_choice_and_keeps_the_release() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  export MISE_CONFIG_DIR="$TEST_HOME/mise c\\fg \"q\""
+  user_mise_choice ripgrep 14.1.1 "$MISE_CONFIG_DIR/config.toml"
+  local inner="$TEEUP_MISE_TOOLS_DIR/rg" out
+  out="$(mise_tool_install ripgrep rg 2>&1)" || { echo "install failed: $out"; return 1; }
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/15.2.0" "the release stays ready" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/14.1.1" "the user's version is installed" || return 1
+  assert_equals "$TEST_HOME/.local/share/mise/installs/ripgrep/14.1.1/bin/rg" "$(readlink "$inner")" "the link follows config.toml" || return 1
+  assert_equals "rg 14.1.1" "$("$TEST_HOME/.local/bin/rg" --version)" || return 1
+  assert_contains "$out" "rg follows your mise config ($MISE_CONFIG_DIR/config.toml): ripgrep 14.1.1, not the release's 15.2.0." || return 1
+  rm -f "$MISE_CONFIG_DIR/config.toml"
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  assert_equals "rg 15.2.0" "$("$TEST_HOME/.local/bin/rg" --version)" "configure returns the link to the installed release" || return 1
+  unset MISE_CONFIG_DIR
+  cleanup_test_env
+}
+
 test_tool_install_follows_a_command_and_a_backend_that_differ_from_the_tool() {
   setup
   tools_fixture
@@ -1269,6 +1295,153 @@ test_apply_installs_every_pair_and_writes_the_conf() {
   cleanup_test_env
 }
 
+test_conf_omits_a_tool_chosen_in_the_user_s_mise_config() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  user_mise_choice ripgrep 14.1.1
+  mise_tools_apply search >/dev/null 2>&1 || return 1
+  assert_not_contains "$(cat "$CONF")" "ripgrep" "the user's choice does not stay in teeup's file" || return 1
+  assert_contains "$(cat "$CONF")" '"tealdeer" = "1.9.0"' "teeup still pins the other tool" || return 1
+  cmp -s "$CONF" "$TEEUP_STATE_DIR/mise-teeup.toml.last" || { echo "the record is not the exact file teeup wrote"; return 1; }
+  cleanup_test_env
+}
+
+test_conf_recognizes_its_own_json_escaped_source_path() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  export MISE_CONFIG_DIR="$TEST_HOME/mise c\\fg \"q\""
+  CONF="$MISE_CONFIG_DIR/conf.d/teeup.toml"
+  state_done mark cap-search
+  mise_tools_sync >/dev/null 2>&1 || return 1
+  mise_tools_conf_write >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "15.2.0"' "teeup's escaped source path is not a user choice" || return 1
+  assert_contains "$(cat "$CONF")" '"tealdeer" = "1.9.0"' || return 1
+  unset MISE_CONFIG_DIR
+  cleanup_test_env
+}
+
+test_apply_adopts_an_edit_to_teeup_s_mise_file() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tools_apply search >/dev/null 2>&1 || return 1
+  sed 's/"ripgrep" = "15.2.0"/"ripgrep" = "14.1.1"/' "$CONF" > "$CONF.new"
+  mv "$CONF.new" "$CONF"
+  local out
+  out="$(mise_tools_apply search 2>&1)" || { echo "apply failed: $out"; return 1; }
+  assert_contains "$(cat "$TEST_HOME/.config/mise/config.toml")" '"ripgrep" = "14.1.1"' || return 1
+  assert_not_contains "$(cat "$CONF")" "ripgrep" "the next write omits the adopted choice" || return 1
+  assert_contains "$out" "Moved your choice ripgrep 14.1.1 from $CONF to $TEST_HOME/.config/mise/config.toml, where teeup does not overwrite it." || return 1
+  cleanup_test_env
+}
+
+test_conf_adopt_leaves_a_replaced_user_file_alone() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tools_apply search >/dev/null 2>&1 || return 1
+  printf '[tools]\nripgrep = "14.1.1"\n' > "$CONF"
+  local out rc=0
+  out="$(mise_tools_apply search 2>&1)" || rc=$?
+  assert_equals "1" "$rc" "the writer still refuses a file teeup does not own" || return 1
+  assert_contains "$out" "Keeping $CONF: it was not written by teeup" || return 1
+  [[ ! -e "$TEST_HOME/.config/mise/config.toml" ]] || { echo "adoption changed config.toml from a user-owned file"; return 1; }
+  assert_equals "$(printf '[tools]\nripgrep = "14.1.1"')" "$(cat "$CONF")" "the replacement file stays untouched" || return 1
+  cleanup_test_env
+}
+
+test_conf_adopt_does_nothing_without_a_last_written_record() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mkdir -p "${CONF%/*}"
+  printf '%s\n[tools]\n"ripgrep" = "14.1.1"\n' "$TEEUP_MISE_CONF_MARKER" > "$CONF"
+  mise_tools_conf_adopt >/dev/null 2>&1 || return 1
+  [[ ! -e "$TEST_HOME/.config/mise/config.toml" ]] || { echo "there is no record, so nothing moves"; return 1; }
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "14.1.1"' || return 1
+  cleanup_test_env
+}
+
+test_conf_adopt_does_nothing_with_mise_global_config_file() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tools_apply search >/dev/null 2>&1 || return 1
+  sed 's/"ripgrep" = "15.2.0"/"ripgrep" = "14.1.1"/' "$CONF" > "$CONF.new"
+  mv "$CONF.new" "$CONF"
+  export MISE_GLOBAL_CONFIG_FILE="$TEST_HOME/global.toml"
+  mise_tools_conf_adopt >/dev/null 2>&1 || return 1
+  unset MISE_GLOBAL_CONFIG_FILE
+  [[ ! -e "$TEST_HOME/.config/mise/config.toml" ]] || { echo "the override disables adoption"; return 1; }
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "14.1.1"' || return 1
+  cleanup_test_env
+}
+
+test_conf_adopt_dry_run_only_previews_the_move() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tools_apply search >/dev/null 2>&1 || return 1
+  sed 's/"ripgrep" = "15.2.0"/"ripgrep" = "14.1.1"/' "$CONF" > "$CONF.new"
+  mv "$CONF.new" "$CONF"
+  local out
+  out="$(DRY_RUN=true mise_tools_conf_adopt 2>&1)" || return 1
+  assert_contains "$out" "Would execute: mise -C / use --quiet --path $TEST_HOME/.config/mise/config.toml ripgrep@14.1.1" || return 1
+  [[ ! -e "$TEST_HOME/.config/mise/config.toml" ]] || { echo "dry run moved the choice"; return 1; }
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "14.1.1"' || return 1
+  cleanup_test_env
+}
+
+test_apply_keeps_an_edit_in_teeup_s_file_when_adoption_fails() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tools_apply search >/dev/null 2>&1 || return 1
+  sed 's/"ripgrep" = "15.2.0"/"ripgrep" = "14.1.1"/' "$CONF" > "$CONF.new"
+  mv "$CONF.new" "$CONF"
+  local out rc=0
+  out="$(MOCK_MISE_FAIL_USE=1 mise_tools_apply search 2>&1)" || rc=$?
+  assert_equals "1" "$rc" "the failed move makes apply fail" || return 1
+  assert_contains "$out" "Could not move your choice ripgrep 14.1.1" || return 1
+  assert_contains "$(cat "$CONF")" '"ripgrep" = "14.1.1"' "the user's version is carried forward" || return 1
+  out="$(mise_tools_apply search 2>&1)" || { echo "the retry failed: $out"; return 1; }
+  assert_contains "$out" "Moved your choice ripgrep 14.1.1" "the next apply retries adoption" || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/mise/config.toml")" '"ripgrep" = "14.1.1"' || return 1
+  assert_not_contains "$(cat "$CONF")" "ripgrep" "the successful retry drops the adopted entry" || return 1
+  cleanup_test_env
+}
+
+test_apply_keeps_an_unknown_user_entry_when_adoption_fails() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  mise_tools_apply search >/dev/null 2>&1 || return 1
+  printf '"node" = "22"\n' >> "$CONF"
+  local out rc=0
+  out="$(MOCK_MISE_FAIL_USE=1 mise_tools_apply search 2>&1)" || rc=$?
+  assert_equals "1" "$rc" || return 1
+  assert_contains "$(cat "$CONF")" '"node" = "22"' "an unknown user entry stays after a failed move" || return 1
+  out="$(mise_tools_apply search 2>&1)" || { echo "the retry failed: $out"; return 1; }
+  assert_contains "$(cat "$TEST_HOME/.config/mise/config.toml")" '"node" = "22"' "the retry adopts the unknown entry" || return 1
+  cleanup_test_env
+}
+
+test_sync_adopts_an_edit_before_it_links_tools() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  mise_tools_sync >/dev/null 2>&1 || return 1
+  sed 's/"ripgrep" = "15.2.0"/"ripgrep" = "14.1.1"/' "$CONF" > "$CONF.new"
+  mv "$CONF.new" "$CONF"
+  mise_tools_sync >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$TEST_HOME/.config/mise/config.toml")" '"ripgrep" = "14.1.1"' || return 1
+  assert_equals "rg 14.1.1" "$("$TEST_HOME/.local/bin/rg" --version)" "sync links the adopted version" || return 1
+  cleanup_test_env
+}
+
 test_apply_finds_a_mise_the_package_manager_just_installed() {
   setup
   tools_fixture
@@ -1518,6 +1691,36 @@ test_tool_remove_with_packages_keeps_a_version_the_user_s_config_asks_for() {
   cleanup_test_env
 }
 
+test_tool_remove_with_packages_keeps_the_overridden_version() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  user_mise_choice ripgrep 14.1.1
+  mise_tool_install ripgrep rg >/dev/null 2>&1 || return 1
+  : > "$MOCK_LOG"
+  mise_tool_remove ripgrep rg true >/dev/null 2>&1 || return 1
+  assert_contains "$(cat "$MOCK_LOG")" "mise -C / uninstall ripgrep@15.2.0" "teeup removes its release version" || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall ripgrep@14.1.1" "the user's choice stays" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/14.1.1" || return 1
+  cleanup_test_env
+}
+
+test_tool_remove_with_packages_keeps_an_unadopted_user_edit() {
+  setup
+  tools_fixture
+  mock_mise_tools
+  state_done mark cap-search
+  mise_tools_sync >/dev/null 2>&1 || return 1
+  sed 's/"ripgrep" = "15.2.0"/"ripgrep" = "14.1.1"/' "$CONF" > "$CONF.new"
+  mv "$CONF.new" "$CONF"
+  mise -C / install --quiet ripgrep@14.1.1 >/dev/null 2>&1
+  : > "$MOCK_LOG"
+  mise_tool_remove ripgrep rg true >/dev/null 2>&1 || return 1
+  assert_not_contains "$(cat "$MOCK_LOG")" "uninstall ripgrep@14.1.1" "an edit not adopted yet is still the user's" || return 1
+  assert_dir_exists "$TEST_HOME/.local/share/mise/installs/ripgrep/14.1.1" || return 1
+  cleanup_test_env
+}
+
 # teeup's own conf.d line is not "another" request, and a user's request for
 # a different version does not protect this one.
 test_tool_remove_with_packages_uninstalls_a_version_only_teeup_asks_for() {
@@ -1675,6 +1878,7 @@ run_test "conf counts a capability being installed and drops one being removed" 
 run_test "conf leaves a file teeup did not write" test_conf_leaves_a_file_teeup_did_not_write
 run_test "conf follows MISE_CONFIG_DIR and dry run writes nothing" test_conf_follows_mise_config_dir_and_dry_run_writes_nothing
 run_test "tool install installs the pinned version then links the which result" test_tool_install_installs_the_pinned_version_then_links_the_which_result
+run_test "tool install links the user's global mise choice and keeps the release" test_tool_install_links_the_user_s_global_mise_choice_and_keeps_the_release
 run_test "tool install follows a command and a backend that differ from the tool" test_tool_install_follows_a_command_and_a_backend_that_differ_from_the_tool
 run_test "tool install keeps a file or link teeup did not write" test_tool_install_keeps_a_file_or_link_teeup_did_not_write
 run_test "tool install repairs a link left dangling by mise uninstall" test_tool_install_repairs_a_link_left_dangling_by_mise_uninstall
@@ -1687,6 +1891,16 @@ run_test "tool remove deletes only a teeup link" test_tool_remove_deletes_only_a
 run_test "tool remove accepts a relative link to teeup's entry" test_tool_remove_accepts_a_relative_link_to_teeup_s_entry
 run_test "tool remove with packages uninstalls the pinned version" test_tool_remove_with_packages_uninstalls_the_pinned_version
 run_test "apply installs every pair and writes the conf" test_apply_installs_every_pair_and_writes_the_conf
+run_test "conf omits a tool chosen in the user's mise config" test_conf_omits_a_tool_chosen_in_the_user_s_mise_config
+run_test "conf recognizes its own JSON-escaped source path" test_conf_recognizes_its_own_json_escaped_source_path
+run_test "apply adopts an edit to teeup's mise file" test_apply_adopts_an_edit_to_teeup_s_mise_file
+run_test "conf adopt leaves a replaced user file alone" test_conf_adopt_leaves_a_replaced_user_file_alone
+run_test "conf adopt does nothing without a last-written record" test_conf_adopt_does_nothing_without_a_last_written_record
+run_test "conf adopt does nothing with MISE_GLOBAL_CONFIG_FILE" test_conf_adopt_does_nothing_with_mise_global_config_file
+run_test "conf adopt dry run only previews the move" test_conf_adopt_dry_run_only_previews_the_move
+run_test "apply keeps an edit in teeup's file when adoption fails" test_apply_keeps_an_edit_in_teeup_s_file_when_adoption_fails
+run_test "apply keeps an unknown user entry when adoption fails" test_apply_keeps_an_unknown_user_entry_when_adoption_fails
+run_test "sync adopts an edit before it links tools" test_sync_adopts_an_edit_before_it_links_tools
 run_test "apply finds a mise the package manager just installed" test_apply_finds_a_mise_the_package_manager_just_installed
 run_test "apply refuses when mise is skipped" test_apply_refuses_when_mise_is_skipped
 run_test "repair warns but succeeds" test_repair_warns_but_succeeds
@@ -1703,6 +1917,8 @@ run_test "conf says nothing about MISE_GLOBAL_CONFIG_FILE with nothing to pin" t
 run_test "tool remove with packages uninstalls the retained pin" test_tool_remove_with_packages_uninstalls_the_retained_pin
 run_test "tool remove with packages uninstalls when the teeup link is gone" test_tool_remove_with_packages_uninstalls_when_the_teeup_link_is_gone
 run_test "tool remove with packages keeps a version the user's config asks for" test_tool_remove_with_packages_keeps_a_version_the_user_s_config_asks_for
+run_test "tool remove with packages keeps the overridden version" test_tool_remove_with_packages_keeps_the_overridden_version
+run_test "tool remove with packages keeps an unadopted user edit" test_tool_remove_with_packages_keeps_an_unadopted_user_edit
 run_test "tool remove with packages uninstalls a version only teeup asks for" test_tool_remove_with_packages_uninstalls_a_version_only_teeup_asks_for
 run_test "tool remove with packages reads the user's config without --all-sources" test_tool_remove_with_packages_reads_the_user_s_config_without_all_sources
 run_test "tool remove with packages reads conf.d tables without --all-sources" test_tool_remove_with_packages_reads_conf_d_tables_without_all_sources

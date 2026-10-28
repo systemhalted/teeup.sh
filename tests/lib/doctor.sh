@@ -825,6 +825,37 @@ test_mise_tools_check_passes_a_linked_pinned_tool() {
   cleanup_test_env
 }
 
+test_mise_tools_check_reports_a_user_choice_as_healthy() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mkdir -p "$TEST_HOME/.config/mise"
+  printf '[tools]\nripgrep = "14.1.1"\n' > "$TEST_HOME/.config/mise/config.toml"
+  mise_tools_apply widget >/dev/null 2>&1
+  local out rc=0
+  out="$(doctor_metadata_check widget 2>&1)" || rc=$?
+  assert_success "$rc" "a user override is healthy" || return 1
+  assert_contains "$out" "rg is ripgrep 14.1.1 through mise, from your mise config ($TEST_HOME/.config/mise/config.toml), not the release's 15.2.0. To go back: mise unuse -g ripgrep && teeup configure widget" || return 1
+  assert_equals "" "$(cat "$REPORT")" "the notice is not a failure" || return 1
+  cleanup_test_env
+}
+
+test_mise_tools_check_fails_when_an_override_link_points_at_neither_version() {
+  setup
+  doctor_tools_fixture
+  mock_brew_formulas
+  mkdir -p "$TEST_HOME/.config/mise"
+  printf '[tools]\nripgrep = "14.1.1"\n' > "$TEST_HOME/.config/mise/config.toml"
+  mise_tools_apply widget >/dev/null 2>&1
+  mise -C / install --quiet ripgrep@13.0.0 >/dev/null 2>&1
+  local wrong
+  wrong="$(mise -C / which --tool ripgrep@13.0.0 rg)"
+  ln -sfn "$wrong" "$TEEUP_MISE_TOOLS_DIR/rg"
+  doctor_metadata_check widget >/dev/null 2>&1
+  assert_contains "$(cat "$REPORT")" "$HOME/.local/bin/rg does not run ripgrep 14.1.1, the version from your mise config ($TEST_HOME/.config/mise/config.toml)." || return 1
+  cleanup_test_env
+}
+
 test_mise_tools_check_fails_a_missing_link() {
   setup
   doctor_tools_fixture
@@ -1134,6 +1165,8 @@ run_test "run one accepts a real capability whose commands are on PATH" test_run
 run_test "run one checks packages for a real capability with no doctor script" test_run_one_checks_packages_for_a_real_capability_with_no_doctor_script
 run_test "metadata check accepts an app installed without its cask" test_metadata_check_accepts_an_app_installed_without_its_cask
 run_test "mise_tools check passes a linked, pinned tool" test_mise_tools_check_passes_a_linked_pinned_tool
+run_test "mise_tools check reports a user choice as healthy" test_mise_tools_check_reports_a_user_choice_as_healthy
+run_test "mise_tools check fails when an override link points at neither version" test_mise_tools_check_fails_when_an_override_link_points_at_neither_version
 run_test "mise_tools check fails a missing link" test_mise_tools_check_fails_a_missing_link
 run_test "mise_tools check fails a dangling link, and its fix repairs it" test_mise_tools_check_fails_a_dangling_link_and_its_fix_repairs_it
 run_test "mise_tools check fails a missing inner entry, and its fix repairs it" test_mise_tools_check_fails_a_missing_inner_entry_and_its_fix_repairs_it
