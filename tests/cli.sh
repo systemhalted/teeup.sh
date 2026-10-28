@@ -2232,6 +2232,30 @@ test_doctor_checks_one_capability_even_when_it_is_not_installed() {
   cleanup_test_env
 }
 
+# 2026-10-28: `teeup doctor cli-tools git starship` checked cli-tools only.
+test_doctor_checks_every_capability_it_is_given() {
+  setup
+  printf '#!/usr/bin/env bash\ndoctor_ok "alpha looks fine"\ndoctor_verdict\n' > "$TEEUP_CAPS_DIR/alpha/doctor"
+  printf '#!/usr/bin/env bash\ndoctor_fail "beta has no widget" "teeup configure beta"\ndoctor_verdict\n' > "$TEEUP_CAPS_DIR/beta/doctor"
+  local out rc=0
+  out="$("$TEEUP" doctor alpha beta 2>&1)" || rc=$?
+  assert_failure "$rc" "beta's problem decides the exit status" || return 1
+  assert_contains "$out" "alpha looks fine" || return 1
+  assert_contains "$out" "beta has no widget" || return 1
+  cleanup_test_env
+}
+
+test_doctor_refuses_an_unknown_name_before_checking_any() {
+  setup
+  printf '#!/usr/bin/env bash\ndoctor_ok "alpha looks fine"\ndoctor_verdict\n' > "$TEEUP_CAPS_DIR/alpha/doctor"
+  local out rc=0
+  out="$("$TEEUP" doctor alpha nope 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "Unknown capability: nope" || return 1
+  assert_not_contains "$out" "alpha looks fine" "nothing runs before every name is known" || return 1
+  cleanup_test_env
+}
+
 # Every installed capability skipped on this machine is not an empty machine:
 # telling the user to run ./bootstrap over a machine that is set up exactly as
 # its machine file asks sends them to do work that is already done.
@@ -3264,6 +3288,8 @@ run_test "remove is honest when the remove script answers not-applicable" test_r
 run_test "remove refuses a not-applicable capability" test_remove_refuses_a_not_applicable_capability
 run_test "doctor is quiet and zero when healthy" test_doctor_is_quiet_and_zero_when_nothing_is_installed_is_wrong
 run_test "doctor names the failure and its fix" test_doctor_names_the_failure_and_the_command_that_fixes_it
+run_test "doctor checks every capability it is given" test_doctor_checks_every_capability_it_is_given
+run_test "doctor refuses an unknown name before checking any" test_doctor_refuses_an_unknown_name_before_checking_any
 run_test "doctor exits 2 when nothing failed but something could not be checked" test_doctor_exits_two_when_nothing_failed_but_something_could_not_be_checked
 run_test "doctor checks an uninstalled capability" test_doctor_checks_one_capability_even_when_it_is_not_installed
 run_test "doctor separates an empty machine from a fully skipped one" test_doctor_separates_an_empty_machine_from_a_fully_skipped_one
