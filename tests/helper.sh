@@ -170,14 +170,33 @@ lock_version() {
 # mise config directory (MISE_GLOBAL_CONFIG_FILE alone when it is set), so a
 # test asks for a version by writing `<tool> = "<version>"` there; with
 # MOCK_MISE_NO_ALL_SOURCES=1 it fails as a mise without --all-sources does.
-# Every other call succeeds and prints nothing, which is a fresh global
-# config's answer to `ls --global`.
+# `ls --current --json <tool>` gives config.toml precedence over conf.d and
+# returns the current record shape from mise 2026.10.17. `use --quiet --path`
+# writes one request under [tools]. Every other call succeeds and prints
+# nothing, which is a fresh global config's answer to `ls --global`.
 mock_mise_tools() {
   mock_command_script mise <<'EOF2'
 [ "$1" = "-C" ] && shift 2
 root="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/installs"
 spec_dir() {
   printf '%s/%s/%s\n' "$root" "$(printf '%s' "${1%@*}" | tr ':/' '--')" "${1##*@}"
+}
+toml_version() {
+  awk -v s="$1" 'BEGIN { in_tools = 0 }
+    /^[ \t]*\[/ { in_tools = ($0 ~ /^[ \t]*\[tools\][ \t]*$/); next }
+    in_tools {
+      line = $0; sub(/^[ \t]+/, "", line)
+      if (index(line, "\"" s "\"") == 1) rest = substr(line, length(s) + 3)
+      else if (index(line, s) == 1) rest = substr(line, length(s) + 1)
+      else next
+      if (rest !~ /^[ \t]*=[ \t]*"/) next
+      sub(/^[ \t]*=[ \t]*"/, "", rest); sub(/".*$/, "", rest)
+      print rest
+      exit
+    }' "$2"
+}
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 case "$1" in
   install)
@@ -207,7 +226,80 @@ case "$1" in
     [ "${MOCK_MISE_FAIL_UNINSTALL:-}" = "${2%@*}" ] && exit 1
     rm -rf "$(spec_dir "$2")"
     ;;
+  use)
+    shift
+    [ "${1:-}" = "--quiet" ] && shift
+    [ "${1:-}" = "--path" ] || exit 2
+    file="$2"
+    s="$3"
+    [ -z "${MOCK_MISE_FAIL_USE:-}" ] || exit 1
+    tool="${s%@*}"
+    version="${s##*@}"
+    mkdir -p "${file%/*}"
+    if [ ! -f "$file" ]; then
+      printf '[tools]\n"%s" = "%s"\n' "$tool" "$version" > "$file"
+      exit 0
+    fi
+    awk -v s="$tool" -v v="$version" '
+      function is_tool(line,   rest) {
+        sub(/^[ \t]+/, "", line)
+        if (index(line, "\"" s "\"") == 1) rest = substr(line, length(s) + 3)
+        else if (index(line, s) == 1) rest = substr(line, length(s) + 1)
+        else return 0
+        return rest ~ /^[ \t]*=/
+      }
+      /^[ \t]*\[/ {
+        if (in_tools && !found) { print "\"" s "\" = \"" v "\""; found = 1 }
+        in_tools = ($0 ~ /^[ \t]*\[tools\][ \t]*$/)
+        if (in_tools) have_tools = 1
+      }
+      in_tools && is_tool($0) {
+        print "\"" s "\" = \"" v "\""
+        found = 1
+        next
+      }
+      { print }
+      END {
+        if (in_tools && !found) print "\"" s "\" = \"" v "\""
+        else if (!have_tools) print "\n[tools]\n\"" s "\" = \"" v "\""
+      }' "$file" > "$file.tmp.$$" && mv "$file.tmp.$$" "$file"
+    ;;
   ls)
+    case " $* " in
+      *" --current --json "*)
+        for tool in "$@"; do :; done
+        dir="${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}"
+        file=""
+        version=""
+        if [ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]; then
+          if [ -f "$MISE_GLOBAL_CONFIG_FILE" ]; then
+            version="$(toml_version "$tool" "$MISE_GLOBAL_CONFIG_FILE")"
+            [ -z "$version" ] || file="$MISE_GLOBAL_CONFIG_FILE"
+          fi
+        else
+          if [ -f "$dir/config.toml" ]; then
+            version="$(toml_version "$tool" "$dir/config.toml")"
+            [ -z "$version" ] || file="$dir/config.toml"
+          fi
+          if [ -z "$file" ]; then
+            for f in "$dir"/conf.d/*.toml; do
+              [ -f "$f" ] || continue
+            version="$(toml_version "$tool" "$f")"
+            if [ -n "$version" ]; then file="$f"; break; fi
+            done
+          fi
+        fi
+        if [ -z "$file" ]; then
+          echo "[]"
+        else
+          file="${MOCK_MISE_CURRENT_SOURCE_PATH:-$file}"
+          json_file="$(json_escape "$file")"
+          printf '[\n  {\n    "version": "%s",\n    "requested_version": "%s",\n    "source": {\n      "type": "mise.toml",\n      "path": "%s"\n    }\n  }\n]\n' \
+            "$version" "$version" "$json_file"
+        fi
+        exit 0
+        ;;
+    esac
     case " $* " in *" --all-sources "*) ;; *) exit 0 ;; esac
     if [ -n "${MOCK_MISE_NO_ALL_SOURCES:-}" ]; then
       echo "error: unexpected argument '--all-sources' found" >&2
@@ -235,7 +327,7 @@ case "$1" in
         [ "$first" = 1 ] || echo "  ,"
         first=0
         printf '  {\n    "version": "%s",\n    "install_path": "%s",\n    "sources": [\n      {\n        "type": "mise.toml",\n        "path": "%s",\n        "requested_version": "%s"\n      }\n    ]\n  }\n' \
-          "$v" "$(spec_dir "$tool@$v")" "$f" "$v"
+          "$v" "$(spec_dir "$tool@$v")" "$(json_escape "$f")" "$v"
       done
     done
     echo "]"

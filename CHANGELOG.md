@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A migration for existing Macs.** It installs and links the pinned tools and keeps the package-manager copies.
 
 ### Changed
+- **Your global mise choice wins.** Run `mise use -g <tool>@<version>`, then run `teeup update` or `teeup configure <capability>` to update teeup's link. teeup keeps the release version installed. Run `mise unuse -g <tool>`, then run `teeup update` to return the link to it. Doctor reports a linked choice as healthy.
 - **The installer starts a new zsh login shell when `./bootstrap` succeeds,** so the `teeup` command works in the same terminal. The last line of `./bootstrap`, run by hand, says to run `exec zsh -l`.
 - **`teeup version` shows the commit.** On a release, it prints the version only. After a release, it also prints the number of commits after the release, the branch and the commit, for example `0.3.0-beta+6 (main, 3c4b7b4)`. `teeup status` shows the same text.
 - **git follows the shell's editor.** `teeup configure git` no longer writes `core.editor` or `sequence.editor`, so `git commit` and `git rebase -i` use `VISUAL`, then `EDITOR`. Before, git used `emacsclient -t` or `vim`, whatever the editor answers said. To give git its own editor, set `core.editor` in `~/.config/git/local`.

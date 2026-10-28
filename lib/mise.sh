@@ -408,39 +408,8 @@ _mise_tools_conf_version() {
 # first one), or nothing. teeup writes the quoted string form; `mise use -g`
 # writes a plain name bare.
 _mise_toml_version() {
-  awk -v s="$1" '
-    function version_of(rest,   count, fields, i, field) {
-      sub(/^[ \t]*=[ \t]*/, "", rest)
-      if (rest ~ /^"/) {
-        sub(/^"/, "", rest)
-        sub(/".*$/, "", rest)
-        return rest
-      }
-      if (rest !~ /^\{/) return ""
-      sub(/^\{[ \t]*/, "", rest)
-      count = split(rest, fields, ",")
-      for (i = 1; i <= count; i++) {
-        field = fields[i]
-        sub(/^[ \t]+/, "", field)
-        if (field !~ /^version[ \t]*=[ \t]*"/) continue
-        sub(/^version[ \t]*=[ \t]*"/, "", field)
-        sub(/".*$/, "", field)
-        return field
-      }
-      return ""
-    }
-    {
-      line = $0
-      sub(/^[ \t]+/, "", line)
-      if (index(line, "\"" s "\"") == 1) rest = substr(line, length(s) + 3)
-      else if (index(line, s) == 1) rest = substr(line, length(s) + 1)
-      else next
-      version = version_of(rest)
-      if (version != "") {
-        print version
-        exit
-      }
-    }'
+  _mise_tools_conf_entries | MISE_TOML_SPEC="$1" awk -F '\t' '
+    $1 == ENVIRON["MISE_TOML_SPEC"] { print $2; exit }'
 }
 
 # _mise_version_request_matches <request> <version> -> 0 when an exact,
@@ -464,12 +433,35 @@ _mise_version_request_matches() {
 mise_tool_requested_elsewhere() {
   local spec="$1" version="$2" teeup_file rows config_dir config_file v
   teeup_file="$(mise_tools_conf_file)"
+  if mise_tool_conf_user_edit "$spec" "$version" keep; then
+    return 0
+  fi
   if rows="$(mise -C / ls --all-sources --json "$spec" 2>/dev/null)"; then
     # A record's "version" comes before its "sources"; "requested_version"
     # and "install_path" do not match the patterns, as the quote before the
     # key is part of each. teeup's file also matches by its tail, in case
     # mise prints the directory in another spelling (a symlinked home).
-    printf '%s\n' "$rows" | awk -v v="$version" -v t="$teeup_file" '
+    printf '%s\n' "$rows" | MISE_TOOL_VERSION="$version" TEEUP_MISE_CONF_FILE="$teeup_file" awk '
+      function json_decode(value,   out, i, char, escaped) {
+        out = ""
+        for (i = 1; i <= length(value); i++) {
+          char = substr(value, i, 1)
+          if (char != "\\") {
+            out = out char
+            continue
+          }
+          i++
+          escaped = substr(value, i, 1)
+          if (escaped == "\"" || escaped == "\\" || escaped == "/") out = out escaped
+          else if (escaped == "b") out = out sprintf("%c", 8)
+          else if (escaped == "f") out = out sprintf("%c", 12)
+          else if (escaped == "n") out = out "\n"
+          else if (escaped == "r") out = out "\r"
+          else if (escaped == "t") out = out "\t"
+          else out = out "\\" escaped
+        }
+        return out
+      }
       /"version": "/ {
         cur = $0
         sub(/^[^:]*: "/, "", cur)
@@ -479,7 +471,8 @@ mise_tool_requested_elsewhere() {
         p = $0
         sub(/^[^:]*: "/, "", p)
         sub(/",?[ \t]*$/, "", p)
-        if (cur == v && p != t && p !~ /\/conf\.d\/teeup\.toml$/) {
+        p = json_decode(p)
+        if (cur == ENVIRON["MISE_TOOL_VERSION"] && p != ENVIRON["TEEUP_MISE_CONF_FILE"] && p !~ /\/conf\.d\/teeup\.toml$/) {
           print p
           found = 1
           exit
@@ -510,11 +503,222 @@ mise_tool_requested_elsewhere() {
   return 1
 }
 
+# mise_tool_conf_user_edit <spec> <version> [keep] -> teeup's conf.d path when
+# its request differs from the last body teeup wrote and asks for <version>.
+# Without a record (the first run after upgrading to a teeup that keeps one)
+# nothing can be told apart: with "keep" the request counts as the user's,
+# so removal leaves the version installed; without it the request counts as
+# teeup's own, so the first write keeps pinning every tool as before (Codex
+# on #131: treating them all as the user's dropped every pin from the file).
+# Adoption normally moves this request to config.toml. Remove can run first,
+# or adoption can fail, so it uses the record directly to keep the user's
+# installed version safe.
+mise_tool_conf_user_edit() {
+  local spec="$1" version="$2" file record current recorded
+  file="$(mise_tools_conf_file)"
+  record="$(mise_tools_conf_record_file)"
+  if [[ ! -f "$file" || -L "$file" ]]; then
+    return 1
+  fi
+  if ! head -1 "$file" 2>/dev/null | grep -qxF "$TEEUP_MISE_CONF_MARKER"; then
+    return 1
+  fi
+  current="$(_mise_tools_conf_version "$spec" "$(cat "$file")")"
+  if [[ -z "$current" ]]; then
+    return 1
+  fi
+  if ! _mise_version_request_matches "$current" "$version"; then
+    return 1
+  fi
+  # Before this version of teeup has written a record, it cannot prove that an
+  # existing managed-file request is its own. Preserve it as the user's choice.
+  if [[ ! -f "$record" ]]; then
+    [[ "${3:-}" == "keep" ]] || return 1
+    printf '%s\n' "$file"
+    return 0
+  fi
+  recorded="$(_mise_tools_conf_version "$spec" "$(cat "$record")")"
+  if [[ "$current" == "$recorded" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$file"
+}
+
 # mise_tools_conf_file -> where teeup pins its tools for mise. mise reads
 # every conf.d/*.toml in its config directory as part of the global config,
 # and MISE_CONFIG_DIR moves that directory as it moves config.toml.
 mise_tools_conf_file() {
   printf '%s/conf.d/teeup.toml\n' "${MISE_CONFIG_DIR:-$(user_config_dir)/mise}"
+}
+
+# mise_tool_user_choice <spec> -> "<version><TAB><source path>" when mise's
+# current global choice comes from a file other than teeup's conf.d file, or
+# from a user edit to teeup's file that adoption has not moved yet. `-C /`
+# excludes project config. The query is read-only, so dry runs use it too.
+# Without mise, there is no current choice to follow.
+mise_tool_user_choice() {
+  local spec="$1" rows choice version path
+  if ! have mise; then
+    return 1
+  fi
+  rows="$(mise -C / ls --current --json "$spec" 2>/dev/null)" || return 1
+  choice="$(printf '%s\n' "$rows" | awk '
+    function json_decode(value,   out, i, char, escaped) {
+      out = ""
+      for (i = 1; i <= length(value); i++) {
+        char = substr(value, i, 1)
+        if (char != "\\") {
+          out = out char
+          continue
+        }
+        i++
+        escaped = substr(value, i, 1)
+        if (escaped == "\"" || escaped == "\\" || escaped == "/") out = out escaped
+        else if (escaped == "b") out = out sprintf("%c", 8)
+        else if (escaped == "f") out = out sprintf("%c", 12)
+        else if (escaped == "n") out = out "\n"
+        else if (escaped == "r") out = out "\r"
+        else if (escaped == "t") out = out "\t"
+        else out = out "\\" escaped
+      }
+      return out
+    }
+    /"version"[ \t]*:[ \t]*"/ && version == "" {
+      version = $0
+      sub(/^[^:]*:[ \t]*"/, "", version)
+      sub(/",?[ \t]*$/, "", version)
+    }
+    /"source"[ \t]*:/ { in_source = 1; next }
+    in_source && /"path"[ \t]*:[ \t]*"/ {
+      path = $0
+      sub(/^[^:]*:[ \t]*"/, "", path)
+      sub(/",?[ \t]*$/, "", path)
+      path = json_decode(path)
+      if (version != "" && path != "") {
+        printf "%s\t%s\n", version, path
+        found = 1
+      }
+      exit
+    }
+    END { exit !found }')" || return 1
+  version="${choice%%$'\t'*}"
+  path="${choice#*$'\t'}"
+  case "$path" in
+    */conf.d/teeup.toml)
+      mise_tool_conf_user_edit "$spec" "$version" >/dev/null || return 1
+      ;;
+  esac
+  printf '%s\n' "$choice"
+}
+
+mise_tools_conf_record_file() {
+  printf '%s/mise-teeup.toml.last\n' "$TEEUP_STATE_DIR"
+}
+
+# _mise_tools_conf_entries < <toml> -> "<spec><TAB><version>" for each
+# string or inline-table request in [tools].
+_mise_tools_conf_entries() {
+  awk '
+    function version_of(rest,   count, fields, i, field) {
+      if (rest !~ /^[ \t]*=/) return ""
+      sub(/^[ \t]*=[ \t]*/, "", rest)
+      if (rest ~ /^"/) {
+        sub(/^"/, "", rest)
+        sub(/".*$/, "", rest)
+        return rest
+      }
+      if (rest !~ /^\{/) return ""
+      sub(/^\{[ \t]*/, "", rest)
+      count = split(rest, fields, ",")
+      for (i = 1; i <= count; i++) {
+        field = fields[i]
+        sub(/^[ \t]+/, "", field)
+        if (field !~ /^version[ \t]*=[ \t]*"/) continue
+        sub(/^version[ \t]*=[ \t]*"/, "", field)
+        sub(/".*$/, "", field)
+        return field
+      }
+      return ""
+    }
+    /^[ \t]*\[/ { in_tools = ($0 ~ /^[ \t]*\[tools\][ \t]*(#.*)?$/); next }
+    in_tools {
+      line = $0
+      sub(/^[ \t]+/, "", line)
+      if (line == "" || line ~ /^#/) next
+      if (line ~ /^"/) {
+        spec = line
+        sub(/^"/, "", spec)
+        sub(/".*/, "", spec)
+        rest = substr(line, length(spec) + 3)
+      } else {
+        spec = line
+        sub(/[ \t]*=.*/, "", spec)
+        sub(/[ \t]+$/, "", spec)
+        rest = substr(line, length(spec) + 1)
+      }
+      version = version_of(rest)
+      if (spec != "" && version != "") printf "%s\t%s\n", spec, version
+    }'
+}
+
+# mise_tools_conf_adopt
+# Moves requests that differ from teeup's last successful write into the
+# user's config.toml. mise 2026.10.17 writes a global request back into an
+# existing conf.d/teeup.toml, so the last-written record distinguishes that
+# edit from teeup's own pin. A failed move is remembered for the next
+# mise_tools_conf_write, which carries the edited version forward.
+mise_tools_conf_adopt() {
+  local file record current last config_file spec version last_version config_version entries rc=0 missing_warned=false
+  TEEUP_MISE_CONF_ADOPT_FAILED=""
+  if [[ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]]; then
+    return 0
+  fi
+  file="$(mise_tools_conf_file)"
+  record="$(mise_tools_conf_record_file)"
+  if [[ ! -f "$file" || -L "$file" || ! -f "$record" ]]; then
+    return 0
+  fi
+  if ! head -1 "$file" 2>/dev/null | grep -qxF "$TEEUP_MISE_CONF_MARKER"; then
+    return 0
+  fi
+  current="$(cat "$file")"
+  last="$(cat "$record")"
+  config_file="${MISE_CONFIG_DIR:-$(user_config_dir)/mise}/config.toml"
+  entries="$(printf '%s\n' "$current" | _mise_tools_conf_entries)"
+  while IFS=$'\t' read -r spec version; do
+    [[ -n "$spec" && -n "$version" ]] || continue
+    last_version="$(_mise_tools_conf_version "$spec" "$last")"
+    if [[ -n "$last_version" && "$last_version" == "$version" ]]; then
+      continue
+    fi
+    if [[ -f "$config_file" ]]; then
+      config_version="$(_mise_toml_version "$spec" < "$config_file")"
+      if [[ -n "$config_version" ]]; then
+        continue
+      fi
+    fi
+    if [[ "$DRY_RUN" != "true" ]] && ! have mise; then
+      if [[ "$missing_warned" != "true" ]]; then
+        warn "mise is not on PATH, so teeup could not move your choices out of $file. The file stays unchanged; run: teeup install mise, then: teeup update"
+        missing_warned=true
+      fi
+      TEEUP_MISE_CONF_ADOPT_FAILED="${TEEUP_MISE_CONF_ADOPT_FAILED}${spec}"$'\t'"${version}"$'\n'
+      rc=1
+      continue
+    fi
+    if ! run_cmd mise -C / use --quiet --path "$config_file" "$spec@$version"; then
+      warn "Could not move your choice $spec $version from $file to $config_file. The choice stays in $file; fix the error above, then run: teeup update"
+      TEEUP_MISE_CONF_ADOPT_FAILED="${TEEUP_MISE_CONF_ADOPT_FAILED}${spec}"$'\t'"${version}"$'\n'
+      rc=1
+      continue
+    fi
+    if [[ "$DRY_RUN" != "true" ]]; then
+      log "Moved your choice $spec $version from $file to $config_file, where teeup does not overwrite it."
+    fi
+  done <<EOF
+$entries
+EOF
+  return $rc
 }
 
 # mise_tools_conf_write [--with <capability>] [--without <capability>]
@@ -530,16 +734,17 @@ mise_tools_conf_file() {
 # follows the rule above. Without mise on PATH, or in a dry run, the lock's
 # version is pinned as it is. --with counts a capability
 # whose install or configure is running before its done marker exists;
-# --without leaves out one being removed. The user's config.toml is never
-# edited. With nothing to pin, teeup's file is deleted. A file without the
-# marker is not teeup's and is left alone. When MISE_GLOBAL_CONFIG_FILE is
+# --without leaves out one being removed. This writer does not edit the
+# user's config.toml; mise_tools_conf_adopt moves user changes there first.
+# With nothing to pin, teeup's file is deleted. A file without the marker is
+# not teeup's and is left alone. When MISE_GLOBAL_CONFIG_FILE is
 # set, mise reads only that file as its global config and never looks at
 # conf.d at all, so this file is written exactly as it would be without the
 # variable (teeup does not edit the user's file for them), and a warning
 # says so once rather than once per tool.
 # 0 written, already current or removed; 1 refused.
 mise_tools_conf_write() {
-  local with="" without="" file name pair tool version spec body="" old="" old_version check=false
+  local with="" without="" file record name pair tool version spec body="" old="" old_version check=false content entries preserve=false any_tools=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --with|--without)
@@ -554,12 +759,37 @@ mise_tools_conf_write() {
     esac
   done
   file="$(mise_tools_conf_file)"
+  record="$(mise_tools_conf_record_file)"
   if [[ -e "$file" || -L "$file" ]] && ! head -1 "$file" 2>/dev/null | grep -qxF "$TEEUP_MISE_CONF_MARKER"; then
     warn "Keeping $file: it was not written by teeup, so the versions teeup pins are in no mise config and mise prune can remove them. Move it aside, then run: teeup update"
     return 1
   fi
   if [[ -f "$file" ]]; then
     old="$(cat "$file")"
+  fi
+  # MISE_GLOBAL_CONFIG_FILE hides conf.d from mise, so adoption cannot move a
+  # user edit. Keep the file and its old record until the override is gone.
+  if [[ -n "${MISE_GLOBAL_CONFIG_FILE:-}" && -n "$old" ]]; then
+    entries="$(printf '%s\n' "$old" | _mise_tools_conf_entries)"
+    while IFS=$'\t' read -r spec version; do
+      [[ -n "$spec" && -n "$version" ]] || continue
+      if mise_tool_conf_user_edit "$spec" "$version" >/dev/null; then
+        preserve=true
+        break
+      fi
+    done <<EOF
+$entries
+EOF
+    if [[ "$preserve" == "true" ]]; then
+      warn "MISE_GLOBAL_CONFIG_FILE is set, so mise does not read $file; teeup keeps your edits there until the variable is unset."
+      return 0
+    fi
+  fi
+  # A failed adoption leaves the current file as the only durable copy of the
+  # user's choice. Do not rebuild or re-baseline any part of it. The next
+  # apply or sync compares it with the unchanged record and retries the move.
+  if [[ -n "${TEEUP_MISE_CONF_ADOPT_FAILED:-}" ]]; then
+    return 1
   fi
   if [[ "$DRY_RUN" != "true" ]] && have mise; then
     check=true
@@ -568,12 +798,16 @@ mise_tools_conf_write() {
     if [[ "$name" == "$without" ]]; then continue; fi
     if [[ "$name" != "$with" ]] && ! state_done check "cap-$name"; then continue; fi
     for pair in $(cap_meta_get "$name" mise_tools); do
+      any_tools=true
       tool="${pair%%:*}"
       if ! version="$(tools_lock_version "$tool")"; then
         warn "$name names $tool in mise_tools, but $TEEUP_TOOLS_LOCK has no line for it, so $file leaves it out."
         continue
       fi
       spec="$(tools_lock_spec "$tool")"
+      if mise_tool_user_choice "$spec" >/dev/null; then
+        continue
+      fi
       # A skipped capability is not teeup's to move: its line stays as it
       # is, even when the lock's new version is on disk for another reason.
       if cap_skipped "$name"; then
@@ -594,21 +828,42 @@ mise_tools_conf_write() {
     done
   done
   if [[ -z "$body" ]]; then
-    if [[ -e "$file" ]]; then
+    if [[ -e "$record" || -L "$record" ]]; then
+      if ! run_cmd rm -f "$record"; then
+        warn "Could not remove $record. Remove it by hand before removing $file."
+        return 1
+      fi
+    fi
+    if [[ -e "$file" || -L "$file" ]]; then
       if ! run_cmd rm -f "$file"; then
         warn "Could not remove $file. Remove it by hand."
         return 1
       fi
-      ok_unless_dry "Removed $file: no capability here uses a tool from mise any more."
+      if [[ "$any_tools" == "true" ]]; then
+        ok_unless_dry "Removed $file: every installed mise tool follows your mise config."
+      else
+        ok_unless_dry "Removed $file: no capability here uses a tool from mise any more."
+      fi
     fi
     return 0
   fi
   if [[ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]]; then
     warn "MISE_GLOBAL_CONFIG_FILE is set, so mise does not read $file; mise prune can remove teeup's pinned tools. Unset it, or add these versions to $MISE_GLOBAL_CONFIG_FILE yourself."
   fi
-  printf '%s\n%s\n[tools]\n%s' "$TEEUP_MISE_CONF_MARKER" \
-    "# The versions come from share/teeup/tools.lock in the teeup checkout." "$body" |
-    write_managed_file "$file" "the tool versions teeup pins for mise"
+  content="$(printf '%s\n%s\n[tools]\n%s' "$TEEUP_MISE_CONF_MARKER" \
+    "# The versions come from share/teeup/tools.lock in the teeup checkout." "$body")"
+  if ! printf '%s\n' "$content" | write_managed_file "$file" "the tool versions teeup pins for mise"; then
+    return 1
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    return 0
+  fi
+  if ! printf '%s\n' "$content" | write_managed_file "$record" "the last mise tool configuration teeup wrote" >/dev/null; then
+    run_cmd rm -f "$record" "$file" || true
+    warn "Could not record the mise tool configuration teeup wrote. Both managed files were removed; run: teeup update"
+    return 1
+  fi
+  return 0
 }
 
 # The second line of a script teeup writes in place of a link (below).
@@ -782,10 +1037,11 @@ mise_tool_link_is() {
 
 # mise_tool_install <tool> <command>
 # Installs <tool> at the version share/teeup/tools.lock pins (only when that
-# version is not installed yet), asks mise where its <command> is, points
-# teeup's own entry for <command> at it, and links ~/.local/bin/<command> to
-# that entry. A call then runs the binary directly, with no mise process in
-# between. A lock bump re-points only the entry. A file or link at the
+# version is not installed yet). When the user's global mise config selects
+# another version, that version is installed too and teeup's entry follows
+# it. Otherwise the entry follows the lock. ~/.local/bin/<command> links to
+# that entry, so a call runs the binary directly, with no mise process in
+# between. A changed choice or lock re-points only the entry. A file or link at the
 # ~/.local/bin path that is not teeup's is kept, with a warning, as
 # mise_wrapper_write does; no entry is made for it, and a stale one is
 # dropped. The previous version
@@ -793,7 +1049,7 @@ mise_tool_link_is() {
 # TEEUP_CAP names the capability in the repair hints when it is set.
 # 0 linked, already linked, kept, or previewed; 1 <command> is missing.
 mise_tool_install() {
-  local tool="$1" command="$2" version spec link inner bin owner
+  local tool="$1" command="$2" version spec link inner bin owner choice choice_version="" choice_file="" link_version rc=0
   _mise_plain_names mise_tool_install "$tool" "$command" || return 1
   if ! version="$(tools_lock_version "$tool")"; then
     err "mise_tool_install: $tool has no line in $TEEUP_TOOLS_LOCK"
@@ -821,23 +1077,56 @@ mise_tool_install() {
     warn "mise is not on PATH, so $tool $version was not installed and $command is missing. Run: teeup install mise, then: teeup configure $owner"
     return 1
   fi
-  if ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
-    if ! run_cmd mise -C / install --quiet "$spec@$version"; then
-      warn "mise could not install $tool $version, so $command is missing. Fix the cause above, then run: teeup configure $owner"
-      return 1
+  if choice="$(mise_tool_user_choice "$spec")"; then
+    choice_version="${choice%%$'\t'*}"
+    choice_file="${choice#*$'\t'}"
+  fi
+  link_version="$version"
+  if [[ -n "$choice_version" ]]; then
+    link_version="$choice_version"
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    if ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
+      run_cmd mise -C / install --quiet "$spec@$version" || return 1
     fi
-    if [[ "$DRY_RUN" == "true" ]]; then
-      printf "%b %s\n" "🔍" "[DRY-RUN] Would link $link to $tool $version (mise)"
+    if [[ "$link_version" != "$version" ]] && ! mise -C / where "$spec@$link_version" >/dev/null 2>&1; then
+      run_cmd mise -C / install --quiet "$spec@$link_version" || return 1
+    fi
+    if ! mise -C / where "$spec@$link_version" >/dev/null 2>&1; then
+      printf "%b %s\n" "🔍" "[DRY-RUN] Would link $link to $tool $link_version (mise)"
       return 0
     fi
   fi
-  if ! bin="$(mise -C / which --tool "$spec@$version" "$command" 2>/dev/null)" || [[ -z "$bin" || ! -x "$bin" ]]; then
-    warn "mise installed $tool $version, but it has no $command, so $link was not written."
+  if [[ "$DRY_RUN" != "true" ]] && ! mise -C / where "$spec@$version" >/dev/null 2>&1; then
+    if ! run_cmd mise -C / install --quiet "$spec@$version"; then
+      if [[ -z "$choice_version" ]]; then
+        warn "mise could not install $tool $version, so $command is missing. Fix the cause above, then run: teeup configure $owner"
+        return 1
+      fi
+      warn "mise could not pre-install the release's $tool $version. $command will still follow your installed choice, but run: teeup configure $owner after fixing the error above."
+      rc=1
+    fi
+  fi
+  if [[ -n "$choice_version" ]]; then
+    if ! mise -C / where "$spec@$link_version" >/dev/null 2>&1; then
+      if ! run_cmd mise -C / install --quiet "$spec@$link_version"; then
+        warn "mise could not install your choice $tool $link_version from $choice_file, so $command is missing. Fix the cause above, then run: teeup configure $owner"
+        return 1
+      fi
+    fi
+    if [[ "$choice_version" == "$version" ]]; then
+      log "$command follows your mise config ($choice_file): $tool $choice_version."
+    else
+      log "$command follows your mise config ($choice_file): $tool $choice_version, not the release's $version."
+    fi
+  fi
+  if ! bin="$(mise -C / which --tool "$spec@$link_version" "$command" 2>/dev/null)" || [[ -z "$bin" || ! -x "$bin" ]]; then
+    warn "mise installed $tool $link_version, but it has no $command, so $link was not written."
     return 1
   fi
   if mise_tool_link_is "$inner" "$bin" && mise_tool_link_owned "$link"; then
-    log "Already linked: $command ($tool $version)"
-    return 0
+    log "Already linked: $command ($tool $link_version)"
+    return $rc
   fi
   if ! mise_tool_link_is "$inner" "$bin"; then
     if [[ ! -d "$TEEUP_MISE_TOOLS_DIR" ]]; then
@@ -848,7 +1137,7 @@ mise_tool_install() {
       if [[ -L "$inner" ]]; then
         run_cmd rm -f "$inner" || return 1
       fi
-      _mise_tool_script "$bin" | write_managed_file "$inner" "$command, which runs $tool $version" || return 1
+      _mise_tool_script "$bin" | write_managed_file "$inner" "$command, which runs $tool $link_version" || return 1
       if [[ "$DRY_RUN" != "true" ]]; then
         chmod 755 "$inner"
       fi
@@ -866,7 +1155,8 @@ mise_tool_install() {
       return 1
     fi
   fi
-  ok_unless_dry "Linked $command to $tool $version (mise)"
+  ok_unless_dry "Linked $command to $tool $link_version (mise)"
+  return $rc
 }
 
 # mise_tool_remove <tool> <command> [true|false]
@@ -973,7 +1263,7 @@ mise_tools_apply() {
     cmds="${cmds:+$cmds }${pair#*:}"
   done
   if [[ -z "$cmds" ]]; then
-    return 0
+    return $rc
   fi
   if cap_skipped mise; then
     warn "mise is skipped on this machine (TEEUP_SKIP), so teeup does not install $cmds for $cap. Install them another way, or take mise out of TEEUP_SKIP."
@@ -981,6 +1271,9 @@ mise_tools_apply() {
   fi
   pkg_backend_path
   local_bin_on_path
+  if ! mise_tools_conf_adopt; then
+    rc=1
+  fi
   for pair in $(cap_meta_get "$cap" mise_tools); do
     if ! TEEUP_CAP="$cap" mise_tool_install "${pair%%:*}" "${pair#*:}"; then
       rc=1
@@ -1010,8 +1303,9 @@ mise_tools_repair() {
 
 # mise_tools_sync
 # `teeup update`'s pinned-tools step and the migration's whole job: every
-# installed, unskipped capability's tools installed and linked at the
-# versions the lock names now, lazy capabilities included (update never runs
+# installed, unskipped capability's tools installed at the versions the lock
+# names now. Links follow a user's global mise choices. Lazy capabilities are
+# included (update never runs
 # their configure). A tool whose pin changed gets the new version; the old
 # one stays for `mise prune`. conf.d is rewritten last.
 # 0 everything linked or nothing to do; 1 otherwise.
@@ -1021,17 +1315,22 @@ mise_tools_sync() {
     log "mise is skipped on this machine (TEEUP_SKIP), so the tools teeup pins are left as they are."
     return 0
   fi
+  pkg_backend_path
+  local_bin_on_path
+  if ! mise_tools_conf_adopt; then
+    rc=1
+  fi
   for name in $(cap_list); do
     if state_done check "cap-$name" && ! cap_skipped "$name" && [[ -n "$(cap_meta_get "$name" mise_tools)" ]]; then
       any=true
     fi
   done
   if [[ "$any" != "true" ]]; then
-    mise_tools_conf_write
-    return $?
+    if ! mise_tools_conf_write; then
+      rc=1
+    fi
+    return $rc
   fi
-  pkg_backend_path
-  local_bin_on_path
   if [[ "$DRY_RUN" != "true" ]] && ! have mise; then
     warn "mise is not on PATH, so the tools teeup pins were not checked. Run: teeup install mise, then: teeup update"
     return 1

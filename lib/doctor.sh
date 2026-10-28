@@ -263,7 +263,7 @@ _doctor_package_command() {
 # altogether (lib/mise.sh's mise_tools_conf_write warns about this too, each
 # time it writes); this says so once per run rather than once per capability.
 _doctor_mise_tools_check() {
-  local cap="$1" pair tool command_name link inner version spec bin found candidate conf_file
+  local cap="$1" pair tool command_name link inner version release_version spec bin found candidate conf_file choice choice_file="" expected_detail
   if [[ -n "${MISE_GLOBAL_CONFIG_FILE:-}" && "$TEEUP_DOCTOR_MISE_GLOBAL_CONFIG_WARNED" != "true" ]] &&
     [[ -n "$(cap_meta_get "$cap" mise_tools)" ]]; then
     conf_file="$(mise_tools_conf_file)"
@@ -277,12 +277,26 @@ _doctor_mise_tools_check() {
     command_name="${pair#*:}"
     link="$HOME/.local/bin/$command_name"
     inner="$TEEUP_MISE_TOOLS_DIR/$command_name"
-    version="$(tools_lock_version "$tool" || true)"
+    release_version="$(tools_lock_version "$tool" || true)"
+    version="$release_version"
     spec="$(tools_lock_spec "$tool" || true)"
+    choice_file=""
+    if choice="$(mise_tool_user_choice "$spec")"; then
+      version="${choice%%$'\t'*}"
+      choice_file="${choice#*$'\t'}"
+    fi
+    expected_detail="the version teeup pins"
+    if [[ -n "$choice_file" ]]; then
+      expected_detail="the version from your mise config ($choice_file)"
+    fi
     if cap_skipped mise; then
       doctor_warn "mise is skipped on this machine (TEEUP_SKIP), so teeup did not install $tool; $command_name is whatever else is on PATH."
     elif [[ ! -e "$link" && ! -L "$link" ]]; then
-      _doctor_report_failure "$cap" "$link is missing, so $command_name is not the $tool $version that teeup pins." "teeup configure $cap"
+      if [[ -n "$choice_file" ]]; then
+        _doctor_report_failure "$cap" "$link is missing, so $command_name is not $tool $version, $expected_detail." "teeup configure $cap"
+      else
+        _doctor_report_failure "$cap" "$link is missing, so $command_name is not the $tool $version that teeup pins." "teeup configure $cap"
+      fi
     elif ! mise_tool_link_owned "$link"; then
       doctor_warn "$link was not written by teeup, so teeup leaves it alone, and $command_name may not be $tool $version."
     elif [[ ! -e "$inner" && ! -L "$inner" ]]; then
@@ -294,7 +308,7 @@ _doctor_mise_tools_check() {
     elif ! bin="$(mise -C / which --tool "$spec@$version" "$command_name" 2>/dev/null)" || [[ -z "$bin" ]]; then
       _doctor_report_failure "$cap" "$tool $version is not installed through mise, so $link runs another version." "teeup configure $cap"
     elif ! mise_tool_link_is "$inner" "$bin"; then
-      _doctor_report_failure "$cap" "$link does not run $tool $version, the version teeup pins." "teeup configure $cap"
+      _doctor_report_failure "$cap" "$link does not run $tool $version, $expected_detail." "teeup configure $cap"
     else
       # bin/teeup puts ~/.local/bin first on its own PATH (local_bin_on_path),
       # so this cannot see the order in the user's shell. It only catches
@@ -303,7 +317,13 @@ _doctor_mise_tools_check() {
       if [[ "$found" != "$link" ]]; then
         doctor_warn "$command_name resolves to ${found:-nothing} on this PATH, not to teeup's $link ($tool $version). teeup puts $HOME/.local/bin first on its own PATH, so something else answers to $command_name first. This check does not see the PATH of your shell."
       elif command_runs "$command_name"; then
-        doctor_ok "$command_name is $tool $version through mise."
+        if [[ -n "$choice_file" && "$version" != "$release_version" ]]; then
+          doctor_ok "$command_name is $tool $version through mise, from your mise config ($choice_file), not the release's $release_version. To go back: mise unuse -g $spec && teeup configure $cap"
+        elif [[ -n "$choice_file" ]]; then
+          doctor_ok "$command_name is $tool $version through mise, from your mise config ($choice_file). To give the release control again: mise unuse -g $spec && teeup configure $cap"
+        else
+          doctor_ok "$command_name is $tool $version through mise."
+        fi
       else
         _doctor_report_failure "$cap" "$link is $tool $version, but $command_name does not run." "teeup configure $cap"
       fi
