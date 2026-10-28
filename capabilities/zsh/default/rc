@@ -127,4 +127,20 @@ _teeup_title_run()  { print -Pn '\e]2;%~ — '"${${1%% *}//\%/%%}"'\a' }
 add-zsh-hook precmd _teeup_title_idle
 add-zsh-hook preexec _teeup_title_run
 
+# --- the lazy shims stay last ------------------------------------------------
+# A lazy shim must lose to every real command, so env puts the shims last. But
+# what runs after it can append behind them: local.zsh, or an installer's line
+# below teeup's in ~/.zshrc (Windsurf, ghcup and llvm on a work Mac,
+# 2026-10-28, which also had one directory twice), and teeup doctor warned.
+# Before each prompt, drop duplicate PATH entries (the first one stays) and
+# move the shims back to the end. Both are cheap array operations.
+_teeup_shims_last() {
+  local shims="$TEEUP_STATE_DIR/shims"
+  path=(${(u)path})
+  if (( ${path[(Ie)$shims]} )) && [[ "${path[-1]}" != "$shims" ]]; then
+    path=(${path:#"$shims"} "$shims")
+  fi
+}
+add-zsh-hook precmd _teeup_shims_last
+
 unset _teeup_zsh

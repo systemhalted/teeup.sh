@@ -267,6 +267,25 @@ test_default_env_appends_the_shims_last() {
   cleanup_test_env
 }
 
+# 2026-10-28, a work Mac: installers appended Windsurf, ghcup and llvm after
+# the shims (one directory twice), and teeup doctor warned.
+test_rc_moves_the_shims_back_last_before_a_prompt() {
+  setup
+  require_zsh || return 1
+  local shims="$TEST_HOME/.local/state/teeup/shims" out
+  mkdir -p "$TEST_HOME/.local/bin" "$shims"
+  out="$(zsh -f -c "export TEEUP_PATH='$TEEUP_PATH'; . '$TEEUP_PATH/capabilities/zsh/default/rc' 2>/dev/null
+    path+=('$TEST_HOME/windsurf' '$TEST_HOME/roc' '$TEST_HOME/roc')
+    (( \${precmd_functions[(Ie)_teeup_shims_last]} )) || print 'hook missing'
+    _teeup_shims_last
+    printf '%s\n' \"\$PATH\"")"
+  assert_not_contains "$out" "hook missing" "rc registers the precmd hook" || return 1
+  [[ "$out" == *":$shims" ]] || { echo "the shims must be last again, got: $out"; return 1; }
+  assert_contains "$out" "$TEST_HOME/windsurf:$TEST_HOME/roc:$shims" "the appended directories keep their order" || return 1
+  assert_equals "1" "$(printf '%s' "$out" | tr ':' '\n' | grep -cxF "$TEST_HOME/roc")" "a duplicate entry goes" || return 1
+  cleanup_test_env
+}
+
 test_default_env_honours_mise_data_dir_for_shims() {
   setup
   require_zsh || return 1
@@ -1354,4 +1373,5 @@ INNER
 run_test "hook guard removes hooks when binaries are deleted" test_hook_guard_removes_hooks_when_binaries_are_deleted
 run_test "hook guard keeps hooks when binaries exist" test_hook_guard_keeps_hooks_when_binaries_exist
 run_test "the shell uses emacs key bindings whatever the editor" test_the_shell_uses_emacs_key_bindings_whatever_the_editor
+run_test "rc moves the shims back last before a prompt" test_rc_moves_the_shims_back_last_before_a_prompt
 print_summary

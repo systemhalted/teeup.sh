@@ -118,7 +118,7 @@ case ":$PATH:" in
           doctor_ok "The lazy shims directory is last on PATH."
           ;;
         *)
-          doctor_warn "The lazy shims directory is on PATH but not last, so a shim can shadow a real command. Open a new login shell, or check what prepends to PATH after ~/.zshenv."
+          doctor_warn "The lazy shims directory is on PATH but not last, so a shim can shadow a real command. Open a new terminal: before each prompt, teeup moves the shims back to the end. If this stays, something adds to PATH after the prompt, for example a tool that runs your command in a stripped shell."
           ;;
       esac
     fi
