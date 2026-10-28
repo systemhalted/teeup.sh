@@ -96,6 +96,34 @@ test_dry_run_records_nothing() {
   cleanup_test_env
 }
 
+# bootstrap runs the migration loop under `set -e`. A signal can interrupt an
+# informational printf to the terminal; state_migration_mark must retry that
+# write and let bootstrap continue because no state file is being changed.
+test_dry_run_migration_mark_retries_a_failed_informational_write() {
+  setup
+  local out rc=0
+  out="$(DRY_RUN=true "$BASH" -eu -c '
+    source "$TEEUP_PATH/lib/core.sh"
+    source "$TEEUP_PATH/lib/state.sh"
+    attempts=0
+    printf() {
+      attempts=$((attempts + 1))
+      if [[ "$attempts" -eq 1 ]]; then
+        return 1
+      fi
+      builtin printf "$@"
+    }
+    state_migration_mark 1780000000.sh
+    builtin printf "attempts:%s\n" "$attempts"
+    echo bootstrap-continued
+  ')" || rc=$?
+  assert_success "$rc" "an informational write must not stop bootstrap-style code" || return 1
+  assert_contains "$out" "Would record state: migrations/1780000000.sh" || return 1
+  assert_contains "$out" "attempts:2" "the failed write must be retried once" || return 1
+  assert_contains "$out" "bootstrap-continued" || return 1
+  cleanup_test_env
+}
+
 echo "lib/state.sh"
 run_test "done check/mark/clear" test_done_check_mark_clear
 run_test "done ensure succeeds only once" test_done_ensure_succeeds_only_first_time
@@ -105,4 +133,5 @@ run_test "na check/mark/clear" test_na_check_mark_clear
 run_test "toggle round trip" test_toggle_round_trip
 run_test "migration markers" test_migration_markers
 run_test "dry run records nothing" test_dry_run_records_nothing
+run_test "dry run migration mark retries a failed informational write" test_dry_run_migration_mark_retries_a_failed_informational_write
 print_summary
