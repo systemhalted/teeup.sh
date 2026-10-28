@@ -182,7 +182,7 @@ no same-line `local` back-reference. BSD `sed` and `awk`, no GNU-only flags.
 ```text
 teeup install <cap> | dev-env <lang> | font <name>    teeup configure <cap>
 teeup update [--main|--release] [<cap>]               teeup remove <cap>
-teeup reset <cap>                                      teeup doctor [<cap>]
+teeup reset <cap>                                      teeup doctor [<cap>...]
 teeup status                                           teeup list [--tier <t>]
 teeup menu [<id>]                                      teeup launch <app|cap>
 teeup theme set|list|current                           teeup config get|set|edit
