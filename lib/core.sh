@@ -10,9 +10,20 @@ DRY_RUN="${DRY_RUN:-false}"
 TEEUP_LOG_FILE="${TEEUP_LOG_FILE:-}"
 export TEEUP_PATH TEEUP_CONFIG_DIR TEEUP_STATE_DIR DRY_RUN TEEUP_LOG_FILE
 
-log()  { printf "%b %s\n" "🔹" "$*"; }
-ok()   { printf "%b %s\n" "✅" "$*"; }
-warn() { printf "%b %s\n" "⚠️" "$*" >&2; }
+# A signal can interrupt a terminal write. These lines only report progress,
+# so retry once and never let the write status stop a run under `set -e`.
+_informational_line() {
+  local icon="$1"
+  shift
+  if ! printf "%b %s\n" "$icon" "$*"; then
+    printf "%b %s\n" "$icon" "$*" || true
+  fi
+  return 0
+}
+
+log()  { _informational_line "🔹" "$*"; }
+ok()   { _informational_line "✅" "$*"; }
+warn() { _informational_line "⚠️" "$*" >&2; }
 err()  { printf "%b %s\n" "❌" "$*" >&2; }
 die()  { err "$@"; exit 1; }
 

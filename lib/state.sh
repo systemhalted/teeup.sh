@@ -8,7 +8,7 @@
 _state_touch() {
   local marker="$1"
   if [[ "$DRY_RUN" == "true" ]]; then
-    printf "%b %s\n" "🔍" "[DRY-RUN] Would record state: ${marker#"$TEEUP_STATE_DIR"/}"
+    _informational_line "🔍" "[DRY-RUN] Would record state: ${marker#"$TEEUP_STATE_DIR"/}"
     return 0
   fi
   mkdir -p "$(dirname "$marker")"
@@ -18,7 +18,7 @@ _state_touch() {
 _state_remove() {
   local marker="$1"
   if [[ "$DRY_RUN" == "true" ]]; then
-    printf "%b %s\n" "🔍" "[DRY-RUN] Would clear state: ${marker#"$TEEUP_STATE_DIR"/}"
+    _informational_line "🔍" "[DRY-RUN] Would clear state: ${marker#"$TEEUP_STATE_DIR"/}"
     return 0
   fi
   # A state directory the user (or a bad umask) made unwritable would leak a

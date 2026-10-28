@@ -234,6 +234,34 @@ test_ok_unless_dry_is_silent_when_dry_and_unchanged_otherwise() {
   cleanup_test_env
 }
 
+test_informational_logs_retry_a_failed_write_and_continue() {
+  setup_test_env
+  local out rc=0
+  out="$("$BASH" -eu -c '
+    source "$TEEUP_PATH/lib/core.sh"
+    attempts=0
+    printf() {
+      attempts=$((attempts + 1))
+      if (( attempts % 2 == 1 )); then
+        return 1
+      fi
+      builtin printf "$@"
+    }
+    log "working"
+    ok "worked"
+    warn "warning"
+    builtin printf "attempts:%s\n" "$attempts"
+    echo bootstrap-continued
+  ' 2>&1)" || rc=$?
+  assert_success "$rc" "an informational log write must not stop bootstrap-style code" || return 1
+  assert_contains "$out" "working" || return 1
+  assert_contains "$out" "worked" || return 1
+  assert_contains "$out" "warning" || return 1
+  assert_contains "$out" "attempts:6" "each failed write must be retried once" || return 1
+  assert_contains "$out" "bootstrap-continued" || return 1
+  cleanup_test_env
+}
+
 test_have_hides_a_binary_by_absolute_path() {
   setup_test_env
   source "$TEEUP_PATH/lib/core.sh"
@@ -969,6 +997,7 @@ run_test "have honours TEEUP_TEST_MISSING hook" test_have_honours_test_missing_h
 run_test "have hides a binary by absolute path" test_have_hides_a_binary_by_absolute_path
 run_test "user_config_dir follows XDG" test_user_config_dir_follows_xdg
 run_test "ok_unless_dry is silent when dry and unchanged otherwise" test_ok_unless_dry_is_silent_when_dry_and_unchanged_otherwise
+run_test "informational logs retry a failed write and continue" test_informational_logs_retry_a_failed_write_and_continue
 run_test "writable_dirs_check passes on a normal home" test_writable_dirs_check_passes_on_a_normal_home
 run_test "writable_dirs_check reports a locked directory" test_writable_dirs_check_reports_a_locked_directory
 run_test "writable_dirs_check names the home folder itself" test_writable_dirs_check_names_the_home_folder_itself
