@@ -308,6 +308,45 @@ test_doctor_reports_present_and_current() {
   cleanup_test_env
 }
 
+test_doctor_reports_an_edited_bundle_as_changed() {
+  setup
+  ca_bundle_rebuild || return 1
+  printf '%s\n' '-----BEGIN CERTIFICATE-----' 'EDITED_CERTIFICATE' '-----END CERTIFICATE-----' >> "$TEEUP_STATE_DIR/ca-bundle.pem"
+  local rc=0 out
+  out="$(cap_run ca-bundle doctor 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "certificates changed since the command-line CA bundle was built" || return 1
+  cleanup_test_env
+}
+
+test_an_unchanged_bundle_with_an_old_marker_is_current() {
+  setup
+  ca_bundle_rebuild || return 1
+  local marker="$TEEUP_STATE_DIR/ca-bundle.checked"
+  [[ -s "$marker" ]] || { echo "marker has no bundle digest"; return 1; }
+  touch -t 202001010000 "$TEEUP_SYSTEM_ROOT_KEYCHAIN" "$TEEUP_SYSTEM_KEYCHAIN"
+  touch -t 202101010000 "$marker"
+  export MOCK_SECURITY_MODE=export_failure
+  local status rc=0
+  status="$(ca_bundle_is_current)" || rc=$?
+  assert_success "$rc" "$status" || return 1
+  assert_equals "current" "$status" || return 1
+  cleanup_test_env
+}
+
+test_a_marker_without_a_digest_runs_the_full_comparison() {
+  setup
+  ca_bundle_rebuild || return 1
+  local marker="$TEEUP_STATE_DIR/ca-bundle.checked"
+  : > "$marker"
+  local status rc=0
+  status="$(ca_bundle_is_current)" || rc=$?
+  assert_success "$rc" "$status" || return 1
+  assert_equals "current" "$status" || return 1
+  [[ -s "$marker" ]] || { echo "legacy marker was not refreshed with a bundle digest"; return 1; }
+  cleanup_test_env
+}
+
 test_doctor_reports_missing_bundle_with_fix() {
   setup
   local rc=0 out report="$TEST_HOME/doctor-report"
@@ -426,7 +465,7 @@ test_an_unwritable_marker_is_dropped_not_trusted() {
   local out
   out="$(ca_bundle_rebuild 2>&1)" || { echo "rebuild failed: $out"; return 1; }
   [[ ! -e "$marker" ]] || { echo "the unwritable marker was kept"; return 1; }
-  assert_contains "$out" "judge the bundle by its own date" || return 1
+  assert_contains "$out" "compare the bundle with the keychains" || return 1
   cleanup_test_env
 }
 
@@ -495,6 +534,9 @@ run_test "doctor reports not needed without admin roots" test_doctor_reports_not
 run_test "no-trust-settings exit means no admin roots" test_no_trust_settings_exit_means_no_admin_roots
 run_test "configure warns but does not fail bootstrap" test_configure_warns_but_does_not_fail_bootstrap
 run_test "doctor reports present and current" test_doctor_reports_present_and_current
+run_test "doctor reports an edited bundle as changed" test_doctor_reports_an_edited_bundle_as_changed
+run_test "an unchanged bundle with an old marker is current" test_an_unchanged_bundle_with_an_old_marker_is_current
+run_test "a marker without a digest runs the full comparison" test_a_marker_without_a_digest_runs_the_full_comparison
 run_test "doctor reports missing bundle with fix" test_doctor_reports_missing_bundle_with_fix
 run_test "doctor is satisfied when keychain is newer but certificates match" test_doctor_is_satisfied_when_keychain_is_newer_but_certificates_match
 run_test "doctor reports certificates changed" test_doctor_reports_certificates_changed

@@ -8,15 +8,33 @@ ca_bundle_path() {
   printf '%s/ca-bundle.pem\n' "${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
 }
 
-# ca_bundle_checked_path -> a file whose date is the last successful rebuild.
-# The bundle keeps its own date when a rebuild finds nothing new, so doctor
-# compares the keychains with this instead.
+# ca_bundle_checked_path -> a marker whose date is the last successful rebuild
+# and whose contents identify the bundle checked then. The bundle keeps its
+# own date when a rebuild finds nothing new, so doctor compares the keychains
+# with this instead.
 ca_bundle_checked_path() {
   printf '%s/ca-bundle.checked\n' "${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
 }
 
 ca_bundle_curlrc_path() {
   printf '%s/ca-bundle.curlrc\n' "${TEEUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/teeup}"
+}
+
+_ca_bundle_digest() {
+  cksum < "$1"
+}
+
+_ca_bundle_record_check() {
+  local bundle checked digest
+  bundle="$1"
+  checked="$(ca_bundle_checked_path)"
+  digest=""
+  if ! digest="$(_ca_bundle_digest "$bundle")" ||
+     [[ -z "$digest" ]] ||
+     ! printf '%s\n' "$digest" > "$checked"; then
+    rm -f "$checked" 2>/dev/null || true
+    return 1
+  fi
 }
 
 _ca_bundle_is_macos() {
@@ -300,13 +318,10 @@ ca_bundle_rebuild() {
       _ca_bundle_fail "$work" "Could not install Homebrew's curl configuration." || return 1
   fi
   rm -rf "$work"
-  # A marker that cannot be updated would make doctor keep trusting its old
-  # date, so drop it and let doctor fall back to the bundle's own date.
-  local checked
-  checked="$(ca_bundle_checked_path)"
-  if ! { : > "$checked"; } 2>/dev/null; then
-    rm -f "$checked" 2>/dev/null || true
-    warn "Could not update $checked; teeup doctor will judge the bundle by its own date."
+  # The marker records both when the keychains were checked and which bundle
+  # was checked. Drop it on failure so doctor runs the full comparison.
+  if ! _ca_bundle_record_check "$bundle" 2>/dev/null; then
+    warn "Could not update $(ca_bundle_checked_path); teeup doctor will compare the bundle with the keychains."
   fi
   ca_bundle_apply_env
 }
@@ -330,7 +345,8 @@ _ca_bundle_cert_set() {
 # marker so the next doctor run takes the cheap path. Never touches the
 # installed bundle or curlrc.
 ca_bundle_is_current() {
-  local bundle curlrc roots keychain checked state_dir work stage_rc=0
+  local bundle curlrc roots keychain checked checked_digest bundle_digest
+  local state_dir work stage_rc=0
   bundle="$(ca_bundle_path)"
   curlrc="$(ca_bundle_curlrc_path)"
   roots="${TEEUP_SYSTEM_ROOT_KEYCHAIN:-/System/Library/Keychains/SystemRootCertificates.keychain}"
@@ -344,8 +360,14 @@ ca_bundle_is_current() {
     return 1
   fi
   checked="$(ca_bundle_checked_path)"
-  [[ -e "$checked" ]] || checked="$bundle"
-  if [[ ( ! -e "$roots" || ! "$roots" -nt "$checked" ) &&
+  checked_digest=""
+  bundle_digest=""
+  if [[ -s "$checked" ]]; then
+    checked_digest="$(cat "$checked" 2>/dev/null)" || checked_digest=""
+    bundle_digest="$(_ca_bundle_digest "$bundle" 2>/dev/null)" || bundle_digest=""
+  fi
+  if [[ -n "$bundle_digest" && "$checked_digest" == "$bundle_digest" &&
+        ( ! -e "$roots" || ! "$roots" -nt "$checked" ) &&
         ( ! -e "$keychain" || ! "$keychain" -nt "$checked" ) ]]; then
     echo current
     return 0
@@ -360,7 +382,7 @@ ca_bundle_is_current() {
   if [[ "$stage_rc" -eq 0 ]] &&
      [[ "$(_ca_bundle_cert_set "$work/ca-bundle.pem")" == "$(_ca_bundle_cert_set "$bundle")" ]]; then
     rm -rf "$work"
-    { : > "$(ca_bundle_checked_path)"; } 2>/dev/null || true
+    _ca_bundle_record_check "$bundle" 2>/dev/null || true
     echo current
     return 0
   fi
