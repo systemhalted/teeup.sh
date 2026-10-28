@@ -286,6 +286,21 @@ test_rc_moves_the_shims_back_last_before_a_prompt() {
   cleanup_test_env
 }
 
+# Codex on #133: an empty PATH entry means the current directory. The hook
+# must keep it, both when the shims are last and when it moves them.
+test_rc_keeps_an_empty_path_entry() {
+  setup
+  require_zsh || return 1
+  local shims="$TEST_HOME/.local/state/teeup/shims" out
+  mkdir -p "$TEST_HOME/.local/bin" "$shims"
+  out="$(zsh -f -c "export TEEUP_PATH='$TEEUP_PATH'; . '$TEEUP_PATH/capabilities/zsh/default/rc' 2>/dev/null
+    PATH='/usr/bin::/bin:$shims'; _teeup_shims_last; printf '%s\\n' \"\$PATH\"
+    PATH='/usr/bin::$shims:/bin'; _teeup_shims_last; printf '%s\\n' \"\$PATH\"")"
+  assert_equals "/usr/bin::/bin:$shims
+/usr/bin::/bin:$shims" "$out" "the empty entry stays" || return 1
+  cleanup_test_env
+}
+
 test_default_env_honours_mise_data_dir_for_shims() {
   setup
   require_zsh || return 1
@@ -1160,6 +1175,7 @@ run_test "configure dry run names the shipped source for a foreign .zshenv" test
 run_test "zshenv sources teeup env from XDG_CONFIG_HOME" test_zshenv_sources_teeup_env_from_xdg_config_home
 run_test "zprofile sources teeup env from XDG_CONFIG_HOME" test_zprofile_sources_teeup_env_from_xdg_config_home
 run_test "default env appends the shims last" test_default_env_appends_the_shims_last
+run_test "rc keeps an empty PATH entry" test_rc_keeps_an_empty_path_entry
 run_test "default env honours MISE_DATA_DIR for shims" test_default_env_honours_mise_data_dir_for_shims
 run_test "default env prefers macports when recorded" test_default_env_prefers_macports_when_recorded
 run_test "default env prefers homebrew when recorded" test_default_env_prefers_homebrew_when_recorded

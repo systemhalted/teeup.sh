@@ -133,12 +133,13 @@ add-zsh-hook preexec _teeup_title_run
 # below teeup's in ~/.zshrc (Windsurf, ghcup and llvm on a work Mac,
 # 2026-10-28, which also had one directory twice), and teeup doctor warned.
 # Before each prompt, drop duplicate PATH entries (the first one stays) and
-# move the shims back to the end. Both are cheap array operations.
+# move the shims back to the end. Both are cheap array operations. The
+# expansions are quoted so that an empty entry (the current directory) stays.
 _teeup_shims_last() {
   local shims="$TEEUP_STATE_DIR/shims"
-  path=(${(u)path})
+  path=("${(@u)path}")
   if (( ${path[(Ie)$shims]} )) && [[ "${path[-1]}" != "$shims" ]]; then
-    path=(${path:#"$shims"} "$shims")
+    path=("${(@)path:#"$shims"}" "$shims")
   fi
 }
 add-zsh-hook precmd _teeup_shims_last
