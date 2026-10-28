@@ -52,6 +52,7 @@ teeup - your Mac, ready to code
                                  (exit 0 verified healthy, 1 found problems,
                                   2 could not check something)
   teeup config get|set|edit      read or change the answers file
+                                 edit prefers VISUAL over EDITOR; set VISUAL= to use EDITOR
   teeup has <capability>         exit 0 when installed (for scripts and menus)
   teeup secret get|set|rm <name>  read, store or delete a Keychain secret
   teeup status                   package manager, answers, installed capabilities
@@ -1126,7 +1127,7 @@ _config_report_changed_answers() {
 # write pointless, because that is the one thing about this precedence that
 # is impossible to notice on your own.
 cmd_config() {
-  local op="${1:-}" key value f pinned editor backup parse_error
+  local op="${1:-}" key value f pinned editor editor_from backup parse_error
   local host user_machine repo_machine
   if [[ $# -gt 0 ]]; then
     shift
@@ -1228,7 +1229,20 @@ cmd_config() {
       ;;
     edit)
       f="$(answers_file)"
-      editor="${VISUAL:-${EDITOR:-vi}}"
+      # VISUAL wins over EDITOR, as git's own order. Say which variable chose
+      # the editor: the zsh layer exports VISUAL, so a user who runs
+      # `EDITOR=nano teeup config edit` would otherwise get Emacs without a
+      # word about why.
+      if [[ -n "${VISUAL:-}" ]]; then
+        editor="$VISUAL"
+        editor_from="from VISUAL; set VISUAL= to use EDITOR"
+      elif [[ -n "${EDITOR:-}" ]]; then
+        editor="$EDITOR"
+        editor_from="from EDITOR"
+      else
+        editor="vi"
+        editor_from="VISUAL and EDITOR are empty, so this is the default"
+      fi
       if [[ "$DRY_RUN" == "true" ]]; then
         printf "%b %s\n" "🔍" "[DRY-RUN] Would open $editor on $f"
         return 0
@@ -1240,6 +1254,7 @@ cmd_config() {
       fi
       backup="$(mktemp)"
       cp "$f" "$backup"
+      log "Opening the answers file with $editor ($editor_from)."
       # Run through `bash -c` with the path as $1, so an EDITOR that carries
       # flags ("code -w", "emacsclient -t") works and a path with spaces or
       # metacharacters in it is still one argument.

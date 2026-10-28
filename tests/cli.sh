@@ -2890,6 +2890,35 @@ EOF2
   cleanup_test_env
 }
 
+# The zsh layer exports VISUAL, which wins over EDITOR in git's order, so a
+# user who set EDITOR=nano and got Emacs had nothing to read that explained
+# it. The line before the editor opens names the command and the variable.
+test_config_edit_says_when_visual_chose_the_editor() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+true
+EOF2
+  local out
+  out="$(VISUAL=fakeed EDITOR=other "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "Opening the answers file with fakeed (from VISUAL; set VISUAL= to use EDITOR)." || return 1
+  cleanup_test_env
+}
+
+test_config_edit_says_when_editor_chose_the_editor() {
+  setup
+  seed_config_answers
+  mock_command_script fakeed <<'EOF2'
+true
+EOF2
+  local out
+  # VISUAL is emptied, not merely unset: it is a real variable in a real
+  # developer's environment and would otherwise win over EDITOR here.
+  out="$(VISUAL="" EDITOR=fakeed "$TEEUP" config edit 2>&1)"
+  assert_contains "$out" "Opening the answers file with fakeed (from EDITOR)." || return 1
+  cleanup_test_env
+}
+
 # R7.3: a dry run previews only. It must not create the answers file, and
 # must not invoke the editor at all (nothing on PATH answers to "fakeed"
 # here, so a regression that reaches run_cmd would fail loudly).
@@ -3395,6 +3424,8 @@ run_test "config edit restores the backup when the editor exits non-zero" test_c
 run_test "config edit accepts a value answers_set itself escaped" test_config_edit_accepts_a_value_answers_set_itself_escaped
 run_test "config edit rejects unescaped command substitution" test_config_edit_rejects_unescaped_command_substitution_in_a_quoted_value
 run_test "config edit passes flags in EDITOR" test_config_edit_passes_flags_in_the_editor_variable
+run_test "config edit names VISUAL when it chose the editor" test_config_edit_says_when_visual_chose_the_editor
+run_test "config edit names EDITOR when it chose the editor" test_config_edit_says_when_editor_chose_the_editor
 run_test "config edit dry run creates and touches nothing" test_config_edit_dry_run_creates_and_touches_nothing
 run_test "config edit that changes emacs flavor prints the configure emacs hint" test_config_edit_that_changes_emacs_flavor_prints_the_configure_emacs_hint
 run_test "config edit that changes nothing prints no hint" test_config_edit_that_changes_nothing_prints_no_hint

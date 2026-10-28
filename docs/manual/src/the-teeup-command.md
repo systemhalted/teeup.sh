@@ -65,7 +65,7 @@ Run `teeup list` to see all capabilities.
 | `teeup config get` | Show the answers file, the machine file (if there is one), and every answer, with a mark on the answers that the machine file pins. |
 | `teeup config get <KEY>` | Print one answer, for example `TEEUP_THEME`. |
 | `teeup config set <KEY> <value>` | Change one answer, and show the command that applies it. |
-| `teeup config edit` | Open the answers file in `$VISUAL`, `$EDITOR`, or `vi`. If an edit breaks the file, teeup restores the previous file. |
+| `teeup config edit` | Open the answers file in `$VISUAL`, then `$EDITOR`, then `vi`. teeup prints which one it opens. Set `VISUAL=` to use `$EDITOR`. If an edit breaks the file, teeup restores the previous file. |
 | `teeup secret set <name>` | Store a secret in the macOS Keychain. teeup asks for the value but does not echo it. |
 | `teeup secret get <name>` | Print a stored secret. |
 | `teeup secret rm <name>` | Delete a stored secret. |
