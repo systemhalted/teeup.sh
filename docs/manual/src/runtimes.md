@@ -33,11 +33,11 @@ teeup records the same versions in `~/.config/mise/conf.d/teeup.toml`, so `mise 
 
 teeup edits your `config.toml` only when it moves a choice that mise wrote into teeup's file. See the [mise configuration](https://mise.jdx.dev/configuration.html) page.
 
-Your own `mise use -g <tool>@<version>` choice wins over the release. It controls your shell and teeup's link.
+Your own `mise use -g <tool>@<version>` choice wins over the release. Run `teeup update` or `teeup configure <capability>` to point teeup's link at it.
 
 teeup keeps the release version installed. Run `mise unuse -g <tool>`, then run `teeup update` to make the link use it again.
 
-`teeup doctor` reports your choice as healthy. It also shows the `teeup configure` command that updates the link.
+`teeup doctor` reports a linked choice as healthy. It also shows the command that returns the link to the release version.
 
 Language runtimes come from mise because projects need different versions. Each project specifies its versions in `mise.toml`, and `mise activate` changes between them when you change directories. mise downloads each AI tool the first time that you run it.
 

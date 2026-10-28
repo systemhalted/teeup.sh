@@ -284,14 +284,15 @@ case "$1" in
           if [ -z "$file" ]; then
             for f in "$dir"/conf.d/*.toml; do
               [ -f "$f" ] || continue
-              version="$(toml_version "$tool" "$f")"
-              if [ -n "$version" ]; then file="$f"; break; fi
+            version="$(toml_version "$tool" "$f")"
+            if [ -n "$version" ]; then file="$f"; break; fi
             done
           fi
         fi
         if [ -z "$file" ]; then
           echo "[]"
         else
+          file="${MOCK_MISE_CURRENT_SOURCE_PATH:-$file}"
           json_file="$(json_escape "$file")"
           printf '[\n  {\n    "version": "%s",\n    "requested_version": "%s",\n    "source": {\n      "type": "mise.toml",\n      "path": "%s"\n    }\n  }\n]\n' \
             "$version" "$version" "$json_file"
@@ -326,7 +327,7 @@ case "$1" in
         [ "$first" = 1 ] || echo "  ,"
         first=0
         printf '  {\n    "version": "%s",\n    "install_path": "%s",\n    "sources": [\n      {\n        "type": "mise.toml",\n        "path": "%s",\n        "requested_version": "%s"\n      }\n    ]\n  }\n' \
-          "$v" "$(spec_dir "$tool@$v")" "$f" "$v"
+          "$v" "$(spec_dir "$tool@$v")" "$(json_escape "$f")" "$v"
       done
     done
     echo "]"

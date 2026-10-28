@@ -737,6 +737,20 @@ test_capabilities_leave_a_version_the_user_s_config_asks_for_out_of_the_summary(
   cleanup_test_env
 }
 
+test_capabilities_adopt_user_edits_before_uninstall() {
+  setup
+  tool_cap_fixture
+  local conf="$TEST_HOME/.config/mise/conf.d/teeup.toml" config="$TEST_HOME/.config/mise/config.toml"
+  sed 's/"ripgrep" = "15.2.0"/"ripgrep" = "14.1.1"/' "$conf" > "$conf.new"
+  mv "$conf.new" "$conf"
+  mise -C / install --quiet ripgrep@14.1.1 >/dev/null 2>&1
+  uninstall_capabilities >/dev/null 2>&1
+  assert_contains "$(cat "$config")" '"ripgrep" = "14.1.1"' "the choice survives removal of teeup's file" || return 1
+  [[ ! -e "$conf" ]] || { echo "teeup's managed file stays after uninstall"; return 1; }
+  assert_not_contains "$_UNINSTALL_KEPT" "mise uninstall ripgrep@14.1.1" "the adopted choice is not offered for removal" || return 1
+  cleanup_test_env
+}
+
 # A user's own link, with no entry of teeup's, is not teeup's tool: the
 # summary neither claims its version as removed nor tells the user to
 # uninstall it.
@@ -1578,6 +1592,7 @@ run_test "capabilities uninstall mise tools when asked" test_capabilities_uninst
 run_test "capabilities name the mise versions teeup leaves installed" test_capabilities_name_the_mise_versions_teeup_leaves_installed
 run_test "capabilities name both mise versions when both are installed" test_capabilities_name_both_mise_versions_when_both_are_installed
 run_test "capabilities leave a version the user's config asks for out of the summary" test_capabilities_leave_a_version_the_user_s_config_asks_for_out_of_the_summary
+run_test "capabilities adopt user edits before uninstall" test_capabilities_adopt_user_edits_before_uninstall
 run_test "capabilities leave a user's mise tool out of the summary" test_capabilities_leave_a_user_s_mise_tool_out_of_the_summary
 run_test "capabilities leave a user link over teeup's entry out of the summary" test_capabilities_leave_a_user_link_over_teeup_s_entry_out_of_the_summary
 run_test "dry run teardown does not call the mise tools directory a leftover" test_dry_run_teardown_does_not_call_the_mise_tools_directory_a_leftover

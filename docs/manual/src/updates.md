@@ -38,9 +38,11 @@ A teeup release sets the version of each tool that comes from mise. The file `sh
 
 When a release changes a version, step 4 installs the new version and changes the link in `~/.local/state/teeup/tools`. The link in `~/.local/bin` stays as it is. The old version stays installed. Run `mise prune` to remove the versions that nothing uses.
 
-Your own `mise use -g <tool>@<version>` choice wins. teeup installs the release version, but its link follows your choice.
+Your own `mise use -g <tool>@<version>` choice wins. Run `teeup update` or `teeup configure <capability>` to point teeup's link at it.
 
-`teeup doctor` reports the choice. Run `mise unuse -g <tool>`, then run `teeup update` to return the link to the release version.
+teeup keeps the release version installed. Run `mise unuse -g <tool>`, then run `teeup update` to make the link use it again.
+
+`teeup doctor` reports a linked choice as healthy. It also shows the command that returns the link to the release version.
 
 Homebrew cannot keep a formula at a fixed version. Thus teeup upgrades the packages that it installed only when the checkout moves to a new commit. On the release channel, this is a new release. On `main`, this is a new commit. If that upgrade fails, the next update tries it again, also when the checkout did not move.
 

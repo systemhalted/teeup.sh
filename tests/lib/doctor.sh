@@ -837,6 +837,12 @@ test_mise_tools_check_reports_a_user_choice_as_healthy() {
   assert_success "$rc" "a user override is healthy" || return 1
   assert_contains "$out" "rg is ripgrep 14.1.1 through mise, from your mise config ($TEST_HOME/.config/mise/config.toml), not the release's 15.2.0. To go back: mise unuse -g ripgrep && teeup configure widget" || return 1
   assert_equals "" "$(cat "$REPORT")" "the notice is not a failure" || return 1
+  : > "$REPORT"
+  rc=0
+  out="$(DRY_RUN=true doctor_metadata_check widget 2>&1)" || rc=$?
+  assert_success "$rc" "a dry run resolves the same user choice" || return 1
+  assert_contains "$out" "rg is ripgrep 14.1.1 through mise, from your mise config" || return 1
+  assert_equals "" "$(cat "$REPORT")" || return 1
   cleanup_test_env
 }
 

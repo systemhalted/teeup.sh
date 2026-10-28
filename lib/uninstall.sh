@@ -756,12 +756,16 @@ _uninstall_mise_specs() {
 
 # _uninstall_remove_one <name>
 _uninstall_remove_one() {
-  local name="$1" rc=0 with="$_UNINSTALL_PACKAGES" names login tool_specs tool_cmds pair link_dir="$HOME/.local/bin" mise_unchecked=false
+  local name="$1" rc=0 with="$_UNINSTALL_PACKAGES" names login tool_specs tool_cmds pair tool_pairs link_dir="$HOME/.local/bin" mise_unchecked=false
   names="$(cap_meta_get "$name" packages) $(cap_meta_get "$name" casks)"
   names="$(printf '%s' "$names" | awk '{$1=$1; print}')"
+  tool_pairs="$(cap_meta_get "$name" mise_tools)"
+  if [[ -n "$tool_pairs" ]]; then
+    mise_tools_conf_adopt || rc=1
+  fi
   # Asked before cap_remove: with packages, mise no longer has them after.
   if ! have mise; then
-    for pair in $(cap_meta_get "$name" mise_tools); do
+    for pair in $tool_pairs; do
       if mise_tool_used "${pair#*:}"; then
         mise_unchecked=true
         break

@@ -418,6 +418,9 @@ cap_remove() {
   # A mise tool's link always goes; its pinned install only with packages.
   # conf.d is rewritten without this capability either way, so `mise prune`
   # may take what nothing pins any more.
+  if [[ -n "$tool_pairs" ]]; then
+    mise_tools_conf_adopt || failed=1
+  fi
   for pair in $tool_pairs; do
     mise_tool_remove "${pair%%:*}" "${pair#*:}" "$with_packages" || failed=1
   done
