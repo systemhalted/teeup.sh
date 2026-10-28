@@ -24,7 +24,8 @@ test_install_skips_an_installed_cask() {
   setup
   # Listed by Homebrew and its app in place: nothing to do.
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
-  mkdir -p "$TEEUP_APPS_DIR/Obsidian.app"
+  mkdir -p "$TEEUP_APPS_DIR/Obsidian.app/Contents"
+  : > "$TEEUP_APPS_DIR/Obsidian.app/Contents/Info.plist"
   mock_command_script brew <<'EOF2'
 case "$1 ${2:-} ${3:-}" in "list --cask obsidian") exit 0 ;; list*) exit 1 ;; *) exit 0 ;; esac
 EOF2
@@ -58,7 +59,8 @@ test_configure_reports_the_app() {
   # never ran.
   assert_contains "$out" "run: teeup install obsidian" || return 1
   assert_not_contains "$out" "the install step above says why" || return 1
-  mkdir -p "$TEST_HOME/Applications/Obsidian.app"
+  mkdir -p "$TEST_HOME/Applications/Obsidian.app/Contents"
+  : > "$TEST_HOME/Applications/Obsidian.app/Contents/Info.plist"
   out="$(DRY_RUN=false "$TEEUP" configure obsidian)"
   assert_contains "$out" "Obsidian is installed; open it with: open -a 'Obsidian'" || return 1
   cleanup_test_env
@@ -90,7 +92,8 @@ test_launch_installs_the_cask_then_opens() {
 case "$1 ${2:-} ${3:-}" in
   "list --cask obsidian") exit 1 ;;
   "install --cask obsidian")
-    mkdir -p "$TEEUP_APPS_DIR/Obsidian.app"
+    mkdir -p "$TEEUP_APPS_DIR/Obsidian.app/Contents"
+    : > "$TEEUP_APPS_DIR/Obsidian.app/Contents/Info.plist"
     echo "brew install --cask obsidian"
     exit 0
     ;;
@@ -123,7 +126,8 @@ test_launch_installs_the_cask_then_opens() {
 case "$1 ${2:-} ${3:-}" in
   "list --cask obsidian") exit 1 ;;
   "install --cask obsidian")
-    mkdir -p "$TEEUP_APPS_DIR/Obsidian.app"
+    mkdir -p "$TEEUP_APPS_DIR/Obsidian.app/Contents"
+    : > "$TEEUP_APPS_DIR/Obsidian.app/Contents/Info.plist"
     echo "brew install --cask obsidian"
     exit 0
     ;;

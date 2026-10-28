@@ -232,10 +232,38 @@ test_app_installed_checks_both_application_folders() {
   setup
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
   app_installed "Sketch Pad" && { echo "nothing installed yet"; return 1; }
-  mkdir -p "$TEEUP_APPS_DIR/Sketch Pad.app"
+  mkdir -p "$TEEUP_APPS_DIR/Sketch Pad.app/Contents"
+  : > "$TEEUP_APPS_DIR/Sketch Pad.app/Contents/Info.plist"
   app_installed "Sketch Pad" || { echo "found under TEEUP_APPS_DIR"; return 1; }
-  mkdir -p "$HOME/Applications/Paint Shop.app"
+  mkdir -p "$HOME/Applications/Paint Shop.app/Contents"
+  : > "$HOME/Applications/Paint Shop.app/Contents/Info.plist"
   app_installed "Paint Shop" || { echo "found under ~/Applications"; return 1; }
+  cleanup_test_env
+}
+
+test_app_installed_rejects_an_empty_bundle() {
+  setup
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/Foo.app"
+  app_installed Foo && { echo "an empty app bundle must not count as installed"; return 1; }
+  cleanup_test_env
+}
+
+test_app_installed_accepts_a_bundle_with_info_plist() {
+  setup
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/Foo.app/Contents"
+  : > "$TEEUP_APPS_DIR/Foo.app/Contents/Info.plist"
+  app_installed Foo || { echo "an app bundle with Contents/Info.plist must count as installed"; return 1; }
+  cleanup_test_env
+}
+
+test_app_installed_accepts_a_bundle_with_a_macos_entry() {
+  setup
+  export TEEUP_APPS_DIR="$TEST_HOME/Applications"
+  mkdir -p "$TEEUP_APPS_DIR/Foo.app/Contents/MacOS"
+  : > "$TEEUP_APPS_DIR/Foo.app/Contents/MacOS/Foo"
+  app_installed Foo || { echo "an app bundle with a non-empty Contents/MacOS must count as installed"; return 1; }
   cleanup_test_env
 }
 
@@ -249,7 +277,8 @@ test_app_installed_checks_macports_apps_dir_on_macports() {
   mkdir -p "$TEEUP_PKG_PREFIX/etc/macports"
   printf 'applications_dir\t%s\n' "$apps_dir" > "$TEEUP_PKG_PREFIX/etc/macports/macports.conf"
   app_installed "Emacs" && { echo "nothing installed yet"; return 1; }
-  mkdir -p "$apps_dir/Emacs.app"
+  mkdir -p "$apps_dir/Emacs.app/Contents"
+  : > "$apps_dir/Emacs.app/Contents/Info.plist"
   app_installed "Emacs" || { echo "must be found under macports_apps_dir"; return 1; }
   unset TEEUP_PACKAGE_MANAGER
   cleanup_test_env
@@ -294,6 +323,9 @@ run_test "cap_apps splits on semicolons" test_cap_apps_splits_on_semicolons
 run_test "launch_resolve by capability and by app name" test_launch_resolve_by_capability_and_by_app_name
 run_test "launch_resolve matches capability names case-sensitively" test_launch_resolve_matches_capability_names_case_sensitively
 run_test "app_installed checks both application folders" test_app_installed_checks_both_application_folders
+run_test "app_installed rejects an empty bundle" test_app_installed_rejects_an_empty_bundle
+run_test "app_installed accepts a bundle with Info.plist" test_app_installed_accepts_a_bundle_with_info_plist
+run_test "app_installed accepts a bundle with a MacOS entry" test_app_installed_accepts_a_bundle_with_a_macos_entry
 run_test "app_installed checks macports_apps_dir on macports" test_app_installed_checks_macports_apps_dir_on_macports
 run_test "app_search_dirs lists macports only on macports" test_app_search_dirs_lists_macports_only_on_macports
 run_test "app_match_in_cap finds the named app" test_app_match_in_cap_finds_the_named_app

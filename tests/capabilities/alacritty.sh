@@ -44,7 +44,8 @@ test_configure_gives_guidance_only_for_an_installed_alacritty() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure alacritty 2>&1)"
   assert_not_contains "$out" "run alacritty" || return 1
-  mkdir -p "$TEEUP_APPS_DIR/Alacritty.app"
+  mkdir -p "$TEEUP_APPS_DIR/Alacritty.app/Contents"
+  : > "$TEEUP_APPS_DIR/Alacritty.app/Contents/Info.plist"
   unset TEEUP_TEST_MISSING
   mock_command alacritty 0 ""
   out="$(DRY_RUN=false "$TEEUP" configure alacritty)"
@@ -58,7 +59,10 @@ test_launch_installs_then_opens() {
   mock_command_script brew <<'EOF2'
 case "$1 ${2:-}" in
   "list "*) exit 1 ;;
-  "install --cask") mkdir -p "$TEEUP_APPS_DIR/Alacritty.app" ;;
+  "install --cask")
+    mkdir -p "$TEEUP_APPS_DIR/Alacritty.app/Contents"
+    : > "$TEEUP_APPS_DIR/Alacritty.app/Contents/Info.plist"
+    ;;
 esac
 exit 0
 EOF2

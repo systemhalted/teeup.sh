@@ -542,7 +542,8 @@ test_lazy_run_rejects_a_command_the_capability_does_not_provide() {
 test_launch_opens_an_installed_app_without_installing() {
   setup
   mock_command open 0 ""
-  mkdir -p "$TEEUP_APPS_DIR/Sketch Pad.app"
+  mkdir -p "$TEEUP_APPS_DIR/Sketch Pad.app/Contents"
+  : > "$TEEUP_APPS_DIR/Sketch Pad.app/Contents/Info.plist"
   local out
   out="$("$TEEUP" launch "sketch pad")"
   assert_contains "$out" "Opening Sketch Pad" || return 1
@@ -558,7 +559,7 @@ test_launch_installs_the_capability_then_opens() {
   setup
   mock_command open 0 ""
   # The fixture's install "installs" the app by creating its bundle.
-  printf '#!/usr/bin/env bash\necho "install:sketch"\nmkdir -p "$TEEUP_APPS_DIR/Sketch Pad.app"\n' > "$TEEUP_CAPS_DIR/sketch/install"
+  printf '#!/usr/bin/env bash\necho "install:sketch"\nmkdir -p "$TEEUP_APPS_DIR/Sketch Pad.app/Contents"\n: > "$TEEUP_APPS_DIR/Sketch Pad.app/Contents/Info.plist"\n' > "$TEEUP_CAPS_DIR/sketch/install"
   local out
   out="$("$TEEUP" launch sketch)"
   assert_contains "$out" "Sketch Pad is not installed; installing sketch first." || return 1
@@ -598,7 +599,8 @@ test_launch_on_macports_consults_the_macports_apps_dir() {
   local macports_dir="$TEST_HOME/pkgprefix/etc/macports"
   mkdir -p "$macports_dir"
   printf 'applications_dir\t%s/MacPortsApps\n' "$TEST_HOME" > "$macports_dir/macports.conf"
-  mkdir -p "$TEST_HOME/MacPortsApps/Sketch Pad.app"
+  mkdir -p "$TEST_HOME/MacPortsApps/Sketch Pad.app/Contents"
+  : > "$TEST_HOME/MacPortsApps/Sketch Pad.app/Contents/Info.plist"
   out="$("$TEEUP" launch sketch 2>&1)"
   assert_contains "$out" "Opening Sketch Pad" || return 1
   assert_not_contains "$out" "install:sketch" || return 1
@@ -632,7 +634,8 @@ test_launch_opens_the_named_app_not_just_the_first() {
   setup
   make_cap paint lazy "" "" "Paint Shop; Paint Viewer"
   mock_command open 0 ""
-  mkdir -p "$TEEUP_APPS_DIR/Paint Viewer.app"
+  mkdir -p "$TEEUP_APPS_DIR/Paint Viewer.app/Contents"
+  : > "$TEEUP_APPS_DIR/Paint Viewer.app/Contents/Info.plist"
   local out
   out="$("$TEEUP" launch "Paint Viewer")"
   assert_contains "$out" "Opening Paint Viewer" || return 1

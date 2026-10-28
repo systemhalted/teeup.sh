@@ -576,7 +576,8 @@ esac
 exit 0
 EOF2
   export TEEUP_CAPS_DIR="$TEST_HOME/caps" TEEUP_APPS_DIR="$TEST_HOME/Applications"
-  mkdir -p "$TEEUP_CAPS_DIR/keep" "$TEEUP_CAPS_DIR/lost" "$TEEUP_APPS_DIR/Keep.app"
+  mkdir -p "$TEEUP_CAPS_DIR/keep" "$TEEUP_CAPS_DIR/lost" "$TEEUP_APPS_DIR/Keep.app/Contents"
+  : > "$TEEUP_APPS_DIR/Keep.app/Contents/Info.plist"
   printf 'casks="keep"\napps="Keep"\n' > "$TEEUP_CAPS_DIR/keep/capability"
   printf 'casks="gone"\napps="Gone"\n' > "$TEEUP_CAPS_DIR/lost/capability"
   state_done mark cap-keep
@@ -601,7 +602,8 @@ test_upgrade_all_leaves_out_a_cask_whose_app_is_gone() {
 test_upgrade_all_names_only_the_casks_that_failed() {
   setup
   raycast_like_fixture
-  mkdir -p "$TEEUP_APPS_DIR/Gone.app"   # here, so it is in the batch, but brew fails on it
+  mkdir -p "$TEEUP_APPS_DIR/Gone.app/Contents"   # here, so it is in the batch, but brew fails on it
+  : > "$TEEUP_APPS_DIR/Gone.app/Contents/Info.plist"
   local out rc=0
   out="$(pkg_upgrade_all 2>&1)" || rc=$?
   assert_failure "$rc" || return 1
@@ -637,7 +639,8 @@ echo "brew $*" >> "$MOCK_LOG"
 case "$1" in list) exit 1 ;; esac
 EOF2
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
-  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app"
+  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app/Contents"
+  : > "$TEEUP_APPS_DIR/WezTerm.app/Contents/Info.plist"
   local out
   out="$(TEEUP_CAP=wezterm cask_install wezterm 2>&1)"
   assert_not_contains "$(cat "$MOCK_LOG")" "install --cask" "brew was asked to install over the app" || return 1
@@ -666,7 +669,10 @@ test_cask_install_reinstalls_a_listed_cask_whose_app_is_gone() {
 echo "brew $*" >> "$MOCK_LOG"
 case "$1" in
   list) exit 0 ;;
-  reinstall) mkdir -p "$TEEUP_APPS_DIR/WezTerm.app" ;;
+  reinstall)
+    mkdir -p "$TEEUP_APPS_DIR/WezTerm.app/Contents"
+    : > "$TEEUP_APPS_DIR/WezTerm.app/Contents/Info.plist"
+    ;;
 esac
 EOF2
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
@@ -702,7 +708,8 @@ echo "brew $*" >> "$MOCK_LOG"
 case "$1" in list) exit 0 ;; esac
 EOF2
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
-  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app"
+  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app/Contents"
+  : > "$TEEUP_APPS_DIR/WezTerm.app/Contents/Info.plist"
   local out
   out="$(TEEUP_CAP=wezterm cask_install wezterm 2>&1)"
   assert_contains "$out" "Already installed: wezterm (cask)" || return 1
@@ -718,7 +725,8 @@ echo "brew $*" >> "$MOCK_LOG"
 case "$1" in list) exit 1 ;; esac
 EOF2
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
-  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app"
+  mkdir -p "$TEEUP_APPS_DIR/WezTerm.app/Contents"
+  : > "$TEEUP_APPS_DIR/WezTerm.app/Contents/Info.plist"
   unset TEEUP_CAP
   cask_install wezterm >/dev/null 2>&1 || true
   assert_contains "$(cat "$MOCK_LOG")" "brew install --cask wezterm" || return 1
