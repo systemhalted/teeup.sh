@@ -2718,6 +2718,42 @@ EOF2
   cleanup_test_env
 }
 
+test_config_edit_refuses_package_manager_change_once_it_is_installed() {
+  setup
+  seed_config_answers
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' >> "$TEST_HOME/.config/teeup/answers"
+  local original
+  original="$(cat "$TEST_HOME/.config/teeup/answers")"
+  mkdir -p "$TEST_HOME/.local/state/teeup/done"
+  : > "$TEST_HOME/.local/state/teeup/done/cap-package-manager"
+  mock_command_script fakeed <<'EOF2'
+printf 'TEEUP_PACKAGE_MANAGER="macports"\n' >> "$1"
+EOF2
+  local rc=0 out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)" || rc=$?
+  assert_failure "$rc" || return 1
+  assert_contains "$out" "TEEUP_PACKAGE_MANAGER picks which package manager teeup drives, and package-manager is already installed on this Mac; teeup config cannot switch that safely after the fact. Run teeup remove package-manager first" || return 1
+  assert_equals "$original" "$(cat "$TEST_HOME/.config/teeup/answers")" "the original answers file must survive the rollback" || return 1
+  cleanup_test_env
+}
+
+test_config_edit_allows_unchanged_package_manager_once_it_is_installed() {
+  setup
+  seed_config_answers
+  printf 'TEEUP_PACKAGE_MANAGER="homebrew"\n' >> "$TEST_HOME/.config/teeup/answers"
+  mkdir -p "$TEST_HOME/.local/state/teeup/done"
+  : > "$TEST_HOME/.local/state/teeup/done/cap-package-manager"
+  mock_command_script fakeed <<'EOF2'
+true
+EOF2
+  local rc=0 out
+  out="$(VISUAL=fakeed "$TEEUP" config edit 2>&1)" || rc=$?
+  assert_success "$rc" || return 1
+  assert_contains "$out" "Saved" || return 1
+  assert_equals "homebrew" "$("$TEEUP" config get TEEUP_PACKAGE_MANAGER)" || return 1
+  cleanup_test_env
+}
+
 test_config_edit_rolls_back_an_edit_that_will_not_parse() {
   setup
   seed_config_answers
@@ -3350,6 +3386,8 @@ run_test "config get header lists both machine files" test_config_get_header_lis
 run_test "config get shows a leftover work answer as ignored" test_config_get_shows_a_leftover_work_answer_as_ignored
 run_test "config get shows the machine file's work answer as pinned" test_config_get_shows_the_machine_files_work_answer_as_pinned
 run_test "config edit keeps a good edit" test_config_edit_runs_the_editor_and_keeps_a_good_edit
+run_test "config edit refuses a package manager change once installed" test_config_edit_refuses_package_manager_change_once_it_is_installed
+run_test "config edit allows an unchanged installed package manager" test_config_edit_allows_unchanged_package_manager_once_it_is_installed
 run_test "config edit rolls back a broken edit" test_config_edit_rolls_back_an_edit_that_will_not_parse
 run_test "config edit rolls back a line that would run as a command" test_config_edit_rolls_back_a_line_that_would_run_as_a_command
 run_test "config edit rolls back a bare value with a semicolon" test_config_edit_rolls_back_a_bare_value_with_a_semicolon

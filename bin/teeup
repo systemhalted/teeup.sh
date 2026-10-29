@@ -1069,6 +1069,29 @@ _config_file_get() {
   )
 }
 
+# _config_file_key_changed <old file> <new file> <key> -> succeeds when the
+# key was added, removed or given a different value. Both files have already
+# passed _config_edit_error before the edit path calls this.
+_config_file_key_changed() {
+  local old="$1" new="$2" key="$3" old_val new_val old_set new_set
+  if old_val="$(_config_file_get "$old" "$key")"; then
+    old_set=true
+  else
+    old_set=false
+    old_val=""
+  fi
+  if new_val="$(_config_file_get "$new" "$key")"; then
+    new_set=true
+  else
+    new_set=false
+    new_val=""
+  fi
+  if [[ "$old_set" != "$new_set" || "$old_val" != "$new_val" ]]; then
+    return 0
+  fi
+  return 1
+}
+
 # _config_report_changed_answers <old file> <new file> -> one apply hint per
 # key that <new file> gives a different value than <old file>, including a
 # key either side is missing (added or removed). Called after a `config
@@ -1231,6 +1254,12 @@ cmd_config() {
       # every verb including the one that would fix it.
       parse_error="$(_config_edit_error "$f")"
       if [[ -z "$parse_error" ]]; then
+        if _config_file_key_changed "$backup" "$f" "TEEUP_PACKAGE_MANAGER" && state_done check "cap-package-manager"; then
+          cp "$backup" "$f"
+          chmod 600 "$f"
+          rm -f "$backup"
+          die "TEEUP_PACKAGE_MANAGER picks which package manager teeup drives, and package-manager is already installed on this Mac; teeup config cannot switch that safely after the fact. Run teeup remove package-manager first, or edit $(machine_file) to pin it."
+        fi
         chmod 600 "$f"
         ok "Saved $f"
         # Same hint `config set` prints, once per key the edit actually
