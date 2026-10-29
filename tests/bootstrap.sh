@@ -365,7 +365,10 @@ case "$1 ${2:-}" in
         while [ -n "$rest" ]; do
           app="${rest%%;*}"; rest="${rest#*;}"
           app="$(printf '%s' "$app" | sed 's/^ *//; s/ *$//')"
-          [ -n "$app" ] && mkdir -p "$HOME/Applications/$app.app"
+          if [ -n "$app" ]; then
+            mkdir -p "$HOME/Applications/$app.app/Contents"
+            : > "$HOME/Applications/$app.app/Contents/Info.plist"
+          fi
         done
       done
     done

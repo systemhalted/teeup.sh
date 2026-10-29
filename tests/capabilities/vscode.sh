@@ -145,7 +145,8 @@ test_configure_reports_installed_with_a_hand_downloaded_app_on_macports() {
   source "$TEEUP_PATH/lib/all.sh"
   export TEEUP_PACKAGE_MANAGER=macports
   mock_command port 1 ""
-  mkdir -p "$TEEUP_APPS_DIR/Visual Studio Code.app"
+  mkdir -p "$TEEUP_APPS_DIR/Visual Studio Code.app/Contents"
+  : > "$TEEUP_APPS_DIR/Visual Studio Code.app/Contents/Info.plist"
   DRY_RUN=false "$TEEUP" theme set catppuccin >/dev/null
   DRY_RUN=false cap_install_verbs vscode >/dev/null 2>&1
   state_done check "cap-vscode" || { echo "must be marked done"; return 1; }

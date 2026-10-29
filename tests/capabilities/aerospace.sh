@@ -304,7 +304,8 @@ test_configure_runs_as_usual_at_the_macos_minimum() {
 test_doctor_fails_when_both_configs_exist() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
-  mkdir -p "$TEEUP_APPS_DIR/AeroSpace.app" "$(dirname "$AERO")"
+  mkdir -p "$TEEUP_APPS_DIR/AeroSpace.app/Contents" "$(dirname "$AERO")"
+  : > "$TEEUP_APPS_DIR/AeroSpace.app/Contents/Info.plist"
   mock_command pgrep 0 ""
   printf 'x = 1\n' > "$TEST_HOME/.aerospace.toml"
   printf 'x = 1\n' > "$AERO"
@@ -318,7 +319,8 @@ test_doctor_fails_when_both_configs_exist() {
 test_doctor_accepts_the_home_config() {
   setup
   source "$TEEUP_PATH/lib/all.sh"
-  mkdir -p "$TEEUP_APPS_DIR/AeroSpace.app"
+  mkdir -p "$TEEUP_APPS_DIR/AeroSpace.app/Contents"
+  : > "$TEEUP_APPS_DIR/AeroSpace.app/Contents/Info.plist"
   mock_command pgrep 0 ""
   printf 'x = 1\n' > "$TEST_HOME/.aerospace.toml"
   local rc=0 out
@@ -394,7 +396,8 @@ EOF2
   # ~/Applications fallback, not through the same path this script checks.
   export TEEUP_APPS_DIR="$TEST_HOME/EmptyApplications"
   mkdir -p "$TEEUP_APPS_DIR"
-  mkdir -p "$HOME/Applications/AeroSpace.app"
+  mkdir -p "$HOME/Applications/AeroSpace.app/Contents"
+  : > "$HOME/Applications/AeroSpace.app/Contents/Info.plist"
   printf 'x = 1\n' > "$TEST_HOME/.aerospace.toml"
   local report="$TEST_HOME/report"
   : > "$report"
@@ -594,6 +597,7 @@ test_the_migration_gate_asks_the_app_when_the_cli_is_missing() {
   aerospace_migration_fixture
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
   mkdir -p "$TEEUP_APPS_DIR/AeroSpace.app/Contents"
+  : > "$TEEUP_APPS_DIR/AeroSpace.app/Contents/Info.plist"
   export TEEUP_TEST_MISSING="${TEEUP_TEST_MISSING:-} aerospace"
   mock_command defaults 0 "0.19.2-Beta"
   local rc=0
@@ -611,6 +615,7 @@ test_the_migration_gate_finds_the_app_in_home_applications() {
   aerospace_migration_fixture
   export TEEUP_APPS_DIR="$TEST_HOME/EmptyApplications"
   mkdir -p "$TEEUP_APPS_DIR" "$HOME/Applications/AeroSpace.app/Contents"
+  : > "$HOME/Applications/AeroSpace.app/Contents/Info.plist"
   export TEEUP_TEST_MISSING="${TEEUP_TEST_MISSING:-} aerospace"
   mock_command defaults 0 "0.19.2-Beta"
   local rc=0

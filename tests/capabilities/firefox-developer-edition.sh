@@ -24,7 +24,8 @@ test_install_skips_an_installed_cask() {
   setup
   # Listed by Homebrew and its app in place: nothing to do.
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
-  mkdir -p "$TEEUP_APPS_DIR/Firefox Developer Edition.app"
+  mkdir -p "$TEEUP_APPS_DIR/Firefox Developer Edition.app/Contents"
+  : > "$TEEUP_APPS_DIR/Firefox Developer Edition.app/Contents/Info.plist"
   mock_command_script brew <<'EOF2'
 case "$1 ${2:-} ${3:-}" in "list --cask firefox@developer-edition") exit 0 ;; list*) exit 1 ;; *) exit 0 ;; esac
 EOF2
@@ -58,7 +59,8 @@ test_configure_reports_the_app() {
   # at a step that never ran.
   assert_contains "$out" "run: teeup install firefox-developer-edition" || return 1
   assert_not_contains "$out" "the install step above says why" || return 1
-  mkdir -p "$TEST_HOME/Applications/Firefox Developer Edition.app"
+  mkdir -p "$TEST_HOME/Applications/Firefox Developer Edition.app/Contents"
+  : > "$TEST_HOME/Applications/Firefox Developer Edition.app/Contents/Info.plist"
   out="$(DRY_RUN=false "$TEEUP" configure firefox-developer-edition)"
   assert_contains "$out" "Firefox Developer Edition is installed; open it with: open -a 'Firefox Developer Edition'" || return 1
   cleanup_test_env
@@ -89,7 +91,8 @@ test_launch_installs_the_cask_then_opens() {
 case "$1 ${2:-} ${3:-}" in
   "list --cask firefox@developer-edition") exit 1 ;;
   "install --cask firefox@developer-edition")
-    mkdir -p "$TEEUP_APPS_DIR/Firefox Developer Edition.app"
+    mkdir -p "$TEEUP_APPS_DIR/Firefox Developer Edition.app/Contents"
+    : > "$TEEUP_APPS_DIR/Firefox Developer Edition.app/Contents/Info.plist"
     echo "brew install --cask firefox@developer-edition"
     exit 0
     ;;

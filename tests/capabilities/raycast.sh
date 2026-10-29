@@ -38,7 +38,8 @@ test_configure_reports_the_app() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure raycast)"
   assert_contains "$out" "Raycast.app is not in $TEST_HOME/Applications or ~/Applications; run: teeup install raycast" || return 1
-  mkdir -p "$TEST_HOME/Applications/Raycast.app"
+  mkdir -p "$TEST_HOME/Applications/Raycast.app/Contents"
+  : > "$TEST_HOME/Applications/Raycast.app/Contents/Info.plist"
   out="$(DRY_RUN=false "$TEEUP" configure raycast)"
   assert_contains "$out" "Raycast is installed; open it with: open -a 'Raycast'" || return 1
   cleanup_test_env
@@ -48,7 +49,8 @@ test_configure_reports_the_app() {
 # a MacPorts Mac, where configure must not call the capability not applicable.
 test_configure_finds_raycast_in_the_home_applications() {
   setup
-  mkdir -p "$HOME/Applications/Raycast.app"
+  mkdir -p "$HOME/Applications/Raycast.app/Contents"
+  : > "$HOME/Applications/Raycast.app/Contents/Info.plist"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure raycast)"
   assert_contains "$out" "Raycast is installed; open it with: open -a 'Raycast'" "Homebrew" || return 1
@@ -89,7 +91,8 @@ test_install_is_not_applicable_on_intel_with_macos_26() {
 test_an_installed_raycast_counts_on_intel_with_macos_26() {
   setup
   mock_intel_tahoe
-  mkdir -p "$TEST_HOME/Applications/Raycast.app"
+  mkdir -p "$TEST_HOME/Applications/Raycast.app/Contents"
+  : > "$TEST_HOME/Applications/Raycast.app/Contents/Info.plist"
   local out
   out="$(DRY_RUN=true "$TEEUP" install raycast 2>&1)"
   assert_not_contains "$out" "runs only on Apple Silicon" || return 1

@@ -56,7 +56,8 @@ test_configure_gives_guidance_only_for_an_installed_iterm2() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure iterm2 2>&1)"
   assert_not_contains "$out" "teeup launch iterm2" || return 1
-  mkdir -p "$TEEUP_APPS_DIR/iTerm.app"
+  mkdir -p "$TEEUP_APPS_DIR/iTerm.app/Contents"
+  : > "$TEEUP_APPS_DIR/iTerm.app/Contents/Info.plist"
   out="$(DRY_RUN=false "$TEEUP" configure iterm2)"
   assert_contains "$out" "teeup launch iterm2" || return 1
   cleanup_test_env
@@ -67,7 +68,10 @@ test_launch_installs_then_opens() {
   mock_command_script brew <<'EOF2'
 case "$1 ${2:-}" in
   "list "*) exit 1 ;;
-  "install --cask") mkdir -p "$TEEUP_APPS_DIR/iTerm.app" ;;
+  "install --cask")
+    mkdir -p "$TEEUP_APPS_DIR/iTerm.app/Contents"
+    : > "$TEEUP_APPS_DIR/iTerm.app/Contents/Info.plist"
+    ;;
 esac
 exit 0
 EOF2

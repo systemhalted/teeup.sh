@@ -95,7 +95,8 @@ test_configure_names_the_macports_app_location() {
   mock_command port 0 ""
   local apps_dir="$TEST_HOME/FakeApps"
   wezterm_set_macports_apps_dir "$apps_dir"
-  mkdir -p "$apps_dir/WezTerm.app"
+  mkdir -p "$apps_dir/WezTerm.app/Contents"
+  : > "$apps_dir/WezTerm.app/Contents/Info.plist"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure wezterm 2>&1)"
   assert_contains "$out" "$apps_dir" || return 1
@@ -110,7 +111,8 @@ test_configure_names_the_macports_app_location_in_dry_run_too() {
   mock_command port 0 ""
   local apps_dir="$TEST_HOME/FakeApps"
   wezterm_set_macports_apps_dir "$apps_dir"
-  mkdir -p "$apps_dir/WezTerm.app"
+  mkdir -p "$apps_dir/WezTerm.app/Contents"
+  : > "$apps_dir/WezTerm.app/Contents/Info.plist"
   local out
   out="$(DRY_RUN=true "$TEEUP" configure wezterm 2>&1)"
   assert_contains "$out" "$apps_dir" || return 1
@@ -155,7 +157,8 @@ test_configure_reads_applications_dir_from_macports_conf() {
   mock_command port 0 ""
   local apps_dir="$TEST_HOME/CustomApps"
   wezterm_set_macports_apps_dir "$apps_dir"
-  mkdir -p "$apps_dir/WezTerm.app"
+  mkdir -p "$apps_dir/WezTerm.app/Contents"
+  : > "$apps_dir/WezTerm.app/Contents/Info.plist"
   local out
   out="$(DRY_RUN=false "$TEEUP" configure wezterm 2>&1)"
   assert_contains "$out" "$apps_dir" || return 1

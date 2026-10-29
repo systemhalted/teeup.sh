@@ -57,7 +57,8 @@ test_configure_gives_guidance_only_for_an_installed_ghostty() {
   local out
   out="$(DRY_RUN=false "$TEEUP" configure ghostty 2>&1)"
   assert_not_contains "$out" "run ghostty" || return 1
-  mkdir -p "$TEEUP_APPS_DIR/Ghostty.app"
+  mkdir -p "$TEEUP_APPS_DIR/Ghostty.app/Contents"
+  : > "$TEEUP_APPS_DIR/Ghostty.app/Contents/Info.plist"
   unset TEEUP_TEST_MISSING
   mock_command ghostty 0 ""
   out="$(DRY_RUN=false "$TEEUP" configure ghostty)"
@@ -71,7 +72,10 @@ test_launch_installs_then_opens() {
   mock_command_script brew <<'EOF2'
 case "$1 ${2:-}" in
   "list "*) exit 1 ;;
-  "install --cask") mkdir -p "$TEEUP_APPS_DIR/Ghostty.app" ;;
+  "install --cask")
+    mkdir -p "$TEEUP_APPS_DIR/Ghostty.app/Contents"
+    : > "$TEEUP_APPS_DIR/Ghostty.app/Contents/Info.plist"
+    ;;
 esac
 exit 0
 EOF2

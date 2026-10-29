@@ -24,7 +24,8 @@ test_install_skips_an_installed_cask() {
   setup
   # Listed by Homebrew and its app in place: nothing to do.
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
-  mkdir -p "$TEEUP_APPS_DIR/Google Chrome.app"
+  mkdir -p "$TEEUP_APPS_DIR/Google Chrome.app/Contents"
+  : > "$TEEUP_APPS_DIR/Google Chrome.app/Contents/Info.plist"
   mock_command_script brew <<'EOF2'
 case "$1 ${2:-} ${3:-}" in "list --cask google-chrome") exit 0 ;; list*) exit 1 ;; *) exit 0 ;; esac
 EOF2
@@ -57,7 +58,8 @@ test_configure_reports_the_app() {
   # so it must say what is actually known, not point at a step that never ran.
   assert_contains "$out" "run: teeup install chrome" || return 1
   assert_not_contains "$out" "the install step above says why" || return 1
-  mkdir -p "$TEST_HOME/Applications/Google Chrome.app"
+  mkdir -p "$TEST_HOME/Applications/Google Chrome.app/Contents"
+  : > "$TEST_HOME/Applications/Google Chrome.app/Contents/Info.plist"
   out="$(DRY_RUN=false "$TEEUP" configure chrome)"
   assert_contains "$out" "Google Chrome is installed; open it with: open -a 'Google Chrome'" || return 1
   cleanup_test_env

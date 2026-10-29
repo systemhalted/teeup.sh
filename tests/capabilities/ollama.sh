@@ -143,7 +143,8 @@ test_configure_names_the_pull_command_only_when_it_exists() {
 
 test_launch_opens_the_app_and_the_shim_exists() {
   setup
-  mkdir -p "$TEEUP_APPS_DIR/Ollama.app"
+  mkdir -p "$TEEUP_APPS_DIR/Ollama.app/Contents"
+  : > "$TEEUP_APPS_DIR/Ollama.app/Contents/Info.plist"
   DRY_RUN=false "$TEEUP" launch ollama >/dev/null
   assert_contains "$(cat "$MOCK_LOG")" "open -a Ollama" || return 1
   DRY_RUN=false "$TEEUP" configure teeup-runtime >/dev/null

@@ -508,7 +508,8 @@ test_metadata_check_reports_a_missing_app() {
   out="$(doctor_metadata_check widget 2>&1)"
   assert_contains "$out" "Widget Studio.app is not installed" || return 1
   assert_contains "$(cat "$REPORT")" "teeup install widget" || return 1
-  mkdir -p "$TEEUP_APPS_DIR/Widget Studio.app"
+  mkdir -p "$TEEUP_APPS_DIR/Widget Studio.app/Contents"
+  : > "$TEEUP_APPS_DIR/Widget Studio.app/Contents/Info.plist"
   : > "$REPORT"
   out="$(doctor_metadata_check widget 2>&1)"
   assert_contains "$out" "Widget Studio.app is installed" || return 1
@@ -1113,7 +1114,8 @@ test_metadata_check_accepts_an_app_installed_without_its_cask() {
 case "$1" in --version) echo "Homebrew 4.0.0" ;; *) exit 1 ;; esac
 EOF2
   export TEEUP_APPS_DIR="$TEST_HOME/Applications"
-  mkdir -p "$TEEUP_APPS_DIR/Widget.app"
+  mkdir -p "$TEEUP_APPS_DIR/Widget.app/Contents"
+  : > "$TEEUP_APPS_DIR/Widget.app/Contents/Info.plist"
   local out
   out="$(doctor_metadata_check widget 2>&1)"
   assert_contains "$out" "the app it provides was installed another way" || return 1

@@ -149,8 +149,21 @@ cap_apps() {
   return 0
 }
 
-# app_installed <app name> -> is <app>.app present where casks -- or, on a
-# MacPorts machine, an aqua port's Portfile -- put it?
+# app_bundle_installed <path> -> does this path contain enough of a real app
+# bundle to use? Info.plist is the normal marker; a non-empty MacOS directory
+# also accepts unusual bundles that omit it.
+app_bundle_installed() {
+  local bundle="$1" entry
+  [[ -f "$bundle/Contents/Info.plist" ]] && return 0
+  [[ -d "$bundle/Contents/MacOS" ]] || return 1
+  for entry in "$bundle/Contents/MacOS/"* "$bundle/Contents/MacOS/".[!.]* "$bundle/Contents/MacOS/"..?*; do
+    [[ -e "$entry" || -L "$entry" ]] && return 0
+  done
+  return 1
+}
+
+# app_installed <app name> -> is a real <app>.app bundle present where casks
+# -- or, on a MacPorts machine, an aqua port's Portfile -- put it?
 # TEEUP_APPS_DIR is the test hook aerospace already uses for /Applications;
 # ~/Applications is where a cask lands when HOMEBREW_CASK_OPTS points it there.
 # macports_apps_dir (lib/pkg.sh) is consulted on a MacPorts backend, because a
@@ -159,8 +172,14 @@ cap_apps() {
 # without this, `teeup launch` calls an installed app "not found" and
 # reinstalls it on every call.
 app_installed() {
-  [[ -d "${TEEUP_APPS_DIR:-/Applications}/$1.app" || -d "$HOME/Applications/$1.app" ]] && return 0
-  [[ "$(pkg_backend)" == "macports" ]] && [[ -d "$(macports_apps_dir)/$1.app" ]]
+  local dir
+  for dir in "${TEEUP_APPS_DIR:-/Applications}" "$HOME/Applications"; do
+    app_bundle_installed "$dir/$1.app" && return 0
+  done
+  if [[ "$(pkg_backend)" == "macports" ]]; then
+    app_bundle_installed "$(macports_apps_dir)/$1.app" && return 0
+  fi
+  return 1
 }
 
 # app_search_dirs -> every directory app_installed actually checked on this
