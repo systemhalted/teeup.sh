@@ -41,7 +41,7 @@ teeup config set TEEUP_EMACS_FLAVOR doom
 🔹 Run: teeup configure emacs -- that is what reads TEEUP_EMACS_FLAVOR (teeup update now covers it too).
 ```
 
-`teeup config edit` opens `$VISUAL`, then `$EDITOR`, then `vi`. The teeup shell sets `EDITOR` and `VISUAL` from your editor answers (see [Editors](shell-tools.md#editors)). When you close the editor, teeup checks that every line has the `KEY="value"` format. If a line does not, teeup restores the previous file and prints the broken line. Because teeup reads the answers file at the start of every command, a broken line breaks `teeup config edit`.
+`teeup config edit` opens `$VISUAL`, then `$EDITOR`, then `vi`. teeup prints that editor and the variable that chose it. The teeup shell sets `EDITOR` and `VISUAL` from your editor answers (see [Editors](shell-tools.md#editors)). When you close the editor, teeup checks that every line has the `KEY="value"` format. If a line does not, teeup restores the previous file and prints the broken line. Because teeup reads the answers file at the start of every command, a broken line breaks `teeup config edit`.
 
 `teeup config set` does not accept two keys:
 
