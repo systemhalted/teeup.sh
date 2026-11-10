@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0-beta] - 2026-11-03
+
+User tools such as ripgrep, Neovim and Starship now come from mise at the versions of the release, and a version you choose with `mise use -g` wins. The installer works on a network that re-signs HTTPS.
+
 ### Added
 - **The installer works on a network that re-signs HTTPS.** When `git clone` fails with a certificate error, the installer makes a temporary bundle from Apple's public roots and the certificates an administrator trusts in the System keychain, and clones again. When no certificate is trusted, it stops and shows the `security add-trusted-cert` command. The manual shows how to download the installer on such a network.
 - **Raycast.** `teeup install raycast` installs the Raycast launcher from its Homebrew cask, and the menu offers it under Apps. MacPorts has no port of it, so teeup shows the download page there.
